@@ -1,0 +1,24 @@
+# Git
+.git
+.gitignore
+
+# Build output
+build/
+
+# IDE
+.idea
+*.iml
+.vscode
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Docs and misc
+README.md
+*.md
+
+# Test and local
+.env
+.env.*

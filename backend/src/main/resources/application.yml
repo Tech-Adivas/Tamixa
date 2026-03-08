@@ -1,0 +1,259 @@
+spring:
+  application:
+    name: araro
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        default_schema: public
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      repositories:
+        enabled: false  # Only RedisTemplate used; no Spring Data Redis repos
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+  datasource:
+    hikari:
+      connection-timeout: 30000
+      maximum-pool-size: 20
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      keepalive-time: 30000
+
+server:
+  port: ${SERVER_PORT:8080}
+
+# Actuator: health groups, metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: ping
+        readiness:
+          include: db,redis,diskSpace
+  health:
+    redis:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  file:
+    path: ${LOG_PATH:logs}
+  level:
+    root: INFO
+    com.araro: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: DEBUG
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+
+# Resilience4j circuit breaker for OpenAI and TTS (fail fast when downstream is failing)
+resilience4j:
+  circuitbreaker:
+    instances:
+      openai:
+        register-health-indicator: true
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+      tts:
+        register-health-indicator: true
+        sliding-window-size: 20
+        failure-rate-threshold: 60
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 5
+
+app:
+  auth:
+    # Dev-only: dummy OTP code accepted with any phone (e.g. 123456). Set in dev profile.
+    dev-otp-code: ${DEV_OTP_CODE:}
+    # Web app base URL for passwordless magic links (e.g. http://localhost:3000 or https://app.araro.com).
+    web-base-url: ${ARARO_WEB_APP_URL:http://localhost:3000}
+    # Dev only: fixed code accepted for web passwordless (e.g. 123456). Set in dev profile; leave empty in prod.
+    dev-passwordless-code: ${DEV_PASSWORDLESS_CODE:}
+  cors:
+    # Comma-separated origins for production; empty or "*" = allow all (dev only)
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    requests-per-minute: ${RATE_LIMIT_REQUESTS_PER_MINUTE:100}
+    story-generation-free-per-hour: ${STORY_RATE_LIMIT_FREE:10}
+    story-generation-paid-per-hour: ${STORY_RATE_LIMIT_PAID:60}
+    story-generation-suspicious-per-hour: ${STORY_RATE_LIMIT_SUSPICIOUS:2}
+  jwt:
+    secret: ${JWT_SECRET:araro-secret-key-min-256-bits-for-hs256-algorithm-please-change-in-production}
+    access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:900000}
+    refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+  # OpenAI: token limit controls cost; system prompt is reused for caching (provider-supported).
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+    model: ${OPENAI_MODEL:gpt-4o-mini}
+    max-tokens: ${OPENAI_MAX_TOKENS:1024}
+    connect-timeout-ms: ${OPENAI_CONNECT_TIMEOUT_MS:15000}
+    read-timeout-ms: ${OPENAI_READ_TIMEOUT_MS:60000}
+    retry:
+      max-attempts: ${OPENAI_RETRY_MAX_ATTEMPTS:3}
+      initial-interval-ms: ${OPENAI_RETRY_INITIAL_MS:1000}
+      multiplier: ${OPENAI_RETRY_MULTIPLIER:2.0}
+  # Sora: image-to-video for story cover (after DALL-E). Output is converted to GIF for app. Requires Sora API access.
+  sora:
+    enabled: ${SORA_ENABLED:false}
+    convert-to-gif: ${SORA_CONVERT_TO_GIF:true}
+    model: ${SORA_MODEL:sora-2}
+    seconds: ${SORA_SECONDS:4}
+    poll-interval-sec: ${SORA_POLL_INTERVAL_SEC:20}
+    max-wait-sec: ${SORA_MAX_WAIT_SEC:300}
+  story:
+    cache-ttl-hours: ${STORY_CACHE_TTL_HOURS:24}
+    max-words: ${STORY_MAX_WORDS:750}
+    # Safety: theme allowlist (empty = allow any; comma-separated for restrict mode)
+    theme-allowlist: ${STORY_THEME_ALLOWLIST:}
+    # Story safety score threshold (0-100). Reject if score < threshold.
+    safety-score-threshold: ${STORY_SAFETY_SCORE_THRESHOLD:60}
+    # Custom keyword blocklist for moderation layer 2 (comma-separated)
+    keyword-blocklist: ${STORY_KEYWORD_BLOCKLIST:}
+  # AI cost protection: token limits
+  ai-token-limits:
+    per-parent-daily: ${AI_TOKEN_LIMIT_PER_PARENT_DAILY:50000}
+    system-wide-daily: ${AI_TOKEN_LIMIT_SYSTEM_DAILY:500000}
+    circuit-breaker-spike-threshold: ${AI_CIRCUIT_BREAKER_SPIKE_THRESHOLD:100000}
+  translation:
+    # openai = real translation via OpenAI; simulated = dev-only prefix [lang]
+    provider: ${TRANSLATION_PROVIDER:simulated}
+  translation-pipeline:
+    source-language: ${TRANSLATION_SOURCE_LANGUAGE:ta}  # Skip translation when target == source
+    target-languages: ${TRANSLATION_TARGET_LANGUAGES:en,hi,te,kn,ml}  # comma-separated, parsed as list
+    # Tamil (source) skips translation; other languages need longer for translate+rewrite+TTS
+    translation-timeout-ms: ${TRANSLATION_TIMEOUT_MS:60000}
+    tts-timeout-ms: ${TTS_TIMEOUT_MS:90000}
+    max-retries: ${TRANSLATION_PIPELINE_MAX_RETRIES:3}
+    cache-ttl-hours: ${TRANSLATION_CACHE_TTL_HOURS:24}
+    parallelism: ${TRANSLATION_PIPELINE_PARALLELISM:4}
+    simulated-delay-ms: ${TRANSLATION_SIMULATED_DELAY_MS:200}
+  audio:
+    base-url: ${AUDIO_BASE_URL:/audio}
+    simulated-tts-delay-ms: ${AUDIO_SIMULATED_TTS_DELAY_MS:500}
+    # When CDN disabled, used to build full URLs for stream-url fallback (e.g. http://localhost:8080 for dev, https://api.araro.com for prod)
+    public-base-url: ${AUDIO_PUBLIC_BASE_URL:http://localhost:8080}
+  soundscapes:
+    base-url: ${SOUNDSCAPES_BASE_URL:https://cdn.araro.app/soundscapes}  # Override to host your own audio files
+  storage:
+    type: ${STORAGE_TYPE:s3}
+    # S3_BUCKET: bucket name (e.g. araro-audio) OR Access Point ARN (e.g. arn:aws:s3:us-east-1:ACCOUNT:accesspoint/name)
+    s3-bucket: ${S3_BUCKET:araro-audio}
+    s3-region: ${S3_REGION:us-east-1}
+  cdn:
+    enabled: ${CDN_STREAM_ENABLED:false}
+    # Max 10 min per security requirements (S3 presigned URLs)
+    signed-url-expiry-minutes: ${CDN_SIGNED_URL_EXPIRY_MINUTES:10}
+    cache-ttl-seconds: ${CDN_CACHE_TTL_SECONDS:86400}
+  narration:
+    # TTS provider: openai | google | sample (local MP3s) | simulated. sample = no API, use files from tts-samples/
+    tts-provider: ${NARRATION_TTS_PROVIDER:simulated}
+    # Sample TTS: dir with ta.mp3, hi.mp3, en.mp3 etc. classpath:tts-samples or file:/path/to/samples
+    sample-tts-dir: ${NARRATION_SAMPLE_TTS_DIR:classpath:tts-samples}
+    sample-tts-fallback: ${NARRATION_SAMPLE_TTS_FALLBACK:en}
+    openai-tts-model: ${NARRATION_OPENAI_TTS_MODEL:tts-1-hd}
+    # Speed 0.95 = slightly slower for conversational, bedtime feel (range 0.25-4.0)
+    openai-tts-speed: ${NARRATION_OPENAI_TTS_SPEED:0.95}
+    # Google Cloud TTS: native Indian language voices (ta-IN, hi-IN, etc.). Requires Text-to-Speech API enabled.
+    google-tts-api-key: ${GOOGLE_CLOUD_TTS_API_KEY:}
+    # Chirp3-HD voice name for more native sound. Options: Achernar (default, warm female), Leda, Kore, Pulcherrima, Gacrux (female); Charon, Orus, Achird, Schedar (male). Leave blank = Achernar.
+    google-tts-voice-name: ${NARRATION_GOOGLE_TTS_VOICE_NAME:Achernar}
+    google-tts-speed: ${NARRATION_GOOGLE_TTS_SPEED:0.95}
+    daily-token-limit: ${NARRATION_DAILY_TOKEN_LIMIT:100000}
+    max-narration-tokens: ${NARRATION_MAX_TOKENS:1024}
+    # Rewrite model: gpt-4o follows conversational prompt better than gpt-4o-mini. Use mini for cheaper/faster.
+    rewrite-model: ${NARRATION_REWRITE_MODEL:gpt-4o}
+    # Rewrite temperature: 0.6 for conversational, varied output; 0.4 = more uniform, 0.7 = more creative
+    rewrite-temperature: ${NARRATION_REWRITE_TEMPERATURE:0.6}
+    # Tamil TTS is faster; other languages (en,hi,te,kn,ml) need more time for longer content
+    tts-timeout-seconds: ${NARRATION_TTS_TIMEOUT:60}
+    tts-max-retries: ${NARRATION_TTS_MAX_RETRIES:2}
+    voice-profile: ${NARRATION_VOICE_PROFILE:default}
+    blocklist-keywords: ${NARRATION_BLOCKLIST:}
+    simulated-tts-delay-ms: ${NARRATION_SIMULATED_TTS_DELAY_MS:0}
+    # Concurrency: core=4, max=8, queue=20; TTS limiter max 5 concurrent calls
+    async-executor-core-size: ${NARRATION_ASYNC_CORE:4}
+    async-executor-max-size: ${NARRATION_ASYNC_MAX:8}
+    async-queue-capacity: ${NARRATION_ASYNC_QUEUE:20}
+    max-concurrent-jobs: ${NARRATION_MAX_CONCURRENT_JOBS:100}
+    max-concurrent-tts: ${NARRATION_MAX_CONCURRENT_TTS:5}  # TTS API rate limit protection
+    max-concurrent-rewrite: ${NARRATION_MAX_CONCURRENT_REWRITE:2}  # Limit concurrent OpenAI rewrites to avoid 429 (flat reads)
+  voice:
+    encryption-key: ${VOICE_ENCRYPTION_KEY:}
+    max-file-size-bytes: 10485760
+  voice-cloning:
+    enabled: ${VOICE_CLONING_ENABLED:false}
+    elevenlabs-api-key: ${ELEVENLABS_API_KEY:}
+    elevenlabs-base-url: ${ELEVENLABS_BASE_URL:https://api.elevenlabs.io}
+  subscription:
+    free-stories-per-month: ${SUBSCRIPTION_FREE_STORIES_PER_MONTH:5}
+    free-voice-generations-per-month: ${SUBSCRIPTION_FREE_VOICE_GENERATIONS_PER_MONTH:5}
+    trial-days: ${SUBSCRIPTION_TRIAL_DAYS:7}
+    grace-period-days: ${SUBSCRIPTION_GRACE_PERIOD_DAYS:3}
+    # Optional: encrypt webhook payloads at rest (base64 32-byte AES key). In production, set to true and set SUBSCRIPTION_WEBHOOK_ENCRYPTION_KEY (PCI/compliance).
+    webhook-payload-encryption-key: ${SUBSCRIPTION_WEBHOOK_ENCRYPTION_KEY:}
+    require-webhook-payload-encryption: ${SUBSCRIPTION_REQUIRE_WEBHOOK_ENCRYPTION:false}
+    grace-period-cron: ${SUBSCRIPTION_GRACE_PERIOD_CRON:0 0 2 * * ?}
+    trial-expiry-cron: ${SUBSCRIPTION_TRIAL_EXPIRY_CRON:0 0 3 * * ?}
+    revenue-snapshot-cron: ${SUBSCRIPTION_REVENUE_SNAPSHOT_CRON:0 0 4 * * ?}
+    reconciliation-cron: ${SUBSCRIPTION_RECONCILIATION_CRON:0 0 5 * * ?}
+    stripe:
+      enabled: ${STRIPE_ENABLED:false}
+      secret-key: ${STRIPE_SECRET_KEY:}
+      webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+      publishable-key: ${STRIPE_PUBLISHABLE_KEY:}
+      success-url-prefix: ${STRIPE_SUCCESS_URL_PREFIX:https://app.araro.com/subscription}
+      voice-premium-price-id: ${STRIPE_VOICE_PREMIUM_PRICE_ID:}
+    zoho:
+      enabled: ${ZOHO_ENABLED:false}
+      account-id: ${ZOHO_ACCOUNT_ID:}
+      webhook-signing-key: ${ZOHO_WEBHOOK_SIGNING_KEY:}
+  avatar-video:
+    enabled: ${AVATAR_VIDEO_ENABLED:false}
+    provider: ${AVATAR_VIDEO_PROVIDER:heygen}
+    heygen-api-key: ${HEYGEN_API_KEY:}
+    replicate-api-token: ${REPLICATE_API_TOKEN:}
+    replicate-model-version: ${AVATAR_VIDEO_MODEL_VERSION:cjwbw/sadtalker:a519cc0cfebaaeade068b23899165a11ec76aaa1d2b313d40d214f204ec957a3}
+    poll-interval-seconds: ${AVATAR_VIDEO_POLL_INTERVAL:15}
+    max-poll-attempts: ${AVATAR_VIDEO_MAX_POLL:20}
+    connect-timeout-ms: ${AVATAR_VIDEO_CONNECT_TIMEOUT:30000}
+    read-timeout-ms: ${AVATAR_VIDEO_READ_TIMEOUT:120000}

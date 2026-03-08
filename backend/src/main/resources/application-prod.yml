@@ -1,0 +1,25 @@
+# Production overrides. REQUIRED: CORS_ALLOWED_ORIGINS, JWT_SECRET, DATABASE_*
+# Storage: S3 default. Set S3_BUCKET, S3_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# When using Stripe: set SUBSCRIPTION_WEBHOOK_ENCRYPTION_KEY (32-byte Base64) so webhook payloads are encrypted at rest (PCI/compliance).
+
+app:
+  subscription:
+    require-webhook-payload-encryption: true
+
+spring:
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: validate
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+
+logging:
+  level:
+    root: WARN
+    com.araro: INFO
+    org.hibernate.SQL: WARN

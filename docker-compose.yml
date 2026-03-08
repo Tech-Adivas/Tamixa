@@ -1,0 +1,128 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: araro-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-araro_kids}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-araro_kids}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: araro-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: araro-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "${ZOOKEEPER_PORT:-2181}:2181"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: araro-kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:${KAFKA_PORT:-9092}
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:29092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: araro:latest
+    container_name: araro-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      # PostgreSQL
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-araro_kids}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC_STORY_CREATED: ${KAFKA_TOPIC_STORY_CREATED:-story-created}
+      KAFKA_TOPIC_CURATED_STORY_CREATED: ${KAFKA_TOPIC_CURATED_STORY_CREATED:-curated-story-created}
+      # JWT (override in production)
+      JWT_SECRET: ${JWT_SECRET:-araro-secret-key-min-256-bits-for-hs256-algorithm-please-change-in-production}
+      JWT_ACCESS_EXPIRATION_MS: ${JWT_ACCESS_EXPIRATION_MS:-900000}
+      JWT_REFRESH_EXPIRATION_MS: ${JWT_REFRESH_EXPIRATION_MS:-604800000}
+      # Dev: seed admin via POST /api/v1/dev/seed-admin (admin@techadivas.com / Admin123!)
+      SEED_ADMIN_ENABLED: ${SEED_ADMIN_ENABLED:-true}
+      DEV_OTP_CODE: ${DEV_OTP_CODE:-123456}
+      # Optional: OpenAI, Translation, Voice encryption (set in production)
+      TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-simulated}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      VOICE_ENCRYPTION_KEY: ${VOICE_ENCRYPTION_KEY:-}
+      # Audio stream fallback: use 10.0.2.2 for Android emulator
+      AUDIO_PUBLIC_BASE_URL: ${AUDIO_PUBLIC_BASE_URL:-http://localhost:8080}
+      # S3 storage
+      STORAGE_TYPE: ${STORAGE_TYPE:-s3}
+      S3_BUCKET: ${S3_BUCKET:-araro-audio}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    volumes:
+      - ./.cursor:/workspace-debug:rw
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  postgres_data:
+  redis_data:

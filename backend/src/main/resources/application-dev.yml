@@ -1,0 +1,29 @@
+# Dev: seed admin via POST /api/v1/dev/seed-admin. Override with env SEED_ADMIN_ENABLED=false to disable.
+SEED_ADMIN_ENABLED: "true"
+
+# Dev OTP bypass: use code "123456" with any phone to log in without SMS
+# Dev passwordless: use code "123456" for web app login with any email (no email send needed)
+# Narration: longer TTS timeout for dev
+app:
+  auth:
+    dev-otp-code: ${DEV_OTP_CODE:123456}
+    dev-passwordless-code: ${DEV_PASSWORDLESS_CODE:123456}
+  narration:
+    tts-timeout-seconds: 60
+
+spring:
+  jpa:
+    show-sql: false  # Use org.hibernate.SQL logger instead (show-sql writes to stdout separately = duplicate logs)
+    hibernate:
+      ddl-auto: update
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:araro_kids}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 20
+
+logging:
+  level:
+    com.araro: DEBUG
+    org.springframework.web: DEBUG

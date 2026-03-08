@@ -1,0 +1,3 @@
+# Copy to terraform.tfvars
+bucket_name = "araro-audio"
+aws_region  = "us-east-1"

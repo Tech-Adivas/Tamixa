@@ -1,0 +1,32 @@
+# Test profile: datasource URL is set via @DynamicPropertySource from Testcontainers.
+# Redis and Kafka are excluded so context loads with only Postgres (Testcontainers).
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+
+# Rate limit: low for tests so we can hit 429 quickly
+app:
+  rate-limit:
+    requests-per-minute: 2
+
+# Override readiness: Redis excluded above, so don't require it in health group
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: db,diskSpace
+  health:
+    redis:
+      enabled: false
+
+logging:
+  level:
+    root: INFO
+    com.araro: DEBUG
