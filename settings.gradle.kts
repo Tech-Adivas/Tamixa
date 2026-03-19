@@ -1,9 +1,9 @@
-rootProject.name = "araro"
+rootProject.name = "tamixa"
 
 /** When true, excludes mobile (requires Android SDK; has Kotlin/AGP compatibility issues). Use for backend-only builds. */
-val backendOnly = providers.gradleProperty("araro.backendOnly").orElse("false").get().toBooleanStrictOrNull() ?: false
+val backendOnly = providers.gradleProperty("tamixa.backendOnly").orElse("false").get().toBooleanStrictOrNull() ?: false
 /** When true, includes only mobile/composeApp (e.g. when building iOS framework from Xcode). Avoids configuring backend. */
-val iosOnly = providers.gradleProperty("araro.iosOnly").orElse("false").get().toBooleanStrictOrNull() ?: false
+val iosOnly = providers.gradleProperty("tamixa.iosOnly").orElse("false").get().toBooleanStrictOrNull() ?: false
 
 pluginManagement {
     repositories {

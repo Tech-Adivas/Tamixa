@@ -9,7 +9,7 @@ export default function Privacy() {
     <main className="page" role="main" aria-label="Privacy Policy">
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "1.5rem 1rem" }}>
         <h1>Privacy Policy</h1>
-        <p className="muted">Last updated: March 2026. Araro is an AI storytelling app for children (age 1–12).</p>
+        <p className="muted">Last updated: March 2026. Tamixa is an AI storytelling app for children (age 1–12).</p>
 
         <section aria-labelledby="your-rights">
           <h2 id="your-rights">Your rights</h2>

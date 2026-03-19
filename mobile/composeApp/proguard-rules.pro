@@ -2,7 +2,7 @@
 -keepclassmembers class * {
     @kotlin.Metadata <methods>;
 }
--keep class com.araro.** { *; }
+-keep class com.tamixa.** { *; }
 -dontwarn org.conscrypt.**
 # Ktor / slf4j - avoid missing StaticLoggerBinder (optional logger binding)
 -dontwarn org.slf4j.impl.StaticLoggerBinder
@@ -13,5 +13,5 @@
 -keepclassmembers class kotlinx.serialization.json.** {
     *** Companion;
 }
--keep,includedescriptorclasses class com.araro.domain.** { *; }
--keep,includedescriptorclasses class com.araro.network.** { *; }
+-keep,includedescriptorclasses class com.tamixa.domain.** { *; }
+-keep,includedescriptorclasses class com.tamixa.network.** { *; }

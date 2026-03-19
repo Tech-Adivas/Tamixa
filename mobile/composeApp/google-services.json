@@ -1,15 +1,15 @@
 {
   "project_info": {
     "project_number": "000000000000",
-    "project_id": "araro-kids-placeholder",
-    "storage_bucket": "araro-kids-placeholder.appspot.com"
+    "project_id": "tamixa-kids-placeholder",
+    "storage_bucket": "tamixa-kids-placeholder.appspot.com"
   },
   "client": [
     {
       "client_info": {
         "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
         "android_client_info": {
-          "package_name": "com.araro.android"
+          "package_name": "com.tamixa.android"
         }
       },
       "api_key": [

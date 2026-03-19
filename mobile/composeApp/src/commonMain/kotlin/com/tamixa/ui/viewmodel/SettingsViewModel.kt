@@ -1,0 +1,174 @@
+package com.tamixa.ui.viewmodel
+
+import com.tamixa.application.port.PreferencesPort
+import com.tamixa.network.ConsentRecordDto
+import com.tamixa.network.ExportJobDto
+import com.tamixa.network.ListeningProgressDto
+import com.tamixa.repository.SettingsRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+data class SettingsState(
+    val languageCode: String = "",
+    val useSystemTheme: Boolean = true,
+    val darkMode: Boolean = false,
+    val hasCompletedLanguageSelection: Boolean = false,
+    val hasCompletedOnboarding: Boolean = false,
+    val preferredVoiceProfile: String = com.tamixa.util.TamixaConstants.VOICE_PROFILE_DEFAULT,
+    val preferredThemes: String = "",
+    val settingsLoaded: Boolean = false,
+    val consentRecords: List<ConsentRecordDto> = emptyList(),
+    val exportJobs: List<ExportJobDto> = emptyList(),
+    val listeningProgress: ListeningProgressDto? = null,
+    /** Consecutive days with at least one story play. For Dashboard. */
+    val listeningStreakDays: Int? = null,
+    val settingsLoading: Boolean = false,
+    val settingsLoadError: String? = null,
+    val exporting: Boolean = false
+)
+
+class SettingsViewModel(
+    private val repository: SettingsRepository,
+    private val preferencesPort: PreferencesPort,
+    private val scope: CoroutineScope
+) {
+    private val _state = MutableStateFlow(SettingsState())
+    val state: StateFlow<SettingsState> = _state.asStateFlow()
+
+    init {
+        scope.launch {
+            val useSystemTheme = preferencesPort.getUseSystemTheme()
+            val darkMode = preferencesPort.getDarkMode()
+            val languageCode = preferencesPort.getLanguageCode()
+            val hasCompletedLanguageSelection = preferencesPort.getHasCompletedLanguageSelection()
+            val hasCompletedOnboarding = preferencesPort.getHasCompletedOnboarding()
+            val preferredVoiceProfile = preferencesPort.getPreferredVoiceProfile()
+            val preferredThemes = preferencesPort.getPreferredThemes()
+            _state.value = _state.value.copy(
+                useSystemTheme = useSystemTheme,
+                darkMode = darkMode,
+                languageCode = languageCode,
+                hasCompletedLanguageSelection = hasCompletedLanguageSelection,
+                hasCompletedOnboarding = hasCompletedOnboarding,
+                preferredVoiceProfile = preferredVoiceProfile.ifEmpty { com.tamixa.util.TamixaConstants.VOICE_PROFILE_DEFAULT },
+                preferredThemes = preferredThemes,
+                settingsLoaded = true
+            )
+        }
+    }
+
+    fun setUseSystemTheme(use: Boolean) {
+        _state.value = _state.value.copy(useSystemTheme = use)
+        scope.launch { preferencesPort.setUseSystemTheme(use) }
+    }
+
+    fun setLanguage(code: String) {
+        _state.value = _state.value.copy(languageCode = code)
+        scope.launch { preferencesPort.setLanguageCode(code) }
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        _state.value = _state.value.copy(darkMode = enabled)
+        scope.launch { preferencesPort.setDarkMode(enabled) }
+    }
+
+    /** Persists language selection. Call from main thread; do navigation after this returns (on main). */
+    suspend fun persistLanguageSelection(code: String) {
+        _state.value = _state.value.copy(
+            languageCode = code,
+            hasCompletedLanguageSelection = true
+        )
+        preferencesPort.setLanguageCode(code)
+        preferencesPort.setHasCompletedLanguageSelection(true)
+    }
+
+    /** @deprecated Prefer calling [persistLanguageSelection] from UI and then navigating on main thread. */
+    fun completeLanguageSelection(code: String, onDone: (() -> Unit)? = null) {
+        _state.value = _state.value.copy(
+            languageCode = code,
+            hasCompletedLanguageSelection = true
+        )
+        scope.launch {
+            preferencesPort.setLanguageCode(code)
+            preferencesPort.setHasCompletedLanguageSelection(true)
+            onDone?.let { callback ->
+                withContext(Dispatchers.Main) { callback() }
+            }
+        }
+    }
+
+    fun setPreferredVoiceProfile(profile: String) {
+        _state.value = _state.value.copy(preferredVoiceProfile = profile)
+        scope.launch { preferencesPort.setPreferredVoiceProfile(profile) }
+    }
+
+    /** Mark onboarding complete and persist. Call before navigating to Login. */
+    suspend fun completeOnboarding() {
+        _state.value = _state.value.copy(hasCompletedOnboarding = true)
+        preferencesPort.setHasCompletedOnboarding(true)
+    }
+
+    fun setPreferredThemes(themes: String) {
+        _state.value = _state.value.copy(preferredThemes = themes)
+        scope.launch { preferencesPort.setPreferredThemes(themes) }
+    }
+
+    fun setBedtimeReminder(enabled: Boolean, hour: Int = 20, minute: Int = 0) {
+        scope.launch {
+            preferencesPort.setBedtimeReminderEnabled(enabled)
+            preferencesPort.setBedtimeReminderHour(hour)
+            preferencesPort.setBedtimeReminderMinute(minute)
+        }
+    }
+
+    fun loadSettings() {
+        scope.launch {
+            _state.value = _state.value.copy(settingsLoading = true, settingsLoadError = null)
+            try {
+                val consent = repository.getConsentRecords()
+                val jobs = repository.getDataExportJobs()
+                val progress = repository.getListeningProgress(30)
+                val streak = repository.getListeningStreak()
+                _state.value = _state.value.copy(
+                    consentRecords = consent,
+                    exportJobs = jobs,
+                    listeningProgress = progress,
+                    listeningStreakDays = streak,
+                    settingsLoading = false,
+                    settingsLoadError = null
+                )
+            } catch (e: Throwable) {
+                _state.value = _state.value.copy(
+                    settingsLoading = false,
+                    settingsLoadError = e.message ?: "Failed to load settings"
+                )
+            }
+        }
+    }
+
+    /** Fetches listening streak only. Call from Dashboard to show streak without loading full settings. */
+    fun loadListeningStreak() {
+        scope.launch {
+            val streak = repository.getListeningStreak()
+            _state.value = _state.value.copy(listeningStreakDays = streak)
+        }
+    }
+
+    fun requestDataExport(onComplete: () -> Unit = {}) {
+        scope.launch {
+            _state.value = _state.value.copy(exporting = true)
+            val job = repository.requestDataExport()
+            if (job != null) {
+                val jobs = repository.getDataExportJobs()
+                _state.value = _state.value.copy(exportJobs = jobs)
+            }
+            _state.value = _state.value.copy(exporting = false)
+            onComplete()
+        }
+    }
+}

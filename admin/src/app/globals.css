@@ -2,101 +2,324 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-}
+/* ==========================================================================
+   Tamixa Design System — Design Tokens
+   Listen • Learn • Shine
+   ========================================================================== */
 
 @layer base {
   * {
-    @apply border-border;
+    @apply border-tamixa-border;
   }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
-    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    font-family: var(--font-sans), "Inter", ui-sans-serif, system-ui, sans-serif;
+    min-height: 100dvh;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
   :root {
-    /* Professional corporate theme: slate blue, refined grays */
-    --gold: 43 74% 49%;
-    --gold-foreground: 0 0% 100%;
-    --maroon: 0 72% 51%;
-    --maroon-foreground: 0 0% 98%;
+    /* -----------------------------------------------------------------------
+       Professional theme — solid backgrounds, accent colors for tabs/tables
+       ----------------------------------------------------------------------- */
+    --tamixa-blue: 217 91% 50%;
+    --tamixa-purple: 263 70% 52%;
+    --tamixa-yellow: 43 96% 56%;
+    --tamixa-orange: 25 95% 53%;
+    --tamixa-pink: 338 82% 55%;
+    --tamixa-teal: 166 72% 38%;
+
+    /* Semantic (light) — neutral slate/blue, professional */
     --background: 220 14% 96%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 221 47% 35%;
+    --primary: 229 84% 31%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 14% 94%;
-    --secondary-foreground: 222 47% 14%;
+    --secondary: 220 14% 91%;
+    --secondary-foreground: 222 47% 11%;
     --muted: 220 14% 96%;
     --muted-foreground: 220 9% 46%;
-    --accent: 220 14% 94%;
-    --accent-foreground: 222 47% 14%;
-    --destructive: 0 72% 51%;
+    --accent: 220 14% 91%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 98%;
     --border: 220 13% 91%;
     --input: 220 13% 91%;
-    --ring: 221 47% 35%;
-    /* Professional chart palette: muted slate blues, single accent */
-    --chart-1: 221 39% 45%;
-    --chart-2: 215 28% 38%;
-    --chart-3: 214 32% 42%;
-    --chart-4: 221 39% 50%;
-    --chart-5: 218 25% 38%;
-    --chart-6: 221 35% 48%;
-    --chart-7: 216 30% 44%;
-    --chart-8: 219 33% 46%;
-    --radius: 0.375rem;
-    --sidebar-bg: 222 47% 9%;
-    --sidebar-foreground: 210 20% 96%;
-    --sidebar-muted: 220 15% 52%;
-    --sidebar-border: 222 30% 16%;
-    --sidebar-accent: 221 47% 35%;
+    --ring: 229 84% 31%;
+
+    /* Table header — solid professional tint */
+    --table-header-bg: 220 14% 92%;
+    --table-header-foreground: 222 47% 20%;
+    /* Tabs — active tab uses primary */
+    --tab-active-bg: 229 84% 31%;
+    --tab-active-foreground: 0 0% 100%;
+    --tab-inactive-foreground: 220 9% 46%;
+
+    --tamixa-bg-soft: 220 14% 96%;
+    --tamixa-bg-card: 0 0% 100%;
+    --tamixa-border: 220 13% 91%;
+    --tamixa-text: 222 47% 11%;
+    --tamixa-text-muted: 220 9% 46%;
+
+    /* Chart palette — professional, distinct */
+    --chart-1: 229 84% 31%;
+    --chart-2: 217 91% 50%;
+    --chart-3: 263 70% 52%;
+    --chart-4: 166 72% 38%;
+    --chart-5: 25 95% 53%;
+    --chart-6: 142 71% 45%;
+    --chart-7: 220 14% 55%;
+    --chart-8: 338 82% 55%;
+
+    /* Sidebar — solid dark slate */
+    --sidebar-bg: 222 47% 14%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-muted: 220 14% 65%;
+    --sidebar-border: 220 20% 22%;
+    --sidebar-accent: 217 91% 60%;
     --sidebar-width: 14rem;
     --header-height: 3.5rem;
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.03);
-    --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.04);
-    --shadow-card-hover: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+
+    /* Spacing scale (8px grid) */
+    --spacing-1: 0.25rem;   /* 4px */
+    --spacing-2: 0.5rem;    /* 8px */
+    --spacing-3: 0.75rem;   /* 12px */
+    --spacing-4: 1rem;      /* 16px */
+    --spacing-5: 1.5rem;    /* 24px */
+    --spacing-6: 2rem;      /* 32px */
+    --spacing-8: 3rem;      /* 48px */
+    --spacing-10: 4rem;     /* 64px */
+
+    /* Responsive — page & card padding */
+    --page-padding-x: 1rem;   /* 16px mobile */
+    --page-padding-y: 1rem;
+    --card-padding: 1rem;
+
+    /* Touch target minimum (accessibility) */
+    --touch-target-min: 48px;
+
+    /* Border radius — playful, rounded */
+    --radius: 0.75rem;
+    --radius-sm: 0.5rem;
+    --radius-md: 0.625rem;
+    --radius-lg: 1rem;
+    --radius-xl: 1.25rem;
+    --radius-2xl: 1.5rem;
+    --radius-full: 9999px;
+
+    /* Motion */
+    --duration-micro: 120ms;
+    --duration-standard: 240ms;
+    --duration-reward: 600ms;
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    /* Shadows — professional elevation scale */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+    --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 4px 12px -4px rgb(0 0 0 / 0.06);
+    --shadow-card-hover: 0 4px 12px -2px rgb(0 0 0 / 0.06), 0 12px 24px -8px rgb(0 0 0 / 0.1);
+    --shadow-glow: 0 0 24px -4px hsl(263 70% 58% / 0.25);
+    --shadow-elevated: 0 8px 24px -4px rgb(0 0 0 / 0.08), 0 16px 40px -12px rgb(0 0 0 / 0.08);
   }
-  .dark {
-    --gold: 43 74% 52%;
-    --gold-foreground: 222 47% 8%;
-    --maroon: 0 72% 55%;
-    --maroon-foreground: 0 0% 98%;
-    --background: 222 47% 5%;
-    --foreground: 210 20% 95%;
-    --card: 222 39% 8%;
-    --card-foreground: 210 20% 95%;
-    --popover: 222 39% 8%;
-    --popover-foreground: 210 20% 95%;
-    --primary: 221 47% 55%;
+
+  /* Dark / Bedtime mode — solid professional */
+  .dark,
+  [data-theme="bedtime"] {
+    --background: 222 47% 9%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
     --primary-foreground: 222 47% 6%;
-    --secondary: 222 39% 12%;
-    --secondary-foreground: 210 20% 95%;
-    --muted: 222 39% 12%;
-    --muted-foreground: 220 15% 58%;
-    --accent: 222 39% 16%;
-    --accent-foreground: 210 20% 95%;
-    --destructive: 0 62.8% 45%;
+    --secondary: 220 20% 18%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 220 20% 18%;
+    --muted-foreground: 220 14% 55%;
+    --accent: 220 20% 18%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
-    --border: 222 39% 16%;
-    --input: 222 39% 16%;
-    --ring: 221 47% 55%;
-    --chart-1: 221 39% 55%;
-    --chart-2: 215 28% 50%;
-    --chart-3: 214 32% 52%;
-    --chart-4: 221 39% 58%;
-    --chart-5: 218 25% 50%;
-    --chart-6: 221 35% 56%;
-    --chart-7: 216 30% 54%;
-    --chart-8: 219 33% 54%;
-    --sidebar-bg: 222 50% 5%;
-    --sidebar-foreground: 210 20% 95%;
-    --sidebar-muted: 220 15% 48%;
-    --sidebar-border: 222 35% 12%;
-    --sidebar-accent: 221 47% 55%;
+    --success: 142 61% 45%;
+    --success-foreground: 0 0% 98%;
+    --border: 220 20% 22%;
+    --input: 220 20% 22%;
+    --ring: 217 91% 60%;
+    --table-header-bg: 220 20% 16%;
+    --table-header-foreground: 210 40% 90%;
+    --tab-active-bg: 217 91% 50%;
+    --tab-active-foreground: 0 0% 100%;
+    --tab-inactive-foreground: 220 14% 55%;
+    --tamixa-bg-soft: 222 47% 9%;
+    --tamixa-bg-card: 222 47% 11%;
+    --tamixa-border: 220 20% 22%;
+    --tamixa-text: 210 40% 98%;
+    --tamixa-text-muted: 220 14% 55%;
+    --sidebar-bg: 222 47% 8%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-muted: 220 14% 55%;
+    --sidebar-border: 220 25% 18%;
+    --sidebar-accent: 217 91% 60%;
+    --shadow-glow: 0 0 24px -4px hsl(217 91% 60% / 0.2);
   }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Responsive / adaptive layout helpers */
+  .page-header {
+    @apply text-xl font-semibold tracking-tight sm:text-2xl;
+  }
+  .page-subheader {
+    @apply mt-1 text-sm text-muted-foreground sm:text-base;
+  }
+  .card-header-responsive {
+    @apply flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4;
+  }
+  .filters-row {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .pagination-row {
+    @apply flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between;
+  }
+  /* Solid professional backgrounds */
+  .bg-tamixa-page {
+    background-color: hsl(var(--background));
+  }
+  .dark .bg-tamixa-page,
+  [data-theme="bedtime"] .bg-tamixa-page {
+    background-color: hsl(var(--background));
+  }
+  .bg-tamixa-sidebar {
+    background-color: hsl(var(--sidebar-bg));
+  }
+  .bg-tamixa-card-glow {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05), 0 0 0 1px hsl(var(--border));
+  }
+  .card-elevated {
+    box-shadow: var(--shadow-card);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+  }
+  .card-elevated:hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+  /* Page hero — solid professional header */
+  .page-hero {
+    @apply rounded-xl border border-border bg-card p-5 sm:p-6 shadow-sm;
+  }
+  .dark .page-hero,
+  [data-theme="bedtime"] .page-hero {
+    background-color: hsl(var(--card));
+  }
+  /* Table header — solid colored background */
+  .table-header-primary thead tr {
+    background-color: hsl(var(--table-header-bg));
+  }
+  .table-header-primary th {
+    color: hsl(var(--table-header-foreground));
+    font-weight: 600;
+  }
+  /* Tabs — colored active state */
+  .tab-list {
+    @apply flex gap-0 border-b border-border;
+  }
+  .tab-trigger {
+    @apply px-4 py-3 text-sm font-medium transition-colors rounded-t-md;
+  }
+  .tab-trigger-active {
+    background-color: hsl(var(--tab-active-bg));
+    color: hsl(var(--tab-active-foreground));
+    border: 1px solid hsl(var(--tab-active-bg));
+    border-bottom-color: hsl(var(--card));
+    margin-bottom: -1px;
+  }
+  .tab-trigger-inactive {
+    color: hsl(var(--tab-inactive-foreground));
+    background: transparent;
+  }
+  .tab-trigger-inactive:hover {
+    background-color: hsl(var(--muted));
+    color: hsl(var(--foreground));
+  }
+
+  /* App icon / logo: fits inside any shape (circle, rounded-xl, etc.) — use on container */
+  .tamixa-app-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 0.5rem;
+  }
+  .tamixa-app-icon img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+  }
+
+  /* Tamixa motion utilities */
+  .animate-tamixa-sparkle {
+    animation: tamixa-sparkle var(--duration-reward) var(--ease-out-bounce) forwards;
+  }
+  .animate-tamixa-bounce-in {
+    animation: tamixa-bounce-in var(--duration-standard) var(--ease-out-bounce) forwards;
+  }
+  .animate-tamixa-scale-tap {
+    transition: transform var(--duration-micro) var(--ease-out-expo);
+  }
+  .animate-tamixa-scale-tap:active {
+    transform: scale(0.97);
+  }
+}
+
+/* Keyframes — reward & guidance */
+@keyframes tamixa-sparkle {
+  0% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes tamixa-bounce-in {
+  0% { opacity: 0; transform: scale(0.8) translateY(8px); }
+  70% { transform: scale(1.02) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes tamixa-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes tamixa-pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+/* Voice & Avatar Studio: hide native mute so only narration plays (no second voice from video) */
+video.avatar-video-narration-only::-webkit-media-controls-mute-button,
+video.avatar-video-narration-only::-webkit-media-controls-volume-slider {
+  display: none !important;
 }

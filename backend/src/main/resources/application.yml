@@ -1,12 +1,19 @@
 spring:
   application:
-    name: araro
+    name: tamixa
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
   flyway:
-    enabled: true
+    # Enable by default for local/dev. In staging/prod, override to false on app nodes
+    # and run migrations in a dedicated release job with FLYWAY_ENABLED=true.
+    enabled: ${FLYWAY_ENABLED:true}
     locations: classpath:db/migration
     baseline-on-migrate: true
+    # Wait longer for lock hand-off instead of failing during rolling starts.
+    lock-retry-count: ${FLYWAY_LOCK_RETRY_COUNT:300}
+    # Handle DB startup races gracefully.
+    connect-retries: ${FLYWAY_CONNECT_RETRIES:10}
+    connect-retries-interval: ${FLYWAY_CONNECT_RETRIES_INTERVAL:5}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -70,10 +77,16 @@ logging:
   file:
     path: ${LOG_PATH:logs}
   level:
-    root: INFO
-    com.araro: DEBUG
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.tamixa: ${LOG_LEVEL_COM_TAMIXA:DEBUG}
     org.springframework.security: INFO
-    org.hibernate.SQL: DEBUG
+    # Suppress Broken pipe / Connection reset WARN when client disconnects during cover/stream response
+    org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver: ERROR
+    # Hibernate SQL: WARN suppresses SELECT/INSERT/UPDATE logs; WARN+ still shows connection errors, constraint violations.
+    # Set LOG_LEVEL_HIBERNATE_SQL=DEBUG to enable SQL debugging.
+    org.hibernate.SQL: ${LOG_LEVEL_HIBERNATE_SQL:WARN}
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    org.hibernate.orm.jdbc.bind: WARN
 
 springdoc:
   api-docs:
@@ -103,8 +116,8 @@ app:
   auth:
     # Dev-only: dummy OTP code accepted with any phone (e.g. 123456). Set in dev profile.
     dev-otp-code: ${DEV_OTP_CODE:}
-    # Web app base URL for passwordless magic links (e.g. http://localhost:3000 or https://app.araro.com).
-    web-base-url: ${ARARO_WEB_APP_URL:http://localhost:3000}
+    # Web app base URL for passwordless magic links (e.g. http://localhost:3000 or your production Tamixa URL).
+    web-base-url: ${TAMIXA_WEB_APP_URL:http://localhost:3000}
     # Dev only: fixed code accepted for web passwordless (e.g. 123456). Set in dev profile; leave empty in prod.
     dev-passwordless-code: ${DEV_PASSWORDLESS_CODE:}
   cors:
@@ -112,12 +125,16 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
   rate-limit:
     enabled: ${RATE_LIMIT_ENABLED:true}
+    # Set true for multi-instance: uses Redis. Requires Redis. Default false.
+    use-redis: ${RATE_LIMIT_USE_REDIS:false}
     requests-per-minute: ${RATE_LIMIT_REQUESTS_PER_MINUTE:100}
+    # Admin dashboard: higher limit per IP (no full bypass) to prevent abuse if admin JWT is compromised.
+    admin-requests-per-minute: ${RATE_LIMIT_ADMIN_REQUESTS_PER_MINUTE:200}
     story-generation-free-per-hour: ${STORY_RATE_LIMIT_FREE:10}
     story-generation-paid-per-hour: ${STORY_RATE_LIMIT_PAID:60}
     story-generation-suspicious-per-hour: ${STORY_RATE_LIMIT_SUSPICIOUS:2}
   jwt:
-    secret: ${JWT_SECRET:araro-secret-key-min-256-bits-for-hs256-algorithm-please-change-in-production}
+    secret: ${JWT_SECRET:tamixa-secret-key-min-256-bits-for-hs256-algorithm-please-change-in-production}
     access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:900000}
     refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
   # OpenAI: token limit controls cost; system prompt is reused for caching (provider-supported).
@@ -127,7 +144,8 @@ app:
     model: ${OPENAI_MODEL:gpt-4o-mini}
     max-tokens: ${OPENAI_MAX_TOKENS:1024}
     connect-timeout-ms: ${OPENAI_CONNECT_TIMEOUT_MS:15000}
-    read-timeout-ms: ${OPENAI_READ_TIMEOUT_MS:60000}
+    # Regenerate with prompt generates 900-1500 word stories; 3 min allows full response (60s can timeout)
+    read-timeout-ms: ${OPENAI_READ_TIMEOUT_MS:180000}
     retry:
       max-attempts: ${OPENAI_RETRY_MAX_ATTEMPTS:3}
       initial-interval-ms: ${OPENAI_RETRY_INITIAL_MS:1000}
@@ -142,7 +160,7 @@ app:
     max-wait-sec: ${SORA_MAX_WAIT_SEC:300}
   story:
     cache-ttl-hours: ${STORY_CACHE_TTL_HOURS:24}
-    max-words: ${STORY_MAX_WORDS:750}
+    max-words: ${STORY_MAX_WORDS:1500}
     # Safety: theme allowlist (empty = allow any; comma-separated for restrict mode)
     theme-allowlist: ${STORY_THEME_ALLOWLIST:}
     # Story safety score threshold (0-100). Reject if score < threshold.
@@ -165,19 +183,31 @@ app:
     tts-timeout-ms: ${TTS_TIMEOUT_MS:90000}
     max-retries: ${TRANSLATION_PIPELINE_MAX_RETRIES:3}
     cache-ttl-hours: ${TRANSLATION_CACHE_TTL_HOURS:24}
-    parallelism: ${TRANSLATION_PIPELINE_PARALLELISM:4}
+    parallelism: ${TRANSLATION_PIPELINE_PARALLELISM:5}
     simulated-delay-ms: ${TRANSLATION_SIMULATED_DELAY_MS:200}
+    # Per-language timeout (minutes). If a language exceeds this, it is marked failed and others continue.
+    language-timeout-minutes: ${TRANSLATION_LANGUAGE_TIMEOUT_MINUTES:5}
+    # Total pipeline timeout (minutes) when processing all languages in parallel. Increase if languages frequently hit "Cancelled after total timeout" (e.g. 60–90 for 6 langs under load).
+    total-timeout-minutes: ${TRANSLATION_PIPELINE_TOTAL_TIMEOUT_MINUTES:60}
+    # When true (default): pipeline runs only when "Submit for review" is used. When false, publish/update also triggers pipeline (legacy).
+    pipeline-on-submit-only: ${PIPELINE_ON_SUBMIT_ONLY:true}
+    # When true (default): Submit for review does NOT trigger pipeline; use "Story to Speech" after approval to generate audio. When false: pipeline (translate + rewrite + TTS) runs on submit.
+    audio-after-approval: ${AUDIO_AFTER_APPROVAL:true}
+    # TTS thread pool size (was 1). Increase to 4 for ~4x faster multi-story throughput. Must stay <= app.narration.max-concurrent-tts.
+    tts-pool-size: ${TRANSLATION_PIPELINE_TTS_POOL_SIZE:4}
+    # Rewrite step timeout (minutes). Prevents indefinite hang when OpenAI is slow. Fails to REWRITE_FAILED, retries.
+    rewrite-timeout-minutes: ${TRANSLATION_PIPELINE_REWRITE_TIMEOUT_MINUTES:1}
+    # Max minutes a pipeline claim blocks retries. After this, Run pipeline can take over (no Clear stuck needed).
+    claim-max-age-minutes: ${TRANSLATION_PIPELINE_CLAIM_MAX_AGE_MINUTES:5}
   audio:
     base-url: ${AUDIO_BASE_URL:/audio}
     simulated-tts-delay-ms: ${AUDIO_SIMULATED_TTS_DELAY_MS:500}
-    # When CDN disabled, used to build full URLs for stream-url fallback (e.g. http://localhost:8080 for dev, https://api.araro.com for prod)
+    # When CDN disabled, used to build full URLs for stream-url fallback (e.g. http://localhost:8080 for dev, https://api.tamixa.com for prod)
     public-base-url: ${AUDIO_PUBLIC_BASE_URL:http://localhost:8080}
-  soundscapes:
-    base-url: ${SOUNDSCAPES_BASE_URL:https://cdn.araro.app/soundscapes}  # Override to host your own audio files
   storage:
     type: ${STORAGE_TYPE:s3}
-    # S3_BUCKET: bucket name (e.g. araro-audio) OR Access Point ARN (e.g. arn:aws:s3:us-east-1:ACCOUNT:accesspoint/name)
-    s3-bucket: ${S3_BUCKET:araro-audio}
+    # S3_BUCKET: bucket name (e.g. tamixa-audio) OR Access Point ARN (e.g. arn:aws:s3:us-east-1:ACCOUNT:accesspoint/name)
+    s3-bucket: ${S3_BUCKET:tamixa-audio}
     s3-region: ${S3_REGION:us-east-1}
   cdn:
     enabled: ${CDN_STREAM_ENABLED:false}
@@ -185,30 +215,47 @@ app:
     signed-url-expiry-minutes: ${CDN_SIGNED_URL_EXPIRY_MINUTES:10}
     cache-ttl-seconds: ${CDN_CACHE_TTL_SECONDS:86400}
   narration:
-    # TTS provider: openai | google | sample (local MP3s) | simulated. sample = no API, use files from tts-samples/
-    tts-provider: ${NARRATION_TTS_PROVIDER:simulated}
-    # Sample TTS: dir with ta.mp3, hi.mp3, en.mp3 etc. classpath:tts-samples or file:/path/to/samples
-    sample-tts-dir: ${NARRATION_SAMPLE_TTS_DIR:classpath:tts-samples}
-    sample-tts-fallback: ${NARRATION_SAMPLE_TTS_FALLBACK:en}
+    # TTS provider: tamixa | google | openai | sample | simulated. tamixa/sample = SAME pre-recorded audio for ALL stories (no story narration). For story-specific narration use google (or openai). Set NARRATION_TTS_PROVIDER=google and GOOGLE_CLOUD_TTS_API_KEY.
+    tts-provider: ${NARRATION_TTS_PROVIDER:tamixa}
+    # Tamixa TTS (provider=sample): dir with ta.mp3, hi.mp3, en.mp3 etc. classpath:tts-samples or file:/path/to/samples
+    tamixa-tts-dir: ${NARRATION_TAMIXA_TTS_DIR:classpath:tts-samples}
+    # Optional: single MP3 used for all languages (e.g. file:/path/to/tamixa.mp3 or classpath:tts-samples/tamixa.mp3). When set, overrides per-language files.
+    tamixa-tts-default-file: ${NARRATION_TAMIXA_TTS_DEFAULT_FILE:}
+    tamixa-tts-fallback: ${NARRATION_TAMIXA_TTS_FALLBACK:en}
     openai-tts-model: ${NARRATION_OPENAI_TTS_MODEL:tts-1-hd}
-    # Speed 0.95 = slightly slower for conversational, bedtime feel (range 0.25-4.0)
-    openai-tts-speed: ${NARRATION_OPENAI_TTS_SPEED:0.95}
-    # Google Cloud TTS: native Indian language voices (ta-IN, hi-IN, etc.). Requires Text-to-Speech API enabled.
+    # Speed 1.0 = normal pace (range 0.25-4.0). Use 0.95 for slower bedtime feel.
+    openai-tts-speed: ${NARRATION_OPENAI_TTS_SPEED:1.0}
+    # Google Cloud TTS: Chirp 3 HD model for high-quality, natural narration. Requires Text-to-Speech API enabled.
     google-tts-api-key: ${GOOGLE_CLOUD_TTS_API_KEY:}
-    # Chirp3-HD voice name for more native sound. Options: Achernar (default, warm female), Leda, Kore, Pulcherrima, Gacrux (female); Charon, Orus, Achird, Schedar (male). Leave blank = Achernar.
+    # Per-chunk HTTP read timeout for Google TTS (full story = multiple chunks; Chirp3/WaveNet can be slow)
+    google-tts-read-timeout-seconds: ${GOOGLE_TTS_READ_TIMEOUT_SECONDS:120}
+    # Chirp 3 HD voice name. Options: Achernar, Leda, Kore, Pulcherrima, Gacrux (female); Charon, Orus, Achird, Schedar, Rasalgethi (male). See https://cloud.google.com/text-to-speech/docs/chirp3-hd
     google-tts-voice-name: ${NARRATION_GOOGLE_TTS_VOICE_NAME:Achernar}
+    # Use WaveNet for Indic (ta, hi, te, kn, ml, bn). WaveNet trained on native speakers; often sounds more natural than Chirp3 for Indian languages. Set false to use Chirp3-HD.
+    google-tts-use-wavenet-for-indic: ${NARRATION_GOOGLE_TTS_USE_WAVENET_FOR_INDIC:true}
+    # Speed 1.0 = default. Use 0.92-0.95 for Indic languages—slightly slower helps natural rhythm and native-like emphasis.
     google-tts-speed: ${NARRATION_GOOGLE_TTS_SPEED:0.95}
+    # Audio: MP3 = valid playable files for S3/CDN. LINEAR16 requires transcoding (S3 adapter only transcodes WAV).
+    # Use MP3 to ensure players get valid audio; LINEAR16 uploaded as .mp3 causes truncation/playback failure.
+    google-tts-audio-encoding: ${NARRATION_GOOGLE_TTS_AUDIO_ENCODING:MP3}
+    google-tts-sample-rate-hertz: ${NARRATION_GOOGLE_TTS_SAMPLE_RATE:44100}
+    google-tts-volume-gain-db: ${NARRATION_GOOGLE_TTS_VOLUME_GAIN_DB:0}
     daily-token-limit: ${NARRATION_DAILY_TOKEN_LIMIT:100000}
-    max-narration-tokens: ${NARRATION_MAX_TOKENS:1024}
+    # LLM completion token limit for narration rewrite. 16384 for full long stories.
+    max-narration-tokens: ${NARRATION_MAX_TOKENS:16384}
     # Rewrite model: gpt-4o follows conversational prompt better than gpt-4o-mini. Use mini for cheaper/faster.
     rewrite-model: ${NARRATION_REWRITE_MODEL:gpt-4o}
-    # Rewrite temperature: 0.6 for conversational, varied output; 0.4 = more uniform, 0.7 = more creative
+    # Rewrite temperature: 0.6 for natural, consistent flow (sounds more human); 0.5 = more uniform, 0.7 = more varied
     rewrite-temperature: ${NARRATION_REWRITE_TEMPERATURE:0.6}
-    # Tamil TTS is faster; other languages (en,hi,te,kn,ml) need more time for longer content
-    tts-timeout-seconds: ${NARRATION_TTS_TIMEOUT:60}
+    # Tamil TTS is faster; other languages (en,hi,te,kn,ml) need more time for full-story synthesis (many chunks).
+    # Must be >= pipeline language-timeout-minutes when Google TTS used; increase if seeing TTS timeout failures.
+    tts-timeout-seconds: ${NARRATION_TTS_TIMEOUT:300}
     tts-max-retries: ${NARRATION_TTS_MAX_RETRIES:2}
     voice-profile: ${NARRATION_VOICE_PROFILE:default}
     blocklist-keywords: ${NARRATION_BLOCKLIST:}
+    per-segment-tts: ${NARRATION_PER_SEGMENT_TTS:false}
+    # Word count tolerance: narration may be shorter/longer by this % vs original (e.g. 35 = 65%-135%). Conversational/Tamil rewrites often shorten.
+    word-count-tolerance-percent: ${NARRATION_WORD_COUNT_TOLERANCE_PERCENT:35}
     simulated-tts-delay-ms: ${NARRATION_SIMULATED_TTS_DELAY_MS:0}
     # Concurrency: core=4, max=8, queue=20; TTS limiter max 5 concurrent calls
     async-executor-core-size: ${NARRATION_ASYNC_CORE:4}
@@ -216,16 +263,31 @@ app:
     async-queue-capacity: ${NARRATION_ASYNC_QUEUE:20}
     max-concurrent-jobs: ${NARRATION_MAX_CONCURRENT_JOBS:100}
     max-concurrent-tts: ${NARRATION_MAX_CONCURRENT_TTS:5}  # TTS API rate limit protection
-    max-concurrent-rewrite: ${NARRATION_MAX_CONCURRENT_REWRITE:2}  # Limit concurrent OpenAI rewrites to avoid 429 (flat reads)
+    # Must be >= translation-pipeline.parallelism (default 4) or tasks timeout waiting for rewrite permit
+    max-concurrent-rewrite: ${NARRATION_MAX_CONCURRENT_REWRITE:5}  # Match parallelism; lower if OpenAI 429
+    # Natural pace: use rate=100% so playback matches Cloud samples. Set false for slower kid-friendly pacing.
+    ssml-use-natural-pace: ${NARRATION_SSML_USE_NATURAL_PACE:true}
+    # When natural pace is on: add very light prosody for dialogue/conversational (+1–2% pitch) to sound warmer. Set false for flat delivery.
+    ssml-subtle-prosody-in-natural: ${NARRATION_SSML_SUBTLE_PROSDY_IN_NATURAL:true}
   voice:
     encryption-key: ${VOICE_ENCRYPTION_KEY:}
     max-file-size-bytes: 10485760
+  # Cloned-voice story narration: ElevenLabs Instant Voice Cloning (IVC). Adapter created when ELEVENLABS_API_KEY is set.
+  # API key: https://elevenlabs.io/app/settings/api-keys — plan must include Instant Voice Cloning. Docs: https://elevenlabs.io/docs/eleven-api/guides/cookbooks/voices/instant-voice-cloning
+  # Tamil (ta) requires ElevenLabs only (XTTS does not support Tamil). S3 required for reference storage (create-from-reference on first use).
   voice-cloning:
     enabled: ${VOICE_CLONING_ENABLED:false}
-    elevenlabs-api-key: ${ELEVENLABS_API_KEY:}
-    elevenlabs-base-url: ${ELEVENLABS_BASE_URL:https://api.elevenlabs.io}
+    provider: ${VOICE_CLONING_PROVIDER:elevenlabs}
+    google-cloud-api-key: ${GOOGLE_CLOUD_TTS_API_KEY:}
+    eleven-labs-api-key: ${ELEVENLABS_API_KEY:}
+    eleven-labs-base-url: ${ELEVENLABS_BASE_URL:https://api.elevenlabs.io}
+    # Default localhost:9000 when backend runs on host. Use 10.0.2.2:9000 only when backend runs inside Android emulator (emulator's alias for host).
+    xtts-base-url: ${XTTS_BASE_URL:http://localhost:9000}
+    # Read timeout for XTTS /synthesize (seconds). Full-story cloned synthesis can take 5–30+ min; increase if you see "Read timed out".
+    xtts-timeout-seconds: ${XTTS_TIMEOUT_SECONDS:1800}
   subscription:
     free-stories-per-month: ${SUBSCRIPTION_FREE_STORIES_PER_MONTH:5}
+    starter-stories-per-month: ${SUBSCRIPTION_STARTER_STORIES_PER_MONTH:15}
     free-voice-generations-per-month: ${SUBSCRIPTION_FREE_VOICE_GENERATIONS_PER_MONTH:5}
     trial-days: ${SUBSCRIPTION_TRIAL_DAYS:7}
     grace-period-days: ${SUBSCRIPTION_GRACE_PERIOD_DAYS:3}
@@ -241,7 +303,7 @@ app:
       secret-key: ${STRIPE_SECRET_KEY:}
       webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
       publishable-key: ${STRIPE_PUBLISHABLE_KEY:}
-      success-url-prefix: ${STRIPE_SUCCESS_URL_PREFIX:https://app.araro.com/subscription}
+      success-url-prefix: ${STRIPE_SUCCESS_URL_PREFIX:https://app.tamixa.com/subscription}
       voice-premium-price-id: ${STRIPE_VOICE_PREMIUM_PRICE_ID:}
     zoho:
       enabled: ${ZOHO_ENABLED:false}
@@ -249,11 +311,22 @@ app:
       webhook-signing-key: ${ZOHO_WEBHOOK_SIGNING_KEY:}
   avatar-video:
     enabled: ${AVATAR_VIDEO_ENABLED:false}
-    provider: ${AVATAR_VIDEO_PROVIDER:heygen}
+    provider: ${AVATAR_VIDEO_PROVIDER:sadtalker}
     heygen-api-key: ${HEYGEN_API_KEY:}
     replicate-api-token: ${REPLICATE_API_TOKEN:}
     replicate-model-version: ${AVATAR_VIDEO_MODEL_VERSION:cjwbw/sadtalker:a519cc0cfebaaeade068b23899165a11ec76aaa1d2b313d40d214f204ec957a3}
-    poll-interval-seconds: ${AVATAR_VIDEO_POLL_INTERVAL:15}
-    max-poll-attempts: ${AVATAR_VIDEO_MAX_POLL:20}
+    gooey-api-key: ${GOOEY_API_KEY:}
+    gooey-recipe-id: ${GOOEY_RECIPE_ID:}
+    gooey-tts-provider: ${GOOEY_TTS_PROVIDER:ELEVEN_LABS}
+    gooey-base-url: ${GOOEY_BASE_URL:https://api.gooey.ai}
+    did-api-key: ${DID_API_KEY:}
+    did-base-url: ${DID_BASE_URL:https://api.d-id.com}
+    poll-interval-seconds: ${AVATAR_VIDEO_POLL_INTERVAL:20}
+    max-poll-attempts: ${AVATAR_VIDEO_MAX_POLL:30}
     connect-timeout-ms: ${AVATAR_VIDEO_CONNECT_TIMEOUT:30000}
     read-timeout-ms: ${AVATAR_VIDEO_READ_TIMEOUT:120000}
+  share-clip:
+    enabled: ${SHARE_CLIP_ENABLED:true}
+    clips-per-month-premium-plus: ${SHARE_CLIP_CLIPS_PER_MONTH:10}
+    share-base-url: ${SHARE_BASE_URL:https://tamixa.com}
+    ffmpeg-enabled: ${SHARE_CLIP_FFMPEG_ENABLED:false}

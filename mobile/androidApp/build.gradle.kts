@@ -4,10 +4,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 android {
-    namespace = "com.araro.android"
+    namespace = "com.tamixa.android"
     compileSdk = 34
     defaultConfig {
-        applicationId = "com.araro.android"
+        applicationId = "com.tamixa.android"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

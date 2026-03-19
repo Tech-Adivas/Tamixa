@@ -2,7 +2,7 @@
 -- Run manually for local dev: psql -f sample_tamil_stories.sql
 -- Stories: பஞ்சதந்திர, ஈசாப், தெனாலிராமன்
 
-INSERT INTO curated_stories (
+INSERT INTO library_stories (
     title, content, theme, language, age, child_name, word_count, reading_time_minutes, moral, status
 ) VALUES
 (

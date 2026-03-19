@@ -13,6 +13,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/layout/page-header";
+import { Mic } from "lucide-react";
 
 const PAGE_SIZE = 20;
 
@@ -34,12 +38,11 @@ export default function VoiceLogsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Voice upload logs</h1>
-        <p className="text-muted-foreground">
-          Monitor voice profile uploads by parent.
-        </p>
-      </div>
+      <PageHeader
+        title="Voice upload logs"
+        description="Monitor voice profile uploads by parent."
+        breadcrumbs
+      />
       <Card>
         <CardHeader>
           <CardTitle>Voice uploads</CardTitle>
@@ -49,9 +52,22 @@ export default function VoiceLogsPage() {
             <p className="mb-4 text-sm text-destructive">{error}</p>
           )}
           {loading ? (
-            <p className="text-muted-foreground">Loading…</p>
+            <div className="space-y-3">
+              <Skeleton className="h-10 w-full" />
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
           ) : data ? (
             <>
+              {data.content.length === 0 ? (
+                <EmptyState
+                  icon={Mic}
+                  title="No voice uploads yet"
+                  description="Voice profile uploads will appear here when parents complete voice setup."
+                />
+              ) : (
+              <>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -98,6 +114,8 @@ export default function VoiceLogsPage() {
                   </Button>
                 </div>
               </div>
+              </>
+              )}
             </>
           ) : null}
         </CardContent>

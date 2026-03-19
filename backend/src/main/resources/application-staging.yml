@@ -1,5 +1,8 @@
 # Staging profile: mirrors prod with relaxed logging and dev-like DB defaults where safe.
 spring:
+  flyway:
+    # Match production strategy: app nodes do not migrate by default.
+    enabled: ${FLYWAY_ENABLED:false}
   jpa:
     show-sql: false
     hibernate:
@@ -14,4 +17,4 @@ spring:
 logging:
   level:
     root: WARN
-    com.araro: INFO
+    com.tamixa: INFO

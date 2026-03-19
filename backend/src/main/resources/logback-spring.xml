@@ -3,7 +3,10 @@
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
-    <springProperty name="APP_NAME" source="spring.application.name" defaultValue="araro"/>
+    <!-- Demote expected business exceptions from ERROR to DEBUG (handled by @ExceptionHandler). -->
+    <turboFilter class="com.tamixa.infrastructure.logging.ExpectedExceptionTurboFilter"/>
+
+    <springProperty name="APP_NAME" source="spring.application.name" defaultValue="tamixa"/>
     <springProperty name="LOG_PATH" source="logging.file.path" defaultValue="logs"/>
 
     <!-- Console (dev) -->
@@ -15,9 +18,9 @@
             </encoder>
         </appender>
         <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-            <file>${LOG_PATH:-logs}/araro.log</file>
+            <file>${LOG_PATH:-logs}/tamixa.log</file>
             <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-                <fileNamePattern>${LOG_PATH:-logs}/araro.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <fileNamePattern>${LOG_PATH:-logs}/tamixa.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
                 <maxFileSize>50MB</maxFileSize>
                 <maxHistory>14</maxHistory>
                 <totalSizeCap>500MB</totalSizeCap>
@@ -31,7 +34,7 @@
             <appender-ref ref="CONSOLE"/>
             <appender-ref ref="FILE"/>
         </root>
-        <logger name="com.araro" level="DEBUG"/>
+        <logger name="com.tamixa" level="DEBUG"/>
         <!-- Audit: security/compliance events (login, story gen, admin, etc.) -->
         <logger name="AUDIT" level="INFO" additivity="false">
             <appender-ref ref="CONSOLE"/>
@@ -50,9 +53,9 @@
             </encoder>
         </appender>
         <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-            <file>${LOG_PATH:-logs}/araro.log</file>
+            <file>${LOG_PATH:-logs}/tamixa.log</file>
             <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-                <fileNamePattern>${LOG_PATH:-logs}/araro.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <fileNamePattern>${LOG_PATH:-logs}/tamixa.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
                 <maxFileSize>50MB</maxFileSize>
                 <maxHistory>14</maxHistory>
                 <totalSizeCap>500MB</totalSizeCap>
@@ -66,7 +69,7 @@
             <appender-ref ref="JSON"/>
             <appender-ref ref="FILE"/>
         </root>
-        <logger name="com.araro" level="INFO"/>
+        <logger name="com.tamixa" level="INFO"/>
         <logger name="AUDIT" level="INFO" additivity="false">
             <appender-ref ref="JSON"/>
             <appender-ref ref="FILE"/>

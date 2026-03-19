@@ -1,5 +1,5 @@
 /**
- * Centralized logging for Araro web app.
+ * Centralized logging for Tamixa web app.
  * Provides structured logging for API errors and runtime errors.
  * Can be extended to ship logs to Sentry or similar.
  *
@@ -27,7 +27,7 @@ function shouldLog(level: LogLevel): boolean {
 
 function formatMessage(scope: string, message: string, meta?: Record<string, unknown>): string {
   const metaStr = meta ? ` ${JSON.stringify(meta)}` : "";
-  return `[Araro/${scope}] ${message}${metaStr}`;
+  return `[Tamixa/${scope}] ${message}${metaStr}`;
 }
 
 export const logger = {

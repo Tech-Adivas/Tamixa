@@ -13,6 +13,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/layout/page-header";
+import { ClipboardList } from "lucide-react";
 
 const PAGE_SIZE = 20;
 
@@ -37,19 +41,18 @@ export default function AuditPage() {
     setError(null);
     api.admin
       .getAuditTrail(page, PAGE_SIZE)
-      .then(setData)
+      .then((res) => setData(res as unknown as PagedResponse<AuditEntry>))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [page]);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Audit trail</h1>
-        <p className="text-muted-foreground">
-          Admin actions (flag, approve, reject, suspend, refund, delete) are logged here and to the backend AUDIT log.
-        </p>
-      </div>
+      <PageHeader
+        title="Audit trail"
+        description="Admin actions (flag, approve, reject, suspend, refund, delete) are logged here and to the backend AUDIT log."
+        breadcrumbs
+      />
       <Card>
         <CardHeader>
           <CardTitle>Admin actions</CardTitle>
@@ -59,7 +62,12 @@ export default function AuditPage() {
             <p className="mb-4 text-sm text-destructive">{error}</p>
           )}
           {loading ? (
-            <p className="text-muted-foreground">Loading…</p>
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
           ) : data && data.content.length > 0 ? (
             <>
               <Table>
@@ -91,7 +99,7 @@ export default function AuditPage() {
                   ))}
                 </TableBody>
               </Table>
-              <div className="mt-4 flex items-center justify-between">
+              <div className="pagination-row mt-4">
                 <p className="text-sm text-muted-foreground">
                   {data.totalElements} total · page {data.page + 1} of{" "}
                   {data.totalPages || 1}
@@ -117,9 +125,11 @@ export default function AuditPage() {
               </div>
             </>
           ) : (
-            <p className="text-muted-foreground">
-              No audit entries yet. Admin actions (flag story, approve, reject, suspend parent, refund invoice, delete curated story) will appear here.
-            </p>
+            <EmptyState
+              icon={ClipboardList}
+              title="No audit entries yet"
+              description="Admin actions (flag story, approve, reject, suspend parent, refund invoice, delete story) will appear here."
+            />
           )}
         </CardContent>
       </Card>

@@ -1,4 +1,4 @@
--- Subscription and billing schema for Araro (Stripe + Razorpay).
+-- Subscription and billing schema for Tamixa (Stripe + Razorpay).
 -- Parent table 'parents' must exist (FK reference).
 
 CREATE TABLE IF NOT EXISTS subscriptions (

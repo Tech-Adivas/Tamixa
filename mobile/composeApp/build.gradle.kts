@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -12,7 +13,7 @@ plugins {
 }
 
 compose.resources {
-    packageOfResClass = "com.araro.composeapp.generated.resources"
+    packageOfResClass = "com.tamixa.composeapp.generated.resources"
 }
 
 kotlin {
@@ -33,13 +34,20 @@ kotlin {
             isStatic = true
         }
         iosTarget.compilations.configureEach {
-            compilerOptions.configure {
-                freeCompilerArgs.add("-opt-in=androidx.compose.ui.ExperimentalComposeUiApi")
+            compileTaskProvider.configure {
+                compilerOptions {
+                    freeCompilerArgs.add("-opt-in=androidx.compose.ui.ExperimentalComposeUiApi")
+                }
             }
         }
     }
 
     sourceSets {
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
         val commonMain by getting {
             dependencies {
                 implementation(compose.runtime)
@@ -61,7 +69,8 @@ kotlin {
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.coil.compose)
                 implementation(libs.coil.network.ktor)
-                implementation("io.coil-kt.coil3:coil-gif:3.4.0")
+                // Pin to 3.0.3: 3.4.x is built with Kotlin 2.3 (ABI 2.3.0), incompatible with Kotlin 2.2.x
+                implementation("io.coil-kt.coil3:coil-gif:3.0.3")
                 implementation("org.jetbrains.androidx.navigation:navigation-compose:2.8.0-alpha10")
             }
         }
@@ -69,6 +78,8 @@ kotlin {
             dependencies {
                 implementation(libs.ktor.client.cio)
                 implementation(libs.firebase.crashlytics)
+                // Route SLF4J (used by Ktor and shared code) to Android logcat
+                implementation("org.slf4j:slf4j-android:1.7.36")
                 implementation(libs.androidx.security.crypto)
                 implementation(libs.androidx.compose.ui.tooling.preview)
                 implementation(libs.androidx.activity.compose)
@@ -102,23 +113,23 @@ kotlin {
 }
 
 android {
-    namespace = "com.araro.android"
+    namespace = "com.tamixa.android"
     compileSdk = 35
 
 
     defaultConfig {
-        applicationId = "com.araro.android"
+        applicationId = "com.tamixa.android"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
-        // Physical device: set ARARO_API_BASE_URL in mobile/local.properties (e.g. http://192.168.1.5:8080)
-        val localProps = java.util.Properties()
+        // Physical device: set TAMIXA_API_BASE_URL in mobile/local.properties (e.g. http://192.168.1.5:8080)
+        val localProps = Properties()
         val localFile = rootProject.file("local.properties")
         if (localFile.exists()) localProps.load(localFile.inputStream())
-        val apiBaseUrl = (localProps["ARARO_API_BASE_URL"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+        val apiBaseUrl = (localProps["TAMIXA_API_BASE_URL"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
             ?: "http://10.0.2.2:8080"
-        val subscriptionWebUrl = (localProps["ARARO_WEB_APP_URL"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+        val subscriptionWebUrl = (localProps["TAMIXA_WEB_APP_URL"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
             ?: apiBaseUrl.replaceAfterLast(":", "3000")
         buildConfigField("String", "BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("String", "SUBSCRIPTION_WEB_URL", "\"$subscriptionWebUrl/subscription\"")
@@ -132,10 +143,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            val prodUrl = project.findProperty("ARARO_API_BASE_URL") as? String
-                ?: "https://api.araro.com"
-            val webUrl = project.findProperty("ARARO_WEB_APP_URL") as? String
-                ?: "https://app.araro.com"
+            val prodUrl = project.findProperty("TAMIXA_API_BASE_URL") as? String
+                ?: "https://api.tamixa.com"
+            val webUrl = project.findProperty("TAMIXA_WEB_APP_URL") as? String
+                ?: "https://app.tamixa.com"
             buildConfigField("String", "BASE_URL", "\"$prodUrl\"")
             buildConfigField("String", "SUBSCRIPTION_WEB_URL", "\"$webUrl/subscription\"")
         }
@@ -158,12 +169,12 @@ android {
     }
 }
 
-// Custom APK name: araro-debug.apk, araro-release.apk
+// Custom APK name: tamixa-debug.apk, tamixa-release.apk
 android.applicationVariants.all {
     val variant = this
     outputs.all {
         (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
-            "araro-${variant.name}.apk"
+            "tamixa-${variant.name}.apk"
     }
 }
 

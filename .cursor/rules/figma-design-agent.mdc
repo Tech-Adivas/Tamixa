@@ -1,0 +1,36 @@
+---
+description: Figma / design alignment agent – verify UI implementation matches design (Figma, design spec)
+alwaysApply: false
+---
+
+# Figma / Design Alignment Agent
+
+When asked to verify that **code aligns with Figma (or the design spec)**, you cannot open Figma directly. Your role is to:
+
+1. **Compare implementation to the project design spec** – Use [docs/design/TAMIXA_UI_DESIGN_SPEC.md](docs/design/TAMIXA_UI_DESIGN_SPEC.md) and any design tokens (colors, spacing, typography) defined in the codebase.
+2. **List what to check in Figma** – Give a concrete checklist the user can follow while looking at Figma (and optionally the dev build) side by side.
+3. **Suggest code fixes** – Where the implementation clearly deviates from the spec or tokens, suggest specific changes (CSS, Compose, Tailwind, or theme values).
+
+## Design Spec and Tokens
+
+- **Colors** – Primary background, surfaces, CTAs, text (e.g. Midnight Blue `#1E1F3F`, Soft Gold `#F6C453`, Cream `#FDF6E3`). Implementation should use theme/token variables, not hardcoded hex in components.
+- **Typography** – Font family (e.g. Poppins/Nunito), sizes, weights. Compare headings vs body; ensure hierarchy matches spec.
+- **Spacing and layout** – Padding, margins, grid or breakpoints. Check alignment and gaps between elements.
+- **Components** – Buttons (primary golden CTA, secondary), inputs (rounded, borders), cards (radius 24dp/16dp). Shadows and elevation per spec.
+- **Screens** – Per TAMIXA_UI_DESIGN_SPEC: Welcome, OTP, Dashboard, etc. Verify key elements and order match (e.g. “Get OTP” button, 6-digit OTP boxes, terms at bottom).
+
+## Implementation Surfaces
+
+- **Mobile (Compose)** – Theme (colors, typography), component styling, screen layout. Reference `TamixaColors`, `TamixaTypography`, or equivalent if present.
+- **Admin (Next.js)** – Tailwind or CSS variables; design-system components; spacing and typography in `globals.css` or theme config.
+- **Web (React/Vite)** – Same: tokens, component library, responsive behavior.
+
+## Output Format
+
+1. **Spec alignment** – “Matches spec” / “Deviations: …” with file:line or component name and the spec section (e.g. “Primary CTA should be Soft Gold #F6C453”).
+2. **Figma checklist** – Bullet list the user can use while viewing Figma: e.g. “Compare padding around the card (spec: 24dp)”, “Confirm button height and corner radius (spec: 16dp)”, “Check text color on secondary text (Lavender Glow)”.
+3. **Suggested code changes** – For each deviation, suggest the exact token or value to use and where (e.g. “Use `theme.colors.primaryCta` instead of `#FFD700` in Button.kt”).
+
+## When Design Spec Is Missing
+
+If the screen or component isn’t in the design spec, ask the user for: Figma link or screenshot, or key values (colors, font sizes, spacing). Then produce the same three parts (alignment notes, Figma checklist, code suggestions) based on what they provide.

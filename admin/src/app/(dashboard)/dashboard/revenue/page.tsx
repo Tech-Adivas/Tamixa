@@ -49,11 +49,13 @@ import {
 } from "@/lib/revenue-api";
 import type { RevenueRow, RevenueAlerts } from "@/types/api";
 
+import { formatInr, formatUsdToInr } from "@/lib/currency";
+
 const METRIC_CARDS = [
   {
     key: "mrr" as const,
     label: "MRR",
-    format: (v: number) => `$${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+    format: (v: number) => formatInr(v),
     icon: DollarSign,
     iconBg: "bg-primary/8 text-primary",
   },
@@ -88,7 +90,7 @@ const METRIC_CARDS = [
   {
     key: "aiTokenCostMonthly" as const,
     label: "AI token cost (monthly)",
-    format: (v: number) => `$${v.toFixed(2)}`,
+    format: (v: number) => formatUsdToInr(v),
     icon: Cpu,
     iconBg: "bg-muted text-muted-foreground",
   },
@@ -185,10 +187,8 @@ export default function RevenuePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Revenue Analytics
-        </h1>
-        <p className="text-muted-foreground">
+        <h1 className="page-header">Revenue Analytics</h1>
+        <p className="page-subheader">
           MRR, subscriptions, churn, and AI cost metrics.
         </p>
       </div>
@@ -457,7 +457,7 @@ export default function RevenuePage() {
                     <TableHead>Parent ID</TableHead>
                     <TableHead>Plan</TableHead>
                     <TableHead>Subscription state</TableHead>
-                    <TableHead>Monthly payment</TableHead>
+                    <TableHead>Monthly (₹)</TableHead>
                     <TableHead>Created date</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -470,7 +470,7 @@ export default function RevenuePage() {
                       <TableCell>{row.plan.replace(/_/g, " ")}</TableCell>
                       <TableCell>{row.subscriptionState}</TableCell>
                       <TableCell>
-                        ${row.monthlyPayment.toFixed(2)}
+                        {formatInr(row.monthlyPayment)}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {new Date(row.createdAt).toLocaleDateString()}

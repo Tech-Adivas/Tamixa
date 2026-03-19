@@ -1,13 +1,15 @@
+import { useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppLayout } from "./components/AppLayout";
+import { AppLoading } from "./components/AppLoading";
+import { TamixaSplash } from "./components/TamixaSplash";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Stories from "./pages/Stories";
-import Children from "./pages/Children";
 import Subscription from "./pages/Subscription";
 import Voice from "./pages/Voice";
 import Settings from "./pages/Settings";
@@ -19,14 +21,14 @@ import "./index.css";
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) return <div className="page">Loading…</div>;
+  if (loading) return <AppLoading />;
   if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   return <AppLayout>{children}</AppLayout>;
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="page">Loading…</div>;
+  if (loading) return <AppLoading />;
   if (user) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
@@ -71,14 +73,6 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/children"
-        element={
-          <ProtectedRoute>
-            <Children />
-          </ProtectedRoute>
-        }
-      />
-      <Route
         path="/subscription"
         element={
           <ProtectedRoute>
@@ -107,9 +101,19 @@ function AppRoutes() {
 }
 
 export default function App() {
+  const [splashDone, setSplashDone] = useState(false);
+
+  if (!splashDone) {
+    return (
+      <ErrorBoundary>
+        <TamixaSplash onDone={() => setSplashDone(true)} />
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
           <AppRoutes />
         </AuthProvider>

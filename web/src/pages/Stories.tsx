@@ -1,15 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useSearchParams, useLocation, useNavigate } from "react-router-dom";
-import { StoryListSkeleton } from "../components/Skeleton";
 import StoryAudioPlayer from "../components/StoryAudioPlayer";
 import {
-  getCuratedStories,
+  getLibraryStories,
   getMyStories,
   generateStory,
-  generateStoryCover,
+  regenerateStoryCover,
   remixStory,
-  getSoundscapes,
-  getChildren,
   getFavorites,
   addFavorite,
   removeFavorite,
@@ -21,27 +18,35 @@ import {
   getPlaybackPosition,
   savePlaybackPosition,
   searchStories,
-  type CuratedStory,
+  type LibraryStory,
   type Story,
-  type Child,
-  type Soundscape,
   type SearchStoryItem,
 } from "../lib/api";
+import type { StreamUrlResponse } from "../types/api";
 import { useAuth } from "../contexts/AuthContext";
+import { EmptyState } from "../components/EmptyState";
 
-/** Renders story cover: animated GIF/video when coverVideoUrl is set, else static image or placeholder. */
+/** Renders story cover: animated GIF/video when coverVideoUrl is set, else static image or placeholder.
+ * Dynamically shows generated cover when coverImageUrl/coverVideoUrl are present; falls back to default illustration.
+ * Pass coverRefreshKey to bust cache when cover was just regenerated (same URL, new content). */
 function StoryCover({
   coverImageUrl,
   coverVideoUrl,
-  placeholder = "📖",
+  coverRefreshKey,
 }: {
   coverImageUrl?: string | null;
   coverVideoUrl?: string | null;
-  placeholder?: string;
+  /** Cache-bust key (e.g. Date.now()) when cover was regenerated. */
+  coverRefreshKey?: number;
 }) {
-  const videoUrl = resolveCoverUrl(coverVideoUrl);
-  const imageUrl = resolveCoverUrl(coverImageUrl);
-  if (videoUrl && videoUrl.toLowerCase().endsWith(".gif")) {
+  const baseVideoUrl = resolveCoverUrl(coverVideoUrl);
+  const baseImageUrl = resolveCoverUrl(coverImageUrl);
+  const appendCacheBust = (url: string) =>
+    coverRefreshKey != null ? `${url}${url.includes("?") ? "&" : "?"}t=${coverRefreshKey}` : url;
+  const videoUrl = baseVideoUrl ? appendCacheBust(baseVideoUrl) : null;
+  const imageUrl = baseImageUrl ? appendCacheBust(baseImageUrl) : null;
+
+  if (videoUrl && videoUrl.toLowerCase().includes(".gif")) {
     return <img src={videoUrl} alt="" />;
   }
   if (videoUrl) {
@@ -60,10 +65,16 @@ function StoryCover({
   if (imageUrl) {
     return <img src={imageUrl} alt="" />;
   }
-  return <div className="poster-card-placeholder" aria-hidden>{placeholder}</div>;
+  return (
+    <div
+      className="poster-card-placeholder poster-card-placeholder--default-cover"
+      aria-hidden
+      style={{ backgroundImage: "url(/story-card-default.png)" }}
+    />
+  );
 }
 
-type Tab = "curated" | "mine" | "favorites";
+type Tab = "library" | "mine" | "favorites";
 
 export default function Stories() {
   useAuth();
@@ -73,17 +84,14 @@ export default function Stories() {
   const resumeId = searchParams.get("resume");
   const resumeSource = searchParams.get("source");
   const playFromState = (location.state as { playStoryId?: number; playStorySource?: string } | null) ?? {};
-  const [tab, setTab] = useState<Tab>("curated");
-  const [curated, setCurated] = useState<CuratedStory[]>([]);
+  const [tab, setTab] = useState<Tab>("library");
+  const [library, setLibrary] = useState<LibraryStory[]>([]);
   const [mine, setMine] = useState<Story[]>([]);
   const [_minePage, setMinePage] = useState({ page: 0, totalPages: 0, last: true });
   const [favorites, setFavorites] = useState<{ storyId: number; storySource: string }[]>([]);
-  const [children, setChildren] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [genTheme, setGenTheme] = useState("");
-  const [genChildName, setGenChildName] = useState("");
-  const [genChildId, setGenChildId] = useState<number | null>(null);
   const [genAge, setGenAge] = useState(5);
   const [generating, setGenerating] = useState(false);
   const [favToggling, setFavToggling] = useState<number | null>(null);
@@ -91,10 +99,10 @@ export default function Stories() {
   const [feedbackRating, setFeedbackRating] = useState(5);
   const [feedbackComment, setFeedbackComment] = useState("");
   const [coverGenId, setCoverGenId] = useState<number | null>(null);
+  /** Cache-bust keys for covers just regenerated; forces fresh fetch when same URL has new content. */
+  const [coverRefreshKeys, setCoverRefreshKeys] = useState<Record<number, number>>({});
   const [remixId, setRemixId] = useState<number | null>(null);
   const [remixInstruction, setRemixInstruction] = useState("");
-  const [soundscapes, setSoundscapes] = useState<Soundscape[]>([]);
-  const [playingSoundscape, setPlayingSoundscape] = useState<string | null>(null);
   const [playingStoryId, setPlayingStoryId] = useState<number | null>(null);
   const [loadingStreamId, setLoadingStreamId] = useState<number | null>(null);
   const [playingTitle, setPlayingTitle] = useState<string | null>(null);
@@ -105,6 +113,8 @@ export default function Stories() {
   const [searchResults, setSearchResults] = useState<SearchStoryItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [playingAvatarVideoUrl, setPlayingAvatarVideoUrl] = useState<string | null>(null);
   const playingStoryRef = useRef<{ id: number; source: string } | null>(null);
   const playIntentRef = useRef<number | null>(null);
   const blobUrlRef = useRef<string | null>(null);
@@ -127,16 +137,10 @@ export default function Stories() {
   useEffect(() => {
     setLoading(true);
     setError("");
-    getCuratedStories("ta")
-      .then(setCurated)
+    getLibraryStories("ta")
+      .then(setLibrary)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    getChildren()
-      .then(setChildren)
-      .catch(() => setChildren([]));
   }, []);
 
   useEffect(() => {
@@ -159,17 +163,13 @@ export default function Stories() {
       .catch(() => setFavorites([]));
   }, []);
 
-  useEffect(() => {
-    getSoundscapes().then(setSoundscapes).catch(() => setSoundscapes([]));
-  }, []);
-
-  // Handle "Continue listening" from Dashboard: ?resume=ID&source=curated|generated
+  // Handle "Continue listening" from Dashboard: ?resume=ID&source=library|generated
   const resumeHandled = useRef(false);
   useEffect(() => {
     if (!resumeId || !resumeSource || resumeHandled.current) return;
     const id = Number(resumeId);
     if (Number.isNaN(id)) return;
-    const sourceTab: Tab = resumeSource === "curated" ? "curated" : resumeSource === "favorites" ? "favorites" : "mine";
+    const sourceTab: Tab = resumeSource === "library" ? "library" : resumeSource === "favorites" ? "favorites" : "mine";
     setTab(sourceTab);
   }, [resumeId, resumeSource]);
 
@@ -177,9 +177,9 @@ export default function Stories() {
     if (!resumeId || !resumeSource || resumeHandled.current) return;
     const id = Number(resumeId);
     if (Number.isNaN(id)) return;
-    const sourceTab: Tab = resumeSource === "curated" ? "curated" : resumeSource === "favorites" ? "favorites" : "mine";
+    const sourceTab: Tab = resumeSource === "library" ? "library" : resumeSource === "favorites" ? "favorites" : "mine";
     const listReady =
-      (sourceTab === "curated" && curated.length > 0) ||
+      (sourceTab === "library" && library.length > 0) ||
       (sourceTab === "mine" && tab === "mine" && !loading) ||
       (sourceTab === "favorites" && favorites.length > 0);
     if (!listReady) return;
@@ -194,31 +194,31 @@ export default function Stories() {
       playStory(id, resumeSource, startPos);
       setSearchParams({});
     })();
-  }, [resumeId, resumeSource, tab, loading, curated.length, mine.length, favorites.length]);
+  }, [resumeId, resumeSource, tab, loading, library.length, mine.length, favorites.length]);
 
   // Handle "Play from Dashboard" recommended: navigate with state { playStoryId, playStorySource } → auto-play
   const playFromStateHandled = useRef(false);
   useEffect(() => {
     const { playStoryId: sid, playStorySource: ssrc } = playFromState;
     if (sid == null || !ssrc || playFromStateHandled.current) return;
-    const sourceTab: Tab = ssrc === "curated" ? "curated" : ssrc === "favorites" ? "favorites" : "mine";
+    const sourceTab: Tab = ssrc === "library" ? "library" : ssrc === "favorites" ? "favorites" : "mine";
     setTab(sourceTab);
     const listReady =
-      (sourceTab === "curated" && curated.length > 0) ||
+      (sourceTab === "library" && library.length > 0) ||
       (sourceTab === "mine" && mine.length >= 0 && !loading) ||
       (sourceTab === "favorites" && favorites.length >= 0);
     if (!listReady) return;
     playFromStateHandled.current = true;
     playStory(sid, ssrc);
     navigate(location.pathname, { replace: true, state: {} });
-  }, [playFromState.playStoryId, playFromState.playStorySource, curated.length, mine.length, favorites.length, loading]);
+  }, [playFromState.playStoryId, playFromState.playStorySource, library.length, mine.length, favorites.length, loading]);
 
   const isFav = (storyId: number) => favorites.some((f) => f.storyId === storyId);
 
   const getTitleForStory = useCallback(
     (id: number, source: string): string => {
-      if (source === "curated") {
-        const s = curated.find((c) => c.id === id);
+      if (source === "library") {
+        const s = library.find((c) => c.id === id);
         return s ? (s.title || s.theme) : `Story #${id}`;
       }
       if (source === "generated" || source === "mine") {
@@ -227,12 +227,12 @@ export default function Stories() {
       }
       const f = favorites.find((x) => x.storyId === id);
       if (f) {
-        const s = curated.find((c) => c.id === id) || mine.find((m) => m.id === id);
+        const s = library.find((c) => c.id === id) || mine.find((m) => m.id === id);
         return s ? (s.title || s.theme) : `Story #${id}`;
       }
       return `Story #${id}`;
     },
-    [curated, mine, favorites]
+    [library, mine, favorites]
   );
 
   const playStory = async (
@@ -243,6 +243,8 @@ export default function Stories() {
   ) => {
     if (playingStoryId === storyId) {
       audioRef.current?.pause();
+      videoRef.current?.pause();
+      setPlayingAvatarVideoUrl(null);
       if (blobUrlRef.current) {
         URL.revokeObjectURL(blobUrlRef.current);
         blobUrlRef.current = null;
@@ -252,23 +254,37 @@ export default function Stories() {
       return;
     }
     audioRef.current?.pause();
+    videoRef.current?.pause();
+    setPlayingAvatarVideoUrl(null);
     playIntentRef.current = storyId;
     setLoadingStreamId(storyId);
     setError("");
     try {
       const voiceToUse = selectedVoice === "default" ? null : selectedVoice;
       const sourceForApi = storySource === "mine" ? "generated" : storySource;
-      let url = await getStreamUrl(storyId, "ta", voiceToUse, sourceForApi);
-      if (!url && voiceToUse != null) {
-        url = await getStreamUrl(storyId, "ta", null, sourceForApi);
+      let data: StreamUrlResponse | null = await getStreamUrl(storyId, "ta", voiceToUse, sourceForApi);
+      if (!data && voiceToUse != null) {
+        data = await getStreamUrl(storyId, "ta", null, sourceForApi);
       }
-      if (!url) {
+      if (!data?.streamUrl) {
         setError("Audio not available for this story");
         return;
       }
       if (playIntentRef.current !== storyId) return;
       playingStoryRef.current = { id: storyId, source: storySource };
       setPlayingTitle(titleOverride ?? getTitleForStory(storyId, storySource));
+
+      if (data.avatarVideoUrl) {
+        const resolvedVideoUrl = resolveCoverUrl(data.avatarVideoUrl) ?? data.avatarVideoUrl;
+        setPlayingAvatarVideoUrl(resolvedVideoUrl);
+        setPlayingStoryId(storyId);
+        setAudioDuration(0);
+        setAudioCurrentTime(0);
+        setLoadingStreamId(null);
+        playIntentRef.current = null;
+        return;
+      }
+
       const audio = audioRef.current;
       if (!audio) {
         setError("Audio player not ready");
@@ -278,11 +294,11 @@ export default function Stories() {
         URL.revokeObjectURL(blobUrlRef.current);
         blobUrlRef.current = null;
       }
-      let playUrl = url;
+      let playUrl = data.streamUrl;
       try {
-        const streamOrigin = typeof window !== "undefined" ? new URL(url).origin : "";
+        const streamOrigin = typeof window !== "undefined" ? new URL(data.streamUrl).origin : "";
         if (streamOrigin === getApiOrigin()) {
-          playUrl = await fetchStreamAsBlobUrl(url);
+          playUrl = await fetchStreamAsBlobUrl(data.streamUrl);
           blobUrlRef.current = playUrl;
         }
       } catch (e) {
@@ -317,41 +333,73 @@ export default function Stories() {
     }
   };
 
+  useEffect(() => {
+    if (!playingAvatarVideoUrl || !playingStoryId) return;
+    const t = setTimeout(() => {
+      videoRef.current?.play().catch((e) => {
+        if (playIntentRef.current !== playingStoryId) return;
+        setError(e instanceof Error ? e.message : "Video playback failed");
+      });
+    }, 100);
+    return () => clearTimeout(t);
+  }, [playingAvatarVideoUrl, playingStoryId]);
+
   const handleAudioPlayPause = useCallback(() => {
     if (playingStoryId != null) {
+      const p = playingStoryRef.current;
+      if (p && playingAvatarVideoUrl && videoRef.current) {
+        savePlaybackPosition({
+          storyId: p.id,
+          storySource: p.source,
+          positionSeconds: Math.floor(videoRef.current.currentTime),
+        }).catch(() => {});
+      }
       audioRef.current?.pause();
+      videoRef.current?.pause();
+      setPlayingAvatarVideoUrl(null);
       setPlayingStoryId(null);
       return;
     }
     const p = playingStoryRef.current;
-    if (p && audioRef.current?.src) {
-      audioRef.current.play().then(() => {
-        setPlayingStoryId(p.id);
-        setPlayingTitle(getTitleForStory(p.id, p.source));
-      }).catch((e) => {
-        const isInterrupted =
-          (e instanceof DOMException && e.name === "AbortError") ||
-          (e instanceof Error && /interrupted|pause/i.test(e.message));
-        if (!isInterrupted) setError("Playback failed");
-      });
+    if (p && (audioRef.current?.src || playingAvatarVideoUrl)) {
+      if (playingAvatarVideoUrl) {
+        videoRef.current?.play().then(() => {
+          setPlayingStoryId(p.id);
+          setPlayingTitle(getTitleForStory(p.id, p.source));
+        }).catch(() => {});
+      } else {
+        audioRef.current!.play().then(() => {
+          setPlayingStoryId(p.id);
+          setPlayingTitle(getTitleForStory(p.id, p.source));
+        }).catch((e) => {
+          const isInterrupted =
+            (e instanceof DOMException && e.name === "AbortError") ||
+            (e instanceof Error && /interrupted|pause/i.test(e.message));
+          if (!isInterrupted) setError("Playback failed");
+        });
+      }
     }
-  }, [playingStoryId, getTitleForStory]);
+  }, [playingStoryId, playingAvatarVideoUrl, getTitleForStory]);
 
   const handleSeek = useCallback((seconds: number) => {
-    const el = audioRef.current;
-    if (el && Number.isFinite(seconds)) {
-      el.currentTime = seconds;
-      setAudioCurrentTime(seconds);
+    if (!Number.isFinite(seconds)) return;
+    if (playingAvatarVideoUrl && videoRef.current) {
+      videoRef.current.currentTime = seconds;
+    } else if (audioRef.current) {
+      audioRef.current.currentTime = seconds;
     }
-  }, []);
+    setAudioCurrentTime(seconds);
+  }, [playingAvatarVideoUrl]);
 
   useEffect(() => {
     const audio = audioRef.current;
+    const video = videoRef.current;
     const handleEnded = () => {
       if (blobUrlRef.current) {
         URL.revokeObjectURL(blobUrlRef.current);
         blobUrlRef.current = null;
       }
+      setPlayingAvatarVideoUrl(null);
       setPlayingStoryId(null);
       setPlayingTitle(null);
       playingStoryRef.current = null;
@@ -366,6 +414,10 @@ export default function Stories() {
         }).catch(() => {});
       }
     };
+    if (video && playingAvatarVideoUrl) {
+      video.addEventListener("ended", handleEnded);
+      return () => video.removeEventListener("ended", handleEnded);
+    }
     if (audio) {
       audio.addEventListener("ended", handleEnded);
       audio.addEventListener("pause", handlePause);
@@ -374,7 +426,7 @@ export default function Stories() {
         audio.removeEventListener("pause", handlePause);
       };
     }
-  }, [playingStoryId]);
+  }, [playingStoryId, playingAvatarVideoUrl]);
 
   const toggleFavorite = async (storyId: number, storySource: string) => {
     setFavToggling(storyId);
@@ -396,23 +448,18 @@ export default function Stories() {
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     const theme = genTheme.trim();
-    const selChild = genChildId ? children.find((c) => c.id === genChildId) : null;
-    const childName = selChild ? selChild.name : genChildName.trim();
-    if (!theme || !childName) {
-      setError("Theme and child name are required");
+    if (!theme) {
+      setError("Theme is required");
       return;
     }
     setGenerating(true);
     setError("");
     try {
-      setError("");
-      const selChild = genChildId ? children.find((c) => c.id === genChildId) : null;
       await generateStory({
         theme,
-        childName: selChild ? selChild.name : childName,
+        childName: "Listener",
         age: genAge,
         language: "ta",
-        childId: genChildId ?? null,
       });
       setTab("mine");
       const p = await getMyStories(0, 20);
@@ -431,6 +478,8 @@ export default function Stories() {
     <div className={`page prime-page${showPlayer ? " has-audio-player" : ""}`}>
       <StoryAudioPlayer
         audioRef={audioRef}
+        videoRef={videoRef}
+        avatarVideoUrl={playingAvatarVideoUrl}
         isPlaying={playingStoryId != null}
         isLoading={loadingStreamId != null}
         title={playingTitle ?? (loadingStreamId != null ? "Loading…" : null)}
@@ -441,10 +490,10 @@ export default function Stories() {
         onDurationChange={setAudioDuration}
         onSeek={handleSeek}
       />
-      <section className="prime-hero stories-hero">
+      <section className="prime-hero prime-hero-tamixa stories-hero">
         <div className="prime-hero-content stories-hero-content">
           <h1>Stories</h1>
-          <p className="prime-hero-subtitle">Browse curated stories or generate new ones with AI. Click any story to play audio.</p>
+          <p className="prime-hero-subtitle">Browse the story library or generate new ones with AI. Click any story to play audio.</p>
           <div className="stories-search-wrap stories-search-center">
             <label htmlFor="stories-search" className="stories-search-label">Search</label>
             <input
@@ -490,7 +539,11 @@ export default function Stories() {
                   aria-label={`Play ${s.title || s.theme}`}
                 >
                   <div className="poster-card-cover">
-                    <StoryCover coverImageUrl={s.coverImageUrl} coverVideoUrl={s.coverVideoUrl} />
+                    <StoryCover
+                      coverImageUrl={s.coverImageUrl}
+                      coverVideoUrl={s.coverVideoUrl}
+                      coverRefreshKey={coverRefreshKeys[s.storyId]}
+                    />
                   </div>
                   <p className="poster-card-title">{s.title || s.theme}</p>
                   <p className="poster-card-meta">{s.theme} · {s.wordCount} words</p>
@@ -526,13 +579,13 @@ export default function Stories() {
         <button
           type="button"
           role="tab"
-          aria-selected={tab === "curated"}
-          aria-controls="curated-panel"
-          id="tab-curated"
-          className={tab === "curated" ? "tab active" : "tab"}
-          onClick={() => setTab("curated")}
+          aria-selected={tab === "library"}
+          aria-controls="library-panel"
+          id="tab-library"
+          className={tab === "library" ? "tab active" : "tab"}
+          onClick={() => setTab("library")}
         >
-          Curated library
+          Library
         </button>
         <button
           type="button"
@@ -588,7 +641,7 @@ export default function Stories() {
       </div>
 
       <div className="story-tab-panel">
-      {tab === "curated" && (
+      {tab === "library" && (
         <>
           {loading ? (
             <div className="prime-row-grid">
@@ -600,28 +653,39 @@ export default function Stories() {
                 </div>
               ))}
             </div>
+          ) : library.length === 0 ? (
+            <EmptyState
+              emoji="📚"
+              title="No stories in library"
+              description="Story library is being updated. Check back soon or try generating your own."
+              action={{ label: "Generate Story", onClick: () => setTab("mine") }}
+            />
           ) : (
             <div className="prime-row-grid">
-              {curated.map((s) => (
+              {library.map((s) => (
                 <div
                   key={s.id}
                   className="poster-card poster-card-clickable"
                   role="button"
                   tabIndex={0}
-                  onClick={() => playStory(s.id, "curated")}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); playStory(s.id, "curated"); } }}
+                  onClick={() => playStory(s.id, "library")}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); playStory(s.id, "library"); } }}
                   aria-label={`Play ${s.title || s.theme}`}
                 >
                   <div className="poster-card-cover">
-                    <StoryCover coverImageUrl={s.coverImageUrl} coverVideoUrl={s.coverVideoUrl} />
+                    <StoryCover
+                      coverImageUrl={s.coverImageUrl}
+                      coverVideoUrl={s.coverVideoUrl}
+                      coverRefreshKey={coverRefreshKeys[s.id]}
+                    />
                   </div>
                   <p className="poster-card-title">{s.title || s.theme}</p>
-                  <p className="poster-card-meta">{s.theme} · {s.wordCount} words · {s.readingTimeMinutes} min</p>
+                  <p className="poster-card-meta">{s.theme} · {s.wordCount} words · {Number(s.readingTimeMinutes ?? 0).toFixed(1)} min</p>
                   <div className="poster-card-actions" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
                       className="btn btn-primary btn-sm story-play-btn"
-                      onClick={() => playStory(s.id, "curated")}
+                      onClick={() => playStory(s.id, "library")}
                       disabled={loadingStreamId === s.id}
                       aria-label={playingStoryId === s.id ? "Pause story" : "Play story"}
                     >
@@ -630,7 +694,7 @@ export default function Stories() {
                     <button
                       type="button"
                       className={`btn btn-sm btn-outline story-fav-btn ${isFav(s.id) ? "fav-active" : ""}`}
-                      onClick={() => toggleFavorite(s.id, "curated")}
+                      onClick={() => toggleFavorite(s.id, "library")}
                       disabled={favToggling === s.id}
                       aria-label={isFav(s.id) ? "Remove from favorites" : "Add to favorites"}
                     >
@@ -656,6 +720,13 @@ export default function Stories() {
                 </div>
               ))}
             </div>
+          ) : mine.length === 0 ? (
+            <EmptyState
+              emoji="✨"
+              title="No stories yet"
+              description="Create your first AI story in Tamil. Pick a theme and we'll generate it for you."
+              action={{ label: "Generate Story", onClick: () => document.getElementById("generate-story-section")?.scrollIntoView({ behavior: "smooth" }) }}
+            />
           ) : (
             <>
             <div className="prime-row-grid">
@@ -670,7 +741,11 @@ export default function Stories() {
                   aria-label={`Play ${s.title || s.theme}`}
                 >
                   <div className="poster-card-cover">
-                    <StoryCover coverImageUrl={s.coverImageUrl} coverVideoUrl={s.coverVideoUrl} />
+                    <StoryCover
+                      coverImageUrl={s.coverImageUrl}
+                      coverVideoUrl={s.coverVideoUrl}
+                      coverRefreshKey={coverRefreshKeys[s.id]}
+                    />
                   </div>
                   <p className="poster-card-title">{s.title || s.theme}</p>
                   <p className="poster-card-meta">{s.theme} · {s.childName} · {s.status}</p>
@@ -699,8 +774,9 @@ export default function Stories() {
                       onClick={async () => {
                         setCoverGenId(s.id);
                         try {
-                          const updated = await generateStoryCover(s.id);
+                          const updated = await regenerateStoryCover(s.id);
                           setMine((prev) => prev.map((x) => (x.id === s.id ? updated : x)));
+                          setCoverRefreshKeys((k) => ({ ...k, [s.id]: Date.now() }));
                         } catch {
                           // ignore
                         } finally {
@@ -765,11 +841,16 @@ export default function Stories() {
       {tab === "favorites" && (
         <>
           {favorites.length === 0 ? (
-            <p className="muted" style={{ padding: "0 0.125rem" }}>No favorites yet. Add stories from Curated or My stories.</p>
+            <EmptyState
+              emoji="♥"
+              title="No favorites yet"
+              description="Add stories from Library or My stories to find them here."
+              action={{ label: "Browse Library", onClick: () => setTab("library") }}
+            />
           ) : (
             <div className="prime-row-grid">
               {favorites.map((f) => {
-                const s = curated.find((c) => c.id === f.storyId) || mine.find((m) => m.id === f.storyId);
+                const s = library.find((c) => c.id === f.storyId) || mine.find((m) => m.id === f.storyId);
                 const coverImageUrl = s && "coverImageUrl" in s ? s.coverImageUrl : null;
                 const coverVideoUrl = s && "coverVideoUrl" in s ? (s as { coverVideoUrl?: string | null }).coverVideoUrl : null;
                 const title = s ? (`title` in s && s.title ? s.title : s.theme) : `Story #${f.storyId}`;
@@ -784,7 +865,11 @@ export default function Stories() {
                     aria-label={`Play ${title}`}
                   >
                     <div className="poster-card-cover">
-                      <StoryCover coverImageUrl={coverImageUrl} coverVideoUrl={coverVideoUrl} placeholder="♥" />
+                      <StoryCover
+                        coverImageUrl={coverImageUrl}
+                        coverVideoUrl={coverVideoUrl}
+                        coverRefreshKey={s ? coverRefreshKeys[s.id] : undefined}
+                      />
                     </div>
                     <p className="poster-card-title">{title}</p>
                     <p className="poster-card-meta">{s ? s.theme : "\u00A0"}</p>
@@ -816,44 +901,6 @@ export default function Stories() {
         </>
       )}
       </div>
-      </section>
-
-      <section className="prime-row">
-        <div className="prime-row-header">
-          <h2 className="prime-row-title">Ambient soundscapes</h2>
-        </div>
-        <p className="muted" style={{ padding: "0 0.125rem", marginBottom: "0.5rem" }}>Optional background sounds during story time (rain, forest, waves, fireplace)</p>
-        <div className="soundscape-chips" style={{ padding: "0 0.125rem" }}>
-          {soundscapes.map((sc) => (
-            <button
-              key={sc.id}
-              type="button"
-              className={`btn btn-sm soundscape-chip ${playingSoundscape === sc.id ? "soundscape-chip-active" : "btn-outline"}`}
-              onClick={() => {
-                const prev = window.__araroSoundscape;
-                prev?.pause();
-                window.__araroSoundscape = undefined;
-                if (playingSoundscape === sc.id) {
-                  setPlayingSoundscape(null);
-                  return;
-                }
-                const audio = new Audio(sc.url);
-                audio.loop = true;
-                audio.play().catch((err) => {
-                  console.error("Failed to play soundscape:", err);
-                  setError("Could not play soundscape. Check browser settings.");
-                  setPlayingSoundscape(null);
-                });
-                setPlayingSoundscape(sc.id);
-                window.__araroSoundscape = audio;
-              }}
-              aria-label={playingSoundscape === sc.id ? `Stop ${sc.name}` : `Play ${sc.name}`}
-              aria-pressed={playingSoundscape === sc.id}
-            >
-              {playingSoundscape === sc.id ? "🔊 " : "🔈 "}{sc.name}
-            </button>
-          ))}
-        </div>
       </section>
 
       <section className="prime-row">
@@ -892,12 +939,12 @@ export default function Stories() {
         </div>
       </section>
 
-      <section className="prime-row">
+      <section id="generate-story-section" className="prime-row">
         <div className="prime-row-header">
           <h2 className="prime-row-title">Generate new story</h2>
         </div>
         <div style={{ padding: "0 0.125rem" }}>
-        <p className="muted" style={{ marginBottom: "0.75rem" }}>AI will create a Tamil story (theme + child name required).</p>
+        <p className="muted" style={{ marginBottom: "0.75rem" }}>AI will create a Tamil story. Enter a theme and age.</p>
         <form onSubmit={handleGenerate} className="form">
           <div className="field">
             <label htmlFor="theme">Theme</label>
@@ -906,36 +953,6 @@ export default function Stories() {
               value={genTheme}
               onChange={(e) => setGenTheme(e.target.value)}
               placeholder="e.g. Animals, Bedtime"
-              required
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="childSelect">Child (for personalization)</label>
-            <select
-              id="childSelect"
-              value={genChildId ?? ""}
-              onChange={(e) => {
-                const v = e.target.value;
-                setGenChildId(v ? Number(v) : null);
-                if (v) {
-                  const c = children.find((x) => x.id === Number(v));
-                  if (c) setGenChildName(c.name);
-                }
-              }}
-            >
-              <option value="">— Custom name —</option>
-              {children.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="childName">Child name</label>
-            <input
-              id="childName"
-              value={genChildName}
-              onChange={(e) => setGenChildName(e.target.value)}
-              placeholder="Name for the story"
               required
             />
           </div>

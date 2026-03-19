@@ -4,9 +4,11 @@ export default function Home() {
   return (
     <div className="home-page home-prime">
       <header className="home-prime-header">
-        <Link to="/" className="app-logo" aria-label="Araro Home">
-          <img src="/araro-logo.svg" alt="" className="app-logo-img" />
-          <span className="app-logo-text">ஆராரோ</span>
+        <Link to="/" className="app-logo" aria-label="Tamixa Home">
+          <span className="tamixa-app-icon">
+            <img src="/tamixa-logo.svg" alt="" className="app-logo-img" />
+          </span>
+          <span className="app-logo-text">Tamixa</span>
         </Link>
         <nav className="home-prime-nav">
           <Link to="/login" className="home-prime-nav-link">Sign in</Link>
@@ -33,18 +35,18 @@ export default function Home() {
 
       <section className="prime-row">
         <div className="prime-row-header">
-          <h2 className="prime-row-title">Why Araro</h2>
+          <h2 className="prime-row-title">Why Tamixa</h2>
         </div>
         <div className="home-prime-features">
           <div className="home-prime-feature">
             <span className="home-feature-icon" aria-hidden>📖</span>
-            <h3>Curated & AI stories</h3>
+            <h3>Library & AI stories</h3>
             <p className="muted">Browse the library or generate new stories with your child&apos;s name and interests.</p>
           </div>
           <div className="home-prime-feature">
             <span className="home-feature-icon" aria-hidden>🎧</span>
             <h3>Listen together</h3>
-            <p className="muted">Stream audio narration and optional soundscapes for story time.</p>
+            <p className="muted">Stream audio narration for story time.</p>
           </div>
           <div className="home-prime-feature">
             <span className="home-feature-icon" aria-hidden>🏠</span>

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Build all production artifacts for Araro deployment.
+# Build all production artifacts for Tamixa deployment.
 # Usage: ./scripts/build-production.sh [--backend-only | --web-only | --admin-only | --mobile-only]
 # Default: builds backend (Docker), web, admin, mobile release.
-# Set API_URL for web/admin builds: API_URL=https://api.araro.com
+# Set API_URL for web/admin builds: API_URL=https://api.tamixa.com
 set -e
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-API_URL="${API_URL:-https://api.araro.com}"
+API_URL="${API_URL:-https://api.tamixa.com}"
 BUILD_ALL=true
 BUILD_BACKEND=false
 BUILD_WEB=false
@@ -29,15 +29,15 @@ if $BUILD_ALL; then
   BUILD_MOBILE=true
 fi
 
-echo "== Araro Production Build =="
+echo "== Tamixa Production Build =="
 echo "API_URL=$API_URL"
 echo ""
 
 if $BUILD_BACKEND; then
   echo ">>> Building backend Docker image..."
   cd "$ROOT"
-  docker build -t araro-backend:prod .
-  echo ">>> Backend: araro-backend:prod"
+  docker build -t tamixa-backend:prod .
+  echo ">>> Backend: tamixa-backend:prod"
   echo ""
 fi
 
@@ -60,7 +60,7 @@ fi
 if $BUILD_MOBILE; then
   echo ">>> Building mobile release APK..."
   cd "$ROOT/mobile"
-  ./gradlew :composeApp:assembleRelease -PARARO_API_BASE_URL="$API_URL"
+  ./gradlew :composeApp:assembleRelease -PTAMIXA_API_BASE_URL="$API_URL"
   echo ">>> Mobile: mobile/composeApp/build/outputs/apk/release/composeApp-release-unsigned.apk"
   echo ""
 fi

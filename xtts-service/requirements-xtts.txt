@@ -1,0 +1,21 @@
+# Optional: install for real story-in-cloned-voice synthesis (Coqui XTTS).
+# Requires Python 3.9, 3.10, or 3.11 (Coqui TTS does not support 3.12+ yet).
+# Use a separate venv: python3.11 -m venv venv-xtts && source venv-xtts/bin/activate
+# Base deps: pip install -r requirements.txt
+# Full: pip install -r requirements.txt -r requirements-xtts.txt
+TTS>=0.22.0
+scipy>=1.11.0
+numpy>=1.24.0
+# Transformers version windows for stock TTS package:
+# - 4.57+: BeamSearchScorer removed (breaks Coqui imports).
+# - 4.50+: PreTrainedModel no longer inherits GenerationMixin → GPT2InferenceModel has no .generate (XTTS fails).
+# Use <4.50 so XTTS synthesis works. If you need newer transformers, use the fork: pip install coqui-tts
+transformers>=4.42.0,<4.50.0
+# Convert MP3 reference to WAV so Coqui TTS does not need torchcodec (avoids "TorchCodec is required for load_with_torchcodec").
+# For MP3 support pydub needs ffmpeg: e.g. brew install ffmpeg (macOS) or apt install ffmpeg (Linux).
+pydub>=0.25.1
+# PyTorch 2.9+ / torchaudio routes audio loading through torchcodec. If you still get
+# "TorchCodec is required for load_with_torchcodec" after ffmpeg+pydub, install torchcodec:
+#   pip install torchcodec
+# Coqui docs: https://coqui-tts.readthedocs.io/en/latest/installation.html
+torchcodec>=0.2.0

@@ -9,7 +9,7 @@ plugins {
 }
 
 allprojects {
-    group = "com.araro"
+    group = "com.tamixa"
     version = "0.0.1-SNAPSHOT"
 }
 

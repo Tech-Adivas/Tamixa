@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: araro-postgres
+    container_name: tamixa-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -18,7 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: araro-redis
+    container_name: tamixa-redis
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
@@ -31,7 +31,7 @@ services:
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
-    container_name: araro-zookeeper
+    container_name: tamixa-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -45,7 +45,7 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    container_name: araro-kafka
+    container_name: tamixa-kafka
     depends_on:
       zookeeper:
         condition: service_healthy
@@ -68,8 +68,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: araro:latest
-    container_name: araro-backend
+    image: tamixa:latest
+    container_name: tamixa-backend
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,7 +94,7 @@ services:
       KAFKA_TOPIC_STORY_CREATED: ${KAFKA_TOPIC_STORY_CREATED:-story-created}
       KAFKA_TOPIC_CURATED_STORY_CREATED: ${KAFKA_TOPIC_CURATED_STORY_CREATED:-curated-story-created}
       # JWT (override in production)
-      JWT_SECRET: ${JWT_SECRET:-araro-secret-key-min-256-bits-for-hs256-algorithm-please-change-in-production}
+      JWT_SECRET: ${JWT_SECRET:-tamixa-secret-key-min-256-bits-for-hs256-algorithm-please-change-in-production}
       JWT_ACCESS_EXPIRATION_MS: ${JWT_ACCESS_EXPIRATION_MS:-900000}
       JWT_REFRESH_EXPIRATION_MS: ${JWT_REFRESH_EXPIRATION_MS:-604800000}
       # Dev: seed admin via POST /api/v1/dev/seed-admin (admin@techadivas.com / Admin123!)
@@ -108,7 +108,7 @@ services:
       AUDIO_PUBLIC_BASE_URL: ${AUDIO_PUBLIC_BASE_URL:-http://localhost:8080}
       # S3 storage
       STORAGE_TYPE: ${STORAGE_TYPE:-s3}
-      S3_BUCKET: ${S3_BUCKET:-araro-audio}
+      S3_BUCKET: ${S3_BUCKET:-tamixa-audio}
       S3_REGION: ${S3_REGION:-us-east-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}

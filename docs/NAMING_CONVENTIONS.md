@@ -1,6 +1,6 @@
 # Naming Conventions
 
-This document defines naming conventions for the Araro codebase. Apply them consistently in all layers (backend, mobile, web, admin).
+This document defines naming conventions for the Tamixa codebase. Apply them consistently in all layers (backend, mobile, web, admin).
 
 ---
 
@@ -29,7 +29,7 @@ This document defines naming conventions for the Araro codebase. Apply them cons
 |--------|-------------|---------|
 | Screens | Suffix: `*Screen` | `LoginScreen`, `DashboardScreen` |
 | ViewModels | Suffix: `*ViewModel` | `AuthViewModel`, `StoryViewModel` |
-| Composables | PascalCase | `StoryCard`, `AraroHeroBanner` |
+| Composables | PascalCase | `StoryCard`, `TamixaHeroBanner` |
 | API classes | Suffix: `*Api` | `StoryApi`, `AuthApi` |
 | DTOs | Suffix: `*Response`, `*Dto`; align with backend JSON | `CuratedStoryResponse`, `StreamUrlResponse` |
 | String keys | camelCase functions | `Strings.login()`, `Strings.childName()` |
@@ -62,3 +62,30 @@ This document defines naming conventions for the Araro codebase. Apply them cons
 
 - **Backend:** One DTO per file under `backend/.../api/<domain>/dto/`. No inline DTOs in controllers.
 - **Mobile:** DTOs may live in the API module; use `@Serializable` with keys matching backend JSON.
+
+---
+
+## User-facing copy (Voice & Avatar)
+
+Use these consistently in the app (story screen, settings, My voice & Avatar tab):
+
+| Concept | Label (EN) | Notes |
+|--------|------------|--------|
+| System / default narration | **Default** | No user voice |
+| User’s own voice (family or cloned profile) | **My voice** | One label for both; aligns with “My voice & Avatar” tab. Do not show “Cloned Voice” in UI. |
+| Premium / paid voice | **&lt;Name&gt; ★** | e.g. “Calm ★” |
+| Tab for voice + avatar | **My voice & Avatar** | Single bottom tab; hub to clone voice and add avatar. |
+| In-player: record for this story | **Record voice for this story** | Per-story recording option. |
+| After clone success (CTA) | **Add your photo — bring stories to life** | Shown when user has credits. |
+
+---
+
+## UI color consistency (mobile)
+
+Use theme-based colors so text is visible in all themes and on all screens:
+
+| Where | Use | Avoid |
+|-------|-----|--------|
+| **Card container + content** | `TamixaCardColors.surface()`, `.primaryContainer()`, `.errorContainer()`, etc. (sets both container and content color) | `CardDefaults.cardColors(containerColor = ...)` without `contentColor` |
+| **Text inside cards** | `TamixaContentColors.cardPrimary()`, `.cardSecondary()`, `.onPrimaryContainer()`, etc. | `TamixaColors.cream` / `lavenderGlow` inside cards (those are for text on dark screen backgrounds only) |
+| **Screen headlines** (on dark bg) | `TamixaColors.cream`, `TamixaColors.lavenderGlow` | — |

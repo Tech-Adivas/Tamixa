@@ -53,7 +53,7 @@ function getMockRevenueMetrics(): RevenueMetricsDto {
   return {
     month: new Date().toISOString().slice(0, 7),
     revenue: 18650,
-    currency: "USD",
+    currency: "INR",
   };
 }
 
@@ -115,7 +115,7 @@ const MOCK_REVENUE_ROWS: RevenueRow[] = [
     email: "jane@example.com",
     plan: "PREMIUM_YEARLY",
     subscriptionState: "ACTIVE",
-    monthlyPayment: 7.5,
+    monthlyPayment: 2399,
     createdAt: "2024-06-01T10:00:00Z",
   },
   {
@@ -123,7 +123,7 @@ const MOCK_REVENUE_ROWS: RevenueRow[] = [
     email: "john@example.com",
     plan: "PREMIUM_MONTHLY",
     subscriptionState: "ACTIVE",
-    monthlyPayment: 9.99,
+    monthlyPayment: 299,
     createdAt: "2024-08-15T14:30:00Z",
   },
   {
@@ -131,7 +131,7 @@ const MOCK_REVENUE_ROWS: RevenueRow[] = [
     email: "alice@example.com",
     plan: "PREMIUM_MONTHLY",
     subscriptionState: "CANCELLED",
-    monthlyPayment: 9.99,
+    monthlyPayment: 299,
     createdAt: "2024-09-20T09:00:00Z",
   },
   {
@@ -139,7 +139,7 @@ const MOCK_REVENUE_ROWS: RevenueRow[] = [
     email: "bob@example.com",
     plan: "FAMILY",
     subscriptionState: "ACTIVE",
-    monthlyPayment: 14.99,
+    monthlyPayment: 549,
     createdAt: "2024-11-01T12:00:00Z",
   },
 ];
@@ -175,7 +175,7 @@ export async function fetchRevenueDashboard(): Promise<RevenueDashboardData> {
       voiceProcessingCount: 890,
       openaiTokensUsed: 1284000,
     };
-    // ~$0.002 per 1K tokens (GPT-4) => ~$2.57 per 1.28M
+    // ~$0.002 per 1K tokens (GPT-4) => USD; dashboard displays in ₹ (× 93)
     const aiCostMonthly = ai.openaiTokensUsed
       ? (ai.openaiTokensUsed / 1_000_000) * 2
       : 0;

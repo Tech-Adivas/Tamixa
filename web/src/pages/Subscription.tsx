@@ -1,7 +1,16 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { SubscriptionSkeleton } from "../components/Skeleton";
-import { getSubscription, getUsage, cancelSubscription, type Subscription, type Usage } from "../lib/api";
+import {
+  getSubscription,
+  getUsage,
+  cancelSubscription,
+  validateReferralCode,
+  createCheckoutSession,
+  type Subscription,
+  type Usage,
+  type ReferralCodeValidateResponse,
+} from "../lib/api";
 
 export default function Subscription() {
   const {} = useAuth();
@@ -10,6 +19,10 @@ export default function Subscription() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [canceling, setCanceling] = useState(false);
+  const [referralInput, setReferralInput] = useState("");
+  const [appliedReferral, setAppliedReferral] = useState<ReferralCodeValidateResponse | null>(null);
+  const [referralError, setReferralError] = useState<string | null>(null);
+  const [upgrading, setUpgrading] = useState(false);
 
   useEffect(() => {
     Promise.all([getSubscription(), getUsage()])
@@ -20,6 +33,53 @@ export default function Subscription() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleApplyReferral = async () => {
+    const code = referralInput.trim().toUpperCase();
+    if (!code) {
+      setAppliedReferral(null);
+      setReferralError(null);
+      return;
+    }
+    setReferralError(null);
+    try {
+      const result = await validateReferralCode(code);
+      if (result.valid && result.shopName != null && result.offerPercent != null) {
+        setAppliedReferral(result);
+      } else {
+        setAppliedReferral(null);
+        setReferralError("Invalid or expired code");
+      }
+    } catch {
+      setAppliedReferral(null);
+      setReferralError("Could not validate code");
+    }
+  };
+
+  const handleClearReferral = () => {
+    setAppliedReferral(null);
+    setReferralError(null);
+  };
+
+  const handleUpgrade = async () => {
+    setUpgrading(true);
+    setError("");
+    try {
+      const referralCode = (appliedReferral?.valid && appliedReferral.shortcode)
+        ? appliedReferral.shortcode
+        : (referralInput.trim().toUpperCase() || undefined);
+      const checkoutUrl = await createCheckoutSession({ referralCode });
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+        return;
+      }
+      setError("Checkout is not available. Try again later.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start checkout");
+    } finally {
+      setUpgrading(false);
+    }
+  };
 
   const handleCancel = async () => {
     if (!confirm("Cancel at end of period? You'll keep access until then.")) return;
@@ -36,13 +96,13 @@ export default function Subscription() {
     }
   };
 
+  const showUpgrade = sub && (sub.plan === "FREE" || !sub.isEntitledToUnlimitedStories);
+
   return (
     <div className="page">
-      <header className="page-header dashboard-header">
-        <div>
-          <h1>Subscription</h1>
-          <p className="page-subtitle muted">Your plan and usage</p>
-        </div>
+      <header className="page-header-tamixa" style={{ marginTop: 0 }}>
+        <h1>Subscription</h1>
+        <p className="page-subtitle">Your plan and usage</p>
       </header>
 
       {error && <p className="error">{error}</p>}
@@ -53,33 +113,73 @@ export default function Subscription() {
         <>
           {sub && (
             <section className="page-section generate-section">
-              <h2 className="page-section-title">Plan</h2>
-              <div className="page-section-card subscription-plan-card">
-                <p><strong>{sub.plan}</strong> — Status: {sub.status}</p>
-              {sub.currentPeriodEnd && <p className="muted">Period ends: {new Date(sub.currentPeriodEnd).toLocaleDateString()}</p>}
-              {sub.cancelAtPeriodEnd && <p className="error">Cancels at end of period</p>}
-              <p>Unlimited stories: {sub.isEntitledToUnlimitedStories ? "Yes" : "No"}</p>
-              <p>Max children: {sub.maxChildren}</p>
-              {sub.plan === "FREE" || !sub.isEntitledToUnlimitedStories ? (
-                <p className="muted" style={{ marginTop: "1rem" }}>
-                  Upgrade to Premium for unlimited stories and voice cloning. Payment integration coming soon.
-                </p>
-              ) : null}
-              {!sub.cancelAtPeriodEnd && sub.plan !== "FREE" && (
-                <button type="button" className="btn btn-outline" onClick={handleCancel} disabled={canceling} style={{ marginTop: "1rem" }}>
-                  {canceling ? "Canceling…" : "Cancel at period end"}
-                </button>
-              )}
+              <div className="section-card-tamixa">
+                <div className="section-card-tamixa-header">
+                  <h2>Plan</h2>
+                  <p className="section-card-subtitle">Current plan and status</p>
+                </div>
+                <div className="section-card-tamixa-body subscription-plan-card" style={{ marginTop: 0, border: "none", borderRadius: 0 }}>
+                  <p><strong>{sub.plan}</strong> — Status: {sub.status}</p>
+                  {sub.currentPeriodEnd && <p className="muted">Period ends: {new Date(sub.currentPeriodEnd).toLocaleDateString()}</p>}
+                  {sub.cancelAtPeriodEnd && <p className="error">Cancels at end of period</p>}
+                  <p>Unlimited stories: {sub.isEntitledToUnlimitedStories ? "Yes" : "No"}</p>
+                  <p>Max children: {sub.maxChildren}</p>
+                  {showUpgrade ? (
+                    <>
+                      <div className="referral-section" style={{ marginTop: "1rem", padding: "1rem", background: "var(--card-bg, #f8f8f8)", borderRadius: "8px" }}>
+                        <p className="section-card-subtitle" style={{ marginBottom: "0.5rem" }}>Referral code (e.g. AMAZ5, SHOPSTOP10)</p>
+                        <div className="field" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                          <input
+                            type="text"
+                            value={referralInput}
+                            onChange={(e) => setReferralInput(e.target.value.toUpperCase().slice(0, 32))}
+                            placeholder="AMAZ5"
+                            style={{ maxWidth: "12rem", textTransform: "uppercase" }}
+                          />
+                          <button type="button" className="btn btn-outline" onClick={handleApplyReferral}>
+                            Apply
+                          </button>
+                        </div>
+                        {appliedReferral?.valid && appliedReferral.shopName != null && appliedReferral.offerPercent != null && (
+                          <p style={{ marginTop: "0.5rem", color: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+                            <span>{appliedReferral.offerPercent}% off — {appliedReferral.shopName}</span>
+                            <button type="button" className="btn btn-outline btn-sm" onClick={handleClearReferral}>Clear</button>
+                          </p>
+                        )}
+                        {referralError && <p className="error" style={{ marginTop: "0.5rem", fontSize: "0.9rem" }}>{referralError}</p>}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={handleUpgrade}
+                        disabled={upgrading}
+                        style={{ marginTop: "1rem" }}
+                      >
+                        {upgrading ? "Opening checkout…" : "Upgrade — ₹99/month"}
+                      </button>
+                    </>
+                  ) : null}
+                  {!sub.cancelAtPeriodEnd && sub.plan !== "FREE" && (
+                    <button type="button" className="btn btn-outline" onClick={handleCancel} disabled={canceling} style={{ marginTop: "1rem" }}>
+                      {canceling ? "Canceling…" : "Cancel at period end"}
+                    </button>
+                  )}
+                </div>
               </div>
             </section>
           )}
 
           {usage && (
             <section className="page-section generate-section">
-              <h2 className="page-section-title">Usage ({usage.month})</h2>
-              <div className="page-section-card subscription-plan-card">
-                <p>Stories: {usage.storiesUsed} {usage.storiesLimit != null ? `/ ${usage.storiesLimit}` : "(unlimited)"}</p>
-                <p>Voice generations: {usage.voiceUsed} / {usage.voiceLimit}</p>
+              <div className="section-card-tamixa">
+                <div className="section-card-tamixa-header">
+                  <h2>Usage ({usage.month})</h2>
+                  <p className="section-card-subtitle">Stories and voice generations this month</p>
+                </div>
+                <div className="section-card-tamixa-body subscription-plan-card" style={{ marginTop: 0, border: "none", borderRadius: 0 }}>
+                  <p>Stories: {usage.storiesUsed} {usage.storiesLimit != null ? `/ ${usage.storiesLimit}` : "(unlimited)"}</p>
+                  <p>Voice generations: {usage.voiceUsed} / {usage.voiceLimit}</p>
+                </div>
               </div>
             </section>
           )}

@@ -41,3 +41,6 @@ out/
 # Next / build
 .next/
 out/
+
+# Vite / build
+dist/

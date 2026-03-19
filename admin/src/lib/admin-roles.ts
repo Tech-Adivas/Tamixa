@@ -20,12 +20,15 @@ export const ROLE_NAV_PERMISSIONS: Record<
     revenue: boolean;
     parents: boolean;
     moderation: boolean;
-    curatedStories: boolean;
+    storyLibrary: boolean;
+    storyForReview: boolean;
+    pipelineTriage: boolean;
     subscriptions: boolean;
+    referralCodes: boolean;
     monitoring: boolean;
     stories: boolean;
-    children: boolean;
     voiceLogs: boolean;
+    voiceTest: boolean;
     health: boolean;
     aiMetrics: boolean;
     kafka: boolean;
@@ -38,12 +41,15 @@ export const ROLE_NAV_PERMISSIONS: Record<
     revenue: true,
     parents: true,
     moderation: true,
-    curatedStories: true,
+    storyLibrary: true,
+    storyForReview: true,
+    pipelineTriage: true,
     subscriptions: true,
+    referralCodes: true,
     monitoring: true,
     stories: true,
-    children: true,
     voiceLogs: true,
+    voiceTest: true,
     health: true,
     aiMetrics: true,
     kafka: true,
@@ -55,12 +61,15 @@ export const ROLE_NAV_PERMISSIONS: Record<
     revenue: true,
     parents: true,
     moderation: true,
-    curatedStories: true,
+    storyLibrary: true,
+    storyForReview: true,
+    pipelineTriage: true,
     subscriptions: true,
+    referralCodes: true,
     monitoring: true,
     stories: true,
-    children: true,
     voiceLogs: true,
+    voiceTest: true,
     health: true,
     aiMetrics: true,
     kafka: true,
@@ -71,13 +80,16 @@ export const ROLE_NAV_PERMISSIONS: Record<
     dashboard: true,
     revenue: true,
     parents: false,
+    referralCodes: true,
     moderation: false,
-    curatedStories: false,
+    storyLibrary: false,
+    storyForReview: false,
+    pipelineTriage: false,
     subscriptions: true,
     monitoring: false,
     stories: false,
-    children: false,
     voiceLogs: false,
+    voiceTest: false,
     health: false,
     aiMetrics: true,
     kafka: false,
@@ -89,12 +101,15 @@ export const ROLE_NAV_PERMISSIONS: Record<
     revenue: false,
     parents: false,
     moderation: true,
-    curatedStories: true,
+    storyLibrary: true,
+    storyForReview: true,
+    pipelineTriage: true,
     subscriptions: false,
+    referralCodes: false,
     monitoring: false,
     stories: true,
-    children: true,
     voiceLogs: true,
+    voiceTest: true,
     health: false,
     aiMetrics: false,
     kafka: false,
@@ -106,12 +121,15 @@ export const ROLE_NAV_PERMISSIONS: Record<
     revenue: false,
     parents: true,
     moderation: false,
-    curatedStories: false,
+    storyLibrary: false,
+    storyForReview: false,
+    pipelineTriage: false,
     subscriptions: false,
+    referralCodes: false,
     monitoring: true,
     stories: true,
-    children: true,
     voiceLogs: false,
+    voiceTest: false,
     health: true,
     aiMetrics: false,
     kafka: false,
@@ -127,4 +145,23 @@ export function isAdminRole(role: string): role is AdminRole {
 export function canAccessNav(role: string, key: keyof (typeof ROLE_NAV_PERMISSIONS)["SUPER_ADMIN"]): boolean {
   const perms = ROLE_NAV_PERMISSIONS[role];
   return perms?.[key] ?? false;
+}
+
+/** True only for SUPER_ADMIN. Use to gate destructive actions (e.g. delete stories). */
+export function isSuperAdmin(role: string): boolean {
+  return role === "SUPER_ADMIN";
+}
+
+/** True if user can manage story library (create, edit, trigger pipeline, regenerate). Uses permissions from /me when available. */
+export function canManageStories(user: { role?: string; permissions?: string[] } | null): boolean {
+  if (!user) return false;
+  if (user.permissions?.includes("MANAGE_STORIES")) return true;
+  return canAccessNav(user.role ?? "", "storyLibrary");
+}
+
+/** True if user can moderate (approve for delivery, flag stories). Uses permissions from /me when available. */
+export function canModerateStories(user: { role?: string; permissions?: string[] } | null): boolean {
+  if (!user) return false;
+  if (user.permissions?.includes("MODERATE_STORIES")) return true;
+  return canAccessNav(user.role ?? "", "storyForReview");
 }

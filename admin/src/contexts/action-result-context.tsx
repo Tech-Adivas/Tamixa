@@ -96,7 +96,7 @@ export function ActionResultProvider({ children }: { children: React.ReactNode }
               )}
             </DialogTitle>
             <DialogDescription className="pt-1 text-foreground">
-              {actionResult?.message}
+              {actionResult?.message || "Something went wrong. Please try again."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

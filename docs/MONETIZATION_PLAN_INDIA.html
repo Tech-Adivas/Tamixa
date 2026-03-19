@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tamixa Monetization Plan (India) — Final</title>
+  <style>
+    body { font-family: Georgia, serif; line-height: 1.6; max-width: 780px; margin: 0 auto; padding: 2rem; color: #222; }
+    h1 { font-size: 1.6rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.2rem; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+    h3 { font-size: 1.05rem; margin-top: 1rem; margin-bottom: 0.4rem; }
+    p { margin: 0.5rem 0; }
+    ul { margin: 0.5rem 0; padding-left: 1.5rem; }
+    li { margin: 0.25rem 0; }
+    hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.9rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.5rem; text-align: left; }
+    th { background: #f5f5f5; font-weight: 600; }
+    code { background: #f0f0f0; padding: 0.1rem 0.3rem; border-radius: 2px; font-size: 0.9em; }
+    a { color: #0066cc; }
+    strong { font-weight: 600; }
+    @media print { .section { page-break-inside: avoid; } }
+  </style>
+</head>
+<body>
+
+<h1>Tamixa Monetization Plan (India) — Final</h1>
+
+<p>Monetization plan for the Tamixa kids storytelling app: subscription tiers aligned with voice cloning and avatar studio, Indian market (INR), third-party API cost model, and implementation notes. <strong>All customer-facing prices in Indian Rupee (INR).</strong></p>
+
+<hr>
+
+<h2>1. Current State Summary</h2>
+
+<p><strong>Features and gating (from codebase):</strong></p>
+
+<table>
+  <thead>
+    <tr><th>Feature</th><th>FREE</th><th>Paid (PREMIUM / FAMILY / VOICE_PREMIUM)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Stories/month</td><td>5 (config: <code>freeStoriesPerMonth</code>)</td><td>Unlimited</td></tr>
+    <tr><td>Voice generations/month</td><td>5 (config: <code>freeVoiceGenerationsPerMonth</code>)</td><td>Tied to usage; premium catalog voices require <code>voicePremium</code></td></tr>
+    <tr><td>Voice cloning (cloned:profileId)</td><td>Currently allowed when parentId present*</td><td>Same; no hard gate in <code>NarrationPremiumVoiceValidatorImpl</code> for cloned</td></tr>
+    <tr><td>Premium catalog voices (calm, etc.)</td><td>Blocked</td><td>Allowed when <code>subscription.voicePremium == true</code></td></tr>
+    <tr><td>Avatar video (talking-head)</td><td>Tier says <code>allowsAvatarVideo=false</code> for FREE</td><td>PREMIUM/FAMILY tiers allow it; enforcement is tier-based where used</td></tr>
+    <tr><td>Soundscapes</td><td>No</td><td>Yes (PREMIUM/FAMILY)</td></tr>
+    <tr><td>Max children</td><td>1</td><td>3 (PREMIUM), 10 (FAMILY)</td></tr>
+  </tbody>
+</table>
+
+<p>*Cloned voice is allowed for any logged-in parent today; premium <em>catalog</em> voices are gated by <code>SubscriptionGuard</code> + <code>voicePremium</code>.</p>
+
+<p><strong>Existing tier definitions:</strong> <code>SubscriptionTierService</code> seeds FREE (0/0), PREMIUM (999/9999 = $9.99/$99.99), FAMILY (1999/19999). Checkout uses a single Stripe <code>voicePremiumPriceId</code>; Zoho webhook uses INR and records payment but does not set plan from product/price.</p>
+
+<p><strong>Cost drivers:</strong> <code>CostEstimatorService</code> (~$0.016/1k TTS chars, AI tokens); <a href="AVATAR_VIDEO.md">AVATAR_VIDEO.md</a> (~$0.10/video SadTalker). Voice cloning uses ElevenLabs or self-hosted XTTS (<a href="VOICE_CLONING_ARCHITECTURE.md">VOICE_CLONING_ARCHITECTURE.md</a>).</p>
+
+<hr>
+
+<h2>2. Third-Party API Costs (USD and INR)</h2>
+
+<p><strong>Exchange rate used:</strong> 1 USD = ₹83 (approximate 2024–25). All per-use costs converted to INR for margin analysis.</p>
+
+<h3>2.1 API cost summary</h3>
+
+<table>
+  <thead>
+    <tr><th>Provider</th><th>Use case</th><th>Unit</th><th>USD (approx)</th><th>INR/unit (₹83/USD)</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>OpenAI (gpt-4o-mini)</strong></td><td>Story generation, rewrite, translation</td><td>1K input tokens</td><td>$0.00015</td><td>₹0.012</td><td>CostEstimatorService</td></tr>
+    <tr><td><strong>OpenAI (gpt-4o-mini)</strong></td><td>Story generation, rewrite</td><td>1K output tokens</td><td>$0.0006</td><td>₹0.050</td><td></td></tr>
+    <tr><td><strong>Default TTS</strong> (e.g. Google/Neural)</td><td>Default narration (no clone)</td><td>1K characters</td><td>$0.016</td><td>₹1.33</td><td>Existing estimate in codebase</td></tr>
+    <tr><td><strong>ElevenLabs (Flash/Turbo)</strong></td><td>Cloned-voice TTS</td><td>1K characters</td><td>$0.06–0.08</td><td>₹5.0–6.6</td><td>Business/API tier; Multilingual v2 ~$0.12/1k = ₹10/1k</td></tr>
+    <tr><td><strong>ElevenLabs</strong></td><td>Instant Voice Cloning (add voice)</td><td>One-time per profile</td><td>Included in usage</td><td>—</td><td>Consumes character quota when synthesizing</td></tr>
+    <tr><td><strong>Replicate (SadTalker)</strong></td><td>Avatar talking-head video</td><td>Per prediction</td><td>$0.10</td><td>₹8.30</td><td>Cached per story/parent/language/voice</td></tr>
+    <tr><td><strong>HeyGen</strong> (optional)</td><td>Premium avatar</td><td>Per video</td><td>Higher than SadTalker</td><td>—</td><td>Use if quality justifies; not in base model</td></tr>
+    <tr><td><strong>Self-hosted XTTS</strong></td><td>Cloned voice (fallback)</td><td>Per request</td><td>Infra (GPU) only</td><td>—</td><td>No per-char API; use for Hindi/non-Tamil to reduce ElevenLabs spend</td></tr>
+  </tbody>
+</table>
+
+<h3>2.2 Per-story cost assumptions (INR)</h3>
+
+<p>Assume one “story narration” = one play in one language with one voice:</p>
+<ul>
+  <li><strong>Script length:</strong> ~2,500 characters TTS, ~1.5K input + ~0.8K output tokens (format/rewrite/generation).</li>
+  <li><strong>Default (no clone):</strong> AI ≈ ₹0.02 + ₹0.04 = ₹0.06; TTS 2.5×1.33 ≈ ₹3.33 → <strong>~₹3.4 per story</strong> (default voice).</li>
+  <li><strong>Cloned voice (ElevenLabs):</strong> Same AI; TTS 2.5×5.5 ≈ ₹13.75 → <strong>~₹14 per story</strong> (first-time; cached replays = ₹0).</li>
+  <li><strong>Avatar (Replicate):</strong> <strong>₹8.30 per new video</strong> (cached replays = ₹0).</li>
+</ul>
+<p>So: <strong>FREE/STARTER</strong> cost ≈ ₹3.4 × stories. <strong>PREMIUM/FAMILY</strong> add ElevenLabs (cloned) and Replicate (avatar); blended cost depends on % of stories with clone and % with new avatar.</p>
+
+<h3>2.3 Monthly cost per tier (illustrative)</h3>
+
+<table>
+  <thead>
+    <tr><th>Tier</th><th>Stories (cap)</th><th>Cloned plays (new)</th><th>New avatar videos</th><th>Est. API cost/month (INR)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>FREE</td><td>5</td><td>0</td><td>0</td><td>5 × 3.4 ≈ <strong>₹17</strong></td></tr>
+    <tr><td>STARTER</td><td>15</td><td>0</td><td>0</td><td>15 × 3.4 ≈ <strong>₹51</strong></td></tr>
+    <tr><td>PREMIUM</td><td>30 (assumed avg)</td><td>15 (half new)</td><td>10 (cap)</td><td>30×3.4 + 15×10.6 + 10×8.3 ≈ <strong>₹102 + ₹159 + ₹83 = ₹344</strong></td></tr>
+    <tr><td>FAMILY</td><td>60 (assumed avg)</td><td>30</td><td>30 (cap)</td><td>60×3.4 + 30×10.6 + 30×8.3 ≈ <strong>₹204 + ₹318 + ₹249 = ₹771</strong></td></tr>
+  </tbody>
+</table>
+
+<p>(Cloned “new” cost ≈ ₹14 − ₹3.4 = ₹10.6 incremental per story when ElevenLabs is used; avatar ₹8.3 each.) These are conservative mid-range usage assumptions; heavy users can exceed, so caps (e.g. <code>maxAvatarVideos</code>) protect margin.</p>
+
+<hr>
+
+<h2>3. India Market: Expectations and Price Sensitivity</h2>
+
+<ul>
+  <li><strong>Willingness to pay:</strong> Parents pay for education and “premium experience” in the ₹99–₹499/month range for apps (e.g. learning apps, music). Annual is often 50–60% of monthly×12 to reduce churn.</li>
+  <li><strong>Expectations:</strong> Strong free tier to try (stories + limited personalization), then clear value for paid: “your voice / your face” (voice cloning + avatar) is a strong differentiator; family plans (multiple kids) are expected.</li>
+  <li><strong>Payments:</strong> UPI/cards; Zoho already integrated with INR; Stripe supports INR but Zoho/Razorpay-style flows are familiar in India.</li>
+  <li><strong>Positioning:</strong> Voice cloning and avatar studio should be the <strong>flagship paid differentiators</strong>, not buried in a single “voice premium” SKU.</li>
+</ul>
+
+<hr>
+
+<h2>4. Pricing Strategies (Analysis)</h2>
+
+<p>Four approaches, with INR implications and trade-offs.</p>
+
+<h3>Strategy A: Cost-plus (cover API + margin)</h3>
+<ul>
+  <li><strong>Idea:</strong> Price each tier so that estimated API cost per user is a fraction of revenue (e.g. 25–35% cost, rest margin + fixed costs).</li>
+  <li><strong>From section 2.3:</strong> FREE ₹17, STARTER ₹51, PREMIUM ₹344, FAMILY ₹771. At 30% cost share: STARTER ≥ ₹170/mo, PREMIUM ≥ ₹1,147/mo, FAMILY ≥ ₹2,570/mo.</li>
+  <li><strong>Pros:</strong> Sustainable unit economics; safe at scale.</li>
+  <li><strong>Cons:</strong> STARTER/PREMIUM at ₹170/₹1,147 are high for India; likely low conversion.</li>
+</ul>
+
+<h3>Strategy B: Value-based (what market bears)</h3>
+<ul>
+  <li><strong>Idea:</strong> Price at willingness to pay; accept thin or negative margin on some tiers and compensate with volume and upsell.</li>
+  <li><strong>Typical India bands:</strong> STARTER ₹49–99, PREMIUM ₹199–349, FAMILY ₹399–599.</li>
+  <li><strong>Pros:</strong> Strong conversion and trial→paid; good for growth.</li>
+  <li><strong>Cons:</strong> PREMIUM at ₹249 with ~₹344 cost is loss-making unless usage is capped or average usage is lower than assumed; need strict caps (e.g. max stories with clone, max avatar videos).</li>
+</ul>
+
+<h3>Strategy C: Penetration (aggressive acquisition)</h3>
+<ul>
+  <li><strong>Idea:</strong> Very low entry (e.g. STARTER ₹49, PREMIUM ₹149) to maximise installs and rely on FAMILY and future price increases.</li>
+  <li><strong>Pros:</strong> Fast user growth; network effects if you add social/sharing later.</li>
+  <li><strong>Cons:</strong> High burn; requires funding or other revenue; STARTER/PREMIUM both below cost at assumed usage.</li>
+</ul>
+
+<h3>Strategy D: Hybrid (recommended)</h3>
+<ul>
+  <li><strong>Idea:</strong> Keep FREE and STARTER low for acquisition; price PREMIUM and FAMILY to cover blended API cost with a target margin, and enforce usage caps so that “average” user stays within budget.</li>
+  <li><strong>Mechanics:</strong>
+    <ul>
+      <li>FREE: 5 stories (≈₹17 cost); no voice clone/avatar.</li>
+      <li>STARTER: ₹99/mo, 15 stories (≈₹51 cost); margin ~₹48 before fixed costs.</li>
+      <li>PREMIUM: ₹299/mo (not ₹249); cap e.g. 20 new cloned narrations + 10 avatar videos/month so expected cost ≈ ₹210 + ₹83 = ₹293; margin thin but non-negative; unlimited “cached” replays.</li>
+      <li>FAMILY: ₹549/mo; cap e.g. 40 cloned + 40 avatar; expected cost ≈ ₹424 + ₹332 = ₹756 → still above revenue at 40 avatar, so cap avatar at 25 or price at ₹599.</li>
+    </ul>
+  </li>
+  <li><strong>Refinement:</strong> Either (1) raise PREMIUM to ₹349 and FAMILY to ₹599 with current caps, or (2) keep PREMIUM ₹249/₹1,999 but tighten caps (e.g. 8 avatar, 12 new cloned/month) so average cost ≈ ₹200 and margin ~₹49.</li>
+</ul>
+
+<hr>
+
+<h2>5. Final Recommended Strategy (INR Only)</h2>
+
+<p>After weighing acquisition (Strategy B/C) and sustainability (Strategy A/D), the <strong>final recommendation is Hybrid (D)</strong> with <strong>INR-only pricing for India</strong> and <strong>usage caps</strong> so third-party API cost stays under control.</p>
+
+<h3>5.1 Final tier and price matrix (INR)</h3>
+
+<table>
+  <thead>
+    <tr><th>Tier</th><th>Monthly (INR)</th><th>Yearly (INR)</th><th>Stories</th><th>Voice cloning</th><th>Avatar studio</th><th>Caps to protect margin</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>FREE</strong></td><td>₹0</td><td>—</td><td>5/month</td><td>No</td><td>No</td><td>—</td></tr>
+    <tr><td><strong>STARTER</strong></td><td>₹99</td><td>₹799 (~₹66/mo)</td><td>15/month</td><td>No</td><td>No</td><td>—</td></tr>
+    <tr><td><strong>PREMIUM</strong></td><td>₹299</td><td>₹2,399 (~₹200/mo)</td><td>Unlimited</td><td>Yes (3 voices)</td><td>Yes</td><td>15 new cloned narrations/mo, 10 avatar videos/mo</td></tr>
+    <tr><td><strong>FAMILY</strong></td><td>₹549</td><td>₹4,399 (~₹367/mo)</td><td>Unlimited</td><td>Yes (10 voices)</td><td>Yes</td><td>30 new cloned/mo, 25 avatar videos/mo</td></tr>
+  </tbody>
+</table>
+
+<ul>
+  <li><strong>Why ₹299 (not ₹249):</strong> At ₹249, PREMIUM is below estimated API cost for moderate usage; ₹299 with caps keeps average cost ~₹250–280 and leaves ~₹20–50 margin before fixed costs.</li>
+  <li><strong>Why ₹549 for FAMILY:</strong> Covers higher blended cost (more stories + clone + avatar) and 25 avatar cap keeps Replicate spend ~₹208; total estimated cost ~₹550–600 so margin is thin but non-negative.</li>
+  <li><strong>Storage:</strong> Store in minor units (paise): 29900, 239900, 54900, 439900. Currency = INR in config/tier.</li>
+</ul>
+
+<h3>5.2 Third-party cost check (final)</h3>
+<ul>
+  <li><strong>STARTER:</strong> 15 × ₹3.4 ≈ ₹51; revenue ₹99 → <strong>~48% cost</strong>.</li>
+  <li><strong>PREMIUM:</strong> With caps, ~₹250–280; revenue ₹299 → <strong>~85–95% cost</strong>, small margin.</li>
+  <li><strong>FAMILY:</strong> With caps, ~₹500–600; revenue ₹549 → <strong>~91–109%</strong>; if needed, cap avatar at 20 (₹166) to keep total cost ~₹520.</li>
+</ul>
+<p>Adjust caps in product/backend (e.g. <code>maxAvatarVideos</code> per period, “new cloned narrations” counter) so that typical users stay within these bounds; monitor CostEstimatorService and Replicate/ElevenLabs usage and tweak caps or price once real data is available.</p>
+
+<h3>5.3 Summary</h3>
+<ul>
+  <li><strong>All amounts in Indian Rupee (INR);</strong> no USD in customer-facing prices for India.</li>
+  <li><strong>Third-party APIs</strong> (OpenAI, default TTS, ElevenLabs, Replicate SadTalker) are included in the cost model; <strong>ElevenLabs and Replicate</strong> are the main variable costs for PREMIUM/FAMILY.</li>
+  <li><strong>Strategy:</strong> Hybrid — value-based entry (FREE, STARTER), cost-aware PREMIUM/FAMILY with caps and ₹299/₹549 so that, on average, API cost is covered and margin is positive or near break-even with room to optimize after launch.</li>
+</ul>
+
+<hr>
+
+<h2>6. Tier Reference (Quick View)</h2>
+
+<table>
+  <thead>
+    <tr><th>Tier</th><th>Monthly (INR)</th><th>Yearly (INR)</th><th>Stories</th><th>Voice cloning</th><th>Avatar studio</th><th>Children</th><th>Target</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>FREE</strong></td><td>0</td><td>—</td><td>5/month</td><td>No</td><td>No</td><td>1</td><td>Trial, acquisition</td></tr>
+    <tr><td><strong>STARTER</strong></td><td>99</td><td>799 (~₹66/mo)</td><td>15/month</td><td>No</td><td>No</td><td>1</td><td>Light payers</td></tr>
+    <tr><td><strong>PREMIUM</strong></td><td>299</td><td>2,399 (~₹200/mo)</td><td>Unlimited</td><td>Yes (3 voices)</td><td>Yes (10/mo)</td><td>3</td><td>Voice + avatar</td></tr>
+    <tr><td><strong>FAMILY</strong></td><td>549</td><td>4,399 (~₹367/mo)</td><td>Unlimited</td><td>Yes (10 voices)</td><td>Yes (25/mo)</td><td>10</td><td>Multiple kids</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Pricing storage:</strong> Backend stores amounts in <strong>minor units</strong> (paise). Tiers have <code>priceMonthly</code> / <code>priceYearly</code> in <code>SubscriptionTier</code>; use same convention and add currency (INR) in config or tier metadata. Seed/migration: FREE 0/0, STARTER 9900/79900, PREMIUM 29900/239900, FAMILY 54900/439900.</p>
+
+<hr>
+
+<h2>7. Feature Gating Recommendations</h2>
+
+<ul>
+  <li><strong>Voice cloning:</strong> Gate by plan: only PREMIUM and FAMILY. Add a check in <code>NarrationPremiumVoiceValidatorImpl</code> or stream/playback path: require <code>subscription.plan in [PREMIUM_MONTHLY, PREMIUM_YEARLY, FAMILY]</code> (or tier <code>allowsVoiceCloning</code>) for <code>voiceProfile.startsWith("cloned:")</code>.</li>
+  <li><strong>Avatar video:</strong> Gate by tier <code>allowsAvatarVideo</code> and enforce <code>maxAvatarVideos</code> per period. Ensure AvatarVideoService / stream URL path checks subscription tier before generating or serving avatar video.</li>
+  <li><strong>FREE:</strong> Keep 5 stories and 5 voice generations; no voice cloning, no avatar.</li>
+  <li><strong>STARTER:</strong> 15 stories/month, no voice cloning, no avatar (or 1 “taste” avatar if desired as hook).</li>
+</ul>
+
+<hr>
+
+<h2>8. Marketing Perspective</h2>
+
+<ul>
+  <li><strong>Messaging:</strong> “Stories in your voice” and “You in the story” (avatar) as the main paid hooks; STARTER as “more stories” for hesitant payers.</li>
+  <li><strong>Free tier:</strong> Enough to complete a few stories and see value; limit voice/avatar to create upgrade moment.</li>
+  <li><strong>Trials:</strong> 7-day trial on PREMIUM (existing <code>trial-days</code>, <code>trialEnd</code>) to let parents try voice + avatar; avoid trial on STARTER to keep it simple.</li>
+  <li><strong>Channels:</strong> App store optimization (India), short demos of voice cloning + avatar on social, parent communities and schools.</li>
+  <li><strong>Objection handling:</strong> “Is my data safe?” — point to existing consent/export and privacy; “Worth ₹299?” — frame as cost per story (unlimited) and emotional value of “your voice reading to your child.”</li>
+</ul>
+
+<hr>
+
+<h2>9. Infrastructure and Ops Constraints</h2>
+
+<ul>
+  <li><strong>Cost control:</strong> Per-story cost (AI + TTS) estimated in CostEstimatorService. Cap avatar generations per tier (<code>maxAvatarVideos</code>); cache aggressively (already done per story/parent/language/voice). Voice cloning: ElevenLabs has per-character cost; self-hosted XTTS reduces marginal cost but needs GPU/reliability. Monitor usage per plan.</li>
+  <li><strong>Rate limits:</strong> AppProperties has <code>storyGenerationFreePerHour</code> (10) and <code>storyGenerationPaidPerHour</code> (60). Consider separate limits for voice cloning and avatar generation (e.g. per day per tier) to prevent abuse.</li>
+  <li><strong>Payments:</strong> <strong>India:</strong> Prefer Zoho (already integrated, INR) for INR products; ensure webhook sets <code>plan</code> and <code>voicePremium</code> from payment link/product. <strong>International:</strong> Keep Stripe for USD/other currencies; support multiple Stripe Price IDs (STARTER, PREMIUM monthly/yearly, FAMILY) and map product/price in webhook to SubscriptionPlan.</li>
+  <li><strong>Grace and trials:</strong> Existing <code>gracePeriodDays</code> (3) and trial expiry jobs are sufficient; ensure Zoho payment failure flow updates subscription to PAST_DUE/EXPIRED where applicable.</li>
+</ul>
+
+<hr>
+
+<h2>10. Other Constraints (Compliance, Localization, Product)</h2>
+
+<ul>
+  <li><strong>Compliance:</strong> No PII in logs (existing rules); store only necessary billing data; consent for marketing if sending receipts/promos.</li>
+  <li><strong>Tax:</strong> GST in India; ensure invoicing (Zoho/Stripe) supports GST number and tax-inclusive or -exclusive display as per your policy.</li>
+  <li><strong>Localization:</strong> App and pricing in English and optionally Hindi for India; Tamil/other languages already in product (stories/TTS). Show INR and “₹” by default when region/currency is India.</li>
+  <li><strong>App store:</strong> Google Play billing for in-app subscriptions in India; consider offering IAP alongside web-based Zoho/Stripe for users who prefer billing through the store (revenue share 15–30%).</li>
+</ul>
+
+<hr>
+
+<h2>11. Implementation Checklist (High Level)</h2>
+
+<ul>
+  <li><strong>Config and tiers:</strong> Add STARTER plan and tier with INR amounts in paise. Extend SubscriptionTierService / seed or migration: FREE 0/0, STARTER 9900/79900, PREMIUM 29900/239900, FAMILY 54900/439900. Add currency to tier or app config (e.g. <code>defaultCurrency: INR</code> for India).</li>
+  <li><strong>Checkout:</strong> Zoho: create payment links per plan (STARTER, PREMIUM_Monthly, PREMIUM_Yearly, FAMILY_Monthly, FAMILY_Yearly); pass <code>parent_id</code> and plan in metadata; on <code>payment_link.paid</code>, upsert subscription with correct plan and set <code>voicePremium</code> and <code>maxChildren</code> from plan. Stripe: add Price IDs for each product; StripeCheckoutAdapter to accept <code>plan</code> and create session with that price; webhook already reads <code>metadata.plan</code> and <code>voice_premium</code> — ensure products set these.</li>
+  <li><strong>Gating:</strong> Enforce voice cloning by plan/tier (PREMIUM/FAMILY) in narration/stream path. Enforce avatar by tier and <code>maxAvatarVideos</code> usage.</li>
+  <li><strong>Usage:</strong> If STARTER has 15 stories/month, enforce via existing UsageTracking and plan-specific limit in config or tier. Optionally track “avatar videos generated” per parent per month and cap by tier.</li>
+  <li><strong>Admin and analytics:</strong> Revenue dashboard already has plan and MRR; ensure plans (FREE, STARTER, PREMIUM, FAMILY) and currency (INR) are visible; track conversion FREE→STARTER, STARTER→PREMIUM, and trial→paid.</li>
+</ul>
+
+<hr>
+
+<h2>12. Summary: Best Price Plan Options for India (Final)</h2>
+
+<table>
+  <thead>
+    <tr><th>Option</th><th>Monthly (INR)</th><th>Yearly (INR)</th><th>Best for</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>FREE</strong></td><td>₹0</td><td>—</td><td>Trial, 5 stories/month</td></tr>
+    <tr><td><strong>STARTER</strong></td><td>₹99</td><td>₹799</td><td>“More stories,” low commitment</td></tr>
+    <tr><td><strong>PREMIUM</strong></td><td>₹299</td><td>₹2,399</td><td>Voice cloning + avatar studio (main revenue)</td></tr>
+    <tr><td><strong>FAMILY</strong></td><td>₹549</td><td>₹4,399</td><td>Multiple children, heavy users</td></tr>
+  </tbody>
+</table>
+
+<p><strong>All prices in Indian Rupee (INR).</strong> Third-party API costs (OpenAI, ElevenLabs, Replicate SadTalker) are reflected in Section 2; PREMIUM and FAMILY use usage caps so that average cost stays within margin (Section 5). Implement by: (1) defining tiers with INR in paise (e.g. 29900, 239900), (2) gating voice cloning and avatar to PREMIUM/FAMILY and enforcing caps, (3) using Zoho for INR checkout and webhooks so plan and entitlements are set correctly after payment.</p>
+
+<hr>
+
+<h2>13. Best Strategy to Succeed (Investigation-Based)</h2>
+
+<p>This section is based on a deeper pass over the codebase and product flow. It lists critical gaps, then a phased success strategy.</p>
+
+<h3>13.1 Critical gaps (must fix for conversion)</h3>
+<ul>
+  <li><strong>Zoho webhook does not set plan after payment.</strong> Today <code>handleZohoPaymentSucceeded</code> and <code>handleZohoPaymentLinkPaid</code> only call <code>recordPaymentSucceeded</code>. They do not call <code>upsertFromProvider</code> to set plan, voicePremium, or maxChildren. After a successful INR payment the user stays on FREE. <strong>Action:</strong> In the Zoho webhook, derive plan from payment link ID or metadata and call a method that creates/updates the subscription with that plan and entitlements.</li>
+  <li><strong>Free story limit returns generic error, not upgrade CTA.</strong> <code>FreeStoryLimitReachedException</code> is thrown but there is no <code>@ExceptionHandler</code> in GlobalExceptionHandler. The API returns 500; mobile shows a generic error. <strong>Action:</strong> Add an exception handler that returns HTTP 402 with <code>LimitReachedResponse</code>. On mobile, when story generate fails with 402 or <code>status === "LIMIT_REACHED"</code>, show an upgrade nudge and navigate to Subscription.</li>
+  <li><strong>Voice cloning not gated by plan.</strong> Cloned voice is allowed for any parentId; FREE users can use it. <strong>Action:</strong> Require PREMIUM/FAMILY (or tier allowsVoiceCloning) for cloned voice and enforce in validator or stream path; show upgrade prompt for FREE/STARTER.</li>
+  <li><strong>Usage visibility before limit.</strong> Story Generation screen does not show “X / 5 stories used this month”. <strong>Action:</strong> Show usage and limit on Story Generation (and optionally Dashboard); consider soft nudge at 4/5.</li>
+</ul>
+
+<h3>13.2 Conversion funnel (order of operations)</h3>
+<ol>
+  <li><strong>First value in &lt; 2 minutes.</strong> Onboarding: minimal steps; first story or first generation within a few taps.</li>
+  <li><strong>Paywall at limit, not at door.</strong> After 5 stories (FREE), show 402/LIMIT_REACHED flow with CTA: “Unlimited stories + your voice + your face — from ₹299/mo.”</li>
+  <li><strong>Trial on PREMIUM only.</strong> 7-day trial when upgrading to PREMIUM; no trial on STARTER. One trial per account (trialUsed).</li>
+  <li><strong>STARTER as step-up.</strong> Position STARTER (₹99) for users who balk at ₹299; later nudge to Premium for voice/avatar.</li>
+  <li><strong>Checkout must reflect plan.</strong> Zoho payment links per plan with parent_id and plan in metadata; webhook must set subscription plan and entitlements so user sees unlimited and voice/avatar immediately after payment.</li>
+</ol>
+
+<h3>13.3 Retention and caps</h3>
+<p>Communicate caps clearly (e.g. “X / 10 avatar videos this month”). Keep grace period and trial expiry; ensure Zoho payment-failure path updates subscription state. After EXPIRED, show “Renew to get back unlimited stories and your voice” with one tap to checkout.</p>
+
+<h3>13.4 India-specific execution</h3>
+<p>All prices in INR. Use Zoho for INR; ensure success redirect returns to app with “Thank you — you’re now Premium.” ASO: kids stories, bedtime stories, Tamil/Hindi, personalized, voice clone. Short video for “your voice” and “you in the story.” Channels: parent groups, schools, “story in your language.” Consider referral incentive once base flow is stable.</p>
+
+<h3>13.5 Metrics and iteration</h3>
+<p>Track: trial start, trial→paid, FREE→STARTER, STARTER→PREMIUM, free-limit hits, MRR by plan, churn. Ensure Zoho-sourced subscriptions included in MRR once webhook sets plan. Iterate: trial length, soft paywall at 4/5, caps based on CostEstimatorService and Replicate/ElevenLabs usage.</p>
+
+<h3>13.6 Phased rollout</h3>
+<ul>
+  <li><strong>Phase 1 (launch):</strong> FREE (5 stories) + PREMIUM (₹299/₹2,399) with 7-day trial. Fix Zoho webhook, 402 + LimitReachedResponse, gate cloned voice, upgrade CTA on limit. No STARTER yet.</li>
+  <li><strong>Phase 2:</strong> Add STARTER (₹99/₹799, 15 stories). Add usage on Story Generation. Optionally add FAMILY.</li>
+  <li><strong>Phase 3:</strong> Add FAMILY if not in Phase 2; refine caps and pricing from real data; consider referral or limited-time annual discount.</li>
+</ul>
+<p>Implementing the critical fixes and the funnel above gives the best chance of success for the India monetization plan.</p>
+
+</body>
+</html>

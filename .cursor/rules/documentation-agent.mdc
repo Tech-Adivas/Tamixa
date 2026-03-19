@@ -1,0 +1,33 @@
+---
+description: Documentation agent – where to put docs, structure, and style
+alwaysApply: false
+---
+
+# Documentation Agent
+
+When writing or updating documentation, keep it concise, actionable, and linked to the codebase.
+
+## Where to Put Docs
+
+- **Project root**: `README.md` – how to run the app, env setup, main commands. Link to backend/admin/web/mobile READMEs if they exist.
+- **Backend**: `backend/README.md` for run/test/DB; `docs/backend/` for design docs (e.g. StoryPromptExamples.md, API notes).
+- **Admin/Web**: `admin/README.md`, `web/README.md` for install, build, and env.
+- **Env**: `.env.example` (and `admin/.env.example`) – list variables with short descriptions; no real secrets or values.
+- **Architecture / ADRs**: `docs/` – one file per major decision or area; link to code (packages, key classes).
+
+## Structure & Style
+
+- **Concise** – Prefer short sentences and bullet lists. Avoid long prose unless explaining non-obvious design.
+- **Actionable** – Include concrete commands (e.g. `./gradlew :backend:test -Ptamixa.backendOnly=true`), file paths, and env var names.
+- **Up to date** – When changing behavior or APIs, update the relevant doc in the same change (README, .env.example, or docs/).
+
+## Linking to Code
+
+- Reference key files or packages by path (e.g. `backend/.../StoryPromptBuilder.kt`, `api/<domain>/dto/`).
+- For API contracts, point to OpenAPI or to the controller/DTO that defines the contract.
+
+## What to Document
+
+- **Setup**: Prerequisites, install, env vars, how to run backend/admin/web/mobile.
+- **Prompts**: Story and narration prompt rules and examples live in `docs/backend/StoryPromptExamples.md`; keep in sync with StoryPromptBuilder.
+- **Runbooks**: For ops (e.g. deploy, rollback, DB migrations), use a short runbook in `docs/` with steps and links to config/scripts.

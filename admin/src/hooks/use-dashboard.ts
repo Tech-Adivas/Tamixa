@@ -46,7 +46,15 @@ export function useDashboard() {
     Promise.all([
       safeFetch(() => api.admin.getSubscriptionMetrics(), { activeSubscriptions: 0, mrr: 0, trialCount: 0, planDistribution: {} }),
       safeFetch(() => api.admin.getAiMetrics(), { storyGenerationsTotal: 0, cacheHits: 0, cacheMisses: 0, voiceProcessingCount: 0, openaiTokensUsed: null }),
-      safeFetch(() => api.admin.getStories(0, 1, "FLAGGED"), { totalElements: 0 }),
+      safeFetch(() => api.admin.getStories(0, 1, "FLAGGED"), {
+        content: [],
+        page: 0,
+        size: 1,
+        totalElements: 0,
+        totalPages: 0,
+        first: true,
+        last: true,
+      }),
       safeFetch(() => api.admin.getStoryUsagePerDay(7), []),
       safeFetch(
         () => Promise.all(months.map((m) => api.admin.getRevenueMetrics(m))),

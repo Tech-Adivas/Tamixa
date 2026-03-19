@@ -12,7 +12,7 @@ COPY backend ./backend
 
 # Download dependencies and build backend JAR (skips mobile)
 RUN chmod +x gradlew && \
-    ./gradlew :backend:bootJar -Pararo.backendOnly=true -x test --no-daemon
+    ./gradlew :backend:bootJar -Ptamixa.backendOnly=true -x test --no-daemon
 
 # Run stage
 FROM eclipse-temurin:21-jre-alpine

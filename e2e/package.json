@@ -1,0 +1,14 @@
+{
+  "name": "tamixa-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:web": "playwright test web/",
+    "test:admin": "playwright test admin/"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

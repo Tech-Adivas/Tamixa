@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { mockApi } from "@/lib/mock-api";
-import type { SystemMonitoringMetrics } from "@/types/api";
+import type { RuntimeConfigDto, SystemMonitoringMetrics } from "@/types/api";
 import { api } from "@/lib/api";
 import {
   Gauge,
@@ -17,6 +17,7 @@ import {
 
 export default function SystemMonitoringPage() {
   const [metrics, setMetrics] = useState<SystemMonitoringMetrics | null>(null);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfigDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,27 +29,33 @@ export default function SystemMonitoringPage() {
       setLoading(false);
       return;
     }
-    // Try real health + AI metrics and merge with mock for full system view
+    // Real API: health + AI metrics for system view
     Promise.all([
       api.admin.getHealth().catch(() => null),
       api.admin.getAiMetrics().catch(() => null),
+      api.admin.getRuntimeConfig().catch(() => null),
     ])
-      .then(([health, ai]) => {
+      .then(([health, ai, runtime]) => {
+        setRuntimeConfig(runtime);
         if (health || ai) {
+          const cacheTotal = (ai?.cacheHits ?? 0) + (ai?.cacheMisses ?? 0);
           setMetrics({
-            apiLatencyMs: 42,
-            kafkaLag: 12,
-            redisHitRatio: ai
-              ? ai.cacheHits / (ai.cacheHits + ai.cacheMisses || 1)
-              : 0.94,
-            errorRate: 0.002,
-            aiCostUsd: 124.5,
+            apiLatencyMs: (health as { latencyMs?: number })?.latencyMs ?? 0,
+            kafkaLag: 0,
+            redisHitRatio: cacheTotal > 0 ? (ai!.cacheHits / cacheTotal) : 0,
+            errorRate: 0,
+            aiCostUsd: 0,
           });
+          setError(null);
         } else {
-          setMetrics(mockApi.getMockSystemMetrics());
+          setError("Unable to load monitoring data. Check backend connectivity.");
+          setMetrics(null);
         }
       })
-      .catch(() => setMetrics(mockApi.getMockSystemMetrics()))
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : "Failed to load monitoring data.");
+        setMetrics(null);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -160,6 +167,29 @@ export default function SystemMonitoringPage() {
               </Card>
             ))}
       </div>
+
+      {runtimeConfig && (
+        <Card
+          className={
+            runtimeConfig.flywayEnabled
+              ? "border-amber-300 bg-amber-50/70 dark:border-amber-700 dark:bg-amber-950/20"
+              : "border-emerald-300 bg-emerald-50/70 dark:border-emerald-700 dark:bg-emerald-950/20"
+          }
+        >
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">
+              Migration mode ({runtimeConfig.migrationMode})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            <p>{runtimeConfig.operatorHint}</p>
+            <p className="text-muted-foreground">
+              Instance: {runtimeConfig.instanceId} | lockRetryCount:{" "}
+              {runtimeConfig.flywayLockRetryCount}
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

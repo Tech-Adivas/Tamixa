@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 48" fill="none" aria-hidden="true">
+  <title>Tamixa</title>
+  <g transform="translate(24, 24)">
+    <circle r="20" stroke="#1E1F3F" stroke-width="4" fill="none"/>
+    <circle r="7" fill="#F6C453"/>
+  </g>
+  <text x="56" y="34" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="28" font-weight="600" letter-spacing="0.02em" fill="#1E1F3F">Tamixa</text>
+</svg>

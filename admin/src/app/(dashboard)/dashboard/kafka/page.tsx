@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import type { PagedResponse } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const PAGE_SIZE = 20;
 
@@ -41,7 +42,11 @@ export default function KafkaPage() {
             <p className="mb-4 text-sm text-destructive">{error}</p>
           )}
           {loading ? (
-            <p className="text-muted-foreground">Loading…</p>
+            <div className="space-y-3">
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-4 w-64" />
+            </div>
           ) : data && data.content.length === 0 ? (
             <p className="text-muted-foreground">
               No in-app event store. Use backend logs or Prometheus for story-created and audio processing events.

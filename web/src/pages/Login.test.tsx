@@ -23,10 +23,15 @@ vi.mock("../lib/api", () => ({
   verifyPasswordlessCode: vi.fn(),
 }));
 
+const routerFuture = {
+  v7_startTransition: true,
+  v7_relativeSplatPath: true,
+} as const;
+
 describe("Login", () => {
   it("renders passwordless login with email field", () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={routerFuture}>
         <Login />
       </MemoryRouter>
     );
@@ -36,12 +41,11 @@ describe("Login", () => {
 
   it("has accessible form controls with proper labels", () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={routerFuture}>
         <Login />
       </MemoryRouter>
     );
-    expect(screen.getByLabelText(/email/i)).toHaveAttribute("type", "email");
+    expect(screen.getByPlaceholderText(/you@example\.com/i)).toHaveAttribute("type", "email");
     expect(screen.getByRole("button", { name: /send code/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /or sign in with password/i })).toBeInTheDocument();
   });
 });

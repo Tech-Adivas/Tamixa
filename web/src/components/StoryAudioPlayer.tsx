@@ -1,11 +1,16 @@
 /**
  * Global story audio player bar. Uses a single <audio> element in the DOM
  * so playback works reliably (parent sets src and calls play() on the ref).
+ * When avatarVideoUrl is provided, shows a small video preview and uses the video element for playback (video includes audio).
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 export interface StoryAudioPlayerProps {
   audioRef: React.RefObject<HTMLAudioElement | null>;
+  /** When set, playback is from this video (talking-head avatar); video ref is used for time/seek. */
+  videoRef?: React.RefObject<HTMLVideoElement | null>;
+  /** Resolved URL for avatar video; when set, player shows video and uses it for playback. */
+  avatarVideoUrl?: string | null;
   isPlaying: boolean;
   isLoading: boolean;
   title: string | null;
@@ -26,6 +31,8 @@ function formatTime(seconds: number): string {
 
 export default function StoryAudioPlayer({
   audioRef,
+  videoRef,
+  avatarVideoUrl,
   isPlaying,
   isLoading,
   title,
@@ -39,6 +46,7 @@ export default function StoryAudioPlayer({
   const progressRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
+    if (avatarVideoUrl && videoRef?.current) return;
     const el = audioRef.current;
     if (!el) return;
     const onTimeUpdateEv = () => onTimeUpdate(el.currentTime);
@@ -49,18 +57,39 @@ export default function StoryAudioPlayer({
       el.removeEventListener("timeupdate", onTimeUpdateEv);
       el.removeEventListener("durationchange", onDurationChangeEv);
     };
-  }, [audioRef, onTimeUpdate, onDurationChange]);
+  }, [audioRef, avatarVideoUrl, videoRef, onTimeUpdate, onDurationChange]);
+
+  useLayoutEffect(() => {
+    if (!avatarVideoUrl || !videoRef?.current) return;
+    const el = videoRef.current;
+    const onTimeUpdateEv = () => onTimeUpdate(el.currentTime);
+    const onDurationChangeEv = () => onDurationChange(el.duration);
+    el.addEventListener("timeupdate", onTimeUpdateEv);
+    el.addEventListener("durationchange", onDurationChangeEv);
+    return () => {
+      el.removeEventListener("timeupdate", onTimeUpdateEv);
+      el.removeEventListener("durationchange", onDurationChangeEv);
+    };
+  }, [avatarVideoUrl, videoRef, onTimeUpdate, onDurationChange]);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = parseFloat(e.target.value);
-    if (Number.isFinite(v)) onSeek(v);
+    if (!Number.isFinite(v)) return;
+    onSeek(v);
+    if (avatarVideoUrl && videoRef?.current) videoRef.current.currentTime = v;
+    else if (audioRef.current) audioRef.current.currentTime = v;
   };
 
   return (
     <>
-      <audio ref={audioRef} preload="metadata" style={{ display: "none" }} />
+      <audio ref={audioRef as React.RefObject<HTMLAudioElement>} preload="metadata" style={{ display: "none" }} />
       {title == null && !isLoading ? null : (
     <div className="story-audio-player" role="region" aria-label="Story playback">
+      {avatarVideoUrl && videoRef && (
+        <div className="story-audio-player-avatar-wrap" style={{ marginBottom: "0.5rem", borderRadius: 8, overflow: "hidden", maxWidth: 200, aspectRatio: "1" }}>
+          <video ref={videoRef as React.RefObject<HTMLVideoElement>} src={avatarVideoUrl} playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} aria-hidden />
+        </div>
+      )}
       <p className="story-audio-player-title">{title ?? "Loading…"}</p>
       <div className="story-audio-player-controls">
         <button

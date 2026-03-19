@@ -1,6 +1,7 @@
 import type {
   AdminInvoice,
   DashboardKpis,
+  ReferralCode,
   RevenueChartPoint,
   StoryUsageChartPoint,
   SystemMonitoringMetrics,
@@ -62,7 +63,7 @@ export function getMockInvoices(
       parentId: 1,
       email: "parent1@example.com",
       amount: 9.99,
-      currency: "USD",
+      currency: "INR",
       status: "PAID",
       plan: "Monthly",
       dueDate: "2025-02-01",
@@ -74,7 +75,7 @@ export function getMockInvoices(
       parentId: 2,
       email: "parent2@example.com",
       amount: 89.99,
-      currency: "USD",
+      currency: "INR",
       status: "PAID",
       plan: "Annual",
       dueDate: "2025-01-15",
@@ -86,7 +87,7 @@ export function getMockInvoices(
       parentId: 3,
       email: "parent3@example.com",
       amount: 9.99,
-      currency: "USD",
+      currency: "INR",
       status: "PENDING",
       plan: "Monthly",
       dueDate: "2025-02-26",
@@ -98,7 +99,7 @@ export function getMockInvoices(
       parentId: 4,
       email: "parent4@example.com",
       amount: 9.99,
-      currency: "USD",
+      currency: "INR",
       status: "REFUNDED",
       plan: "Monthly",
       dueDate: "2025-01-10",
@@ -293,6 +294,37 @@ export function getMockSubscriptions(
   };
 }
 
+// Referral codes (mock)
+export function getMockReferralCodes(): ReferralCode[] {
+  const now = new Date().toISOString();
+  const nextYear = new Date();
+  nextYear.setFullYear(nextYear.getFullYear() + 1);
+  return [
+    {
+      id: 1,
+      shortcode: "AMAZ5",
+      shopName: "Amazon",
+      offerPercent: 5,
+      expiresAt: nextYear.toISOString(),
+      active: true,
+      stripeCouponId: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 2,
+      shortcode: "SHOPSTOP10",
+      shopName: "ShopStop",
+      offerPercent: 10,
+      expiresAt: nextYear.toISOString(),
+      active: true,
+      stripeCouponId: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+}
+
 export const mockApi = {
   useMock,
   getMockDashboardKpis,
@@ -304,4 +336,5 @@ export const mockApi = {
   getMockStories,
   getMockStoryBody,
   getMockSubscriptions,
+  getMockReferralCodes,
 };

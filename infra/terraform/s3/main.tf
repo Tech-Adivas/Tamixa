@@ -1,10 +1,10 @@
-# S3 audio streaming for Araro production
+# S3 audio streaming for Tamixa production
 # Run from this directory: terraform init && terraform apply
 
 variable "bucket_name" {
   description = "S3 bucket name for narration audio"
   type        = string
-  default     = "araro-audio"
+  default     = "tamixa-audio"
 }
 
 variable "aws_region" {
@@ -36,7 +36,7 @@ resource "aws_s3_bucket" "audio" {
   bucket = var.bucket_name
 
   tags = {
-    Purpose = "araro-narration-audio"
+    Purpose = "tamixa-narration-audio"
   }
 }
 
@@ -71,10 +71,10 @@ resource "aws_s3_bucket_cors_configuration" "audio" {
 }
 
 resource "aws_iam_user" "audio_backend" {
-  name = "araro-audio-backend"
+  name = "tamixa-audio-backend"
 
   tags = {
-    Purpose = "araro-narration-audio"
+    Purpose = "tamixa-narration-audio"
   }
 }
 
@@ -83,7 +83,7 @@ resource "aws_iam_access_key" "audio_backend" {
 }
 
 resource "aws_iam_user_policy" "audio_backend" {
-  name = "araro-audio-s3-access"
+  name = "tamixa-audio-s3-access"
   user = aws_iam_user.audio_backend.name
 
   policy = jsonencode({

@@ -8,9 +8,6 @@ app:
   auth:
     dev-otp-code: ${DEV_OTP_CODE:123456}
     dev-passwordless-code: ${DEV_PASSWORDLESS_CODE:123456}
-  narration:
-    tts-timeout-seconds: 60
-
 spring:
   jpa:
     show-sql: false  # Use org.hibernate.SQL logger instead (show-sql writes to stdout separately = duplicate logs)
@@ -25,5 +22,10 @@ spring:
 
 logging:
   level:
-    com.araro: DEBUG
-    org.springframework.web: DEBUG
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.tamixa: ${LOG_LEVEL_COM_TAMIXA:DEBUG}
+    org.hibernate.SQL: ${LOG_LEVEL_HIBERNATE_SQL:WARN}
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+    # INFO so PIPELINE >>> and RequestLoggingFilter stand out; set LOG_LEVEL_SPRING_WEB=DEBUG for Spring verbosity
+    org.springframework.web: ${LOG_LEVEL_SPRING_WEB:INFO}

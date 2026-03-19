@@ -7,6 +7,10 @@ app:
     require-webhook-payload-encryption: true
 
 spring:
+  flyway:
+    # For horizontally scaled prod, disable on app pods by default and
+    # run one dedicated migration job with FLYWAY_ENABLED=true.
+    enabled: ${FLYWAY_ENABLED:false}
   jpa:
     show-sql: false
     hibernate:
@@ -20,6 +24,6 @@ spring:
 
 logging:
   level:
-    root: WARN
-    com.araro: INFO
-    org.hibernate.SQL: WARN
+    root: ${LOG_LEVEL_ROOT:WARN}
+    com.tamixa: ${LOG_LEVEL_COM_TAMIXA:INFO}
+    org.hibernate.SQL: ${LOG_LEVEL_HIBERNATE_SQL:WARN}

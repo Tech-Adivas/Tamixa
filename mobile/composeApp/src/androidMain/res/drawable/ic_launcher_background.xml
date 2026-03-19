@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Gradient matching Tamixa app icon: sky blue → purple -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#0D0D0D" />
+    <gradient
+        android:type="linear"
+        android:angle="270"
+        android:startColor="#6EC3FF"
+        android:endColor="#7C3AED" />
 </shape>

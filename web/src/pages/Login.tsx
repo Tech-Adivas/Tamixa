@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import {
   authStorage,
@@ -21,6 +21,31 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [ambientPlaying, setAmbientPlaying] = useState(false);
+  const ambientRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const audio = ambientRef.current;
+    if (!audio) return;
+    const onPlay = () => setAmbientPlaying(true);
+    const onPause = () => setAmbientPlaying(false);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
+    return () => {
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
+    };
+  }, []);
+
+  const toggleAmbientSound = () => {
+    const audio = ambientRef.current;
+    if (!audio) return;
+    if (ambientPlaying) {
+      audio.pause();
+    } else {
+      audio.play().catch(() => {});
+    }
+  };
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,11 +106,34 @@ export default function Login() {
   };
 
   return (
-    <main className="page auth-page" role="main" aria-label="Login page">
-      <div className="auth-card">
+    <main className="page auth-page auth-page--bedtime" role="main" aria-label="Login page">
+      <audio
+        ref={ambientRef}
+        src="/audio/calm-ambient.mp3"
+        loop
+        playsInline
+        className="auth-bg-music"
+        preload="metadata"
+      />
+      <button
+        type="button"
+        onClick={toggleAmbientSound}
+        className="auth-ambient-toggle"
+        aria-label={ambientPlaying ? "Mute background sound" : "Play background sound"}
+      >
+        {ambientPlaying ? "🔊 Mute" : "🔈 Play sound"}
+      </button>
+      <div className="auth-page__stars" aria-hidden="true" />
+      <div className="auth-page__lantern auth-page__lantern--1" aria-hidden="true" />
+      <div className="auth-page__lantern auth-page__lantern--2" aria-hidden="true" />
+      <div className="auth-card auth-card--bedtime">
         <Link to="/" className="auth-logo-link">
-          <img src="/araro-logo.svg" alt="Araro" className="auth-logo" />
+          <img src="/tamixa-logo.svg" alt="Tamixa" className="auth-logo" />
         </Link>
+        <p className="auth-welcome">Welcome to Tamixa</p>
+        <p className="auth-tagline auth-tagline--bedtime">
+          Listen your way—personalized for you.
+        </p>
         <h1 id="login-heading">Sign in</h1>
         <p id="login-desc" className="muted">Sign in to access stories for your child.</p>
 

@@ -24,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/layout/page-header";
 import { BookOpen, CheckCircle, XCircle, Flag, FileText } from "lucide-react";
 import { useActionResult } from "@/contexts/action-result-context";
 
@@ -57,6 +59,8 @@ export default function ModerationPage() {
   const [previewBody, setPreviewBody] = useState<string | null>(null);
   const [flagReason, setFlagReason] = useState("");
   const [actioningId, setActioningId] = useState<number | null>(null);
+  const [rejectConfirmId, setRejectConfirmId] = useState<number | null>(null);
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -122,12 +126,24 @@ export default function ModerationPage() {
     try {
       await api.admin.rejectStory(storyId);
       showSuccess("Story rejected", "The story has been rejected and the action has been logged.");
+      setRejectConfirmId(null);
       closePreview();
       load();
     } catch {
       showError("Rejection failed", "Unable to reject the story. Please try again.");
+      throw new Error("Rejection failed");
     } finally {
       setActioningId(null);
+    }
+  };
+
+  const handleRejectConfirm = async () => {
+    if (rejectConfirmId == null) return;
+    setRejectSubmitting(true);
+    try {
+      await handleReject(rejectConfirmId);
+    } finally {
+      setRejectSubmitting(false);
     }
   };
 
@@ -147,32 +163,28 @@ export default function ModerationPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Story moderation
-          </h1>
-          <p className="text-muted-foreground">
-            Review generated stories. Approve, reject, or flag. All actions are
-            logged in the audit trail.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <PageHeader
+          title="Story moderation"
+          description="Review generated stories. Approve, reject, or flag. All actions are logged in the audit trail."
+          breadcrumbs
+        />
+        <div className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
           <FileText className="h-4 w-4" aria-hidden />
           <span>Actions are audited</span>
         </div>
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4 pb-2">
+        <CardHeader className="card-header-responsive pb-2">
           <CardTitle>Stories</CardTitle>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="filters-row">
             <Input
               placeholder="Filter by theme"
               value={themeFilter}
               onChange={(e) => setThemeFilter(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && (setThemeQuery(themeFilter), setPage(0))}
-              className="w-[160px]"
+              className="min-w-0 flex-1 sm:w-[160px]"
             />
             <Button
               variant="outline"
@@ -188,7 +200,7 @@ export default function ModerationPage() {
                 setPage(0);
               }}
             >
-              <SelectTrigger className="w-[130px]">
+              <SelectTrigger className="w-full min-w-[100px] sm:w-[130px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -286,7 +298,7 @@ export default function ModerationPage() {
                       ))}
                     </TableBody>
                   </Table>
-                  <div className="mt-4 flex items-center justify-between">
+                  <div className="pagination-row mt-4">
                     <p className="text-sm text-muted-foreground">
                       {data.totalElements} total · page {data.page + 1} of{" "}
                       {data.totalPages || 1}
@@ -365,7 +377,7 @@ export default function ModerationPage() {
               variant="outline"
               className="text-destructive hover:bg-destructive/10"
               disabled={actioningId !== null}
-              onClick={() => previewStory && handleReject(previewStory.id)}
+              onClick={() => previewStory && setRejectConfirmId(previewStory.id)}
             >
               <XCircle className="mr-2 h-4 w-4" />
               Reject
@@ -381,6 +393,17 @@ export default function ModerationPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={rejectConfirmId != null}
+        onOpenChange={(open) => !open && setRejectConfirmId(null)}
+        title="Reject story"
+        description="Reject this story? The action will be logged in the audit trail. The story will not be published."
+        confirmLabel="Reject"
+        variant="destructive"
+        loading={rejectSubmitting}
+        onConfirm={handleRejectConfirm}
+      />
     </div>
   );
 }

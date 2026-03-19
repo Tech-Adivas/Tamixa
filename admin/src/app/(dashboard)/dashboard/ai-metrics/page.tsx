@@ -1,41 +1,83 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
-import type { AiMetricsDto } from "@/types/api";
+import type { AiMetricsDto, ApiUsageDto, StoryAiUsageDto } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/layout/page-header";
+import { Cpu, Lightbulb, BarChart3 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatUsdToInr, formatInr } from "@/lib/currency";
+
+function formatTokens(value: number | null | undefined): string {
+  if (value == null) return "—";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
+  return String(value);
+}
+
+function formatTokensOrChars(value: number | null | undefined): string {
+  if (value == null || value === 0) return "—";
+  return formatTokens(value);
+}
 
 export default function AiMetricsPage() {
   const [data, setData] = useState<AiMetricsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     setError(null);
     api.admin
       .getAiMetrics()
       .then(setData)
-      .catch((e) => setError(e.message))
+      .catch((e) => {
+        const msg = e?.message ?? String(e);
+        setError(msg.includes("403") || msg.includes("Forbidden") ? "You don’t have permission to view AI metrics." : msg);
+      })
       .finally(() => setLoading(false));
-  };
+  }, []);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
+
+  const cacheTotal = data ? data.cacheHits + data.cacheMisses : 0;
+  const cacheHitRate = cacheTotal > 0 ? ((data!.cacheHits / cacheTotal) * 100).toFixed(1) : null;
+
+  const apiBreakdown = data?.apiBreakdown ?? [];
+  const storyBreakdown = data?.storyBreakdown ?? [];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">AI usage metrics</h1>
-        <p className="text-muted-foreground">
-          Story generation and OpenAI token usage (when tracked by backend).
-        </p>
-      </div>
+      <PageHeader
+        title="AI usage metrics"
+        description="Story generation, cache, voice processing, and per-API usage from the backend."
+        breadcrumbs
+      />
+      <Card className="border-primary/30 bg-primary/5">
+        <CardContent className="pt-6">
+          <div className="flex gap-3">
+            <Lightbulb className="h-5 w-5 shrink-0 text-primary" />
+            <div className="text-sm">
+              <p className="font-medium text-foreground">Recommendation</p>
+              <p className="text-muted-foreground mt-0.5">
+                Use <strong>Google Cloud TTS</strong> for default and cloned (Tamil) narration for best cost and quality.
+                Add Vertex/Gemini-TTS only if you need prompt-driven style. Avatar video: HeyGen primary; Replicate/D-ID as fallbacks.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle>Metrics</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Cpu className="h-5 w-5 text-muted-foreground" />
+            Metrics
+          </CardTitle>
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
             {loading ? "Refreshing…" : "Refresh"}
           </Button>
@@ -44,34 +86,118 @@ export default function AiMetricsPage() {
           {error && (
             <p className="mb-4 text-sm text-destructive">{error}</p>
           )}
-          {!error && data && (
-            <dl className="grid gap-4 sm:grid-cols-2">
+          {loading && !data && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-8 w-20" />
+                </div>
+              ))}
+            </div>
+          )}
+          {!error && data && !loading && (
+            <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
                 <dt className="text-sm text-muted-foreground">Story generations (total)</dt>
-                <dd className="text-2xl font-semibold">{data.storyGenerationsTotal}</dd>
+                <dd className="text-2xl font-semibold">{data.storyGenerationsTotal.toLocaleString()}</dd>
               </div>
               <div>
                 <dt className="text-sm text-muted-foreground">Cache hits</dt>
-                <dd className="text-2xl font-semibold">{data.cacheHits}</dd>
+                <dd className="text-2xl font-semibold">{data.cacheHits.toLocaleString()}</dd>
               </div>
               <div>
                 <dt className="text-sm text-muted-foreground">Cache misses</dt>
-                <dd className="text-2xl font-semibold">{data.cacheMisses}</dd>
+                <dd className="text-2xl font-semibold">{data.cacheMisses.toLocaleString()}</dd>
               </div>
+              {cacheHitRate != null && (
+                <div>
+                  <dt className="text-sm text-muted-foreground">Cache hit rate</dt>
+                  <dd className="text-2xl font-semibold">{cacheHitRate}%</dd>
+                </div>
+              )}
               <div>
                 <dt className="text-sm text-muted-foreground">Voice processing count</dt>
-                <dd className="text-2xl font-semibold">{data.voiceProcessingCount}</dd>
+                <dd className="text-2xl font-semibold">{data.voiceProcessingCount.toLocaleString()}</dd>
               </div>
               <div>
                 <dt className="text-sm text-muted-foreground">OpenAI tokens used</dt>
-                <dd className="text-2xl font-semibold">
-                  {data.openaiTokensUsed ?? "—"}
-                </dd>
+                <dd className="text-2xl font-semibold">{formatTokens(data.openaiTokensUsed)}</dd>
               </div>
             </dl>
           )}
         </CardContent>
       </Card>
+
+      {apiBreakdown.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-muted-foreground" />
+              Per API
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>API</TableHead>
+                  <TableHead className="text-right">Requests</TableHead>
+                  <TableHead className="text-right">Tokens / characters</TableHead>
+                  <TableHead className="text-right">Cost (₹)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {apiBreakdown.map((row: ApiUsageDto) => (
+                  <TableRow key={row.api}>
+                    <TableCell className="font-medium">{row.displayName}</TableCell>
+                    <TableCell className="text-right">{row.requests.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{formatTokensOrChars(row.tokensOrCharacters)}</TableCell>
+                    <TableCell className="text-right">{formatUsdToInr(row.costEstimateUsd)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {storyBreakdown.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-muted-foreground" />
+              Per story (top by tokens)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Story ID</TableHead>
+                  <TableHead>Title</TableHead>
+                  <TableHead className="text-right">Tokens</TableHead>
+                  <TableHead className="text-right">Avatar videos</TableHead>
+                  <TableHead className="text-right">Cost (₹)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {storyBreakdown.map((row: StoryAiUsageDto) => (
+                  <TableRow key={row.storyId}>
+                    <TableCell className="font-mono text-sm">{row.storyId}</TableCell>
+                    <TableCell className="max-w-[200px] truncate" title={row.title ?? undefined}>
+                      {row.title ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right">{formatTokensOrChars(row.totalTokens)}</TableCell>
+                    <TableCell className="text-right">{row.avatarVideoCount.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{formatInr(row.costInr)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

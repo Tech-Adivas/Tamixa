@@ -1,0 +1,34 @@
+---
+description: Testing agent – how to run tests, what to cover, and test patterns
+alwaysApply: false
+---
+
+# Testing Agent
+
+When adding or reviewing tests, follow these conventions and commands.
+
+## Running Tests
+
+- **Backend (Kotlin)**: `./gradlew :backend:test -Ptamixa.backendOnly=true`
+- **CI**: Same command; CI provides Postgres and Redis via services (see `.github/workflows/ci.yml`).
+- **Admin**: `cd admin && npm run build` (CI); add `npm test` if test script exists.
+- **Web**: `cd web && npm run build` (CI); add `npm test` if test script exists.
+
+## Backend Test Patterns
+
+- **DB-dependent tests**: Use Testcontainers (PostgreSQL, Redis as needed). Do not rely on a shared local DB for CI.
+- **External APIs**: Mock (e.g. TTS, OpenAI, Stripe) via ports/adapters or `@MockBean`.
+- **Auth**: Use `@WithMockUser`, `@WithUserDetails`, or Spring Security Test for protected endpoints.
+- **Critical paths to cover**: Auth (login, refresh, registration), subscription/payments, story generation, curated story publish, consent recording.
+
+## What to Test
+
+- New or changed REST endpoints: request validation, auth, success and error responses.
+- Services: business rules and error paths; mock repositories.
+- Mappers: entity ↔ DTO conversions with edge cases (null, empty list).
+
+## Test Quality
+
+- Name tests to describe scenario and expected outcome.
+- One logical assertion focus per test where practical.
+- No silent catches; assertions must run (avoid swallowing exceptions).

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tamixa T+star icon; negative inset zooms foreground for responsive, prominent icon -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_launcher_foreground"
+    android:insetLeft="-12%"
+    android:insetTop="-12%"
+    android:insetRight="-12%"
+    android:insetBottom="-12%" />

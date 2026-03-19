@@ -1,0 +1,41 @@
+---
+description: Story and narration prompt agent – safety, consistency, Tamixa persona
+alwaysApply: false
+---
+
+# Prompt / Story Agent
+
+When changing story generation or narration prompts, follow these rules. Reference [docs/backend/StoryPromptExamples.md](docs/backend/StoryPromptExamples.md) and [StoryPromptBuilder](backend/src/main/kotlin/com/tamixa/application/story/StoryPromptBuilder.kt).
+
+## Tamixa Persona
+
+- Warm, engaging, narration-friendly stories for children and families.
+- System message is static and cacheable; user prompt injects language, child name, age, theme, and optional extras from the request only (never hardcode).
+
+## Safety (Mandatory)
+
+- **Banned in prompts and output**: No violence, weapons, politics, religious conflict, war, death, drugs, alcohol, self-harm, or adult themes.
+- **No raw user input in prompts** – Use only sanitized inputs from StorySafetyMiddleware / SanitizedInput; never concatenate unsanitized request text into prompts.
+- **No PII in prompts** – Child name and age are allowed (from request); do not inject email, phone, or other PII into prompt text.
+
+## Output Shape
+
+- JSON only: `title`, `category`, `theme`, `moral`, `story_text`, `estimated_duration_seconds` (number).
+- Backend requires at least: `title`, `moral`, `story_text`, `estimated_duration_seconds`.
+- Instruct model: "Return only valid JSON … No markdown, no code block."
+
+## Structure & Consistency
+
+- **System message**: Requirements, word/paragraph rules (~900–1500 words, 1–3 sentences per paragraph), TTS/narration-friendly, positive ending, one short moral.
+- **User prompt**: Language, child name, age, theme; optional interests/color/animal; cultural hint from `StoryPromptBuilder.culturalHint`; vocabulary and length constraints.
+- **Fallback prompt**: Same structure as user prompt; use when primary response fails parse/validation; can reinforce "~10 minutes (estimated_duration_seconds around 600)".
+
+## Age & Culture
+
+- Age-based vocabulary: 1–4 very simple; 5–7 clear everyday words; 8–12 richer but still child-appropriate (see StoryPromptExamples.md).
+- Cultural hints per language (e.g. Tamil: family, village/town, respect for elders, friendship, nature). Keep in sync with `StoryPromptBuilder` and docs.
+
+## When Changing Prompts
+
+- Update [docs/backend/StoryPromptExamples.md](docs/backend/StoryPromptExamples.md) if you add or change system/user examples or rules.
+- Keep StoryPromptBuilder and NarrationOpenAIAdapter (or other adapters) aligned with the same safety and JSON shape.

@@ -1,5 +1,5 @@
 /**
- * Shared API configuration for Araro apps.
+ * Shared API configuration for Tamixa apps.
  * Use localhost for local development. Override via env vars for staging/production.
  *
  * Usage:
@@ -23,5 +23,5 @@ export const DEFAULT_WEB_APP_URL = "http://localhost:3000";
 /** Subscription management page path. Mobile "Manage" opens BASE + SUBSCRIPTION_PATH. */
 export const SUBSCRIPTION_PATH = "/subscription";
 
-/** Full subscription URL for dev. Override with ARARO_WEB_APP_URL in production. */
+/** Full subscription URL for dev. Override with TAMIXA_WEB_APP_URL in production. */
 export const DEFAULT_SUBSCRIPTION_URL = `${DEFAULT_WEB_APP_URL}${SUBSCRIPTION_PATH}`;

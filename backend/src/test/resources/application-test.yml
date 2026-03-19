@@ -8,7 +8,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
-    show-sql: true
+    show-sql: false  # Use org.hibernate.SQL logger; set LOG_LEVEL_HIBERNATE_SQL=DEBUG for SQL in tests
 
 # Rate limit: low for tests so we can hit 429 quickly
 app:
@@ -29,4 +29,5 @@ management:
 logging:
   level:
     root: INFO
-    com.araro: DEBUG
+    com.tamixa: DEBUG
+    org.hibernate.SQL: WARN

@@ -1,9 +1,17 @@
+buildscript {
+    repositories { mavenCentral() }
+    dependencies {
+        classpath("org.flywaydb:flyway-database-postgresql:10.8.1")
+    }
+}
+
 plugins {
     id("org.springframework.boot") version "3.2.5"
     id("io.spring.dependency-management") version "1.1.4"
     kotlin("jvm") version "1.9.24"
     kotlin("plugin.spring") version "1.9.24"
     kotlin("plugin.jpa") version "1.9.24"
+    id("org.flywaydb.flyway") version "10.8.1"
 }
 
 java {
@@ -41,6 +49,8 @@ dependencies {
 
     implementation("software.amazon.awssdk:s3:2.25.0")
 
+    implementation("com.google.cloud:google-cloud-speech:4.81.0")
+
     implementation("com.stripe:stripe-java:24.0.0")
     implementation("org.flywaydb:flyway-core")
 
@@ -52,8 +62,47 @@ dependencies {
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
 }
 
+// Load .env from project root (for bootRun and Flyway)
+fun loadEnv(): Map<String, String> {
+    val envFile = rootProject.projectDir.resolve(".env")
+    if (!envFile.exists()) return emptyMap()
+    return envFile.readLines().mapNotNull { line ->
+        val trimmed = line.trim()
+        if (trimmed.isEmpty() || trimmed.startsWith("#") || !trimmed.contains("=")) return@mapNotNull null
+        val eq = trimmed.indexOf('=')
+        val key = trimmed.substring(0, eq).trim()
+        var value = trimmed.substring(eq + 1).trim()
+        if (!value.startsWith("\"") && !value.startsWith("'")) {
+            val hash = value.indexOf('#')
+            if (hash >= 0) value = value.substring(0, hash).trim()
+        }
+        if (value.startsWith("\"") && value.endsWith("\"")) value = value.drop(1).dropLast(1)
+        if (value.startsWith("'") && value.endsWith("'")) value = value.drop(1).dropLast(1)
+        key to value
+    }.toMap()
+}
+
+val envMap = loadEnv()
+val flywayUrl = envMap["DATABASE_URL"] ?: "jdbc:postgresql://${envMap["POSTGRES_HOST"] ?: "localhost"}:${envMap["POSTGRES_PORT"] ?: "5432"}/${envMap["POSTGRES_DB"] ?: "araro_kids"}"
+val flywayUser = envMap["POSTGRES_USER"] ?: envMap["DATABASE_USERNAME"] ?: "postgres"
+val flywayPassword = envMap["POSTGRES_PASSWORD"] ?: envMap["DATABASE_PASSWORD"] ?: "postgres"
+
+flyway {
+    url = flywayUrl
+    user = flywayUser
+    password = flywayPassword
+    locations = arrayOf("classpath:db/migration")
+    baselineOnMigrate = true
+}
+
 // Load .env from project root into bootRun so AWS_*, S3_*, etc. are available when running locally
 tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+    jvmArgs = listOf(
+        "-Xmx1g",
+        "-Xms256m",
+        "-XX:+HeapDumpOnOutOfMemoryError",
+        "-XX:HeapDumpPath=build/heap-dump.hprof"
+    )
     doFirst {
         val envFile = rootProject.projectDir.resolve(".env")
         if (envFile.exists()) {
@@ -63,6 +112,11 @@ tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
                     val eq = trimmed.indexOf('=')
                     val key = trimmed.substring(0, eq).trim()
                     var value = trimmed.substring(eq + 1).trim()
+                    // Strip inline # comment (value must not be quoted for comment to apply)
+                    if (!value.startsWith("\"") && !value.startsWith("'")) {
+                        val hash = value.indexOf('#')
+                        if (hash >= 0) value = value.substring(0, hash).trim()
+                    }
                     if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
                         value = value.drop(1).dropLast(1)
                     }

@@ -1,0 +1,36 @@
+---
+description: Observability agent – logging, metrics, tracing, and production visibility
+alwaysApply: false
+---
+
+# Observability Agent
+
+When adding or changing logging, metrics, or health, keep production visibility high and avoid leaking secrets or PII.
+
+## Logging
+
+- **Structured logging** – Use structured fields (e.g. MDC, key-value pairs) so logs are queryable. Include correlation IDs or request IDs when available.
+- **Levels**: `info` for business events (e.g. story created, subscription updated); `warn` for recoverable issues (e.g. retry, fallback); `error` for failures with stack trace when useful.
+- **Never log secrets or PII** – No passwords, tokens, API keys, full child names, emails, or phones in log messages or structured fields. Mask with `***${last4}` or omit.
+- **Log location** – Prefer SLF4J/Logback; config in `application*.yml` under `logging` (e.g. `path`, level per package).
+
+## Metrics
+
+- **Micrometer** – Use the existing `MeterRegistry` and the centralized [ApplicationMetrics](backend/src/main/java/com/tamixa/infrastructure/observability/ApplicationMetrics.java) where applicable. Add new timers, counters, or gauges there for story generation, voice, cache, moderation, and tokens rather than ad-hoc registries.
+- **Naming** – Use dot-separated, lowercase names (e.g. `story_generation_latency`, `story.cache.hits`, `moderation_failure_count`). Use tags for dimensions (e.g. `layer` for moderation).
+- **Actuator** – Metrics and health exposed under `/actuator` (health, info, metrics, prometheus). Do not expose sensitive data via actuator; keep `show-details` for health appropriate to env (e.g. when-authorized in prod).
+
+## Traces and Request Context
+
+- If request tracing is added, propagate trace/span IDs in logs and optionally in response headers. Use consistent naming (e.g. `traceId`, `spanId`) for correlation.
+
+## What to Instrument
+
+- **Latency**: Critical paths (story generation, voice processing, external API calls) – use `ApplicationMetrics` timers or equivalent.
+- **Counts**: Failures, cache hit/miss, validation failures, fallback usage, token usage – use counters/gauges.
+- **Health**: DB, Redis, and critical external deps in actuator health; keep checks fast and non-blocking.
+
+## Production
+
+- In production config, avoid verbose or debug logging for application packages; use log sampling or rate limiting for very chatty log lines if needed.
+- Ensure metrics naming is stable; avoid high-cardinality tags (e.g. user ID) unless required and supported by the metrics backend.

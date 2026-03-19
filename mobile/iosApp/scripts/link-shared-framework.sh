@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates Araro/Frameworks/shared.framework as a symlink to the Gradle-built framework.
+# Creates Tamixa/Frameworks/shared.framework as a symlink to the Gradle-built framework.
 # Run from repo root: ./mobile/iosApp/scripts/link-shared-framework.sh
 # Or from mobile/iosApp: ./scripts/link-shared-framework.sh
 # Options: --simulator (default) | --device; --debug (default) | --release; --link-only (skip Gradle build)
@@ -20,7 +20,7 @@ for arg in "$@"; do
     -h|--help)
       echo "Usage: $0 [--simulator|--device] [--debug|--release] [--link-only]"
       echo "  Defaults: --simulator --debug"
-      echo "  Builds the shared Kotlin framework and symlinks it to Araro/Frameworks/shared.framework"
+      echo "  Builds the shared Kotlin framework and symlinks it to Tamixa/Frameworks/shared.framework"
       echo "  Use --link-only to only create the symlink (framework must already be built)."
       exit 0
       ;;
@@ -49,7 +49,7 @@ if [ -z "$LINK_ONLY" ]; then
     exit 1
   fi
   echo "Building framework: $TASK"
-  ./gradlew "$TASK" -Pkotlin.native.cacheKind=none -Pararo.iosOnly=true
+  ./gradlew "$TASK" -Pkotlin.native.cacheKind=none -Ptamixa.iosOnly=true
 fi
 
 ABS_SRC="$(pwd)/$FRAMEWORK_SRC"
@@ -58,7 +58,7 @@ if [ ! -f "$ABS_SRC/Headers/shared.h" ]; then
   exit 1
 fi
 
-FRAMEWORK_DST="$IOS_APP_DIR/Araro/Frameworks/shared.framework"
+FRAMEWORK_DST="$IOS_APP_DIR/Tamixa/Frameworks/shared.framework"
 mkdir -p "$(dirname "$FRAMEWORK_DST")"
 rm -rf "$FRAMEWORK_DST"
 ln -s "$ABS_SRC" "$FRAMEWORK_DST"

@@ -1,19 +1,32 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans } from "next/font/google";
+import { Nunito, Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/auth-context";
 import { ActionResultProvider } from "@/contexts/action-result-context";
 import { Providers } from "@/components/providers";
 
-const ibmPlexSans = IBM_Plex_Sans({
+const nunito = Nunito({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "600", "700", "800"],
   variable: "--font-sans",
 });
 
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-inter",
+});
+
 export const metadata: Metadata = {
-  title: "Araro Admin",
-  description: "Admin dashboard for Araro",
+  title: "Tamixa Admin",
+  description: "Admin dashboard for Tamixa",
+  icons: { icon: "/favicon.svg" },
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default function RootLayout({
@@ -23,7 +36,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${ibmPlexSans.variable} font-sans antialiased`}>
+      <body className={`${nunito.variable} ${inter.variable} font-sans antialiased`}>
         <Providers>
           <AuthProvider>
             <ActionResultProvider>

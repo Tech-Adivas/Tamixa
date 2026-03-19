@@ -4,7 +4,6 @@ import { useAuth } from "../contexts/AuthContext";
 const navItems = [
   { to: "/dashboard", label: "Home" },
   { to: "/stories", label: "Stories" },
-  { to: "/children", label: "Children" },
   { to: "/subscription", label: "Subscription" },
   { to: "/voice", label: "Voice" },
   { to: "/settings", label: "Settings" },
@@ -18,9 +17,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="app-layout">
       <header className="app-header" role="banner">
         <div className="app-header-inner">
-          <Link to="/dashboard" className="app-logo" aria-label="Araro Home">
-            <img src="/araro-logo.svg" alt="" className="app-logo-img" />
-            <span className="app-logo-text">ஆராரோ</span>
+          <Link to="/dashboard" className="app-logo" aria-label="Tamixa Home">
+            <span className="tamixa-app-icon">
+              <img src="/tamixa-logo.svg" alt="" className="app-logo-img" />
+            </span>
+            <span className="app-logo-text">Tamixa</span>
           </Link>
           <nav className="app-nav" aria-label="Main navigation">
             {navItems.map(({ to, label }) => (

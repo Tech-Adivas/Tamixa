@@ -10,7 +10,7 @@ export default function Terms() {
         <h1>Terms of Service</h1>
         <p className="muted">Last updated: March 2026.</p>
         <p>
-          By creating an account, you agree to use Araro in accordance with these terms. You must be a parent or
+          By creating an account, you agree to use Tamixa in accordance with these terms. You must be a parent or
           guardian (18 or older) to register. You are responsible for the use of the service under your account and for
           ensuring that any child data you provide is given with your consent.
         </p>

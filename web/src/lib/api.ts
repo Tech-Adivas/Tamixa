@@ -1,5 +1,5 @@
 /**
- * Araro Web API client.
+ * Tamixa Web API client.
  * In the browser we use the full backend URL so the Authorization header is sent
  * (Vite proxy can strip it, causing "Unauthorized. Please log in.").
  */
@@ -47,21 +47,21 @@ export async function fetchStreamAsBlobUrl(streamUrl: string): Promise<string> {
 }
 
 function getStoredToken(): string | null {
-  return localStorage.getItem("araro_access_token");
+  return localStorage.getItem("tamixa_access_token");
 }
 
 function getStoredRefreshToken(): string | null {
-  return localStorage.getItem("araro_refresh_token");
+  return localStorage.getItem("tamixa_refresh_token");
 }
 
 function setStoredTokens(access: string, refresh: string) {
-  localStorage.setItem("araro_access_token", access);
-  localStorage.setItem("araro_refresh_token", refresh);
+  localStorage.setItem("tamixa_access_token", access);
+  localStorage.setItem("tamixa_refresh_token", refresh);
 }
 
 export function clearStoredTokens() {
-  localStorage.removeItem("araro_access_token");
-  localStorage.removeItem("araro_refresh_token");
+  localStorage.removeItem("tamixa_access_token");
+  localStorage.removeItem("tamixa_refresh_token");
 }
 
 export interface AuthResponse {
@@ -76,23 +76,12 @@ export interface CurrentUser {
   role: string;
 }
 
-export interface Child {
-  id: number;
-  name: string;
-  dateOfBirth: string;
-  languagePreference: string | null;
-  interests?: string | null;
-  favoriteColor?: string | null;
-  favoriteAnimal?: string | null;
-  characterTraits?: string | null;
-  avatarChoice?: string | null;
-}
-
-export interface CuratedStory {
+export interface LibraryStory {
   id: number;
   title: string | null;
   content: string;
   theme: string;
+  category?: string | null;
   language: string;
   age: number;
   childName: string;
@@ -139,7 +128,8 @@ export interface GenerateStoryRequest {
   age: number;
   language?: string;
   theme: string;
-  childName: string;
+  /** Optional; when blank or omitted, backend uses "Listener". */
+  childName?: string;
   childId?: number | null;
   emotionMode?: string | null;
   parentCustomPrompt?: string | null;
@@ -148,6 +138,34 @@ export interface GenerateStoryRequest {
 
 export interface StreamUrlResponse {
   streamUrl: string;
+  avatarUrl?: string | null;
+  avatarVideoUrl?: string | null;
+}
+
+/** Playback manifest (timeline) — scenes with segments for subtitle sync. From GET /stories/{id}/timeline. */
+export interface PlaybackManifest {
+  storyId: string;
+  title: string;
+  storySource: string;
+  audioUrl: string;
+  coverImageUrl?: string | null;
+  coverVideoUrl?: string | null;
+  scenes: PlaybackScene[];
+  totalDurationMs: number;
+}
+
+export interface PlaybackScene {
+  sceneId: string;
+  backgroundHint?: string | null;
+  segments: PlaybackSegment[];
+}
+
+export interface PlaybackSegment {
+  segmentId: string;
+  speaker: string;
+  text: string;
+  audioUrl: string;
+  durationMs: number;
 }
 
 export interface VoiceOption {
@@ -247,55 +265,13 @@ export async function getMe(): Promise<CurrentUser> {
   return res.json();
 }
 
-// Children
-export async function getChildren(): Promise<Child[]> {
-  const res = await fetchWithAuth("/children");
+/** Permanently delete the authenticated account and all data (GDPR). */
+export async function deleteAccount(): Promise<void> {
+  const res = await fetchWithAuth("/auth/account", { method: "DELETE" });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { message?: string };
-    throw new Error(err?.message ?? "Failed to load children");
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err?.message ?? "Account deletion failed");
   }
-  return res.json();
-}
-
-export async function createChild(data: {
-  name: string;
-  dateOfBirth: string;
-  languagePreference?: string | null;
-  interests?: string | null;
-  favoriteColor?: string | null;
-  favoriteAnimal?: string | null;
-  characterTraits?: string | null;
-  avatarChoice?: string | null;
-  childProfileConsent?: boolean;
-}): Promise<Child> {
-  const res = await fetchWithAuth("/children", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { message?: string };
-    throw new Error(err?.message ?? "Failed to create child");
-  }
-  return res.json();
-}
-
-export async function updateChild(id: number, data: {
-  languagePreference?: string | null;
-  interests?: string | null;
-  favoriteColor?: string | null;
-  favoriteAnimal?: string | null;
-  characterTraits?: string | null;
-  avatarChoice?: string | null;
-}): Promise<Child> {
-  const res = await fetchWithAuth(`/children/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { message?: string };
-    throw new Error(err?.message ?? "Failed to update child");
-  }
-  return res.json();
 }
 
 // Search stories (curated + generated) — aligns with mobile Search
@@ -331,8 +307,8 @@ export async function searchStories(
 }
 
 // Curated stories (browse library)
-export async function getCuratedStories(language = "ta"): Promise<CuratedStory[]> {
-  const res = await fetchWithAuth(`/stories/curated?language=${encodeURIComponent(language)}&size=50`);
+export async function getLibraryStories(language = "ta"): Promise<LibraryStory[]> {
+  const res = await fetchWithAuth(`/stories/library?language=${encodeURIComponent(language)}&size=50`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { message?: string };
     throw new Error(err?.message ?? "Failed to load stories");
@@ -373,24 +349,27 @@ export async function getAvailableVoices(storyId: number, language = "ta"): Prom
 }
 
 /**
- * Fetch signed stream URL for a story. Links audio to the correct backend stream by source.
+ * Fetch signed stream URL and optional avatar URLs for a story.
  * Pass voiceProfile for multi-voice (e.g. "calm"). storySource ensures curated vs generated use the right endpoint.
- * Returns null on 404. Throws on 402 (UpgradeRequired) with upgrade message.
+ * playbackMode: default | my_voice | avatar. Only "avatar" triggers avatar video. "my_voice" = audio only.
+ * Returns full response (streamUrl, avatarUrl, avatarVideoUrl) or null on 404. Throws on 402 (UpgradeRequired).
  */
 export async function getStreamUrl(
   storyId: number,
   language = "ta",
   voiceProfile?: string | null,
-  storySource?: string | null
-): Promise<string | null> {
+  storySource?: string | null,
+  playbackMode?: string | null
+): Promise<StreamUrlResponse | null> {
   const params = new URLSearchParams({ language });
   if (voiceProfile && voiceProfile !== "default") params.set("voiceProfile", voiceProfile);
+  if (playbackMode && ["default", "my_voice", "avatar"].includes(playbackMode)) params.set("playbackMode", playbackMode);
   const qs = params.toString();
   const suffix = qs ? `?${qs}` : "";
   const base = "/stories";
   const path =
-    storySource === "curated"
-      ? `${base}/curated/${storyId}/stream-url${suffix}`
+    storySource === "library"
+      ? `${base}/library/${storyId}/stream-url${suffix}`
       : storySource === "generated" || storySource === "mine"
         ? `${base}/generated/${storyId}/stream-url${suffix}`
         : `${base}/${storyId}/stream-url${suffix}`;
@@ -404,14 +383,34 @@ export async function getStreamUrl(
     return null;
   }
   const data = (await res.json()) as StreamUrlResponse;
-  return data.streamUrl ?? null;
+  if (!data?.streamUrl) return null;
+  return data;
 }
 
-export async function generateStoryCover(storyId: number): Promise<Story> {
-  const res = await fetchWithAuth(`/stories/${storyId}/generate-cover`, { method: "POST" });
+/**
+ * Fetch playback manifest (timeline) with scenes and segments for subtitle sync.
+ * Use for karaoke-style playback; each segment can have its own audioUrl when per-segment TTS is enabled.
+ */
+export async function getTimeline(
+  storyId: number,
+  language = "ta",
+  storySource?: string | null,
+  voiceProfile?: string | null
+): Promise<PlaybackManifest | null> {
+  const params = new URLSearchParams({ language });
+  if (storySource) params.set("storySource", storySource);
+  if (voiceProfile && voiceProfile !== "default") params.set("voiceProfile", voiceProfile);
+  const qs = params.toString();
+  const res = await fetchWithAuth(`/stories/${storyId}/timeline${qs ? `?${qs}` : ""}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function regenerateStoryCover(storyId: number): Promise<Story> {
+  const res = await fetchWithAuth(`/stories/${storyId}/regenerate-cover`, { method: "POST" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { message?: string };
-    throw new Error(err?.message ?? "Cover generation failed");
+    throw new Error(err?.message ?? "Regenerate cover failed");
   }
   return res.json();
 }
@@ -424,22 +423,6 @@ export async function remixStory(storyId: number, remixInstruction: string): Pro
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { message?: string };
     throw new Error(err?.message ?? "Remix failed");
-  }
-  return res.json();
-}
-
-export interface Soundscape {
-  id: string;
-  name: string;
-  description: string;
-  url: string;
-}
-
-export async function getSoundscapes(): Promise<Soundscape[]> {
-  const res = await fetch(`${API_BASE}/soundscapes`);
-  if (!res.ok) {
-    logger.warn("api", "getSoundscapes failed", { status: res.status });
-    return [];
   }
   return res.json();
 }
@@ -598,6 +581,50 @@ export async function cancelSubscription(): Promise<void> {
   if (!res.ok) throw new Error("Failed to cancel");
 }
 
+/** Referral code validation response. */
+export interface ReferralCodeValidateResponse {
+  valid: boolean;
+  shortcode?: string | null;
+  shopName?: string | null;
+  offerPercent?: number | null;
+}
+
+/** Validate a referral code. Returns discount info if valid and not expired. */
+export async function validateReferralCode(code: string): Promise<ReferralCodeValidateResponse> {
+  const res = await fetchWithAuth(
+    `/subscription/referral-code/validate?code=${encodeURIComponent(code.trim().toUpperCase())}`
+  );
+  if (!res.ok) return { valid: false };
+  return res.json();
+}
+
+/** Upgrade response with Stripe checkout URL. */
+export interface UpgradeResponse {
+  checkoutUrl: string;
+}
+
+/** Create checkout session for subscription upgrade. Pass referralCode to apply discount. Returns URL to redirect to. */
+export async function createCheckoutSession(options?: {
+  successUrl?: string | null;
+  cancelUrl?: string | null;
+  referralCode?: string | null;
+}): Promise<string | null> {
+  const res = await fetchWithAuth("/subscription/upgrade", {
+    method: "POST",
+    body: JSON.stringify({
+      successUrl: options?.successUrl ?? null,
+      cancelUrl: options?.cancelUrl ?? null,
+      referralCode: options?.referralCode?.trim() || null,
+    }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err?.message ?? "Failed to start checkout");
+  }
+  const data = (await res.json()) as UpgradeResponse;
+  return data?.checkoutUrl ?? null;
+}
+
 // Voice profiles
 export interface VoiceProfile {
   id: number;
@@ -719,9 +746,19 @@ export async function verifyPasswordlessCode(
   return res.json();
 }
 
-export async function uploadVoiceProfile(file: File): Promise<VoiceProfile> {
+export async function uploadVoiceProfile(
+  file: File,
+  consentFile?: File | null,
+  userConsent?: boolean
+): Promise<VoiceProfile> {
   const formData = new FormData();
   formData.append("file", file);
+  if (consentFile && consentFile.size > 0) {
+    formData.append("consentFile", consentFile);
+  }
+  if (userConsent) {
+    formData.append("userConsent", "true");
+  }
   const token = getStoredToken();
   const headers: HeadersInit = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -769,39 +806,6 @@ export async function getReadyVoices(): Promise<VoiceCloningJob[]> {
 export async function getVoiceTiers(): Promise<VoiceTier[]> {
   const res = await fetchWithAuth("/voice-cloning/tiers");
   if (!res.ok) throw new Error("Failed to load voice tiers");
-  return res.json();
-}
-
-// Soundscapes (getSoundscapes is defined earlier in this file)
-export async function getSoundscapesByCategory(category: string): Promise<Soundscape[]> {
-  const res = await fetch(`${API_BASE}/soundscapes/category/${encodeURIComponent(category)}`);
-  if (!res.ok) {
-    logger.warn("api", "getSoundscapesByCategory failed", { category, status: res.status });
-    return [];
-  }
-  return res.json();
-}
-
-export async function searchSoundscapes(name: string): Promise<Soundscape[]> {
-  const res = await fetch(`${API_BASE}/soundscapes/search?name=${encodeURIComponent(name)}`);
-  if (!res.ok) {
-    logger.warn("api", "searchSoundscapes failed", { name, status: res.status });
-    return [];
-  }
-  return res.json();
-}
-
-export async function useSoundscape(soundscapeId: number, storyId?: number): Promise<void> {
-  const params = storyId ? `?storyId=${storyId}` : "";
-  const res = await fetchWithAuth(`/soundscapes/${soundscapeId}/use${params}`, {
-    method: "POST",
-  });
-  if (!res.ok) throw new Error("Failed to use soundscape");
-}
-
-export async function getSoundscapeUsage(): Promise<SoundscapeUsage[]> {
-  const res = await fetchWithAuth("/soundscapes/usage");
-  if (!res.ok) throw new Error("Failed to load soundscape usage");
   return res.json();
 }
 

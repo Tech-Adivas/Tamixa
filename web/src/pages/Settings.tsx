@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { deleteAccount } from "../lib/api";
 
 function useAccessibility() {
   const [fontScale, setFontScale] = useState(1);
@@ -32,6 +33,10 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const navigate = useNavigate();
+  const { logout } = useAuth();
 
   useEffect(() => {
     Promise.all([getConsentRecords(), getDataExportJobs(), getListeningProgress()])
@@ -58,13 +63,26 @@ export default function Settings() {
     }
   };
 
+  const handleDeleteAccount = async () => {
+    if (deleteConfirm !== "DELETE") return;
+    setDeleting(true);
+    setError("");
+    try {
+      await deleteAccount();
+      logout();
+      navigate("/", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Account deletion failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="page">
-      <header className="page-header dashboard-header">
-        <div>
-          <h1>Settings & Privacy</h1>
-          <p className="page-subtitle muted">Consent, data export, listening progress</p>
-        </div>
+      <header className="page-header-tamixa" style={{ marginTop: 0 }}>
+        <h1>Settings & Privacy</h1>
+        <p className="page-subtitle">Consent, data export, listening progress</p>
       </header>
 
       {error && <p className="error">{error}</p>}
@@ -144,6 +162,32 @@ export default function Settings() {
                 ))}
               </ul>
             )}
+            </div>
+          </section>
+
+          <section className="page-section generate-section">
+            <h2 className="page-section-title">Delete account</h2>
+            <div className="page-section-card" style={{ borderColor: "var(--color-destructive, #dc3545)" }}>
+              <p className="muted" style={{ marginTop: 0 }}>Permanently delete your account and all associated data. This cannot be undone.</p>
+              <p style={{ marginTop: "0.5rem", fontSize: "0.9rem" }}>Type <strong>DELETE</strong> to confirm:</p>
+              <input
+                type="text"
+                className="field-input"
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                placeholder="DELETE"
+                aria-label="Confirmation"
+                style={{ marginTop: "0.25rem", maxWidth: "12rem" }}
+              />
+              <button
+                type="button"
+                className="btn"
+                style={{ marginTop: "0.5rem", background: "var(--color-destructive, #dc3545)", color: "#fff" }}
+                onClick={handleDeleteAccount}
+                disabled={deleting || deleteConfirm !== "DELETE"}
+              >
+                {deleting ? "Deleting…" : "Delete my account"}
+              </button>
             </div>
           </section>
         </>

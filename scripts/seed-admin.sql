@@ -1,5 +1,5 @@
 -- Seed admin user: admin@techadivas.com / Admin123!
--- Run against your araro_kids database (the one the backend uses).
+-- Run against your tamixa_kids database (the one the backend uses).
 -- Creates the user if missing, or resets password and promotes to ADMIN if exists.
 --
 -- PREFERRED: Use the dev API instead (backend must be running with dev profile):

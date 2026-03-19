@@ -24,11 +24,12 @@ export interface Child {
   avatarChoice?: string | null;
 }
 
-export interface CuratedStory {
+export interface LibraryStory {
   id: number;
   title: string | null;
   content: string;
   theme: string;
+  category?: string | null;
   language: string;
   age: number;
   childName: string;
@@ -83,6 +84,8 @@ export interface GenerateStoryRequest {
 
 export interface StreamUrlResponse {
   streamUrl: string;
+  avatarUrl?: string | null;
+  avatarVideoUrl?: string | null;
 }
 
 export interface VoiceOption {
@@ -92,25 +95,6 @@ export interface VoiceOption {
 
 export interface VoicesResponse {
   voices: VoiceOption[];
-}
-
-export interface Soundscape {
-  id: number;
-  name: string;
-  category: string;
-  durationSeconds: number;
-  audioUrl: string;
-  description: string | null;
-}
-
-export interface SoundscapeUsage {
-  id: number;
-  parentId: number;
-  storyId: number | null;
-  soundscapeId: number;
-  soundscapeName: string;
-  usageCount: number;
-  lastUsedAt: string;
 }
 
 export interface VoiceCloningJob {

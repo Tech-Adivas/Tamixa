@@ -2,5 +2,5 @@
 -keepclassmembers class * {
     @kotlin.Metadata <methods>;
 }
--keep class com.araro.** { *; }
+-keep class com.tamixa.** { *; }
 -dontwarn org.conscrypt.**

@@ -1,4 +1,4 @@
-rootProject.name = "araro-mobile"
+rootProject.name = "tamixa-mobile"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {

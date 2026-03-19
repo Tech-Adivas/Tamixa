@@ -49,8 +49,9 @@ export default function Register() {
     <main className="page auth-page" role="main" aria-label="Registration page">
       <div className="auth-card">
         <Link to="/" className="auth-logo-link">
-          <img src="/araro-logo.svg" alt="Araro" className="auth-logo" />
+          <img src="/tamixa-logo.svg" alt="Tamixa" className="auth-logo" />
         </Link>
+        <p className="auth-tagline">Listen • Learn • Shine</p>
         <h1 id="register-heading">Create account</h1>
         <p id="register-desc" className="muted">Create an account to start creating stories for your child.</p>
       <form onSubmit={handleSubmit} className="form" aria-labelledby="register-heading" aria-describedby="register-desc">

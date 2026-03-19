@@ -30,7 +30,7 @@ Use `@JsonProperty("snake_case")` only when integrating with external APIs (Open
 |---------|------------|---------|
 | **Screens** | `*Screen` | `LoginScreen`, `DashboardScreen` |
 | **ViewModels** | `*ViewModel` | `AuthViewModel`, `StoryViewModel` |
-| **Composables** | PascalCase | `StoryCard`, `AraroHeroBanner` |
+| **Composables** | PascalCase | `StoryCard`, `TamixaHeroBanner` |
 | **API classes** | `*Api` | `StoryApi`, `AuthApi` |
 | **DTOs** | `*Response`, `*Dto`; match backend JSON | `CuratedStoryResponse`, `StreamUrlResponse` |
 | **String keys** | camelCase functions | `Strings.login()`, `Strings.childName()` |
