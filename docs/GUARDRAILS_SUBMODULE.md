@@ -11,7 +11,14 @@ The **structured guardrails HTTP API** lives in its **own Git repository** so it
 
 ### Submodule URL on your machine
 
-This monorepo may use a **`file://`** URL in `.gitmodules` so the submodule resolves to your **local** `tamixa-guardrails-service` clone without needing the GitHub repo to exist yet. After you publish the guardrails repo, change `.gitmodules` to the **HTTPS** URL and run:
+This monorepo may use a **`file://`** URL in `.gitmodules` so the submodule resolves to your **local** `tamixa-guardrails-service` clone without needing the GitHub repo to exist yet. That path is **machine-specific**; teammates should either use the published **HTTPS** URL or clone `tamixa-guardrails-service` beside `araro-kids` and run:
+
+```bash
+git config submodule.guardrails-service.url file:///absolute/path/to/tamixa-guardrails-service
+git submodule sync
+```
+
+After you publish the guardrails repo, commit `.gitmodules` with the **HTTPS** URL and run:
 
 ```bash
 git submodule sync
