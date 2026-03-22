@@ -1,3 +1,3 @@
 [submodule "guardrails-service"]
 	path = guardrails-service
-	url = file:///Users/Achappan/guardrails-service
+	url = https://github.com/tech-adivas/guardrails-service.git
