@@ -17,9 +17,9 @@ spring:
     hibernate:
       ddl-auto: validate
   datasource:
-    # Staging default: Railway private Postgres (same project). Railway: reference linked Postgres DATABASE_URL; override for public proxy or other hosts.
-    # Credentials must come from env (DATABASE_USERNAME / DATABASE_PASSWORD or PGUSER / PGPASSWORD).
-    url: ${DATABASE_URL:jdbc:postgresql://${POSTGRES_HOST:${PGHOST:postgres.railway.internal}}:${POSTGRES_PORT:${PGPORT:5432}}/${POSTGRES_DB:${PGDATABASE:railway}}}
+    # Prefer DATABASE_PUBLIC_URL (Railway public proxy), then DATABASE_URL. If both unset, default JDBC uses public proxy host (no Private Networking).
+    # Override host/port with RAILWAY_DATABASE_PUBLIC_HOST / RAILWAY_DATABASE_PUBLIC_PORT if Railway assigns a different proxy port.
+    url: ${DATABASE_PUBLIC_URL:${DATABASE_URL:jdbc:postgresql://${RAILWAY_DATABASE_PUBLIC_HOST:crossover.proxy.rlwy.net}:${RAILWAY_DATABASE_PUBLIC_PORT:58777}/${POSTGRES_DB:${PGDATABASE:railway}}?sslmode=require}}
     username: ${DATABASE_USERNAME:${POSTGRES_USER:${PGUSER:postgres}}}
     password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:${PGPASSWORD:}}}
     hikari:
@@ -30,3 +30,5 @@ logging:
   level:
     root: WARN
     com.tamixa: INFO
+    # Hibernate still recommends dropping explicit dialect; we keep it so failed first-connect does not cascade into dialect errors.
+    org.hibernate.orm.deprecation: ERROR
