@@ -190,13 +190,17 @@ private fun applyDatabaseUrlCompatibility() {
         when {
             rawDatabaseUrl.startsWith("jdbc:postgresql:", ignoreCase = true) ||
                 rawDatabaseUrl.startsWith("jdbc:postgres:", ignoreCase = true) -> {
-                System.setProperty("spring.datasource.url", ensureRailwayPublicJdbcUrlHasSsl(rawDatabaseUrl))
+                val jdbcUrl = ensureRailwayPublicJdbcUrlHasSsl(rawDatabaseUrl)
+                System.setProperty("spring.datasource.url", jdbcUrl)
+                applyEmbeddedCredentialsFromPostgresStyleUrl(jdbcUrl, env)
             }
             else -> applyJdbcPropertiesFromUrl(rawDatabaseUrl, env)
         }
     } else {
         envValueIgnoringCase(env, "SPRING_DATASOURCE_URL")?.let {
-            System.setProperty("spring.datasource.url", ensureRailwayPublicJdbcUrlHasSsl(it))
+            val jdbcUrl = ensureRailwayPublicJdbcUrlHasSsl(it)
+            System.setProperty("spring.datasource.url", jdbcUrl)
+            applyEmbeddedCredentialsFromPostgresStyleUrl(jdbcUrl, env)
         } ?: applyPgHostCompatibility(env)
     }
     applyDatasourceSecretsFromRailwayPgEnv(env)
@@ -268,16 +272,70 @@ private fun warnIfDatasourceEnvFamiliesOverlap() {
     }
 }
 
-private fun databaseUrlAppearsToEmbedPassword(raw: String): Boolean {
-    if (!raw.startsWith("postgresql://", ignoreCase = true) && !raw.startsWith("postgres://", ignoreCase = true)) {
-        return false
+/** postgresql://, postgres://, or jdbc:postgresql:// — for credential checks and optional extraction. */
+private fun toUriStylePostgresUrl(raw: String): String? {
+    val t = raw.trim()
+    return when {
+        t.startsWith("jdbc:postgresql://", ignoreCase = true) ||
+            t.startsWith("jdbc:postgres://", ignoreCase = true) ->
+            t.replaceFirst(Regex("^jdbc:", RegexOption.IGNORE_CASE), "")
+        t.startsWith("postgresql://", ignoreCase = true) ||
+            t.startsWith("postgres://", ignoreCase = true) -> t
+        else -> null
     }
-    return try {
-        val uri = URI(raw)
-        val ui = uri.userInfo
-        ui != null && ui.contains(":") && ui.substringAfter(":").isNotBlank()
-    } catch (_: Exception) {
-        false
+}
+
+/**
+ * True if the URL appears to carry a non-blank password (user:password@host).
+ * URI parsing can fail on rare unescaped characters; a small regex fallback avoids false "missing password" warnings.
+ */
+private fun postgresConnectionUrlEmbedsPassword(raw: String): Boolean {
+    val uriStyle = toUriStylePostgresUrl(raw) ?: return false
+    val viaUri =
+        try {
+            val uri = URI(uriStyle)
+            val ui = uri.userInfo
+            ui != null && ui.contains(":") && ui.substringAfter(":").isNotBlank()
+        } catch (_: Exception) {
+            false
+        }
+    if (viaUri) {
+        return true
+    }
+    return Regex("://[^/@]+:[^@]+@", RegexOption.IGNORE_CASE).containsMatchIn(uriStyle)
+}
+
+/**
+ * When a JDBC URL still contains user:password@, copy them into Spring datasource properties if not already set.
+ * (Spring Boot often expects separate username/password; Hikari may not always infer them from the JDBC URL alone.)
+ */
+private fun applyEmbeddedCredentialsFromPostgresStyleUrl(rawUrl: String, env: Map<String, String>) {
+    val uriStyle = toUriStylePostgresUrl(rawUrl) ?: return
+    val userInfo: String? =
+        try {
+            URI(uriStyle).userInfo?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            Regex("://([^@]+)@", RegexOption.IGNORE_CASE).find(uriStyle)?.groupValues?.getOrNull(1)
+        }
+    if (userInfo.isNullOrBlank() || !userInfo.contains(":")) {
+        return
+    }
+    val username = decodeUserInfoPart(userInfo.substringBefore(':'))
+    val password = decodeUserInfoPart(userInfo.substringAfter(':', missingDelimiterValue = ""))
+    if (username.isBlank() || password.isBlank()) {
+        return
+    }
+    if (envValueIgnoringCase(env, "SPRING_DATASOURCE_USERNAME").isNullOrBlank() &&
+        envValueIgnoringCase(env, "DATABASE_USERNAME").isNullOrBlank() &&
+        System.getProperty("spring.datasource.username").isNullOrBlank()
+    ) {
+        System.setProperty("spring.datasource.username", username)
+    }
+    if (envValueIgnoringCase(env, "SPRING_DATASOURCE_PASSWORD").isNullOrBlank() &&
+        envValueIgnoringCase(env, "DATABASE_PASSWORD").isNullOrBlank() &&
+        System.getProperty("spring.datasource.password").isNullOrBlank()
+    ) {
+        System.setProperty("spring.datasource.password", password)
     }
 }
 
@@ -296,10 +354,14 @@ private fun warnIfLikelyMissingDbCredentials() {
     val sysDsPassword = System.getProperty("spring.datasource.password")?.isNotBlank() == true
     val dbUrl = envValueIgnoringCase(env, "DATABASE_URL") ?: ""
     val dbUrlPublic = envValueIgnoringCase(env, "DATABASE_PUBLIC_URL") ?: ""
+    val springDsUrl = envValueIgnoringCase(env, "SPRING_DATASOURCE_URL") ?: ""
+    val normalizedJdbc = System.getProperty("spring.datasource.url") ?: ""
     if (explicitPassword ||
         sysDsPassword ||
-        databaseUrlAppearsToEmbedPassword(dbUrl) ||
-        databaseUrlAppearsToEmbedPassword(dbUrlPublic)
+        postgresConnectionUrlEmbedsPassword(dbUrlPublic) ||
+        postgresConnectionUrlEmbedsPassword(dbUrl) ||
+        postgresConnectionUrlEmbedsPassword(springDsUrl) ||
+        postgresConnectionUrlEmbedsPassword(normalizedJdbc)
     ) {
         return
     }
