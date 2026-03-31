@@ -65,6 +65,7 @@ class FamilyAvatarService(
             storagePath = storagePath,
             contentType = normalizedContentType,
             fileSizeBytes = imageBytes.size.toLong(),
+            heygenTalkingPhotoId = null,
             createdAt = existing?.createdAt ?: now,
             updatedAt = now
         )
@@ -118,6 +119,7 @@ class FamilyAvatarService(
             storagePath = storagePath,
             contentType = normalizedContentType,
             fileSizeBytes = imageBytes.size.toLong(),
+            heygenTalkingPhotoId = null,
             createdAt = existing?.createdAt ?: now,
             updatedAt = now
         )

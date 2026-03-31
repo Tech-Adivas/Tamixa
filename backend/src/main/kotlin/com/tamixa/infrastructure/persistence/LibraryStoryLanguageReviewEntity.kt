@@ -22,5 +22,9 @@ class LibraryStoryLanguageReviewEntity(
     val language: String,
 
     @Column(name = "reviewed_at", nullable = false)
-    val reviewedAt: Instant = Instant.now()
+    var reviewedAt: Instant = Instant.now(),
+
+    /** SHA-256 hex of normalized title, body, moral, narration script when marked reviewed; null = legacy row (no stale styling). */
+    @Column(name = "content_fingerprint", length = 64)
+    var contentFingerprint: String? = null
 )

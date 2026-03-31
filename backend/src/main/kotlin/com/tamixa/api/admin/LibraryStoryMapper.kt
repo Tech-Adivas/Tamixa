@@ -39,6 +39,11 @@ object LibraryStoryMapper {
         emotionMode = emotionMode,
         narrationApprovedAt = narrationApprovedAt,
         reviewNotes = reviewNotes,
-        rejectMarkedAt = rejectMarkedAt
+        rejectMarkedAt = rejectMarkedAt,
+        regeneratePromptLocked = regeneratePromptLocked,
+        regeneratePromptLockApproved = regeneratePromptLockApproved,
+        regeneratePromptUnlockRequestedAt = regeneratePromptUnlockRequestedAt,
+        deletedAt = deletedAt,
+        sourceContent = content
     )
 }

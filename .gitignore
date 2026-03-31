@@ -23,6 +23,12 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Editor swap/temp files
+.!*
+*.swp
+*.swo
+*~
+
 # Env
 .env
 .env.local
@@ -30,6 +36,11 @@ Thumbs.db
 
 # Test
 /test-output/
+
+# Local runs of PR governance scripts (repo root)
+/pr-governance.json
+/pr-metrics-export.json
+/pr-body.txt
 
 # Node
 node_modules/

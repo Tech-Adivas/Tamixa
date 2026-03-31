@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
+import { reconcileAdminAuthCookie } from "@/lib/api";
 import { PipelineActiveProvider } from "@/contexts/pipeline-active-context";
 import { SidebarProvider } from "@/contexts/sidebar-context";
 import { PipelineStatusBanner } from "./pipeline-status-banner";
@@ -13,6 +14,10 @@ import { isAdminRole } from "@/lib/admin-roles";
 export function DashboardGuard({ children }: { children: React.ReactNode }) {
   const { user, loading, error } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    reconcileAdminAuthCookie();
+  }, []);
 
   useEffect(() => {
     if (loading) return;

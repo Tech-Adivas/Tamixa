@@ -13,10 +13,11 @@ import com.tamixa.domain.narration.StoryNarrationAudio
 import com.tamixa.domain.narration.StoryNarrationScript
 import com.tamixa.domain.narration.ToneMode
 import com.tamixa.infrastructure.config.AppProperties
+import com.tamixa.infrastructure.narration.Mp3DurationReader
+import com.tamixa.infrastructure.narration.NarrationTruncationPolicy
 import com.tamixa.infrastructure.observability.NarrationMetrics
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
 /**
@@ -58,8 +59,11 @@ class StoryProcessingOrchestrator(
      * @param voiceProfiles List of voice identifiers; skipped if not entitled
      * @param parentId Optional; required for premium voice validation
      * @param allowClonedForPreview When true (e.g. admin preview), cloned voices are not gated by subscription so preview works
+     *
+     * **No @Transactional:** TTS and LLM calls must not run inside one DB transaction; that would hold row locks
+     * (narration script / translation / library story) for minutes and block admin saves. Each `save` uses a
+     * short Spring Data transaction.
      */
-    @Transactional
     fun process(
         translation: StoryTranslation,
         toneMode: ToneMode = ToneMode.CALM,
@@ -96,6 +100,7 @@ class StoryProcessingOrchestrator(
         if (skipped.isNotEmpty()) {
             log.debug("Skipping non-entitled voices for translationId={}: {}", translation.id, skipped)
         }
+        val previewClonedFlow = allowClonedForPreview && profilesToProcess.any { it.startsWith("cloned:") }
 
         val masterStory = storyLibraryRepository.findById(translation.masterStoryId)
             ?: run {
@@ -146,7 +151,16 @@ class StoryProcessingOrchestrator(
                     }
                 } catch (e: SafetyValidationException) {
                     narrationMetrics.recordSafetyValidationFailure()
-                    throw e
+                    if (previewClonedFlow) {
+                        log.warn(
+                            "Skipping strict safety validation for admin cloned preview translationId={} voiceProfiles={} violations={}",
+                            translation.id,
+                            profilesToProcess,
+                            e.violations.joinToString("; ")
+                        )
+                    } else {
+                        throw e
+                    }
                 }
 
                 // Emotional realism: tag emotions, validate, then build SSML with prosody
@@ -210,13 +224,17 @@ class StoryProcessingOrchestrator(
                         voiceProfile,
                         mp3Bytes
                     )
-                    lastDurationSeconds = estimateDurationSeconds(mp3Bytes)
                     val scriptWordCount = scriptText.split(Regex("\\s+")).filter { it.isNotBlank() }.size
                     val expectedSecs = (scriptWordCount / 150.0 * 60).toInt().coerceAtLeast(10)
-                    val truncationWarning = lastDurationSeconds < (expectedSecs * 0.5)
+                    val measured = Mp3DurationReader.durationSecondsOrNull(mp3Bytes)
+                    lastDurationSeconds = measured ?: expectedSecs
+                    val truncationWarning =
+                        measured != null && measured < (expectedSecs * NarrationTruncationPolicy.MIN_AUDIO_VS_EXPECTED_SPEECH_FRACTION)
                     if (truncationWarning) {
-                        log.warn("Narration possible truncation translationId={} lang={} duration={}s expected>={}s",
-                            translation.id, translation.language, lastDurationSeconds, expectedSecs)
+                        log.warn(
+                            "Narration possible truncation translationId={} lang={} duration={}s expected~{}s",
+                            translation.id, translation.language, measured, expectedSecs
+                        )
                     }
                     val existingAudio = narrationAudioRepository.findByTranslationIdAndVoiceProfile(translation.id, voiceProfile)
                     val audio = if (existingAudio != null) {
@@ -287,6 +305,24 @@ class StoryProcessingOrchestrator(
                 retryCount++
                 lastError = e.message ?: "Unknown error"
                 log.warn("Narration attempt {} failed for translationId={}: {}", retryCount, translation.id, lastError)
+                if (previewClonedFlow && lastError.contains("No audio generated for any voice profile", ignoreCase = true)) {
+                    narrationMetrics.recordNarrationFailure()
+                    for (voiceProfile in profilesToProcess) {
+                        if (!narrationAudioRepository.existsByTranslationIdAndVoiceProfileAndStatus(
+                                translation.id, voiceProfile, NarrationAudioStatus.READY
+                            )
+                        ) {
+                            saveFailedAudio(translation.id, voiceProfile)
+                        }
+                    }
+                    log.error(
+                        "Narration FAILED (terminal cloned preview) for translationId={} after {} attempt(s): {}",
+                        translation.id,
+                        retryCount,
+                        lastError
+                    )
+                    throw RuntimeException("Narration failed: $lastError")
+                }
                 if (retryCount > maxRetries) {
                     narrationMetrics.recordNarrationFailure()
                     for (voiceProfile in profilesToProcess) {
@@ -319,9 +355,5 @@ class StoryProcessingOrchestrator(
             )
         }
         narrationAudioRepository.save(toSave)
-    }
-
-    private fun estimateDurationSeconds(mp3Bytes: ByteArray): Int {
-        return (mp3Bytes.size / 16000).coerceAtLeast(1)
     }
 }

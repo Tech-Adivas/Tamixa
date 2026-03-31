@@ -85,7 +85,9 @@ fun SettingsScreen(
     onNavigateToMyVoiceAndAvatar: () -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
     onNavigateToShortContent: () -> Unit = {},
-    onNavigateToProfile: () -> Unit = {}
+    onNavigateToProfile: () -> Unit = {},
+    storyArtPersonalizationOptIn: Boolean = false,
+    onStoryArtPersonalizationOptInChange: (Boolean) -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
@@ -255,6 +257,39 @@ fun SettingsScreen(
                             label = { Text(com.tamixa.ui.strings.Strings.voiceLabel("family", false)) }
                         )
                     }
+                }
+            }
+            Spacer(Modifier.height(TamixaDesignTokens.cardSpacing))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
+                colors = TamixaCardColors.surface(),
+                elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation + 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(TamixaDesignTokens.cardContentPadding),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text(
+                            Strings.storyArtPersonalizationSettingTitle(),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            Strings.storyArtPersonalizationSettingSummary(),
+                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 20.sp),
+                            color = TamixaContentColors.cardSecondary()
+                        )
+                    }
+                    Switch(
+                        checked = storyArtPersonalizationOptIn,
+                        onCheckedChange = onStoryArtPersonalizationOptInChange
+                    )
                 }
             }
             Spacer(Modifier.height(TamixaDesignTokens.cardSpacing))

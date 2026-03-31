@@ -56,12 +56,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.tamixa.ui.components.TamixaTab
 import com.tamixa.ui.navigation.Screen
 import com.tamixa.util.TamixaConstants
 import com.tamixa.util.TamixaLog
 import com.tamixa.ui.screen.*
 import com.tamixa.ui.strings.Strings
 import com.tamixa.analytics.AppAnalytics
+import com.tamixa.ui.viewmodel.EducationViewModel
 import com.tamixa.ui.viewmodel.AuthViewModel
 import com.tamixa.ui.viewmodel.SettingsViewModel
 import com.tamixa.ui.viewmodel.StoryViewModel
@@ -70,6 +72,7 @@ import com.tamixa.ui.viewmodel.AvatarViewModel
 import com.tamixa.ui.viewmodel.VoiceViewModel
 import com.tamixa.application.port.OnboardingReminderPort
 import com.tamixa.ui.AppMessageNotifier
+import com.tamixa.ui.components.platformIsReduceMotionEnabled
 import androidx.compose.ui.Alignment
 
 private val onboardingRoutes = setOf(
@@ -91,6 +94,7 @@ fun TamixaNavHost(
     subscriptionViewModel: SubscriptionViewModel,
     settingsViewModel: SettingsViewModel,
     shortContentViewModel: com.tamixa.ui.viewmodel.ShortContentViewModel,
+    educationViewModel: EducationViewModel,
     onSensitiveScreen: ((Boolean) -> Unit)? = null
 ) {
     val navController = rememberNavController()
@@ -130,6 +134,15 @@ fun TamixaNavHost(
         if (authViewModel.isLoggedIn()) {
             authViewModel.loadCurrentUser()
         }
+    }
+
+    val currentUserState by authViewModel.currentUser.collectAsState()
+    LaunchedEffect(currentUserState) {
+        val u = when (val s = currentUserState) {
+            is UiState.Success<*> -> s.data as? com.tamixa.domain.CurrentUser
+            else -> null
+        } ?: return@LaunchedEffect
+        settingsViewModel.applyServerStoryArtOptIn(u.storyArtPersonalizationOptIn)
     }
 
     // First-time users: show language selection; returning users go straight to dashboard (only when settings loaded)
@@ -359,7 +372,8 @@ fun TamixaNavHost(
                 onClearPasswordlessState = { authViewModel.clearPasswordlessState() },
                 onSendOtp = { authViewModel.sendOtp(it) },
                 onVerifyOtp = { phone, code -> authViewModel.loginWithOtp(phone, code) },
-                onClearOtpState = { authViewModel.clearOtpState() }
+                onClearOtpState = { authViewModel.clearOtpState() },
+                onNavigateToRegister = { navController.navigate(Screen.Register.route) }
             )
         }
         composable(Screen.Register.route) {
@@ -415,11 +429,12 @@ fun TamixaNavHost(
             val favoriteIds = favorites.map { it.id }.toSet()
             val vmStories = storyViewModel.allStories()
             val stories = if (vmStories.isEmpty()) SampleData.sampleStories() else vmStories
-            val recentPlayback = recentPlaybackWithStories.map { (dto, story) ->
+            val recentPlayback = recentPlaybackWithStories.map { row ->
                 com.tamixa.ui.screen.RecentPlaybackItem(
-                    story = story,
-                    positionSeconds = dto.positionSeconds,
-                    storySource = dto.storySource
+                    story = row.story,
+                    positionSeconds = row.dto.positionSeconds,
+                    storySource = row.dto.storySource,
+                    progressFraction = row.progressFraction
                 )
             }
             val recommended = recommendedWithStories.map { (dto, story) ->
@@ -713,12 +728,15 @@ fun TamixaNavHost(
             val apiBaseUrl: String = koinInject(named("apiBaseUrl"))
             val prefLang = settingsState.languageCode.ifEmpty { TamixaConstants.DEFAULT_LANGUAGE }
             val curated by storyViewModel.libraryStories.collectAsState()
+            val favorites by storyViewModel.favorites.collectAsState()
             val allStories = storyViewModel.allStories()
             var story by remember(storyId) { mutableStateOf<com.tamixa.domain.Story?>(null) }
             var streamUrl by remember(storyId) { mutableStateOf<String?>(null) }
             var streamAvatarUrl by remember(storyId) { mutableStateOf<String?>(null) }
             var streamAvatarVideoUrl by remember(storyId) { mutableStateOf<String?>(null) }
             var streamWordTimings by remember(storyId) { mutableStateOf<List<com.tamixa.network.WordTiming>?>(null) }
+            var streamNarrativeScenes by remember(storyId) { mutableStateOf<List<com.tamixa.network.NarrativeSceneVisual>?>(null) }
+            var streamHostStoryClipUrl by remember(storyId) { mutableStateOf<String?>(null) }
             var streamDurationSeconds by remember(storyId) { mutableStateOf<Int?>(null) }
             var streamUrlFailed by remember(storyId) { mutableStateOf(false) }
             var streamUrlLoading by remember(storyId) { mutableStateOf(false) }
@@ -735,7 +753,7 @@ fun TamixaNavHost(
             var showUpgradeDialog by remember { mutableStateOf(false) }
             val appMessageNotifier: AppMessageNotifier = koinInject()
             var showSleepTimerDialog by remember { mutableStateOf(false) }
-            var showMoralDialog by remember { mutableStateOf(false) }
+            val appAnalytics: AppAnalytics = koinInject()
             LaunchedEffect(storyId, allStories, curated, prefLang, storySource) {
                 story = if (storyId > 0) {
                     storyViewModel.fetchStoryById(storyId, prefLang, storySource, forceRefresh = true)
@@ -746,6 +764,9 @@ fun TamixaNavHost(
             }
             var familyVoiceRefreshTrigger by remember(storyId) { mutableStateOf(0) }
             val voiceRefreshTrigger by voiceViewModel.refreshVoicesTrigger.collectAsState(0)
+            LaunchedEffect(prefLang, storyId) {
+                storyViewModel.loadFavorites(prefLang)
+            }
             LaunchedEffect(story?.id, familyVoiceRefreshTrigger, voiceRefreshTrigger, storySource) {
                 val id = story?.id ?: return@LaunchedEffect
                 availableVoices = storyApi.getAvailableVoices(id, prefLang)
@@ -792,6 +813,8 @@ fun TamixaNavHost(
                     streamAvatarVideoUrl = null
                     streamAvatarStatus = null
                     streamWordTimings = null
+                    streamNarrativeScenes = null
+                    streamHostStoryClipUrl = null
                 } else {
                     streamUrlLoading = true
                     try {
@@ -804,6 +827,8 @@ fun TamixaNavHost(
                                 streamVoiceFallback = result.voiceFallback
                                 streamWordTimings = result.wordTimings
                                 streamDurationSeconds = result.durationSeconds
+                                streamNarrativeScenes = result.narrativeScenes
+                                streamHostStoryClipUrl = result.hostStoryClipUrl
                             }
                             is StoryApi.StreamUrlResult.UpgradeRequired -> {
                                 showUpgradeDialog = true
@@ -813,6 +838,8 @@ fun TamixaNavHost(
                                 streamAvatarStatus = null
                                 streamWordTimings = null
                                 streamDurationSeconds = null
+                                streamNarrativeScenes = null
+                                streamHostStoryClipUrl = null
                             }
                             is StoryApi.StreamUrlResult.NotFound -> {
                                 if (voiceParam != null) {
@@ -825,12 +852,16 @@ fun TamixaNavHost(
                                         streamVoiceFallback = fallback.voiceFallback
                                         streamWordTimings = fallback.wordTimings
                                         streamDurationSeconds = fallback.durationSeconds
+                                        streamNarrativeScenes = fallback.narrativeScenes
+                                        streamHostStoryClipUrl = fallback.hostStoryClipUrl
                                     } else {
                                         streamUrl = ApiConfig.resolveAudioUrl(apiBaseUrl, s.audioFileUrl)
                                         streamAvatarUrl = null
                                         streamAvatarVideoUrl = null
                                         streamAvatarStatus = null
                                         streamDurationSeconds = null
+                                        streamNarrativeScenes = null
+                                        streamHostStoryClipUrl = null
                                     }
                                 } else {
                                     streamUrl = ApiConfig.resolveAudioUrl(apiBaseUrl, s.audioFileUrl)
@@ -838,6 +869,8 @@ fun TamixaNavHost(
                                     streamAvatarVideoUrl = null
                                     streamAvatarStatus = null
                                     streamDurationSeconds = null
+                                    streamNarrativeScenes = null
+                                    streamHostStoryClipUrl = null
                                 }
                             }
                         }
@@ -872,6 +905,12 @@ fun TamixaNavHost(
             }
             val currentStreamUrl = streamUrl
             val hasAvatarVideo = !streamAvatarVideoUrl.isNullOrBlank()
+            val reduceMotion = platformIsReduceMotionEnabled()
+            val hostStoryClipResolved = streamHostStoryClipUrl?.let { raw ->
+                ApiConfig.resolveCoverUrl(apiBaseUrl, raw) ?: raw
+            }
+            val hostClipVideoUrlForPlayer =
+                if (!hasAvatarVideo && !reduceMotion && !hostStoryClipResolved.isNullOrBlank()) hostStoryClipResolved else null
             val hasRealAudio = !currentStreamUrl.isNullOrBlank() && !currentStreamUrl.startsWith(TamixaConstants.PLACEHOLDER_AUDIO_PREFIX)
             val ttsFallback = conversationalTtsUri ?: synthesizedUri
             val playbackUrl = when {
@@ -888,9 +927,21 @@ fun TamixaNavHost(
                     storyTheme = story?.theme ?: "",
                     scope = scope,
                     onProgressChanged = { },
-                    onPlaybackError = { avatarVideoSurfaceFailed = true }
+                    onPlaybackError = { avatarVideoSurfaceFailed = true },
+                    muteVideoAudio = false,
+                    repeatVideo = false
                 )
             } else null
+            val hostClipVideoResult = rememberAvatarVideoController(
+                videoUrl = hostClipVideoUrlForPlayer,
+                storyTitle = story?.title ?: story?.theme ?: "Story",
+                storyTheme = story?.theme ?: "",
+                scope = scope,
+                onProgressChanged = { },
+                onPlaybackError = null,
+                muteVideoAudio = true,
+                repeatVideo = true
+            )
             val controller = when {
                 avatarVideoResult != null -> avatarVideoResult.controller
                 isTtsFile -> rememberLocalFileController(
@@ -911,10 +962,35 @@ fun TamixaNavHost(
             }
             val tracker = storyViewModel.playbackTracker()
             LaunchedEffect(story?.id) { tracker.reset() }
-            LaunchedEffect(playbackUrl, controller.isReady) {
+            val audioPlayerPageLoading =
+                (story == null && storyId > 0) ||
+                    (useTts && synthesizedUri == null && story != null) ||
+                    streamUrlLoading
+            LaunchedEffect(playbackUrl, controller.isReady, audioPlayerPageLoading, streamUrlError) {
+                if (audioPlayerPageLoading || streamUrlError != null) return@LaunchedEffect
                 if (playbackUrl != null && controller.isReady && !controller.isPlaying) {
-                    controller.playPause()
+                    delay(48)
+                    if (audioPlayerPageLoading || streamUrlError != null) return@LaunchedEffect
+                    if (controller.isReady && !controller.isPlaying) {
+                        controller.playPause()
+                    }
                 }
+            }
+            val hostClipController = hostClipVideoResult.controller
+            // Host clip follows main narration only (no separate auto-start); avoids racing main's LaunchedEffect above.
+            LaunchedEffect(controller.isPlaying, hostClipVideoUrlForPlayer, hostClipController.isReady) {
+                if (hostClipVideoUrlForPlayer == null || !hostClipController.isReady) return@LaunchedEffect
+                val mainPlaying = controller.isPlaying
+                val clipPlaying = hostClipController.isPlaying
+                if (mainPlaying && !clipPlaying) hostClipController.playPause()
+                else if (!mainPlaying && clipPlaying) hostClipController.playPause()
+            }
+            LaunchedEffect(hostClipVideoUrlForPlayer, story?.id) {
+                val sid = story?.id ?: return@LaunchedEffect
+                if (hostClipVideoUrlForPlayer == null) return@LaunchedEffect
+                val src =
+                    if (story?.parentId == 0L) TamixaConstants.STORY_SOURCE_LIBRARY else TamixaConstants.STORY_SOURCE_GENERATED
+                appAnalytics.trackHostStoryClipImpression(sid, src)
             }
             val analytics = remember(tracker) {
                 com.tamixa.ui.screen.StoryAnalyticsCallbacks(
@@ -960,70 +1036,21 @@ fun TamixaNavHost(
                     }
                 )
             }
-            story?.let { currentStory ->
-            if (showMoralDialog) {
-                AlertDialog(
-                    onDismissRequest = { showMoralDialog = false },
-                    shape = TamixaDialogDefaults.shape,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    title = {
-                        Text(
-                            Strings.moralOfStory(),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    text = {
-                        Column {
-                            Text(
-                                Strings.moralDialogIntro(),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Text(
-                                currentStory.moral ?: Strings.noMoralAvailable(),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                Strings.talkAboutIt(),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "• ${Strings.discussionPromptWhatLearned()}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "• ${Strings.discussionPromptFavoritePart()}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = { showMoralDialog = false },
-                            shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius)
-                        ) { Text(Strings.continueWith()) }
-                    }
-                )
-            }
-            }
             com.tamixa.platform.PlatformBackHandler {
-                story?.let { s ->
-                    val prog = controller.progress
-                    if (prog < 0.99f) {
-                        val pos = (prog * s.readingTimeMinutes * 60).toInt()
-                        tracker.onStoppedEarly(s, pos)
+                scope.launch {
+                    val s = story
+                    if (s != null) {
+                        val totalSec = (streamDurationSeconds?.takeIf { it > 0 }
+                            ?: (s.readingTimeMinutes * 60).toInt()).coerceAtLeast(1)
+                        val pos = (controller.progress * totalSec).toInt().coerceAtLeast(0)
+                        if (controller.progress < 0.99f) {
+                            tracker.onStoppedEarly(s, pos)
+                        }
+                        delay(400)
                     }
+                    storyViewModel.loadRecentPlayback(TamixaConstants.RECENT_PLAYBACK_LIMIT, prefLang)
+                    navController.popBackStack()
                 }
-                navController.popBackStack()
             }
             if (showSleepTimerDialog) {
                 AlertDialog(
@@ -1077,6 +1104,14 @@ fun TamixaNavHost(
                         { com.tamixa.platform.AvatarVideoSurface(player = r.player, modifier = Modifier.fillMaxWidth().aspectRatio(1f)) }
                     }
                 } else null,
+                hostStoryClipVideoContent = if (hostClipVideoUrlForPlayer != null && hostClipVideoResult.player != null) {
+                    {
+                        com.tamixa.platform.AvatarVideoSurface(
+                            player = hostClipVideoResult.player,
+                            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                        )
+                    }
+                } else null,
                 onNavigateToVoiceUpload = {
                     voiceViewModel.setReturnToStory(storyId, storySource)
                     navController.navigate(Screen.VoiceUpload.route) { launchSingleTop = true }
@@ -1092,14 +1127,20 @@ fun TamixaNavHost(
                 isPremiumForVoice = subscription?.isActive == true,
                 onNavigateToSubscription = { navController.navigate(Screen.Subscription.route) },
                 onBack = {
-                    story?.let { s ->
-                        val prog = controller.progress
-                        if (prog < 0.99f) {
-                            val pos = (prog * s.readingTimeMinutes * 60).toInt()
-                            tracker.onStoppedEarly(s, pos)
+                    scope.launch {
+                        val s = story
+                        if (s != null) {
+                            val totalSec = (streamDurationSeconds?.takeIf { it > 0 }
+                                ?: (s.readingTimeMinutes * 60).toInt()).coerceAtLeast(1)
+                            val pos = (controller.progress * totalSec).toInt().coerceAtLeast(0)
+                            if (controller.progress < 0.99f) {
+                                tracker.onStoppedEarly(s, pos)
+                            }
+                            delay(400)
                         }
+                        storyViewModel.loadRecentPlayback(TamixaConstants.RECENT_PLAYBACK_LIMIT, prefLang)
+                        navController.popBackStack()
                     }
-                    navController.popBackStack()
                 },
                 progress = controller.progress,
                 onSleepTimer = { showSleepTimerDialog = true },
@@ -1109,7 +1150,61 @@ fun TamixaNavHost(
                     { controller.download(currentStreamUrl!!, "story_${story?.id ?: 0}", "audio/mpeg") }
                 } else null,
                 onShare = { controller.share() },
-                onMoralClick = { showMoralDialog = true },
+                bottomNavSelectedTab = if (storySource == TamixaConstants.STORY_SOURCE_LIBRARY) TamixaTab.Library else TamixaTab.Home,
+                onBottomNavHome = {
+                    scope.launch {
+                        story?.let { s ->
+                            val totalSec = (streamDurationSeconds?.takeIf { it > 0 }
+                                ?: (s.readingTimeMinutes * 60).toInt()).coerceAtLeast(1)
+                            val pos = (controller.progress * totalSec).toInt().coerceAtLeast(0)
+                            if (controller.progress < 0.99f) tracker.onStoppedEarly(s, pos)
+                        }
+                        storyViewModel.loadRecentPlayback(TamixaConstants.RECENT_PLAYBACK_LIMIT, prefLang)
+                        navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } }
+                    }
+                },
+                onBottomNavLibrary = {
+                    scope.launch {
+                        story?.let { s ->
+                            val totalSec = (streamDurationSeconds?.takeIf { it > 0 }
+                                ?: (s.readingTimeMinutes * 60).toInt()).coerceAtLeast(1)
+                            val pos = (controller.progress * totalSec).toInt().coerceAtLeast(0)
+                            if (controller.progress < 0.99f) tracker.onStoppedEarly(s, pos)
+                        }
+                        storyViewModel.loadRecentPlayback(TamixaConstants.RECENT_PLAYBACK_LIMIT, prefLang)
+                        navController.navigate(Screen.Library.route) {
+                            popUpTo(Screen.Dashboard.route) { inclusive = false }
+                        }
+                    }
+                },
+                onBottomNavFunAndLearn = {
+                    scope.launch {
+                        story?.let { s ->
+                            val totalSec = (streamDurationSeconds?.takeIf { it > 0 }
+                                ?: (s.readingTimeMinutes * 60).toInt()).coerceAtLeast(1)
+                            val pos = (controller.progress * totalSec).toInt().coerceAtLeast(0)
+                            if (controller.progress < 0.99f) tracker.onStoppedEarly(s, pos)
+                        }
+                        storyViewModel.loadRecentPlayback(TamixaConstants.RECENT_PLAYBACK_LIMIT, prefLang)
+                        navController.navigate(Screen.ShortContent.route) {
+                            popUpTo(Screen.Dashboard.route) { inclusive = false }
+                        }
+                    }
+                },
+                onBottomNavProfile = {
+                    scope.launch {
+                        story?.let { s ->
+                            val totalSec = (streamDurationSeconds?.takeIf { it > 0 }
+                                ?: (s.readingTimeMinutes * 60).toInt()).coerceAtLeast(1)
+                            val pos = (controller.progress * totalSec).toInt().coerceAtLeast(0)
+                            if (controller.progress < 0.99f) tracker.onStoppedEarly(s, pos)
+                        }
+                        storyViewModel.loadRecentPlayback(TamixaConstants.RECENT_PLAYBACK_LIMIT, prefLang)
+                        navController.navigate(Screen.Profile.route) {
+                            popUpTo(Screen.Dashboard.route) { inclusive = false }
+                        }
+                    }
+                },
                 onRemix = { id, instruction ->
                     storyViewModel.remixStory(id, instruction) { newStory ->
                         navController.popBackStack()
@@ -1130,14 +1225,43 @@ fun TamixaNavHost(
                     }
                 },
                 availableVoices = availableVoices,
-                upNextStories = (allStories + curated)
-                    .filter { it.status == com.tamixa.domain.StoryStatus.READY && it.id != storyId }
-                    .distinctBy { it.id }
-                    .take(12),
                 durationSeconds = streamDurationSeconds,
-                onUpNextStoryClick = { s ->
-                    val src = if (s.parentId == 0L) TamixaConstants.STORY_SOURCE_LIBRARY else TamixaConstants.STORY_SOURCE_GENERATED
-                    navController.navigate(Screen.AudioPlayer.withId(s.id, src)) { launchSingleTop = true }
+                narrativeScenes = streamNarrativeScenes,
+                storyArtPersonalizationOptIn = settingsState.storyArtPersonalizationOptIn,
+                isFavorite = story?.let { s -> favorites.any { it.id == s.id } } == true,
+                onFavoriteToggle = story?.let { s ->
+                    {
+                        val src = if (s.parentId == 0L) TamixaConstants.STORY_SOURCE_LIBRARY else TamixaConstants.STORY_SOURCE_GENERATED
+                        val fav = favorites.any { it.id == s.id }
+                        if (fav) {
+                            storyViewModel.removeFavorite(s.id) {
+                                appAnalytics.trackFavoriteRemove(s.id, src)
+                            }
+                        } else {
+                            storyViewModel.addFavorite(s.id, src) {
+                                appAnalytics.trackFavoriteAdd(s.id, src)
+                            }
+                        }
+                    }
+                },
+                onAddToList = story?.let { s ->
+                    {
+                        val src = if (s.parentId == 0L) TamixaConstants.STORY_SOURCE_LIBRARY else TamixaConstants.STORY_SOURCE_GENERATED
+                        if (favorites.any { it.id == s.id }) {
+                            appMessageNotifier.show(Strings.playerAlreadyInListSnackbar())
+                        } else {
+                            storyViewModel.addFavorite(s.id, src) {
+                                appMessageNotifier.show(Strings.playerAddedToListSnackbar())
+                                appAnalytics.trackFavoriteAdd(s.id, src)
+                            }
+                        }
+                    }
+                },
+                onVolumeClick = null,
+                onOpenQuiz = story?.childId?.takeIf { it > 0L }?.let { cid ->
+                    {
+                        navController.navigate(Screen.Quiz.withIds(storyId, cid))
+                    }
                 }
             )
         }
@@ -1279,6 +1403,8 @@ fun TamixaNavHost(
                 settingsLoadError = settingsState.settingsLoadError,
                 exporting = settingsState.exporting,
                 onPreferredVoiceChange = { settingsViewModel.setPreferredVoiceProfile(it) },
+                storyArtPersonalizationOptIn = settingsState.storyArtPersonalizationOptIn,
+                onStoryArtPersonalizationOptInChange = { settingsViewModel.setStoryArtPersonalizationOptIn(it) },
                 onLanguageChange = { code ->
                     settingsViewModel.setLanguage(code)
                     Strings.setLanguage(code)
@@ -1321,6 +1447,109 @@ fun TamixaNavHost(
                 onNavigateToLibrary = { navController.navigate(Screen.Library.route) },
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+            )
+        }
+        // ── Education routes ──────────────────────────────────────────────────
+        composable(
+            Screen.Streak.route,
+            arguments = listOf(navArgument("childId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val childId = backStackEntry.arguments?.getLong("childId") ?: 0L
+            val streak by educationViewModel.streak.collectAsState()
+            val loading by educationViewModel.streakLoading.collectAsState()
+            val error by educationViewModel.streakError.collectAsState()
+            LaunchedEffect(childId) { educationViewModel.loadStreak(childId) }
+            StreakScreen(
+                streak = streak,
+                loading = loading,
+                error = error,
+                onRetry = { educationViewModel.loadStreak(childId) },
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            Screen.Vocabulary.route,
+            arguments = listOf(navArgument("childId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val childId = backStackEntry.arguments?.getLong("childId") ?: 0L
+            val progress by educationViewModel.vocabProgress.collectAsState()
+            val learnedWords by educationViewModel.learnedWords.collectAsState()
+            val suggestions by educationViewModel.suggestions.collectAsState()
+            val loading by educationViewModel.vocabLoading.collectAsState()
+            val error by educationViewModel.vocabError.collectAsState()
+            LaunchedEffect(childId) { educationViewModel.loadVocabulary(childId) }
+            VocabularyScreen(
+                progress = progress,
+                learnedWords = learnedWords,
+                suggestions = suggestions,
+                loading = loading,
+                error = error,
+                onRetry = { educationViewModel.loadVocabulary(childId) },
+                onMarkLearned = { wordId -> educationViewModel.markWordLearned(childId, wordId) },
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            Screen.Classroom.route,
+            arguments = listOf(navArgument("childId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val childId = backStackEntry.arguments?.getLong("childId") ?: 0L
+            val classrooms by educationViewModel.classrooms.collectAsState()
+            val loading by educationViewModel.classroomsLoading.collectAsState()
+            val error by educationViewModel.classroomsError.collectAsState()
+            val joinLoading by educationViewModel.joinLoading.collectAsState()
+            val joinError by educationViewModel.joinError.collectAsState()
+            val joinResult by educationViewModel.joinResult.collectAsState()
+            LaunchedEffect(childId) { educationViewModel.loadClassrooms(childId) }
+            ClassroomScreen(
+                classrooms = classrooms,
+                loading = loading,
+                error = error,
+                joinLoading = joinLoading,
+                joinError = joinError,
+                joinSuccess = joinResult,
+                onRetry = { educationViewModel.loadClassrooms(childId) },
+                onJoin = { code -> educationViewModel.joinClassroom(code, childId) },
+                onClearJoin = { educationViewModel.clearJoinResult() },
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            Screen.Quiz.route,
+            arguments = listOf(
+                navArgument("storyId") { type = NavType.LongType },
+                navArgument("childId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val storyId = backStackEntry.arguments?.getLong("storyId") ?: 0L
+            val childId = backStackEntry.arguments?.getLong("childId") ?: 0L
+            val quiz by educationViewModel.quiz.collectAsState()
+            val result by educationViewModel.quizResult.collectAsState()
+            val loading by educationViewModel.quizLoading.collectAsState()
+            val error by educationViewModel.quizError.collectAsState()
+            LaunchedEffect(storyId, childId) {
+                educationViewModel.loadQuiz(storyId)
+            }
+            QuizScreen(
+                quiz = quiz,
+                result = result,
+                loading = loading,
+                error = error,
+                quizChildId = childId,
+                onSubmit = { answers ->
+                    val q = quiz
+                    if (q != null && childId != 0L) {
+                        educationViewModel.submitQuiz(q.id, childId, answers)
+                    }
+                },
+                onDone = {
+                    educationViewModel.clearQuiz()
+                    navController.popBackStack()
+                },
+                onBack = {
+                    educationViewModel.clearQuiz()
+                    navController.popBackStack()
+                }
             )
         }
     }

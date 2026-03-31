@@ -184,6 +184,7 @@ private suspend fun trySynthesizeChunkToFile(
                     safeResume(outputFile.exists() && outputFile.length() > 0)
                 }
             }
+            @Suppress("OVERRIDE_DEPRECATION")
             override fun onError(id: String?) { onError(id, -1) }
             override fun onError(id: String?, errorCode: Int) {
                 handler.post {

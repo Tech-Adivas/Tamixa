@@ -22,7 +22,7 @@ import {
   type Story,
   type SearchStoryItem,
 } from "../lib/api";
-import type { StreamUrlResponse } from "../types/api";
+import type { StreamUrlResponse } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { EmptyState } from "../components/EmptyState";
 
@@ -115,6 +115,7 @@ export default function Stories() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [playingAvatarVideoUrl, setPlayingAvatarVideoUrl] = useState<string | null>(null);
+  const [playingHostClipUrl, setPlayingHostClipUrl] = useState<string | null>(null);
   const playingStoryRef = useRef<{ id: number; source: string } | null>(null);
   const playIntentRef = useRef<number | null>(null);
   const blobUrlRef = useRef<string | null>(null);
@@ -245,6 +246,7 @@ export default function Stories() {
       audioRef.current?.pause();
       videoRef.current?.pause();
       setPlayingAvatarVideoUrl(null);
+      setPlayingHostClipUrl(null);
       if (blobUrlRef.current) {
         URL.revokeObjectURL(blobUrlRef.current);
         blobUrlRef.current = null;
@@ -256,6 +258,7 @@ export default function Stories() {
     audioRef.current?.pause();
     videoRef.current?.pause();
     setPlayingAvatarVideoUrl(null);
+    setPlayingHostClipUrl(null);
     playIntentRef.current = storyId;
     setLoadingStreamId(storyId);
     setError("");
@@ -276,6 +279,7 @@ export default function Stories() {
 
       if (data.avatarVideoUrl) {
         const resolvedVideoUrl = resolveCoverUrl(data.avatarVideoUrl) ?? data.avatarVideoUrl;
+        setPlayingHostClipUrl(null);
         setPlayingAvatarVideoUrl(resolvedVideoUrl);
         setPlayingStoryId(storyId);
         setAudioDuration(0);
@@ -312,6 +316,13 @@ export default function Stories() {
       if (startPositionSeconds != null && startPositionSeconds > 0) {
         audio.currentTime = startPositionSeconds;
       }
+      const reduceMotion =
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const clipRaw = !reduceMotion && data.hostStoryClipUrl?.trim()
+        ? resolveCoverUrl(data.hostStoryClipUrl) ?? data.hostStoryClipUrl
+        : null;
+      setPlayingHostClipUrl(clipRaw);
       await audio.play();
       if (playIntentRef.current !== storyId) return;
       setPlayingStoryId(storyId);
@@ -357,6 +368,7 @@ export default function Stories() {
       audioRef.current?.pause();
       videoRef.current?.pause();
       setPlayingAvatarVideoUrl(null);
+      setPlayingHostClipUrl(null);
       setPlayingStoryId(null);
       return;
     }
@@ -400,6 +412,7 @@ export default function Stories() {
         blobUrlRef.current = null;
       }
       setPlayingAvatarVideoUrl(null);
+      setPlayingHostClipUrl(null);
       setPlayingStoryId(null);
       setPlayingTitle(null);
       playingStoryRef.current = null;
@@ -480,6 +493,7 @@ export default function Stories() {
         audioRef={audioRef}
         videoRef={videoRef}
         avatarVideoUrl={playingAvatarVideoUrl}
+        hostClipUrl={playingHostClipUrl}
         isPlaying={playingStoryId != null}
         isLoading={loadingStreamId != null}
         title={playingTitle ?? (loadingStreamId != null ? "Loading…" : null)}

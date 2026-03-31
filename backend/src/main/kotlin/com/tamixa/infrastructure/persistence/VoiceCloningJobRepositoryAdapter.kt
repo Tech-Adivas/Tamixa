@@ -68,6 +68,6 @@ class VoiceCloningJobRepositoryAdapter(
         googleVoiceCloningKey: String?
     ) {
         val now = Instant.now()
-        voiceCloningJobJpaRepository.updateStatus(id, status, elevenLabsVoiceId, googleVoiceCloningKey, errorMessage, now)
+        voiceCloningJobJpaRepository.updateStatus(id, status.name, elevenLabsVoiceId, googleVoiceCloningKey, errorMessage, now)
     }
 }

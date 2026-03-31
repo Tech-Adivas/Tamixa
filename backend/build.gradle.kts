@@ -28,6 +28,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.springframework.retry:spring-retry")
     implementation("org.springframework:spring-aspects")
+    implementation("org.springframework.boot:spring-boot-starter-aop")
     implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")
 
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
@@ -40,6 +41,8 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.5.0")
     implementation("net.logstash.logback:logstash-logback-encoder:7.4")
     implementation("com.bucket4j:bucket4j-core:8.7.0")
+    implementation("net.javacrumbs.shedlock:shedlock-spring:5.13.0")
+    implementation("net.javacrumbs.shedlock:shedlock-provider-jdbc-template:5.13.0")
     implementation("io.micrometer:micrometer-core:1.12.5")
     implementation("io.micrometer:micrometer-registry-prometheus")
 
@@ -48,6 +51,9 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.5")
 
     implementation("software.amazon.awssdk:s3:2.25.0")
+
+    /** Decode MP3 length for narration duration + truncation_warning (per-segment and single-blob TTS). */
+    implementation("com.mpatric:mp3agic:0.9.1")
 
     implementation("com.google.cloud:google-cloud-speech:4.81.0")
 

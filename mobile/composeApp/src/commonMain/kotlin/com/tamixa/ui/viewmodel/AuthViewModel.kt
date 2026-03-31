@@ -33,8 +33,11 @@ class AuthViewModel(
     private val _otpSentToPhone = MutableStateFlow<String?>(null)
     val otpSentToPhone: StateFlow<String?> = _otpSentToPhone.asStateFlow()
 
+    // Dev code is intentionally NOT exposed as a public StateFlow to prevent
+    // it from being rendered in UI or leaked via state inspection.
+    // Only used internally to auto-fill OTP in debug builds.
     private val _otpDevCode = MutableStateFlow<String?>(null)
-    val otpDevCode: StateFlow<String?> = _otpDevCode.asStateFlow()
+    internal val otpDevCode: StateFlow<String?> = _otpDevCode.asStateFlow()
 
     private val _passwordlessCodeSentToEmail = MutableStateFlow<String?>(null)
     val passwordlessCodeSentToEmail: StateFlow<String?> = _passwordlessCodeSentToEmail.asStateFlow()

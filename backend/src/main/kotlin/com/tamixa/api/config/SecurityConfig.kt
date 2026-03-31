@@ -1,10 +1,10 @@
 package com.tamixa.api.config
 
 import com.tamixa.api.ApiVersion
-import com.tamixa.api.exception.ErrorResponse
 import com.tamixa.infrastructure.config.AppProperties
 import com.fasterxml.jackson.databind.ObjectMapper
 import jakarta.servlet.http.HttpServletResponse
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.core.env.Environment
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -17,11 +17,14 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
+import org.springframework.web.filter.OncePerRequestFilter
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher
 import org.springframework.http.HttpMethod
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
+import org.slf4j.MDC
 import java.time.Instant
 
 @Configuration
@@ -31,21 +34,29 @@ class SecurityConfig(
     private val appProperties: AppProperties,
     private val environment: Environment,
     private val requestTracingFilter: RequestTracingFilter,
-    private val rateLimitingFilter: RateLimitingFilter,
+    redisRateLimitingFilter: ObjectProvider<RedisRateLimitingFilter>,
+    inMemoryRateLimitingFilter: ObjectProvider<RateLimitingFilter>,
     private val jwtAuthenticationFilter: JwtAuthenticationFilter,
     private val storyGenerationRateLimitFilter: StoryGenerationRateLimitFilter,
     private val objectMapper: ObjectMapper
 ) {
 
+    /** Exactly one of [RedisRateLimitingFilter] / [RateLimitingFilter] is registered (see @ConditionalOnProperty). */
+    private val rateLimitingFilter: OncePerRequestFilter =
+        redisRateLimitingFilter.getIfAvailable()
+            ?: inMemoryRateLimitingFilter.getIfAvailable()
+            ?: error("No API rate limit filter: enable app.rate-limit or fix configuration")
+
     private fun writeJsonError(response: HttpServletResponse, status: Int, message: String) {
         response.status = status
         response.contentType = MediaType.APPLICATION_JSON_VALUE
         response.characterEncoding = "UTF-8"
-        val body = ErrorResponse(
-            message = message,
-            status = status,
-            traceId = null,
-            timestamp = Instant.now().toString()
+        val traceId = MDC.get(RequestTracingFilter.TRACE_ID_MDC_KEY).orEmpty()
+        val body = mapOf(
+            "message" to message,
+            "status" to status,
+            "traceId" to traceId,
+            "timestamp" to Instant.now().toString()
         )
         objectMapper.writeValue(response.outputStream, body)
     }
@@ -67,7 +78,10 @@ class SecurityConfig(
                     "http://127.0.0.1:3001"
                 )
             } else {
-                allowedOriginPatterns = listOf("*")
+                // Production: ALLOWED_ORIGINS must be explicitly configured; fail-fast to prevent open CORS
+                throw IllegalStateException(
+                    "ALLOWED_ORIGINS must be set in production. Set app.cors.allowed-origins to a comma-separated list of allowed origins."
+                )
             }
             allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
             allowedHeaders = listOf("*")
@@ -84,6 +98,10 @@ class SecurityConfig(
         return http
             .cors { it.configurationSource(corsConfigurationSource()) }
             .csrf { it.disable() }
+            .headers { headers ->
+                headers.frameOptions { it.deny() }
+                headers.referrerPolicy { it.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN) }
+            }
             .sessionManagement {
                 it.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             }
@@ -107,6 +125,8 @@ class SecurityConfig(
                         AntPathRequestMatcher.antMatcher(HttpMethod.GET, "$v1/admin/parents/*/voice"),
                         AntPathRequestMatcher.antMatcher(HttpMethod.POST, "$v1/admin/parents/*/voice/upload")
                     ).hasAnyRole("ADMIN", "SUPER_ADMIN", "CONTENT_MANAGER", "REVENUE_ANALYST", "SUPPORT")
+                    // Reserved public control-plane prefix; use `/api/v1/admin/ai-control-plane/` (RBAC) for operations.
+                    .requestMatchers("/api/control-plane/**").denyAll()
                     .anyRequest().authenticated()
             }
             .exceptionHandling { ex ->

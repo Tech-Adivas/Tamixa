@@ -1,0 +1,47 @@
+# Enforces mini-spec links when changing high-blast-radius paths (see docs/specs/README.md).
+name: Spec-first guard
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: spec-first-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spec-first:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Skip if skip-spec-first label
+        id: skip
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            core.setOutput('skip', labels.includes('skip-spec-first') ? 'true' : 'false');
+
+      - name: Write PR body to file
+        if: steps.skip.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            fs.writeFileSync('pr-body.txt', context.payload.pull_request.body || '');
+
+      - name: Run spec-first guard
+        if: steps.skip.outputs.skip != 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY_FILE: pr-body.txt
+        run: bash .github/scripts/spec-first-guard.sh

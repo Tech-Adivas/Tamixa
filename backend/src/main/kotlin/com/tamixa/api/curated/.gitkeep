@@ -1,0 +1,2 @@
+# Reserved for future curated content API endpoints.
+# Currently curated stories are served via LibraryController under /api/v1/stories/library.

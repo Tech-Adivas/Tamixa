@@ -19,6 +19,7 @@ class TranslationPipelineStatusTest {
         assertFalse(TranslationPipelineStatus.TRANSLATING.isFailed())
         assertFalse(TranslationPipelineStatus.REWRITING.isFailed())
         assertFalse(TranslationPipelineStatus.TTS_PROCESSING.isFailed())
+        assertFalse(TranslationPipelineStatus.AWAITING_AUDIO.isFailed())
         assertFalse(TranslationPipelineStatus.COMPLETED.isFailed())
     }
 
@@ -36,6 +37,7 @@ class TranslationPipelineStatusTest {
         assertFalse(TranslationPipelineStatus.TRANSLATING.isTerminal())
         assertFalse(TranslationPipelineStatus.REWRITING.isTerminal())
         assertFalse(TranslationPipelineStatus.TTS_PROCESSING.isTerminal())
+        assertFalse(TranslationPipelineStatus.AWAITING_AUDIO.isTerminal())
     }
 
     @Test
@@ -46,6 +48,7 @@ class TranslationPipelineStatusTest {
         assertTrue(TranslationPipelineStatus.REWRITING.canRetry())
         assertTrue(TranslationPipelineStatus.TRANSLATING.canRetry())
         assertTrue(TranslationPipelineStatus.TTS_PROCESSING.canRetry())
+        assertTrue(TranslationPipelineStatus.AWAITING_AUDIO.canRetry())
         assertFalse(TranslationPipelineStatus.PENDING.canRetry())
         assertFalse(TranslationPipelineStatus.COMPLETED.canRetry())
     }

@@ -7,6 +7,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -133,13 +134,13 @@ private val LightScheme = lightColorScheme(
 
 private val DarkScheme = NightSkyScheme
 
-// Design spec: 24dp corners for large elements, 16dp for inputs
+// Expressive M3-style radii: slightly softer curves for a current, friendly product feel
 private val TamixaShapes = Shapes(
-    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-    small = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-    medium = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-    large = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
+    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+    small = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+    medium = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
+    large = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
+    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(32.dp)
 )
 
 /** Relative luminance (0–1) for light/dark detection. WCAG-style. */
@@ -190,9 +191,9 @@ private val TamixaTypography = Typography(
     ),
     titleMedium = TextStyle(
         fontWeight = FontWeight.Medium,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.15.sp
+        fontSize = 17.sp,
+        lineHeight = 26.sp,
+        letterSpacing = 0.1.sp
     ),
     titleSmall = TextStyle(
         fontWeight = FontWeight.Medium,
@@ -202,15 +203,15 @@ private val TamixaTypography = Typography(
     ),
     bodyLarge = TextStyle(
         fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.25.sp
+        fontSize = 17.sp,
+        lineHeight = 26.sp,
+        letterSpacing = 0.2.sp
     ),
     bodyMedium = TextStyle(
         fontWeight = FontWeight.Normal,
-        fontSize = 15.sp,
-        lineHeight = 22.sp,
-        letterSpacing = 0.25.sp
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.2.sp
     ),
     bodySmall = TextStyle(
         fontWeight = FontWeight.Normal,
@@ -226,9 +227,9 @@ private val TamixaTypography = Typography(
     ),
     labelMedium = TextStyle(
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
+        fontSize = 13.sp,
+        lineHeight = 18.sp,
+        letterSpacing = 0.35.sp
     ),
     labelSmall = TextStyle(
         fontWeight = FontWeight.Medium,
@@ -250,6 +251,23 @@ fun TamixaTheme(
         typography = TamixaTypography,
         content = content
     )
+}
+
+/**
+ * Shared chrome (top/bottom bars) tied to the active [MaterialTheme] color scheme so light/dark
+ * stay coherent instead of hard-coded charcoal everywhere.
+ */
+object TamixaChrome {
+    /** Top/bottom chrome: dark = warm charcoal [surface] (Storybook Dusk); light = M3 surface container. */
+    @Composable
+    fun barContainerColor(): Color {
+        val scheme = MaterialTheme.colorScheme
+        return if (scheme.background.luminance() < 0.5f) {
+            scheme.surface
+        } else {
+            scheme.surfaceContainer
+        }
+    }
 }
 
 // Design system: named colors for gradients, glows, components (aligned with admin/web)
@@ -286,6 +304,12 @@ object TamixaColors {
     /** Text color on white inputs (dark for contrast) */
     val onInputSurface: Color get() = Color(0xFF2C2520)
     val nightSkySurfaceVariant: Color get() = TamixaSurfaceVariant
+    /** Deeper warm charcoal for player chrome / docks; main tab bar uses [nightSkyBg] in [com.tamixa.ui.components.TamixaBottomBar]. */
+    val bottomBarBackgroundDark: Color get() = Color(0xFF0F0D09)
+    /**
+     * Mid-tone anchor for light bottom nav — warm taupe between cream surfaces and shadows.
+     */
+    val bottomBarBackgroundLight: Color get() = Color(0xFFDDD3C8)
     val cream: Color get() = Cream
     val lavenderGlow: Color get() = LavenderGlow
     val grayText: Color get() = GrayText
@@ -339,17 +363,29 @@ object TamixaDesignTokens {
     val cardElevationHover = 10.dp
     val dialogRadius = 24.dp
     val buttonRadius = 24.dp
-    val inputRadius = 16.dp
+    val inputRadius = 18.dp
     /** Card corner radius: list/content cards — consistent professional look */
-    val cardRadius = 16.dp
+    val cardRadius = 18.dp
+    /** List rows / compact cards — between default and large feature cards */
+    val cardRadiusMedium = 20.dp
     /** Large feature cards (e.g. profile menu, settings sections) */
-    val cardRadiusLarge = 20.dp
+    val cardRadiusLarge = 22.dp
     /** Carousel/poster cards */
-    val carouselCardRadius = 16.dp
+    val carouselCardRadius = 18.dp
+    /** List row cards: soft shadow (ambient / spot) — use with [listCardShadowElevation] */
+    val listCardShadowElevation = 5.dp
+    val listCardShadowAmbient = Color.Black.copy(alpha = 0.07f)
+    val listCardShadowSpot = Color.Black.copy(alpha = 0.055f)
+    /** Poster / carousel cards: slightly deeper shadow */
+    val carouselCardShadowElevation = 8.dp
+    val carouselCardShadowAmbient = Color.Black.copy(alpha = 0.11f)
+    val carouselCardShadowSpot = Color.Black.copy(alpha = 0.085f)
     /** Screen edge padding — consistent on all screens */
     val screenPadding = 24.dp
     /** Extra bottom padding when screen has bottom nav — minimal gap above bar, consistent across app */
     val screenPaddingBottomWithNav = 0.dp
+    /** Bottom inset when there is no bottom navigation */
+    val screenPaddingBottomWithoutNav = 28.dp
     val headerPaddingHorizontal = 20.dp
     val headerPaddingVertical = 18.dp
     val contentPaddingHorizontal = 20.dp
@@ -362,6 +398,10 @@ object TamixaDesignTokens {
     val cardContentPadding = 20.dp
     /** Min touch target (accessibility); use for icon buttons and list rows */
     val minTouchTargetSize = 48.dp
+    /** Full-width hero art on story player — consistent height across devices */
+    val storyIllustrationHeroHeight = 264.dp
+    /** Corner radius for player hero illustration frame (cards may use [cardRadius] or [carouselCardRadius]) */
+    val storyIllustrationFrameRadius = 18.dp
     /** Soft glow for primary CTA (gold) */
     val buttonShadowElevation = 8.dp
     val fabShadowElevation = 12.dp
@@ -415,6 +455,41 @@ object TamixaGradients {
     fun appBackgroundBrush() = Brush.verticalGradient(appBackground)
     /** Primary button gradient brush (Figma warm orange) */
     fun primaryButtonBrush() = Brush.linearGradient(primaryButton)
+
+    /**
+     * “Storybook playbook” shelf frame — terracotta → teal → mint edge (chunky kid-app energy, not Duolingo green).
+     */
+    fun storybookShelfFrameBrush(): Brush = Brush.linearGradient(
+        colorStops = arrayOf(
+            0f to Terracotta.copy(alpha = 0.98f),
+            0.48f to DeepTeal.copy(alpha = 0.88f),
+            1f to Color(0xFF5CBCA8).copy(alpha = 0.92f)
+        ),
+        start = Offset.Zero,
+        end = Offset(1080f, 520f)
+    )
+
+    /** Splash: strong bottom wash so launch feels branded and alive immediately. */
+    fun splashStorybookVignetteBrush(): Brush = Brush.verticalGradient(
+        colorStops = arrayOf(
+            0f to Color.Transparent,
+            0.5f to Color.Transparent,
+            0.78f to Terracotta.copy(alpha = 0.26f),
+            1f to DeepTeal.copy(alpha = 0.32f)
+        )
+    )
+
+    /** Onboarding: soft top atmosphere (no heavy bars) — pairs with starfield. */
+    fun onboardingTopAtmosphereBrush(): Brush = Brush.verticalGradient(
+        colorStops = arrayOf(
+            0f to Terracotta.copy(alpha = 0.14f),
+            0.35f to DeepTeal.copy(alpha = 0.08f),
+            0.7f to Color.Transparent,
+            1f to Color.Transparent
+        ),
+        startY = 0f,
+        endY = 1200f
+    )
     /** Splash gradient brush */
     fun splashBackgroundBrush() = Brush.verticalGradient(splashBackground)
     /** Reward / star gradient brush */

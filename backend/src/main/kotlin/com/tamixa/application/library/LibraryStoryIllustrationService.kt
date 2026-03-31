@@ -14,8 +14,9 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Service
 
 /**
- * Generates AI cover for library stories: DALL-E image, then optional Sora image-to-video
- * converted to GIF for app. Uses English content when available. Keeps static image as fallback.
+ * Generates AI cover for library stories: DALL-E reference frame, then **prefers** Sora image-to-video
+ * converted to GIF (upload GIF before static image). Uses English content when available.
+ * Static image is always stored when generation succeeds; serves as fallback when GIF is absent.
  */
 @Service
 class LibraryStoryIllustrationService(
@@ -32,7 +33,26 @@ class LibraryStoryIllustrationService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * Generate and store cover image (DALL-E), then optionally cover video (Sora image-to-video).
+     * When storage keys change between two saves (e.g. submit for review after editing), delete the **previous**
+     * S3 objects so stale cover/animation files are not left orphaned.
+     */
+    fun deleteReplacedCoverAssets(before: LibraryStory, after: LibraryStory) {
+        val oldImageKey = coverImageUrlResolver.normalizeForStorage(before.coverImageUrl)
+        val newImageKey = coverImageUrlResolver.normalizeForStorage(after.coverImageUrl)
+        if (!oldImageKey.isNullOrBlank() && oldImageKey != newImageKey) {
+            imageStorage.deleteCuratedCoverImage(oldImageKey)
+            log.info("Deleted replaced curated cover image key={} storyId={}", oldImageKey, before.id)
+        }
+        val oldVideoKey = coverImageUrlResolver.normalizeForStorage(before.coverVideoUrl)
+        val newVideoKey = coverImageUrlResolver.normalizeForStorage(after.coverVideoUrl)
+        if (!oldVideoKey.isNullOrBlank() && oldVideoKey != newVideoKey) {
+            coverVideoStorage?.deleteCuratedCoverVideo(oldVideoKey)
+            log.info("Deleted replaced curated cover video key={} storyId={}", oldVideoKey, before.id)
+        }
+    }
+
+    /**
+     * Generate cover: DALL-E bytes, try animated GIF upload first, then static image upload.
      * When force=true, clears existing cover and video then regenerates.
      * Otherwise idempotent: skips if already has cover.
      */
@@ -77,15 +97,10 @@ class LibraryStoryIllustrationService(
             return null
         }
         log.info("DALL-E returned {} bytes for story {}", imageBytes.size, current.id)
-        val path = imageStorage.storeCuratedCoverImage(current.id, imageBytes)
-        if (path == null) {
-            log.warn("Library story {} cover storage failed: imageStorage.storeCuratedCoverImage returned null (check S3/GCS config)", current.id)
-            return null
-        }
         var coverAnimationPath: String? = null
         if (coverVideoGeneration != null && coverVideoStorage != null) {
             val motionPrompt = buildCoverVideoMotionPrompt(current)
-            log.info("Sora: generating cover animation for story {} (image-to-video, then GIF)", current.id)
+            log.info("Sora (preferred): generating cover animation for library story {} before static upload", current.id)
             log.debug("Sora motion prompt length={} excerpt={}", motionPrompt.length, motionPrompt.take(80))
             val videoBytes = coverVideoGeneration.generateVideoFromImage(imageBytes, motionPrompt)
             if (videoBytes != null) {
@@ -101,14 +116,22 @@ class LibraryStoryIllustrationService(
                     log.warn("Library story {} MP4-to-GIF conversion failed (install FFmpeg and set SORA_CONVERT_TO_GIF=true for animated cover)", current.id)
                 }
             } else {
-                log.warn("Library story {} cover video generation failed (Sora returned null; check SORA_ENABLED and Sora API access)", current.id)
+                log.warn("Library story {} cover video generation failed (Sora returned null); continuing with static cover only", current.id)
             }
         } else {
-            log.debug("Cover animation skipped: Sora or storage not configured (set SORA_ENABLED=true for animated GIF cover)")
+            log.debug("Cover animation skipped: Sora or storage not configured — generating static cover only")
+        }
+        val path = imageStorage.storeCuratedCoverImage(current.id, imageBytes)
+        if (path == null) {
+            log.warn("Library story {} cover storage failed: imageStorage.storeCuratedCoverImage returned null (check S3/GCS config)", current.id)
+            if (coverAnimationPath != null) {
+                coverVideoStorage?.deleteCuratedCoverVideo(coverAnimationPath)
+            }
+            return null
         }
         val updated = current.copy(coverImageUrl = path, coverVideoUrl = coverAnimationPath)
         repository.update(updated)
-        log.info("Generated cover for library story {} (image + {})", current.id, if (coverAnimationPath != null) "GIF" else "image only")
+        log.info("Generated cover for library story {} (static + {})", current.id, if (coverAnimationPath != null) "GIF" else "no GIF")
         return repository.findById(current.id)
     }
 

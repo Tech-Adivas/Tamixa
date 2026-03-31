@@ -2,6 +2,7 @@ package com.tamixa.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -23,7 +24,10 @@ fun TamixaApp(onSensitiveScreen: ((Boolean) -> Unit)? = null) {
     val systemDark = isSystemInDarkTheme()
     val darkTheme = if (settingsState.useSystemTheme) systemDark else settingsState.darkMode
     TamixaTheme(darkTheme = darkTheme) {
-        Surface(modifier = Modifier.fillMaxSize()) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
             TamixaNavHost(
                 authViewModel = koinInject(),
                 storyViewModel = koinInject(),
@@ -32,6 +36,7 @@ fun TamixaApp(onSensitiveScreen: ((Boolean) -> Unit)? = null) {
                 subscriptionViewModel = koinInject(),
                 settingsViewModel = settingsViewModel,
                 shortContentViewModel = koinInject(),
+                educationViewModel = koinInject(),
                 onSensitiveScreen = onSensitiveScreen
             )
         }

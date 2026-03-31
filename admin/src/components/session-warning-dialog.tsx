@@ -10,25 +10,21 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Clock } from "lucide-react";
+import { INACTIVITY_SESSION_WARNING_MS } from "@/lib/session-config";
+
+const INACTIVITY_MINUTES = Math.round(INACTIVITY_SESSION_WARNING_MS / 60_000);
 
 interface SessionWarningDialogProps {
   open: boolean;
-  minutesLeft: number;
   onStaySignedIn: () => void;
   onLogout: () => void;
 }
 
 export function SessionWarningDialog({
   open,
-  minutesLeft,
   onStaySignedIn,
   onLogout,
 }: SessionWarningDialogProps) {
-  const message =
-    minutesLeft <= 1
-      ? "Your session will expire in less than a minute."
-      : `Your session will expire in about ${minutesLeft} minutes due to inactivity.`;
-
   return (
     <Dialog open={open} onOpenChange={() => {}}>
       <DialogContent
@@ -39,9 +35,12 @@ export function SessionWarningDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-amber-500" />
-            Session expiring soon
+            Still there?
           </DialogTitle>
-          <DialogDescription>{message} Stay signed in to continue.</DialogDescription>
+          <DialogDescription>
+            You have been inactive for {INACTIVITY_MINUTES} minutes. Stay signed in to continue your session, or log
+            out.
+          </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onLogout}>

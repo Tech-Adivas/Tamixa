@@ -23,12 +23,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tamixa.composeapp.generated.resources.Res
 import com.tamixa.composeapp.generated.resources.onboarding_avatar_hero
+import com.tamixa.composeapp.generated.resources.onboarding_avatar_hero_animated
 import com.tamixa.ui.components.TamixaPrimaryButton
 import com.tamixa.ui.components.TamixaSkipButton
 import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.OnboardingCardColors
 import com.tamixa.ui.theme.OnboardingCardDefaults
 import com.tamixa.ui.theme.TamixaColors
+import com.tamixa.ui.theme.TamixaDesignTokens
 
 /**
  * Optional onboarding step: introduce talking avatar.
@@ -119,8 +121,8 @@ private fun AvatarInvitationPreviewCard() {
         border = BorderStroke(1.dp, OnboardingCardColors.cardBorder)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            modifier = Modifier.padding(TamixaDesignTokens.cardSpacing),
+            verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
         ) {
             Box(
                 modifier = Modifier
@@ -130,6 +132,7 @@ private fun AvatarInvitationPreviewCard() {
             ) {
                 OnboardingImageBanner(
                     image = Res.drawable.onboarding_avatar_hero,
+                    animatedGif = Res.drawable.onboarding_avatar_hero_animated,
                     contentDescription = "Avatar",
                     height = 176.dp
                 )

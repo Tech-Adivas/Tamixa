@@ -32,18 +32,50 @@
   --tamixa-gold: #FFD84D;
   --tamixa-gold-light: #FF8A00;
 
-  /* Design tokens – radii, shadows, motion */
-  --tamixa-radius-sm: 0.5rem;
-  --tamixa-radius-md: 0.625rem;
-  --tamixa-radius-lg: 0.75rem;
-  --tamixa-radius-xl: 1rem;
-  --tamixa-radius-2xl: 1.25rem;
+  /* Spacing tokens (8dp grid - aligned with mobile P0 enhancements) */
+  --spacing-xs: 0.25rem;    /* 4px */
+  --spacing-sm: 0.5rem;     /* 8px */
+  --spacing-md: 0.75rem;    /* 12px - smallSpacing */
+  --spacing-lg: 1rem;       /* 16px - cardSpacing */
+  --spacing-xl: 1.25rem;    /* 20px - cardContentPadding */
+  --spacing-2xl: 1.5rem;    /* 24px - screenPadding, sectionSpacing */
+  --spacing-3xl: 2rem;      /* 32px */
+  --spacing-4xl: 3rem;      /* 48px - minTouchTargetSize */
+  --spacing-5xl: 4rem;      /* 64px */
+
+  /* Semantic spacing (aligned with mobile TamixaDesignTokens) */
+  --screen-padding: 1.5rem;           /* 24px */
+  --section-spacing: 1.5rem;          /* 24px */
+  --card-spacing: 1rem;               /* 16px */
+  --small-spacing: 0.75rem;           /* 12px */
+  --card-content-padding: 1.25rem;    /* 20px */
+  --header-padding-horizontal: 1.25rem; /* 20px */
+  --header-padding-vertical: 1.125rem;  /* 18px */
+  --min-touch-target-size: 3rem;      /* 48px */
+
+  /* Design tokens – radii, shadows, motion (aligned with mobile) */
+  --tamixa-radius-sm: 0.5rem;     /* 8px */
+  --tamixa-radius-md: 0.75rem;    /* 12px */
+  --tamixa-radius-lg: 1rem;       /* 16px - inputRadius, cardRadius */
+  --tamixa-radius-xl: 1.25rem;    /* 20px - cardRadiusLarge */
+  --tamixa-radius-2xl: 1.5rem;    /* 24px - dialogRadius, buttonRadius */
   --tamixa-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   --tamixa-shadow-hover: 0 4px 16px rgba(124, 58, 237, 0.25);
   --tamixa-shadow-glow: 0 0 24px -4px rgba(124, 58, 237, 0.35);
   --tamixa-shadow-card: 0 2px 8px -2px rgba(0, 0, 0, 0.15), 0 4px 12px -4px rgba(0, 0, 0, 0.1);
+  
+  /* Motion — aligned with mobile P0 enhancements */
   --tamixa-duration-micro: 120ms;
   --tamixa-duration-standard: 240ms;
+  --tamixa-duration-reward: 600ms;
+  --tamixa-ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --tamixa-ease-out-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --tamixa-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Accessibility — P0 enhancement */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: hsl(217 91% 60%);
 
   /* Typography */
   --font-display: "Nunito", "Inter", system-ui, sans-serif;
@@ -2247,7 +2279,7 @@ body.high-contrast .btn-outline {
   100% { opacity: 0.9; }
 }
 
-/* Respect user preference for reduced motion */
+/* Respect user preference for reduced motion — P0 enhancement */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2255,5 +2287,57 @@ body.high-contrast .btn-outline {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
+}
+
+/* P0 Enhancement: Accessibility utilities */
+.focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.min-touch-target {
+  min-width: var(--min-touch-target-size);
+  min-height: var(--min-touch-target-size);
+}
+
+/* P0 Enhancement: Adaptive rendering utilities */
+.low-end-device .complex-animation {
+  animation: none !important;
+  transition: none !important;
+}
+
+.low-end-device .heavy-shadow {
+  box-shadow: var(--tamixa-shadow) !important;
+}
+
+.low-end-device .tamixa-splash__particle {
+  display: none !important;
+}
+
+.reduced-motion .tamixa-splash__hero,
+.reduced-motion .tamixa-splash__sparkle,
+.reduced-motion .tamixa-splash__ring {
+  animation: none !important;
+}
+
+/* P0 Enhancement: Performance optimized animations */
+.tamixa-performance-optimized {
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.tamixa-performance-optimized.animate {
+  transition: transform var(--tamixa-duration-micro) var(--tamixa-ease-out-expo);
+}
+
+/* P0 Enhancement: Adaptive story cards for low-end devices */
+.low-end-device .story-card {
+  box-shadow: var(--tamixa-shadow) !important;
+}
+
+.low-end-device .story-card:hover {
+  transform: none !important;
+  box-shadow: var(--tamixa-shadow) !important;
 }

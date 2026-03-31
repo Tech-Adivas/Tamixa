@@ -9,6 +9,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
@@ -34,7 +35,14 @@ class NarrationAsyncConfig(
             maxPoolSize = 12
             setQueueCapacity(50)
             setThreadNamePrefix("story-pipeline-")
-            setRejectedExecutionHandler { r, e -> log.warn("Story pipeline executor queue full, running in caller"); r.run() }
+            setRejectedExecutionHandler { _, e ->
+                log.error(
+                    "Story pipeline executor rejected task (queue full). active={} poolSize={}",
+                    e.activeCount,
+                    e.poolSize
+                )
+                throw RejectedExecutionException("Story pipeline executor overloaded")
+            }
             initialize()
         }
         log.info("Story pipeline async executor: core=4 max=12 (parallel stories)")
@@ -49,7 +57,14 @@ class NarrationAsyncConfig(
             maxPoolSize = 4
             setQueueCapacity(16)
             setThreadNamePrefix("trigger-pipeline-")
-            setRejectedExecutionHandler { r, e -> log.warn("Trigger pipeline queue full"); r.run() }
+            setRejectedExecutionHandler { _, e ->
+                log.error(
+                    "Trigger pipeline executor rejected task (queue full). active={} poolSize={}",
+                    e.activeCount,
+                    e.poolSize
+                )
+                throw RejectedExecutionException("Trigger pipeline executor overloaded")
+            }
             // Graceful shutdown: wait for in-flight pipeline tasks (up to 15 min) before stopping
             setWaitForTasksToCompleteOnShutdown(true)
             setAwaitTerminationSeconds(900)
@@ -111,9 +126,13 @@ class NarrationAsyncConfig(
             queue,
             java.util.concurrent.Executors.defaultThreadFactory()
         ).apply {
-            setRejectedExecutionHandler { r, _ ->
-                log.warn("Narration TTS executor queue full, running in caller thread")
-                r.run()
+            setRejectedExecutionHandler { _, e ->
+                log.error(
+                    "Narration TTS executor rejected task (queue full). active={} poolSize={}",
+                    e.activeCount,
+                    e.poolSize
+                )
+                throw RejectedExecutionException("Narration TTS executor overloaded")
             }
         }
         log.info("Narration TTS executor: core={} max={} queue={}",

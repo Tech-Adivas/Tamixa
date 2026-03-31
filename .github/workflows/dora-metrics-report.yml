@@ -1,0 +1,184 @@
+name: DORA metrics report
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Event type"
+        type: choice
+        required: true
+        options:
+          - deployment
+          - incident
+      status:
+        description: "deployment: SUCCESS/FAILED, incident: OPEN/RESOLVED"
+        required: true
+        type: string
+      service:
+        description: "Service name"
+        required: false
+        default: "backend"
+        type: string
+      environment:
+        description: "Environment name"
+        required: false
+        default: "production"
+        type: string
+      change_id:
+        description: "Optional change id (commit SHA, release id)"
+        required: false
+        type: string
+      summary:
+        description: "Optional summary"
+        required: false
+        type: string
+      change_started_at:
+        description: "Optional ISO timestamp for deployment lead time start"
+        required: false
+        type: string
+      deployed_at:
+        description: "Optional ISO timestamp deployment completed"
+        required: false
+        type: string
+      incident_started_at:
+        description: "Optional ISO timestamp incident start"
+        required: false
+        type: string
+      restored_at:
+        description: "Optional ISO timestamp incident restoration"
+        required: false
+        type: string
+      caused_by_change:
+        description: "Incident only: true/false"
+        required: false
+        default: "true"
+        type: string
+  repository_dispatch:
+    types:
+      - dora_deployment
+      - dora_incident
+  workflow_call:
+    inputs:
+      mode:
+        description: "Event type: deployment|incident"
+        required: true
+        type: string
+      status:
+        description: "deployment: SUCCESS/FAILED, incident: OPEN/RESOLVED"
+        required: true
+        type: string
+      service:
+        description: "Service name"
+        required: false
+        default: "backend"
+        type: string
+      environment:
+        description: "Environment name"
+        required: false
+        default: "production"
+        type: string
+      change_id:
+        description: "Optional change id (commit SHA, release id)"
+        required: false
+        type: string
+      summary:
+        description: "Optional summary"
+        required: false
+        type: string
+      change_started_at:
+        description: "Optional ISO timestamp for deployment lead time start"
+        required: false
+        type: string
+      deployed_at:
+        description: "Optional ISO timestamp deployment completed"
+        required: false
+        type: string
+      incident_started_at:
+        description: "Optional ISO timestamp incident start"
+        required: false
+        type: string
+      restored_at:
+        description: "Optional ISO timestamp incident restoration"
+        required: false
+        type: string
+      caused_by_change:
+        description: "Incident only: true/false"
+        required: false
+        default: "true"
+        type: string
+    secrets:
+      DORA_API_BASE_URL:
+        required: true
+      DORA_ADMIN_BEARER_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  report-dora-event:
+    runs-on: ubuntu-latest
+    env:
+      DORA_API_BASE_URL: ${{ secrets.DORA_API_BASE_URL || '' }}
+      DORA_ADMIN_BEARER_TOKEN: ${{ secrets.DORA_ADMIN_BEARER_TOKEN || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate secrets
+        run: |
+          if [ -z "${DORA_API_BASE_URL:-}" ]; then
+            echo "Missing required secret DORA_API_BASE_URL"
+            exit 1
+          fi
+          if [ -z "${DORA_ADMIN_BEARER_TOKEN:-}" ]; then
+            echo "Missing required secret DORA_ADMIN_BEARER_TOKEN"
+            exit 1
+          fi
+
+      - name: Report DORA deployment (dispatch)
+        if: ${{ github.event_name == 'repository_dispatch' && github.event.action == 'dora_deployment' }}
+        run: |
+          scripts/report-dora-event.sh deployment \
+            --status "${{ github.event.client_payload.status }}" \
+            --service "${{ github.event.client_payload.service || 'backend' }}" \
+            --environment "${{ github.event.client_payload.environment || 'production' }}" \
+            --change-id "${{ github.event.client_payload.change_id || '' }}" \
+            --summary "${{ github.event.client_payload.summary || '' }}" \
+            --change-started-at "${{ github.event.client_payload.change_started_at || '' }}" \
+            --deployed-at "${{ github.event.client_payload.deployed_at || '' }}"
+
+      - name: Report DORA incident (dispatch)
+        if: ${{ github.event_name == 'repository_dispatch' && github.event.action == 'dora_incident' }}
+        run: |
+          scripts/report-dora-event.sh incident \
+            --status "${{ github.event.client_payload.status }}" \
+            --service "${{ github.event.client_payload.service || 'backend' }}" \
+            --environment "${{ github.event.client_payload.environment || 'production' }}" \
+            --caused-by-change "${{ github.event.client_payload.caused_by_change || 'true' }}" \
+            --summary "${{ github.event.client_payload.summary || '' }}" \
+            --incident-started-at "${{ github.event.client_payload.incident_started_at || '' }}" \
+            --restored-at "${{ github.event.client_payload.restored_at || '' }}"
+
+      - name: Report DORA deployment (manual/call)
+        if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.mode == 'deployment' }}
+        run: |
+          scripts/report-dora-event.sh deployment \
+            --status "${{ inputs.status }}" \
+            --service "${{ inputs.service }}" \
+            --environment "${{ inputs.environment }}" \
+            --change-id "${{ inputs.change_id }}" \
+            --summary "${{ inputs.summary }}" \
+            --change-started-at "${{ inputs.change_started_at }}" \
+            --deployed-at "${{ inputs.deployed_at }}"
+
+      - name: Report DORA incident (manual/call)
+        if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.mode == 'incident' }}
+        run: |
+          scripts/report-dora-event.sh incident \
+            --status "${{ inputs.status }}" \
+            --service "${{ inputs.service }}" \
+            --environment "${{ inputs.environment }}" \
+            --caused-by-change "${{ inputs.caused_by_change }}" \
+            --summary "${{ inputs.summary }}" \
+            --incident-started-at "${{ inputs.incident_started_at }}" \
+            --restored-at "${{ inputs.restored_at }}"

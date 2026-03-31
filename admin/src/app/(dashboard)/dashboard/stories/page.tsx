@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { api, getApiBaseUrl } from "@/lib/api";
-import type { LibraryStorySummary, PagedResponse, PipelineStatusResponse } from "@/types/api";
+import type { LibraryStorySummary, PagedResponse, PipelineStatusResponse, StoryWithIssues } from "@/types/api";
 import { STORY_CATEGORIES } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { usePipelineActive } from "@/contexts/pipeline-active-context";
 import { useActionResult } from "@/contexts/action-result-context";
 import { isSuperAdmin, canManageStories } from "@/lib/admin-roles";
+import { isLibraryStoryPipelineActivelyRunning, REGENERATE_THEN_TRANSLATIONS_HELP } from "@/lib/library-story-workflow";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -59,6 +61,7 @@ const PIPELINE_META_KEYS = [
   "progress",
   "overallStatus",
   "reviewedLanguages",
+  "reviewStaleLanguages",
   "allLanguagesReviewed",
   "durationSeconds",
   "generatedAtIst",
@@ -100,6 +103,10 @@ function parsePipelineStatus(value: string): { status: string; error?: string } 
   const idx = value.indexOf(" — ");
   if (idx === -1) return { status: value };
   return { status: value.slice(0, idx).trim(), error: value.slice(idx + 3).trim() };
+}
+
+function isReviewQueueStatus(status: string | null | undefined): boolean {
+  return status === "PUBLISHED" || status === "PROCESSING" || status === "READY";
 }
 
 export default function LibraryStoriesPage() {
@@ -145,14 +152,42 @@ export default function LibraryStoriesPage() {
   const viewAudioRef = useRef<{ element: HTMLAudioElement; objectUrl: string } | null>(null);
   const [clearAllConfirmOpen, setClearAllConfirmOpen] = useState(false);
   const [clearAllLoading, setClearAllLoading] = useState(false);
+  const [storiesWithIssues, setStoriesWithIssues] = useState<StoryWithIssues[]>([]);
+  const [issuesLoading, setIssuesLoading] = useState(false);
+  const [issuesError, setIssuesError] = useState<string | null>(null);
+
+  const loadStoryIssues = useCallback(async () => {
+    setIssuesLoading(true);
+    setIssuesError(null);
+    try {
+      const issues = await api.admin.getStoriesWithIssues();
+      setStoriesWithIssues(issues);
+    } catch (e) {
+      setIssuesError(e instanceof Error ? e.message : "Failed to load story issues");
+      setStoriesWithIssues([]);
+    } finally {
+      setIssuesLoading(false);
+    }
+  }, []);
 
   const load = useCallback((silent = false) => {
     if (!silent) {
       setLoading(true);
       setError(null);
     }
+    const narrationApprovedParam =
+      approvedFilter === "approved"
+        ? true
+        : approvedFilter === "not_approved"
+          ? false
+          : undefined;
     api.admin
-      .getLibraryStories(page, PAGE_SIZE, statusFilter === "ALL" ? undefined : statusFilter)
+      .getLibraryStories(
+        page,
+        PAGE_SIZE,
+        statusFilter === "ALL" ? undefined : statusFilter,
+        narrationApprovedParam
+      )
       .then(setData)
       .catch((e) => {
         if (!silent) {
@@ -161,15 +196,23 @@ export default function LibraryStoriesPage() {
         }
       })
       .finally(() => !silent && setLoading(false));
-  }, [page, statusFilter]);
+  }, [page, statusFilter, approvedFilter]);
 
-  const filteredContent = data?.content?.filter((row) => {
-    if (approvedFilter === "all") return true;
-    const isApproved = !!row.narrationApprovedAt;
-    return approvedFilter === "approved" ? isApproved : !isApproved;
-  }) ?? [];
+  const listRows = data?.content ?? [];
+
+  useEffect(() => {
+    setPage(0);
+  }, [statusFilter, approvedFilter]);
 
   useEffect(load, [load]);
+  useEffect(() => {
+    loadStoryIssues();
+  }, [loadStoryIssues]);
+
+  const handleRefreshAll = useCallback(() => {
+    load();
+    loadStoryIssues();
+  }, [load, loadStoryIssues]);
 
   const loadPipelineStatuses = useCallback((ids: number[]) => {
     if (ids.length === 0) return;
@@ -334,19 +377,8 @@ export default function LibraryStoriesPage() {
   };
 
   /** True when pipeline is actively processing (TRANSLATING, REWRITING, TTS_PROCESSING). Disable edit/approve/delete during this. */
-  const isPipelineInProgress = (status?: PipelineStatusResponse | Record<string, string | undefined> | null) => {
-    if (!status) return false;
-    const entries = Object.entries(status).filter(([k]) => !PIPELINE_META_KEYS.includes(k));
-    return entries.some(
-      ([, s]) =>
-        s === "TRANSLATING" ||
-        s === "REWRITING" ||
-        s === "TTS_PROCESSING" ||
-        s?.startsWith("TRANSLATING") ||
-        s?.startsWith("REWRITING") ||
-        s?.startsWith("TTS_PROCESSING")
-    );
-  };
+  const isPipelineInProgress = (status?: PipelineStatusResponse | Record<string, string | undefined> | null) =>
+    isLibraryStoryPipelineActivelyRunning(status);
 
   const isPipelineFullyComplete = (status?: PipelineStatusResponse | Record<string, string | undefined> | null) => {
     const entries = Object.entries(status ?? {}).filter(([k]) => !PIPELINE_META_KEYS.includes(k));
@@ -364,8 +396,8 @@ export default function LibraryStoriesPage() {
     Object.keys(status ?? {}).filter((k) => !PIPELINE_META_KEYS.includes(k)).length;
 
   const toggleSelectAll = () => {
-    if (filteredContent.length === 0) return;
-    const filteredIds = new Set(filteredContent.map((r) => r.id));
+    if (listRows.length === 0) return;
+    const filteredIds = new Set(listRows.map((r) => r.id));
     if (selectedIds.size === filteredIds.size && [...filteredIds].every((id) => selectedIds.has(id))) {
       setSelectedIds(new Set());
     } else {
@@ -383,7 +415,10 @@ export default function LibraryStoriesPage() {
     setPublishing(true);
     try {
       const res = await api.admin.bulkPublish(ids);
-      showSuccess("Stories published", `${res.updated} story${res.updated === 1 ? "" : "s"} published. The pipeline will process each one.`);
+      showSuccess(
+        "Stories published",
+        `${res.updated} story${res.updated === 1 ? "" : "s"} published. Run Generate translations from each story’s Edit page when needed, then Narration → Generate audio after approval.`
+      );
       setBulkAction(null);
       setSelectedIds(new Set());
       load();
@@ -398,7 +433,10 @@ export default function LibraryStoriesPage() {
     setDeletingId(id);
     try {
       await api.admin.deleteLibraryStory(id);
-      showSuccess("Story deleted", "The story and all associated data have been permanently removed.");
+      showSuccess(
+        "Story moved to trash",
+        "The story is hidden for ~30 days (configurable). Super Admin: GET soft-deleted list or POST restore before the scheduled purge removes it permanently."
+      );
       setDeleteConfirmOpen({ single: null, bulk: null });
       load();
     } catch (e) {
@@ -414,7 +452,10 @@ export default function LibraryStoriesPage() {
     setPublishing(true);
     try {
       const res = await api.admin.bulkDeleteLibraryStories(ids);
-      showSuccess("Stories deleted", `${res.deleted} story${res.deleted === 1 ? "" : "s"} permanently removed.`);
+      showSuccess(
+        "Stories moved to trash",
+        `${res.deleted} story${res.deleted === 1 ? "" : "s"} soft-deleted. Super Admin can restore from the API until retention purge.`
+      );
       setDeleteConfirmOpen({ single: null, bulk: null });
       setBulkAction(null);
       setSelectedIds(new Set());
@@ -465,8 +506,58 @@ export default function LibraryStoriesPage() {
 
       <div className="rounded-lg border border-border/80 bg-muted/20 px-4 py-2.5 text-sm text-muted-foreground">
         <span className="font-medium text-foreground">Pipeline:</span>{" "}
-        <strong>Submit for review</strong> (on Edit) → pipeline runs → <strong>Approve</strong> or <strong>Reject</strong> in Story for review. Progress in Pipeline column.
+        Open a story → <strong>Edit</strong>. {REGENERATE_THEN_TRANSLATIONS_HELP} Then <strong>Submit for review</strong> →{" "}
+        <strong>Approve</strong> or <strong>Reject</strong> in Story for review. After approval, open <strong>Narration</strong> and use{" "}
+        <strong>Generate audio</strong>. Progress appears in the Pipeline column and the top banner when a job is running.
       </div>
+
+      <Card className="border-border/80">
+        <CardContent className="pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">Status consistency audit</p>
+              <p className="text-xs text-muted-foreground">
+                Stories with translation/pipeline anomalies detected by backend checks.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={loadStoryIssues} disabled={issuesLoading}>
+              {issuesLoading ? "Checking..." : "Recheck"}
+            </Button>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Badge variant={storiesWithIssues.length > 0 ? "destructive" : "default"}>
+              {storiesWithIssues.length} story{storiesWithIssues.length === 1 ? "" : "ies"} with issues
+            </Badge>
+            {issuesError ? <span className="text-xs text-destructive">{issuesError}</span> : null}
+          </div>
+          {storiesWithIssues.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {storiesWithIssues.slice(0, 8).map((item) => (
+                <div key={item.storyId} className="inline-flex items-center gap-1 rounded-md border px-1.5 py-1">
+                  <Badge variant="outline">
+                    #{item.storyId} ({item.issues.length})
+                  </Badge>
+                  <Link href={`/dashboard/stories/approve?storyId=${item.storyId}`}>
+                    <Badge variant="secondary" className="hover:bg-muted">
+                      Review
+                    </Badge>
+                  </Link>
+                  <Link href={`/dashboard/stories/to-speech?storyId=${item.storyId}`}>
+                    <Badge variant="secondary" className="hover:bg-muted">
+                      Narration
+                    </Badge>
+                  </Link>
+                </div>
+              ))}
+              {storiesWithIssues.length > 8 ? (
+                <span className="text-xs text-muted-foreground self-center">
+                  +{storiesWithIssues.length - 8} more
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
 
       {selectedIds.size > 0 && (
@@ -547,8 +638,21 @@ export default function LibraryStoriesPage() {
       )}
 
       <Card className="border-border/80 shadow-sm overflow-hidden">
-        <CardHeader className="flex flex-col gap-4 pb-2 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-          <CardTitle className="text-lg font-semibold tracking-tight">Story library · HD</CardTitle>
+        <CardHeader className="flex flex-col gap-4 pb-2 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
+          <div className="space-y-1.5 min-w-0 pr-2">
+            <CardTitle className="text-lg font-semibold tracking-tight">Story library · HD</CardTitle>
+            <p className="text-sm text-muted-foreground leading-snug max-w-xl">
+              This table is the curated catalog (database table{" "}
+              <span className="font-mono text-xs">library_stories</span>
+              ). Parent-generated AI stories live in the{" "}
+              <Link href="/dashboard/moderation" className="text-primary underline-offset-4 hover:underline">
+                Moderation
+              </Link>{" "}
+              queue and are not counted here. Use{" "}
+              <span className="font-medium text-foreground">All</span> for status and approval to page through every
+              library row (20 per page).
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full min-w-[120px] max-w-[140px] h-9 sm:w-[140px]">
@@ -558,7 +662,11 @@ export default function LibraryStoriesPage() {
               <SelectContent>
                 <SelectItem value="ALL">All status</SelectItem>
                 <SelectItem value="DRAFT">Draft</SelectItem>
-                <SelectItem value="PUBLISHED">Published</SelectItem>
+                <SelectItem value="PUBLISHED">Published (+ processing)</SelectItem>
+                <SelectItem value="PROCESSING">Processing</SelectItem>
+                <SelectItem value="READY">Ready</SelectItem>
+                <SelectItem value="CHANGES_REQUESTED">Changes requested</SelectItem>
+                <SelectItem value="REJECTED">Rejected</SelectItem>
               </SelectContent>
             </Select>
             <Select value={approvedFilter} onValueChange={(v: "all" | "approved" | "not_approved") => setApprovedFilter(v)}>
@@ -571,9 +679,9 @@ export default function LibraryStoriesPage() {
                 <SelectItem value="not_approved">Not approved</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" size="default" className="h-9 font-medium shrink-0" onClick={() => load()} disabled={loading}>
+            <Button variant="outline" size="default" className="h-9 font-medium shrink-0" onClick={handleRefreshAll} disabled={loading || issuesLoading}>
               <RefreshCw
-                className={`h-4 w-4 mr-1 shrink-0 ${loading ? "animate-spin" : ""}`}
+                className={`h-4 w-4 mr-1 shrink-0 ${loading || issuesLoading ? "animate-spin" : ""}`}
               />
               Refresh
             </Button>
@@ -601,6 +709,22 @@ export default function LibraryStoriesPage() {
             <p className="text-muted-foreground">Loading…</p>
           ) : data ? (
             <>
+              {(approvedFilter !== "all" || statusFilter !== "ALL") && (
+                <div
+                  className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+                  role="status"
+                >
+                  <span className="font-medium">Filters are narrowing the list on the server.</span>{" "}
+                  Set status to <span className="font-medium">All status</span> and approval to{" "}
+                  <span className="font-medium">All</span> to load every curated story (paginated).{" "}
+                  {approvedFilter === "not_approved" && (
+                    <span>With &quot;Not approved&quot;, you see stories where narration approval is not set yet (including draft/review/rejected states).</span>
+                  )}
+                  {approvedFilter === "approved" && (
+                    <span>With &quot;Approved&quot;, you only see titles already cleared for the app.</span>
+                  )}
+                </div>
+              )}
               <div className="w-full overflow-x-auto">
                 <table className="w-full table-fixed text-sm">
                   <colgroup>
@@ -627,8 +751,8 @@ export default function LibraryStoriesPage() {
                           onClick={toggleSelectAll}
                           className="rounded p-1 hover:bg-muted"
                         >
-                          {filteredContent.length > 0 &&
-                          filteredContent.every((r) => selectedIds.has(r.id)) ? (
+                          {listRows.length > 0 &&
+                          listRows.every((r) => selectedIds.has(r.id)) ? (
                             <CheckSquare className="h-4 w-4" />
                           ) : (
                             <Square className="h-4 w-4" />
@@ -667,7 +791,7 @@ export default function LibraryStoriesPage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredContent.map((row) => {
+                    listRows.map((row) => {
                       const pipelineStatus = pipelineStatusMap[row.id];
                       const rowDisabled = isPipelineInProgress(pipelineStatus);
                       return (
@@ -707,7 +831,11 @@ export default function LibraryStoriesPage() {
                               </span>
                             </TooltipTrigger>
                             <TooltipContent side="top">
-                              {row.narrationApprovedAt ? "Approved — Live on app" : "Ready for review — approve to allow generate/regenerate audio"}
+                              {row.narrationApprovedAt
+                                ? "Approved — Live on app"
+                                : isReviewQueueStatus(row.status)
+                                  ? "Ready for review — approve to allow generate/regenerate audio"
+                                  : "Not in review queue yet"}
                             </TooltipContent>
                           </Tooltip>
                         </td>
@@ -766,8 +894,8 @@ export default function LibraryStoriesPage() {
                         <td className="px-4 py-3 text-right align-middle tabular-nums">{row.wordCount}</td>
                         <td className="min-w-0 px-4 py-3 text-left align-middle">
                           <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            {!row.narrationApprovedAt ? (
-                              <Link href="/dashboard/stories/approve">
+                            {!row.narrationApprovedAt && isReviewQueueStatus(row.status) ? (
+                              <Link href={`/dashboard/stories/approve?storyId=${row.id}`}>
                                 <span className="text-muted-foreground text-xs hover:underline" title="Approve first to generate or regenerate audio">Ready for review →</span>
                               </Link>
                             ) : (() => {
@@ -783,7 +911,7 @@ export default function LibraryStoriesPage() {
                               }
                               const totalLangs = getTotalPipelineLanguages(pipelineStatusMap[row.id]);
                               return (
-                                <Link href="/dashboard/stories/to-speech" className="inline-flex items-center gap-1.5">
+                                <Link href={`/dashboard/stories/to-speech?storyId=${row.id}`} className="inline-flex items-center gap-1.5">
                                   <Badge variant={pipelineComplete ? "default" : "outline"}>
                                     {pipelineComplete ? "Complete" : totalLangs > 0 ? `${completedLangs.length} of ${totalLangs}` : `${completedLangs.length}`}
                                   </Badge>
@@ -809,7 +937,7 @@ export default function LibraryStoriesPage() {
                                 size="sm"
                                 className="h-8 px-2 text-muted-foreground hover:text-foreground"
                                 disabled={rowDisabled}
-                                title={rowDisabled ? "Pipeline in progress" : "Actions"}
+                                title={rowDisabled ? "Pipeline queued or running" : "Actions"}
                               >
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
@@ -894,8 +1022,8 @@ export default function LibraryStoriesPage() {
             </DialogTitle>
             <DialogDescription>
               {deleteConfirmOpen.bulk?.length
-                ? "This action cannot be undone. The selected stories and all associated data (favorites, analytics, audio) will be permanently removed."
-                : "This action cannot be undone. The story and all associated data (favorites, analytics, audio) will be permanently removed."}
+                ? "Stories will be moved to trash first (soft delete). You can restore them during retention; permanent purge happens later."
+                : "The story will be moved to trash first (soft delete). You can restore it during retention; permanent purge happens later."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -967,13 +1095,15 @@ export default function LibraryStoriesPage() {
               {viewStoryData.coverVideoUrl?.trim() && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-1.5">Animated cover (GIF)</p>
-                  <div className="aspect-video max-w-full rounded-lg border bg-muted/30 overflow-hidden">
+                  <div className="relative aspect-video max-w-full rounded-lg border bg-muted/30 overflow-hidden">
                     {viewStoryData.coverVideoUrl.includes(".gif") ? (
-                      <img
+                      <Image
                         key={viewCoverRefreshKey}
                         src={`${resolveCoverSrc(viewStoryData.coverVideoUrl) ?? viewStoryData.coverVideoUrl}?t=${viewCoverRefreshKey}`}
                         alt="Animated cover"
-                        className="w-full h-full object-cover"
+                        fill
+                        unoptimized
+                        className="object-cover"
                       />
                     ) : (
                       <video
@@ -993,14 +1123,16 @@ export default function LibraryStoriesPage() {
               {viewStoryData.coverImageUrl?.trim() && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-1.5">Cover image</p>
-                  <div className="aspect-video max-w-full rounded-lg border bg-muted/30 overflow-hidden">
-                    <img
+                  <div className="relative aspect-video max-w-full rounded-lg border bg-muted/30 overflow-hidden">
+                    <Image
                       key={viewCoverRefreshKey}
                       src={`${resolveCoverSrc(viewStoryData.coverImageUrl) ?? viewStoryData.coverImageUrl}?t=${viewCoverRefreshKey}`}
                       alt="Story cover"
-                      className="w-full h-full object-cover"
+                      fill
+                      unoptimized
+                      className="object-cover"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
+                        (e.currentTarget as HTMLImageElement).style.display = "none";
                       }}
                     />
                   </div>
@@ -1064,7 +1196,7 @@ export default function LibraryStoriesPage() {
                 )}
                 {viewStoryTabLang !== "ta" && !viewStoryLangLoading && (!viewStoryContentByLang[viewStoryTabLang]?.content?.trim()?.length) && (
                   <p className="text-xs text-muted-foreground mb-2">
-                    No translation for this language yet. Run <strong>Generate audio</strong> in Narration to create it. Showing original story above.
+                    No translation for this language yet. Run <strong>Generate translations</strong> from <strong>Edit</strong> (open this story from Story library), then submit for review; after approval, use <strong>Narration</strong> → <strong>Generate audio</strong>. Showing original story above.
                   </p>
                 )}
                 <div className="flex items-center gap-2">
@@ -1081,7 +1213,7 @@ export default function LibraryStoriesPage() {
                     )}
                     Preview ({VIEW_LANGUAGES.find((l) => l.code === viewStoryTabLang)?.label ?? viewStoryTabLang})
                   </Button>
-                  <Link href="/dashboard/stories/to-speech">
+                  <Link href={`/dashboard/stories/to-speech?storyId=${viewStoryData?.id ?? viewStoryId ?? ""}`}>
                     <Button variant="ghost" size="sm" onClick={() => setViewStoryId(null)}>
                       Open Narration
                     </Button>

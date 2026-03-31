@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/auth-context";
+import { isSuperAdmin } from "@/lib/admin-roles";
 import type { AdminUser, PagedResponse, ParentSummary } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,21 +32,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { UserCog, Plus } from "lucide-react";
 import { useActionResult } from "@/contexts/action-result-context";
 
 const PAGE_SIZE = 20;
-const ADMIN_ROLES = [
-  { value: "SUPER_ADMIN", label: "Super Admin" },
-  { value: "REVENUE_ANALYST", label: "Revenue Analyst" },
-  { value: "CONTENT_MANAGER", label: "Content Manager" },
-  { value: "SUPPORT", label: "Support" },
-  { value: "PARENT", label: "Revoke (Parent)" },
-];
+
+/** Roles available to assign. SUPER_ADMIN only shown to super admins. */
+const ALL_ADMIN_ROLES = [
+  { value: "SUPER_ADMIN", label: "Super Admin", superAdminOnly: true },
+  { value: "REVENUE_ANALYST", label: "Revenue Analyst", superAdminOnly: false },
+  { value: "CONTENT_MANAGER", label: "Content Manager", superAdminOnly: false },
+  { value: "SUPPORT", label: "Support", superAdminOnly: false },
+  { value: "PARENT", label: "Revoke (Parent)", superAdminOnly: false },
+] as const;
 
 export default function UsersPage() {
+  const { user: currentUser } = useAuth();
   const { showSuccess, showError } = useActionResult();
   const [data, setData] = useState<PagedResponse<AdminUser> | null>(null);
   const [page, setPage] = useState(0);
@@ -57,6 +63,22 @@ export default function UsersPage() {
   const [parentsSearch, setParentsSearch] = useState("");
   const [parentsResult, setParentsResult] = useState<ParentSummary[]>([]);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  // Role change requires confirmation before firing
+  const [roleChangeTarget, setRoleChangeTarget] = useState<{
+    userId: number;
+    email: string;
+    currentRole: string;
+    newRole: string;
+  } | null>(null);
+
+  const canAssignRole = (role: string) => {
+    const def = ALL_ADMIN_ROLES.find((r) => r.value === role);
+    if (!def) return false;
+    if (def.superAdminOnly && !isSuperAdmin(currentUser?.role ?? "")) return false;
+    return true;
+  };
+
+  const availableRoles = ALL_ADMIN_ROLES.filter((r) => canAssignRole(r.value));
 
   const load = useCallback(() => {
     setLoading(true);
@@ -64,7 +86,7 @@ export default function UsersPage() {
     api.admin
       .getAdminUsers(page, PAGE_SIZE)
       .then(setData)
-      .catch((e) => setError(e.message))
+      .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, [page]);
 
@@ -89,6 +111,10 @@ export default function UsersPage() {
       showError("Invalid parent", "Enter a valid parent ID.");
       return;
     }
+    if (!canAssignRole(addRole)) {
+      showError("Permission denied", "You cannot assign this role.");
+      return;
+    }
     setAddSubmitting(true);
     try {
       await api.admin.addAdminUser(parentId, addRole);
@@ -105,10 +131,14 @@ export default function UsersPage() {
   };
 
   const handleAddByParent = async (parent: ParentSummary) => {
+    if (!canAssignRole(addRole)) {
+      showError("Permission denied", "You cannot assign this role.");
+      return;
+    }
     setAddSubmitting(true);
     try {
       await api.admin.addAdminUser(parent.id, addRole);
-      showSuccess("Admin added", `${parent.email} has been assigned admin role.`);
+      showSuccess("Admin added", `${parent.email} has been assigned the role.`);
       setAddOpen(false);
       setAddParentId("");
       setParentsSearch("");
@@ -120,11 +150,22 @@ export default function UsersPage() {
     }
   };
 
-  const handleUpdateRole = async (userId: number, role: string) => {
-    setUpdatingId(userId);
+  const handleRoleChangeRequest = (row: AdminUser, newRole: string) => {
+    if (newRole === row.role) return;
+    if (!canAssignRole(newRole)) {
+      showError("Permission denied", "You cannot assign this role.");
+      return;
+    }
+    setRoleChangeTarget({ userId: row.id, email: row.email, currentRole: row.role, newRole });
+  };
+
+  const handleRoleChangeConfirm = async () => {
+    if (!roleChangeTarget) return;
+    setUpdatingId(roleChangeTarget.userId);
     try {
-      await api.admin.updateAdminRole(userId, role);
+      await api.admin.updateAdminRole(roleChangeTarget.userId, roleChangeTarget.newRole);
       showSuccess("Role updated", "User role has been updated.");
+      setRoleChangeTarget(null);
       load();
     } catch (e) {
       showError("Update failed", e instanceof Error ? e.message : "Unable to update role.");
@@ -132,6 +173,9 @@ export default function UsersPage() {
       setUpdatingId(null);
     }
   };
+
+  const roleLabel = (value: string) =>
+    ALL_ADMIN_ROLES.find((r) => r.value === value)?.label ?? value;
 
   return (
     <div className="space-y-6">
@@ -152,9 +196,7 @@ export default function UsersPage() {
           </Button>
         </CardHeader>
         <CardContent>
-          {error && (
-            <p className="mb-4 text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
           {loading ? (
             <div className="space-y-2">
               <Skeleton className="h-10 w-full" />
@@ -188,20 +230,18 @@ export default function UsersPage() {
                           <TableCell>
                             <Badge variant="secondary">{row.role}</Badge>
                           </TableCell>
-                          <TableCell>
-                            {new Date(row.createdAt).toLocaleString()}
-                          </TableCell>
+                          <TableCell>{new Date(row.createdAt).toLocaleString()}</TableCell>
                           <TableCell>
                             <Select
                               value={row.role}
-                              onValueChange={(v) => handleUpdateRole(row.id, v)}
+                              onValueChange={(v) => handleRoleChangeRequest(row, v)}
                               disabled={updatingId === row.id}
                             >
                               <SelectTrigger className="w-[180px]">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                {ADMIN_ROLES.map((opt) => (
+                                {availableRoles.map((opt) => (
                                   <SelectItem key={opt.value} value={opt.value}>
                                     {opt.label}
                                   </SelectItem>
@@ -244,6 +284,7 @@ export default function UsersPage() {
         </CardContent>
       </Card>
 
+      {/* Add admin dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
           <DialogHeader>
@@ -295,11 +336,13 @@ export default function UsersPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ADMIN_ROLES.filter((r) => r.value !== "PARENT").map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
+                  {availableRoles
+                    .filter((r) => r.value !== "PARENT")
+                    .map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -314,6 +357,22 @@ export default function UsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Role change confirmation */}
+      <ConfirmDialog
+        open={roleChangeTarget !== null}
+        onOpenChange={(open) => !open && setRoleChangeTarget(null)}
+        title="Change role"
+        description={
+          roleChangeTarget
+            ? `Change ${roleChangeTarget.email} from ${roleLabel(roleChangeTarget.currentRole)} to ${roleLabel(roleChangeTarget.newRole)}?${roleChangeTarget.newRole === "PARENT" ? " This will revoke all admin access." : ""}`
+            : ""
+        }
+        confirmLabel="Change role"
+        variant={roleChangeTarget?.newRole === "PARENT" ? "destructive" : "default"}
+        loading={updatingId !== null}
+        onConfirm={handleRoleChangeConfirm}
+      />
     </div>
   );
 }

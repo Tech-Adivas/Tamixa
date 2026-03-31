@@ -2,6 +2,7 @@ package com.tamixa.application.port
 
 import com.tamixa.domain.LibraryStory
 import com.tamixa.domain.LibraryStoryListing
+import java.time.Instant
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 
@@ -15,7 +16,21 @@ interface StoryLibraryRepositoryPort {
 
     fun findAllWithProcessingFirst(pageable: Pageable): Page<LibraryStory>
 
+    fun findAllWithProcessingFirstAndNarrationApprovedAtNotNull(pageable: Pageable): Page<LibraryStory>
+
+    fun findAllWithProcessingFirstAndNarrationApprovedAtNull(pageable: Pageable): Page<LibraryStory>
+
     fun findByStatusInWithProcessingFirst(statuses: List<String>, pageable: Pageable): Page<LibraryStory>
+
+    fun findByStatusInWithProcessingFirstAndNarrationApprovedAtNotNull(
+        statuses: List<String>,
+        pageable: Pageable
+    ): Page<LibraryStory>
+
+    fun findByStatusInWithProcessingFirstAndNarrationApprovedAtNull(
+        statuses: List<String>,
+        pageable: Pageable
+    ): Page<LibraryStory>
 
     fun findListingByLanguage(language: String, pageable: Pageable): Page<LibraryStoryListing>
 
@@ -28,6 +43,12 @@ interface StoryLibraryRepositoryPort {
     /** Distinct themes for masters with approved translation in given language (non-Tamil). */
     fun findDistinctThemesByNarrationApprovedAndTranslationLanguage(language: String): List<String>
 
+    /**
+     * Same as [findDistinctThemesByNarrationApprovedAndTranslationLanguage] but audio readiness follows the story's
+     * master language (master-only narration mode).
+     */
+    fun findDistinctThemesByNarrationApprovedAndTranslationLanguageWithMasterAudio(language: String): List<String>
+
     fun findListingByIdIn(ids: List<Long>): List<LibraryStoryListing>
 
     fun findByLanguage(language: String, pageable: Pageable): Page<LibraryStory>
@@ -37,6 +58,10 @@ interface StoryLibraryRepositoryPort {
     fun findByLanguageAndNarrationApprovedAndTheme(language: String, theme: String, pageable: Pageable): Page<LibraryStory>
 
     fun findByStatus(status: String, pageable: Pageable): Page<LibraryStory>
+
+    fun findByStatusAndNarrationApprovedAtNotNull(status: String, pageable: Pageable): Page<LibraryStory>
+
+    fun findByStatusAndNarrationApprovedAtNull(status: String, pageable: Pageable): Page<LibraryStory>
 
     fun findByStatusPublishedAndNarrationApprovedAtNull(pageable: Pageable): Page<LibraryStory>
 
@@ -71,12 +96,30 @@ interface StoryLibraryRepositoryPort {
     /** Search by theme or title (case-insensitive). */
     fun searchByThemeOrTitle(query: String, language: String, pageable: org.springframework.data.domain.Pageable): org.springframework.data.domain.Page<LibraryStory>
 
-    /** Delete library story by id. Caller must clean up related data (favorites, analytics, etc.) first. */
-    fun deleteById(id: Long)
+    /** Stories in soft-delete retention (newest first). */
+    fun findSoftDeleted(pageable: Pageable): Page<LibraryStory>
+
+    /** Master ids with soft-delete older than cutoff (for purge). */
+    fun findIdsSoftDeletedBefore(cutoff: Instant): List<Long>
+
+    /** Set deleted_at; returns false if missing or already soft-deleted. */
+    fun markSoftDeleted(id: Long, deletedAt: Instant): Boolean
+
+    /** Clear deleted_at; returns false if not soft-deleted. */
+    fun restoreSoftDeleted(id: Long): Boolean
+
+    /** Physical DELETE (DB cascades translations/audio). Used after retention; caller should have cleaned user refs on soft-delete. */
+    fun hardDeleteById(id: Long)
 
     /** Set when narration was approved for final delivery by a human. */
     fun updateNarrationApprovedAt(id: Long, approvedAt: java.time.Instant?)
 
     /** Set when admin has marked story for reject from the language view. */
     fun updateRejectMarkedAt(id: Long, markedAt: java.time.Instant?)
+
+    /** Content manager requests SUPER_ADMIN/ADMIN to allow Regenerate with prompt again. */
+    fun updateRegeneratePromptUnlockRequestedAt(id: Long, requestedAt: java.time.Instant?)
+
+    /** SUPER_ADMIN/ADMIN approves unlock for content managers. */
+    fun approveRegeneratePromptUnlock(id: Long)
 }

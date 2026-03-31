@@ -17,7 +17,8 @@ import java.time.Instant
 
 /**
  * Dev-only endpoint to seed/reset admin user. Only active when SEED_ADMIN_ENABLED=true.
- * POST /api/v1/dev/seed-admin creates or updates admin@techadivas.com with password Admin123!
+ * POST /api/v1/dev/seed-admin creates or updates the admin account.
+ * Credentials are read from SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD env vars.
  */
 @RestController
 @RequestMapping("${ApiVersion.V1}/dev")
@@ -26,13 +27,10 @@ class DevSeedController(
     private val parentRepository: ParentRepositoryPort,
     private val passwordEncoder: PasswordEncoder,
     private val consentService: ConsentService,
-    @Value("\${SEED_ADMIN_ENABLED:false}") private val seedAdminEnabled: String
+    @Value("\${SEED_ADMIN_ENABLED:false}") private val seedAdminEnabled: String,
+    @Value("\${SEED_ADMIN_EMAIL:admin@techadivas.com}") private val adminEmail: String,
+    @Value("\${SEED_ADMIN_PASSWORD:Admin123!}") private val adminPassword: String
 ) {
-
-    companion object {
-        const val ADMIN_EMAIL = "admin@techadivas.com"
-        const val ADMIN_PASSWORD = "Admin123!"
-    }
 
     @PostMapping("/seed-admin")
     fun seedAdmin(): ResponseEntity<Map<String, Any>> {
@@ -40,13 +38,13 @@ class DevSeedController(
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(mapOf("message" to "Seed admin is disabled. Set SEED_ADMIN_ENABLED=true to enable."))
         }
-        val existing = parentRepository.findByEmail(ADMIN_EMAIL)
-        val hash = passwordEncoder.encode(ADMIN_PASSWORD)
+        val existing = parentRepository.findByEmail(adminEmail)
+        val hash = passwordEncoder.encode(adminPassword)
         val parent = if (existing != null) {
             parentRepository.save(
                 Parent(
                     id = existing.id,
-                    email = ADMIN_EMAIL,
+                    email = adminEmail,
                     passwordHash = hash,
                     role = Role.SUPER_ADMIN,
                     createdAt = existing.createdAt,
@@ -58,7 +56,7 @@ class DevSeedController(
             val created = parentRepository.save(
                 Parent(
                     id = 0,
-                    email = ADMIN_EMAIL,
+                    email = adminEmail,
                     passwordHash = hash,
                     role = Role.SUPER_ADMIN,
                     createdAt = Instant.now(),

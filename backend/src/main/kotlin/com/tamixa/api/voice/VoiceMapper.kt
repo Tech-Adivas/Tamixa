@@ -8,6 +8,7 @@ fun VoiceProfile.toResponse(): VoiceProfileResponse = VoiceProfileResponse(
     id = id,
     parentId = parentId,
     createdAt = createdAt,
+    profileName = profileDisplayName(),
     heygenVoiceId = heygenVoiceId
 )
 
@@ -15,5 +16,22 @@ fun VoiceProfile.toResponse(): VoiceProfileResponse = VoiceProfileResponse(
 fun VoiceCloningJob.toResponse(): VoiceProfileResponse = VoiceProfileResponse(
     id = id,
     parentId = parentId,
-    createdAt = createdAt
+    createdAt = createdAt,
+    profileName = voiceName
 )
+
+private fun VoiceProfile.profileDisplayName(): String? {
+    val path = referenceAudioPath?.trim().orEmpty()
+    if (path.isBlank()) return null
+    val fileName = path.substringAfterLast('/').substringBeforeLast('.').trim()
+    if (fileName.isBlank()) return null
+    return fileName
+        .replace('-', ' ')
+        .replace('_', ' ')
+        .trim()
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { token ->
+            token.replaceFirstChar { c -> c.uppercaseChar() }
+        }
+}

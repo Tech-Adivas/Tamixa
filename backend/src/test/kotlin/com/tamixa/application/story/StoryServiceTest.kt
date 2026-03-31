@@ -65,7 +65,8 @@ class StoryServiceTest : IntegrationTestBase() {
             title = "The Fox and the Grapes",
             moral = "It is easy to despise what you cannot get.",
             storyText = "A fox saw some grapes. He tried to reach them but could not.",
-            estimatedDurationSeconds = 30
+            // Must match StoryValidation duration vs word count (~13 words → ~5 s at 150 wpm).
+            estimatedDurationSeconds = 5
         )
         whenever(openAIPort.generateStructuredStory(any(), any(), any(), any()))
             .thenReturn(StructuredStoryResult(payload, TokenUsage(10, 50, 60)))

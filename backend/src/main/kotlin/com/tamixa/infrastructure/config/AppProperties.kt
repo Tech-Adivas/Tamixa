@@ -25,8 +25,59 @@ data class AppProperties(
     val export: ExportProperties = ExportProperties(),
     val avatarVideo: AvatarVideoProperties = AvatarVideoProperties(),
     val voiceCloning: VoiceCloningProperties = VoiceCloningProperties(),
-    val shareClip: ShareClipProperties = ShareClipProperties()
+    val shareClip: ShareClipProperties = ShareClipProperties(),
+    val bulkJob: BulkJobProperties = BulkJobProperties(),
+    val push: PushProperties = PushProperties(),
+    /** Soft-deleted library stories: retention before permanent DB delete. */
+    val libraryStorySoftDelete: LibraryStorySoftDeleteProperties = LibraryStorySoftDeleteProperties(),
+    /** Optional reusable Python guardrails HTTP service (separate repo / container). */
+    val guardrailsService: GuardrailsServiceProperties = GuardrailsServiceProperties(),
+    /** AI control plane (governance registry + workflow runs). */
+    val controlPlane: ControlPlaneProperties = ControlPlaneProperties(),
 ) {
+
+    data class ControlPlaneProperties(
+        /**
+         * When true, each parent story generation registers a workflow run (`execute` → `markRunCompleted` / `markRunFailed`)
+         * against [storyProjectCode] / [storyWorkflowKey]. Requires Flyway V75+V76 (seed project + workflow).
+         */
+        val storyWorkflowIntegrationEnabled: Boolean = false,
+        /** Control plane project code for story runs (seed default: `tamixa`). */
+        val storyProjectCode: String = "tamixa",
+        /** Workflow key for story runs (seed default: `story.create_with_narration`). */
+        val storyWorkflowKey: String = "story.create_with_narration",
+    )
+
+    data class LibraryStorySoftDeleteProperties(
+        /** Days to keep soft-deleted `library_stories` rows before purge job runs DELETE. */
+        val retentionDays: Long = 30,
+        val purgeEnabled: Boolean = true,
+        /** Spring @Scheduled six-field cron (sec min hour day month weekday). */
+        val purgeCron: String = "0 0 4 * * *"
+    )
+
+    data class GuardrailsServiceProperties(
+        val enabled: Boolean = false,
+        val baseUrl: String = "",
+        val apiKey: String = "",
+        val connectTimeoutMs: Long = 2000,
+        val readTimeoutMs: Long = 15000,
+        /** When true, unreachable/5xx from guardrails service skips remote check (Kotlin pipeline still runs). */
+        val failOpenOnError: Boolean = false
+    )
+
+    data class PushProperties(
+        val fcmServerKey: String = "",
+        val apnsKeyId: String = "",
+        val apnsTeamId: String = "",
+        val apnsKeyPath: String = "",
+        val apnsBundleId: String = "com.tamixa.app",
+        val apnsProduction: Boolean = false
+    )
+
+    data class BulkJobProperties(
+        val useRedis: Boolean = false
+    )
 
     data class ShareClipProperties(
         val enabled: Boolean = true,
@@ -55,8 +106,13 @@ data class AppProperties(
 
     data class VoiceCloningProperties(
         val enabled: Boolean = false,
-        /** Provider: elevenlabs | google | xtts. Default from application.yml: google */
+        /** Primary provider: elevenlabs | google | xtts. Default from application.yml: google */
         val provider: String = "google",
+        /**
+         * When true and provider=google, failed Google clone/synthesize attempts may fall back to ElevenLabs
+         * if ELEVENLABS_API_KEY is configured.
+         */
+        val allowElevenLabsFallback: Boolean = true,
         val elevenLabsApiKey: String = "",
         val elevenLabsBaseUrl: String = "https://api.elevenlabs.io",
         /** Google Cloud API key for Chirp 3 Instant Custom Voice (when provider=google). */
@@ -73,7 +129,11 @@ data class AppProperties(
         /** Signed URL validity in minutes when listing completed exports. */
         val signedUrlExpiryMinutes: Long = 60,
         /** Cron for processing pending export jobs. Default: every 2 minutes. */
-        val processCron: String = "0 */2 * * * *"
+        val processCron: String = "0 */2 * * * *",
+        /** DB page size when streaming stories into export JSON (memory vs round-trips). */
+        val storyPageSize: Int = 200,
+        /** DB page size for consent rows in export. */
+        val consentPageSize: Int = 100
     )
 
     /** Auth: dev OTP bypass, web passwordless bypass, web base URL for magic links, etc. */
@@ -118,9 +178,21 @@ data class AppProperties(
         val enabled: Boolean = true,
         /** When true, use Redis for rate limiting (multi-instance). Requires Redis. Default false. */
         val useRedis: Boolean = false,
+        /**
+         * When false and Redis errors during a limit check, return 503 instead of allowing the request.
+         * Production: set false so Redis outages do not multiply effective quotas across abuse paths.
+         */
+        val redisFailOpen: Boolean = true,
         val requestsPerMinute: Long = 100,
         /** Admin API: higher limit per IP (no full bypass). Default 200/min. */
         val adminRequestsPerMinute: Long = 200,
+        /**
+         * Session maintenance: `/auth/me`, `/auth/refresh`. Uses a dedicated bucket so heavy admin UI traffic
+         * does not exhaust the general limit and block refresh (which surfaces as false "session expired").
+         */
+        val sessionRequestsPerMinute: Long = 300,
+        /** Auth endpoints (login, register, passwordless): strict limit to prevent brute force. Default 5/min. */
+        val authRequestsPerMinute: Long = 5,
         val storyGenerationFreePerHour: Int = 10,
         val storyGenerationPaidPerHour: Int = 60,
         val storyGenerationSuspiciousPerHour: Int = 2
@@ -139,6 +211,11 @@ data class AppProperties(
         val maxTokens: Int = 1024,
         val connectTimeoutMs: Long = 15000,
         val readTimeoutMs: Long = 180000,
+        /**
+         * When true, [com.tamixa.infrastructure.openai.OpenAIClient.getModerationResult] fails closed if the API key is blank
+         * (unsafe for children). Default false in dev; enable via `OPENAI_MODERATION_REQUIRED` or prod profile defaults.
+         */
+        val moderationRequired: Boolean = false,
         val retry: RetryProperties = RetryProperties()
     ) {
         data class RetryProperties(
@@ -150,10 +227,16 @@ data class AppProperties(
 
     data class StoryProperties(
         val cacheTtlHours: Long = 24,
-        val maxWords: Int = 750,
+        /** Upper bound for library + pipeline text (translations / rewrite); aligns with STORY_MAX_WORDS default 900. */
+        val maxWords: Int = 900,
         val themeAllowlist: String = "",
         val safetyScoreThreshold: Int = 60,
-        val keywordBlocklist: String = ""
+        val keywordBlocklist: String = "",
+        /**
+         * When true, parent-generated stories stop at [com.tamixa.domain.StoryStatus.PENDING_REVIEW] until an admin
+         * approves in Story moderation; then status becomes PENDING and narration/cover jobs run.
+         */
+        val humanReviewBeforeNarration: Boolean = false,
     )
 
     data class AiTokenLimitProperties(
@@ -179,21 +262,40 @@ data class AppProperties(
         val totalTimeoutMinutes: Int = 60,
         /** When true (default), pipeline runs only when "Submit for review" is used. */
         val pipelineOnSubmitOnly: Boolean = true,
-        /** When true (default): Submit for review only saves content and does not trigger pipeline. Use "Story to Speech" after approval to generate audio. When false: pipeline runs on submit. */
+        /** When true (default): Submit for review only saves content; edit-page rebuild does translate+rewrite only (no TTS on submit). When false: full pipeline can run on submit. */
         val audioAfterApproval: Boolean = true,
+        /** When true: Approve for delivery also starts background TTS if audio is still needed. When false (default): ops must use Narration (Story to Speech) → Generate audio after approval. */
+        val autoTtsOnApprove: Boolean = false,
         /** TTS thread pool size for pipeline. Was 1 (bottleneck); 4 allows ~4x faster multi-story throughput. Stays under app.narration.max-concurrent-tts. */
         val ttsPoolSize: Int = 4,
         /** Rewrite (OpenAI) step timeout. Prevents indefinite hang when API is slow/unresponsive. 1 min fails fast. */
         val rewriteTimeoutMinutes: Int = 1,
         /** Max minutes a pipeline claim can block retries. After this, "Run pipeline" or Retry can take over (no need to click Clear stuck). */
-        val claimMaxAgeMinutes: Int = 5
+        val claimMaxAgeMinutes: Int = 5,
+        /**
+         * When true, published stories keep `narrationApprovedAt` on metadata-only edits (theme/category/cover/age/childName/emotion).
+         * Approval is still cleared when source or translation text changes.
+         * When false (default), any save with status=PUBLISHED starts a fresh review cycle.
+         */
+        val keepNarrationApprovalOnMetadataOnlyPublishedUpdate: Boolean = false,
+        /**
+         * When true: translate/rewrite/TTS run only for each story's master language (`library_stories.language`).
+         * Other locales skip the narration pipeline; playback reuses master narration audio when present.
+         * Parent approved-library queries use master narration readiness instead of per-translation audio.
+         */
+        val masterOnlyNarration: Boolean = false
     )
 
     data class AudioProperties(
         val baseUrl: String = "/audio",
         val simulatedTtsDelayMs: Long = 500,
         /** When CDN disabled, used to build full URLs for stream-url fallback. */
-        val publicBaseUrl: String = "http://localhost:8080"
+        val publicBaseUrl: String = "http://localhost:8080",
+        /**
+         * Phase 4: optional short host / brand clip (MP4 URL). When non-blank, included in stream-url
+         * responses for the app to show muted alongside story audio. Use https or a path joined with [publicBaseUrl].
+         */
+        val hostStoryClipUrl: String = ""
     )
 
     /** CDN/signed URLs: S3 presigned URLs (10 min expiry). */
@@ -249,5 +351,19 @@ data class AppProperties(
             val accountId: String = "",
             val webhookSigningKey: String = ""
         )
+    }
+}
+
+/** Resolved absolute URL for optional host story clip in API responses, or null when unset. */
+fun AppProperties.resolvedHostStoryClipUrl(): String? {
+    val raw = audio.hostStoryClipUrl.trim()
+    if (raw.isEmpty()) return null
+    return when {
+        raw.startsWith("http://", ignoreCase = true) || raw.startsWith("https://", ignoreCase = true) -> raw
+        else -> {
+            val base = audio.publicBaseUrl.trimEnd('/')
+            val path = if (raw.startsWith("/")) raw else "/$raw"
+            "$base$path"
+        }
     }
 }

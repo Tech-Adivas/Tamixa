@@ -71,7 +71,7 @@ export default function ReferralCodesPage() {
     }
     api.admin
       .getReferralCodes()
-      .then(setCodes)
+      .then((res) => setCodes(res.content))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);

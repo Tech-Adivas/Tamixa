@@ -1,3 +1,13 @@
+export interface AuditEntry {
+  id: number;
+  adminEmail: string;
+  action: string;
+  resourceType: string;
+  resourceId: string;
+  details: string;
+  createdAt: string;
+}
+
 export interface PagedResponse<T> {
   content: T[];
   page: number;
@@ -6,6 +16,72 @@ export interface PagedResponse<T> {
   totalPages: number;
   first: boolean;
   last: boolean;
+}
+
+/** AI control plane — matches backend admin DTOs under `/api/v1/admin/ai-control-plane`. */
+export interface AiProjectSummary {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+}
+
+export interface AiWorkflowSummary {
+  id: string;
+  workflowKey: string;
+  name: string;
+  category: string;
+  status: string;
+  version: number;
+}
+
+export interface AiWorkflowRunSummary {
+  id: string;
+  workflowKey: string;
+  status: string;
+  currentStepKey: string | null;
+  entityType: string;
+  entityId: string | null;
+  startedAtIso: string;
+}
+
+export interface ExecuteWorkflowRequest {
+  projectCode: string;
+  workflowKey: string;
+  entityType: string;
+  entityId?: string | null;
+  input?: Record<string, unknown>;
+}
+
+export interface WorkflowRunStarted {
+  workflowRunId: string;
+  status: string;
+  currentStep: string | null;
+  trackingPath: string;
+}
+
+export interface WorkflowRunDetail {
+  workflowRunId: string;
+  status: string;
+  currentStepKey: string | null;
+  output: Record<string, unknown> | null;
+  startedAtIso: string | null;
+  completedAtIso: string | null;
+}
+
+export interface PromptVersion {
+  assetId: string;
+  assetKey: string;
+  version: number;
+  checksum: string;
+  approvalStatus: string;
+}
+
+export interface PublishPromptRequest {
+  projectCode: string;
+  assetKey: string;
+  content: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface AdminUser {
@@ -19,6 +95,7 @@ export interface VoiceProfile {
   id: number;
   parentId: number;
   createdAt: string;
+  profileName?: string | null;
   /** HeyGen voice_id for cloned-voice TTS; set via PATCH /admin/parents/:parentId/voice/:voiceProfileId */
   heygenVoiceId?: string | null;
 }
@@ -109,10 +186,22 @@ export interface LibraryStorySummary {
   narrationApprovedAt?: string | null;
   /** Per-language narration approval: language code -> approved. */
   translationApproval?: Record<string, boolean>;
-  /** Rewritten narration script when pipeline has run. Use for further edits (prefer over content when present). */
+  /** Rewritten narration script when pipeline has run. */
   narratedContent?: string | null;
+  /** Primary story text for this language (translation/master), not the narration script. */
+  sourceContent?: string;
+  /** When true, a conversational narration script exists for this language. */
+  preferNarratedContentForEditor?: boolean;
   /** When set, admin has marked this story for reject from the language view. */
   rejectMarkedAt?: string | null;
+  /** Reviewer notes when status is CHANGES_REQUESTED or REJECTED. */
+  reviewNotes?: string | null;
+  /** When true, content managers need elevated approval to use Regenerate with prompt. */
+  regeneratePromptLocked?: boolean;
+  regeneratePromptLockApproved?: boolean;
+  regeneratePromptUnlockRequestedAt?: string | null;
+  /** ISO timestamp when soft-deleted (trash). */
+  deletedAt?: string | null;
 }
 
 export const EMOTION_MODES = ["CALM", "SOOTHING", "ADVENTUROUS"] as const;
@@ -138,6 +227,11 @@ export interface CreateLibraryStoryRequest {
   translationContents?: Record<string, string> | null;
   /** Per-language content with optional title and moral for each language. */
   translationContentEntries?: Record<string, { content: string; title?: string | null; moral?: string | null }> | null;
+  /**
+   * When sent on PUT, updates the narration script for the story’s current language.
+   * Omit on create or when leaving the script unchanged; send "" to clear the script.
+   */
+  narratedContent?: string | null;
 }
 
 export interface BulkGenerateStoriesRequest {
@@ -206,10 +300,19 @@ export interface PipelineStatusResponse {
   processing?: string;
   /** Comma-separated languages marked as reviewed (persisted in DB) */
   reviewedLanguages?: string;
+  /** Languages reviewed but story text / script changed since review — admin should re-open and tap Have reviewed */
+  reviewStaleLanguages?: string;
   /** True when all pipeline languages have a review row in library_story_language_reviews */
   allLanguagesReviewed?: string;
   /** Derived overall status for admin UX. COMPLETED when all audio exists. */
-  overallStatus?: "PENDING" | "TRANSLATING_LANGUAGES" | "TTS_PROCESSING" | "COMPLETED" | "READY_FOR_REVIEW" | "FAILED";
+  overallStatus?:
+    | "PENDING"
+    | "TRANSLATING_LANGUAGES"
+    | "TTS_PROCESSING"
+    | "FINALIZING_STORY"
+    | "COMPLETED"
+    | "READY_FOR_REVIEW"
+    | "FAILED";
   /** 0-100 progress */
   progress?: string;
   /** When audio was last generated/regenerated, in IST (e.g. "18-Mar-2026 17:15:23 IST") */
@@ -230,6 +333,8 @@ export interface LibraryStoryStreamUrlResponse {
   avatarVideoStatus?: string;
   avatarVideoError?: string;
   avatarVideoProvider?: string;
+  /** Same optional host bumper as parent stream-url (muted in app). */
+  hostStoryClipUrl?: string;
 }
 
 /**
@@ -362,7 +467,10 @@ export interface RuntimeConfigDto {
   instanceId: string;
   flywayEnabled: boolean;
   flywayLockRetryCount: number;
+  datasourceTarget?: string;
   migrationMode: "MIGRATION_ENABLED" | "APP_ONLY";
+  keepNarrationApprovalOnMetadataOnlyPublishedUpdate?: boolean;
+  storyApprovalRetentionMode?: "STRICT_REVIEW_CYCLE" | "RELAXED_METADATA_ONLY";
   operatorHint: string;
 }
 
@@ -414,7 +522,7 @@ export interface CurrentUserResponse {
 export interface DashboardKpis {
   activeSubscriptions: number;
   monthlyRevenue: number;
-  storyGenerationsToday: number;
+  storyGenerationsTotal: number;
   aiTokenUsage: number;
   moderationFlags: number;
 }
@@ -477,6 +585,30 @@ export interface SubscriptionMetricsDto {
   mrr: number;
   trialConversionRate?: number;
   churnRate?: number;
+}
+
+export interface StoryLengthProfileDto {
+  windowDays: number;
+  totalStories: number;
+  avgWordCount: number;
+  avgReadingTimeMinutes: number;
+  avgExpectedMinutesByWords: number;
+  wpmAssumption: number;
+}
+
+export interface DoraMetricsDto {
+  windowDays: number;
+  serviceName?: string | null;
+  environment?: string | null;
+  successfulDeployments: number;
+  failedDeployments: number;
+  deploymentFrequencyPerDay: number;
+  changeFailureRatePercent: number;
+  leadTimeMinutesP50?: number | null;
+  leadTimeMinutesP95?: number | null;
+  meanTimeToRestoreMinutes?: number | null;
+  openIncidents: number;
+  resolvedIncidents: number;
 }
 
 export interface RevenueRow {
@@ -543,6 +675,9 @@ export interface VoiceCloningJob {
   elevenLabsVoiceId: string | null;
   status: string;
   errorMessage: string | null;
+  providerAuthFailed?: boolean;
+  providerQuotaFailed?: boolean;
+  providerStatusMessage?: string | null;
   createdAt: string;
   completedAt: string | null;
 }

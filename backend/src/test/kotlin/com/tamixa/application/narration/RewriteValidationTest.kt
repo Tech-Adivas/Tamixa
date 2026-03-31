@@ -12,7 +12,8 @@ import org.junit.jupiter.api.Test
  */
 class RewriteValidationTest {
 
-    private val validator = SafetyValidatorServiceImpl(20, "badword,violence")
+    /** maxWords=0 disables hard cap so tests exercise ratio-only behaviour. */
+    private val validator = SafetyValidatorServiceImpl(20, "badword,violence", 0)
 
     @Test
     fun `validates rewrite when word count within 20 percent of original`() {

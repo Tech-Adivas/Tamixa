@@ -55,14 +55,18 @@ actual fun rememberAvatarVideoController(
     storyTheme: String,
     scope: CoroutineScope,
     onProgressChanged: (Float) -> Unit,
-    onPlaybackError: (() -> Unit)?
+    onPlaybackError: (() -> Unit)?,
+    muteVideoAudio: Boolean,
+    repeatVideo: Boolean
 ): AvatarVideoControllerResult = rememberAvatarVideoExoPlayerController(
     videoUrl = videoUrl,
     storyTitle = storyTitle,
     storyTheme = storyTheme,
     scope = scope,
     onProgressChanged = onProgressChanged,
-    onPlaybackError = onPlaybackError
+    onPlaybackError = onPlaybackError,
+    muteVideoAudio = muteVideoAudio,
+    repeatVideo = repeatVideo
 )
 
 @Composable

@@ -1,0 +1,2 @@
+# Reserved for future pipeline orchestration services.
+# Currently translation pipeline logic is in TranslationService and StoryProcessingService.

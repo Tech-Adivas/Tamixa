@@ -28,7 +28,8 @@ class NarrationOpenAIAdapter(
     @Value("\${app.openai.base-url:https://api.openai.com}") private val baseUrl: String,
     @Value("\${app.narration.rewrite-model:gpt-4o}") private val model: String,
     @Value("\${app.narration.max-narration-tokens:16384}") private val maxTokens: Int,
-    @Value("\${app.narration.rewrite-temperature:0.7}") private val rewriteTemperature: Double
+    @Value("\${app.narration.rewrite-temperature:0.7}") private val rewriteTemperature: Double,
+    @Value("\${app.story.max-words:900}") private val maxStoryWords: Int
 ) : NarrationLLMPort {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -39,7 +40,10 @@ class NarrationOpenAIAdapter(
      */
     private val systemPrompt = """
         You are Tamixa, a native speaker telling a story aloud to a child in your mother tongue. You sound like a grandparent, teacher, or friend—NOT like someone reading translated text. Use the natural expressions, idioms, and cadence that a native would use when speaking to a child. Avoid phrasing that sounds translated, formal, or textbook-like. Output ONLY the narration—no titles, labels, or meta-commentary. Preserve all story content, characters, plot, and moral. NEVER return input unchanged. Use short segments: 1 to 3 sentences per paragraph. Suited for TTS and voice cloning.
+        Continuity: Keep the same order of events and logic as the input. Do not skip scenes, merge unrelated moments, or leave gaps between cause and effect. If two parts of the source feel abrupt, add a brief natural bridge in the spoken style of the language—without inventing new plot.
         Rhythm: Write for spoken delivery. Natural speech has breath points—place sentence endings where a speaker would pause. Avoid long run-on clauses; break at thought boundaries. This helps the voice sound human, not robotic.
+        Creativity: Bring the tale to life with fresh, age-appropriate images, light dialogue, and sensory detail where it fits—without changing who does what, outcomes, or the moral. Prefer one vivid moment over generic filler; avoid cliché stacking.
+        TTS tags: When the source already includes bracket cues like [Pause 500ms], [Warm tone], or [Calm tone], preserve them unless they break grammar; keep pacing tags where they still fit the rewritten sentence.
     """.trimIndent()
 
     @Retryable(
@@ -106,7 +110,7 @@ class NarrationOpenAIAdapter(
             throw IllegalArgumentException("Custom prompt must not be blank.")
         }
         val effectiveMax = maxTokens.coerceIn(256, 16384)
-        val systemPrompt = "You are a helpful assistant. Follow the user's instructions exactly. Output only what is requested (e.g. valid JSON when the prompt asks for JSON)—no extra explanations or commentary."
+        val systemPrompt = "You are a helpful assistant. Follow the user's instructions exactly. Output only what is requested (e.g. valid JSON when the prompt asks for JSON)—no extra explanations or commentary. When rewriting or restructuring story text, preserve narrative continuity: same event order, no skipped beats or unexplained jumps; use clear transitions; keep vocabulary clear and conversational in the target language as specified in the instructions."
         val userContent = "$trimmedPrompt\n\nStory:\n$storyText"
         val request = ChatRequest(
             model = model.trim().ifBlank { "gpt-4o-mini" },
@@ -148,13 +152,28 @@ class NarrationOpenAIAdapter(
             ToneMode.CALM -> "soothing, gentle, like a bedtime story"
             ToneMode.EXPRESSIVE -> "warm, animated, full of expression—like sharing an exciting tale"
         }
+        val normalizedLanguage = language.trim().lowercase()
+        val languageSpecificRules = when (normalizedLanguage) {
+            "ta", "tamil" -> "Tamil quality (mandatory): write fluent spoken Tamil in Tamil script. Do not output transliteration artifacts, malformed words, or mixed-language text. Use natural colloquial flow while preserving meaning."
+            "hi", "hindi" -> "Hindi quality (mandatory): write fluent spoken Hindi in Devanagari script with natural everyday expressions. Avoid textbook Hindi and avoid script mixing."
+            "te", "telugu" -> "Telugu quality (mandatory): write fluent spoken Telugu in Telugu script with natural conversational rhythm. Avoid stiff formal wording and script mixing."
+            "kn", "kannada" -> "Kannada quality (mandatory): write fluent spoken Kannada in Kannada script with natural storytelling cadence. Avoid literal translation tone and script mixing."
+            "ml", "malayalam" -> "Malayalam quality (mandatory): write fluent spoken Malayalam in Malayalam script with natural oral storytelling flow. Avoid formal bookish phrasing and script mixing."
+            "en", "english" -> "English quality (mandatory): write natural spoken English narration with warm conversational flow, not stiff literary prose."
+            else -> "Language quality (mandatory): use fully natural spoken style for the target language and keep script consistent for that language."
+        }
+        val wordCap = maxStoryWords.coerceIn(200, 2500)
         return """
             |Rewrite this story as if you are a NATIVE SPEAKER of this language (code: $language) telling it aloud to a $age-year-old. Tone: $toneDesc.
             |
             |Critical: The listener must hear a native speaker, NOT someone reading translated text. Use expressions, word choices, and rhythm that a native would naturally use. Avoid "translated" or textbook phrasing.
             |
+            |Continuity (mandatory): Keep every important event and beat from the input in the same logical order. Do not drop scenes, rush from problem to ending without the middle steps, or leave the listener confused about what happened in between. If needed, add a short connecting sentence in natural $language speech—do not invent new plot or characters.
+            |
+            |$languageSpecificRules
+            |
             |Natural Speech Rules (critical—follow these):
-            |- Use contractions and everyday words: "it's" not "it is", "don't" not "do not", "that's" not "that is" where natural in the language.
+            |- For English: use contractions and everyday words where natural ("it's", "don't", "that's"). For other languages: use the equivalent colloquial, spoken forms natives use with children—not stiff written or translated-sounding phrasing.
             |- Vary how you start sentences: "And then...", "So you see...", "Well, one day...", "Can you imagine?" instead of repeating "The" or formal structures.
             |- Use natural storytelling connectors: "So...", "Now...", "Oh! And then...", "You see..." as a real speaker would.
             |- Mix sentence lengths: short punchy phrases alongside longer flowing ones. Real speech isn't uniform.
@@ -169,9 +188,15 @@ class NarrationOpenAIAdapter(
             |- Do not use overly formal or written-style language.
             |- Do not make every sentence the same structure or length.
             |
-            |CRITICAL—Inline markers: Preserve all narration markers in the input exactly as-is: [Pause 500ms], [Pause 1s], [Happy tone], [Soft voice], [Warm tone], [Calm], [Whisper], [Excited]. If the input has none, add a few where they help (e.g. before/after dialogue, at emotional beats). These are TTS instructions—never remove or translate them.
+            |CRITICAL—Inline markers:
+            |- Preserve existing narration markers and keep marker text in English.
+            |- Use only this vocabulary when adding markers: [Warm tone], [Gentle tone], [Calm tone], [Happy tone], [Excited tone], [Playful tone], [Curious tone], [Wonder tone], [Reassuring tone], [Thoughtful tone], [Soft voice], [Whispered tone], [Emotional tone], [Soft emotional tone], [Celebration tone], [Storyteller tone], [Slow pacing], [Medium pacing], [Brisk pacing], [Scene opens softly], [Scene shifts], [A gentle moment], [A magical moment], [A quiet pause], [A joyful moment], [A surprise moment], [Closing tone], [Pause 300ms], [Pause 500ms], [Pause 700ms], [Pause 1s], [Pause 1.5s].
+            |- Never translate marker labels. Never output malformed marker text.
+            |
+            |Length (strict): The narration must be at most $wordCap words (count words in the output language). If the input is longer, compress faithfully—keep every beat of the plot and the moral—while staying under $wordCap words. If the input is shorter, you may add tasteful detail and dialogue as long as you stay within $wordCap words and do not invent new plot points or characters.
             |
             |Output only the narration. No titles, labels, or meta-commentary. Preserve all story content, characters, plot, and moral.
+            |Formatting hygiene: never output the literal token "nn". Use proper line breaks between paragraphs.
             |
             |Story:
             |$storyText

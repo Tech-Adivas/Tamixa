@@ -13,5 +13,12 @@ data class StreamUrlResponse(
     val voiceFallback: Boolean = false,
     val wordTimings: List<WordTimingDto>? = null,
     /** Actual audio duration in seconds from story_narration_audio. Use for progress bar instead of readingTimeMinutes. */
-    val durationSeconds: Int? = null
+    val durationSeconds: Int? = null,
+    /** In-player narrative visuals (multi-scene timelines, optional per-scene art). */
+    val narrativeScenes: List<NarrativeSceneVisualDto>? = null,
+    /**
+     * Optional Phase 4: muted supplementary clip (e.g. synthetic host). Null when not configured.
+     * Client should play story audio as primary and keep this video muted.
+     */
+    val hostStoryClipUrl: String? = null
 )

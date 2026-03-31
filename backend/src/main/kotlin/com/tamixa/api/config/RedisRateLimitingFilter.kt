@@ -20,7 +20,7 @@ import java.time.Instant
 
 /**
  * Redis-backed rate limiter. Use for multi-instance deployments.
- * Fixed-window counter: key = rl:{admin?}:{clientKey}:{minute}, INCR, EXPIRE 60.
+ * Fixed-window counter: key = rl:{auth|session|admin|general}:{clientKey}:{minute}, INCR, EXPIRE 60.
  * When RATE_LIMIT_USE_REDIS=true and Redis is available, this filter runs instead of RateLimitingFilter.
  */
 @Component
@@ -33,11 +33,6 @@ class RedisRateLimitingFilter(
     private val objectMapper: ObjectMapper
 ) : OncePerRequestFilter() {
 
-    private companion object {
-        private const val KEY_PREFIX = "rl:"
-        private const val WINDOW_SECONDS = 60L
-    }
-
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
@@ -49,11 +44,21 @@ class RedisRateLimitingFilter(
             return
         }
         val path = request.requestURI.orEmpty()
-        val isAdminPath = path.contains("/api/v1/admin")
-        val limit = if (isAdminPath) config.adminRequestsPerMinute else config.requestsPerMinute
+        val bucketPrefix = when {
+            STRICT_AUTH_PATHS.any { path.contains(it) } -> "auth"
+            SESSION_PATHS.any { path.contains(it) } -> "session"
+            path.contains("/api/v1/admin") -> "admin"
+            else -> "general"
+        }
+        val limit = when (bucketPrefix) {
+            "auth" -> config.authRequestsPerMinute
+            "session" -> config.sessionRequestsPerMinute
+            "admin" -> config.adminRequestsPerMinute
+            else -> config.requestsPerMinute
+        }
         val key = clientKey(request)
         val window = System.currentTimeMillis() / 1000 / WINDOW_SECONDS
-        val redisKey = "$KEY_PREFIX${if (isAdminPath) "admin:" else ""}$key:$window"
+        val redisKey = "$KEY_PREFIX$bucketPrefix:$key:$window"
 
         try {
             val count = redisTemplate.opsForValue().increment(redisKey) ?: 1L
@@ -68,9 +73,13 @@ class RedisRateLimitingFilter(
                 respondRateLimited(response)
             }
         } catch (e: Exception) {
-            // Redis failure: allow request (fail open) but log
-            org.slf4j.LoggerFactory.getLogger(javaClass).warn("Redis rate limit check failed: {}", e.message)
-            filterChain.doFilter(request, response)
+            val log = org.slf4j.LoggerFactory.getLogger(javaClass)
+            log.warn("Redis rate limit check failed: {}", e.message)
+            if (config.redisFailOpen) {
+                filterChain.doFilter(request, response)
+            } else {
+                respondRateLimitUnavailable(response)
+            }
         }
     }
 
@@ -91,5 +100,29 @@ class RedisRateLimitingFilter(
         response.contentType = MediaType.APPLICATION_JSON_VALUE
         response.characterEncoding = "UTF-8"
         response.writer.write(objectMapper.writeValueAsString(errorBody))
+    }
+
+    private fun respondRateLimitUnavailable(response: HttpServletResponse) {
+        response.setHeader("Retry-After", "30")
+        val errorBody = ErrorResponse(
+            message = "Rate limit check temporarily unavailable. Please retry shortly.",
+            status = HttpStatus.SERVICE_UNAVAILABLE.value(),
+            traceId = MDC.get(RequestTracingFilter.TRACE_ID_MDC_KEY),
+            timestamp = Instant.now().toString()
+        )
+        response.status = HttpStatus.SERVICE_UNAVAILABLE.value()
+        response.contentType = MediaType.APPLICATION_JSON_VALUE
+        response.characterEncoding = "UTF-8"
+        response.writer.write(objectMapper.writeValueAsString(errorBody))
+    }
+
+    private companion object {
+        private const val KEY_PREFIX = "rl:"
+        private const val WINDOW_SECONDS = 60L
+        private val STRICT_AUTH_PATHS = listOf(
+            "/auth/register", "/auth/login", "/auth/passwordless",
+            "/auth/otp/send", "/auth/otp/verify"
+        )
+        private val SESSION_PATHS = listOf("/api/v1/auth/me", "/api/v1/auth/refresh")
     }
 }

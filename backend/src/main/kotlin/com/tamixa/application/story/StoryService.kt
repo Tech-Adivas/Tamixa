@@ -10,11 +10,15 @@ import com.tamixa.application.port.StoryRepositoryPort
 import com.tamixa.application.port.StoryTokenUsagePort
 import com.tamixa.application.port.UsageTrackingPort
 import com.tamixa.application.admin.StoryNotFoundException
+import com.tamixa.application.guardrail.ExternalGuardrailUnavailableException
+import com.tamixa.application.guardrail.GeneratedStoryGuardrailPipeline
 import com.tamixa.application.subscription.SubscriptionService
 import com.tamixa.domain.Story
 import com.tamixa.domain.StoryStatus
 import com.tamixa.domain.SubscriptionPlan
 import com.tamixa.domain.SubscriptionStatus
+import com.tamixa.controlplane.application.port.ControlPlaneWorkflowService
+import com.tamixa.controlplane.application.port.WorkflowExecutionRequest
 import com.tamixa.infrastructure.config.AppProperties
 import com.tamixa.infrastructure.observability.ApplicationMetrics
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -31,9 +35,9 @@ import java.time.YearMonth
 import java.time.ZoneOffset
 import java.util.UUID
 
-private const val WORDS_PER_MINUTE = 150
-/** Target: 10 minutes of narration per story. */
-private const val MAX_READING_MINUTES = 10.0
+private const val WORDS_PER_MINUTE = 120
+/** Target: 7–8 minutes of narration per story. */
+private const val MAX_READING_MINUTES = 8.0
 private const val MAX_WORDS = (WORDS_PER_MINUTE * MAX_READING_MINUTES).toInt()
 private const val PLACEHOLDER_CONTENT = "..."
 
@@ -52,14 +56,14 @@ class StoryService(
     private val appProperties: AppProperties,
     private val safetyMiddleware: StorySafetyMiddleware,
     private val storyValidation: StoryValidation,
-    private val storyModeration: StoryModerationService,
-    private val storySafetyScore: StorySafetyScoreService,
+    private val generatedStoryGuardrailPipeline: GeneratedStoryGuardrailPipeline,
     private val tokenLimitGuard: TokenLimitGuard,
     private val storyPromptBuilder: StoryPromptBuilder,
     private val conversationSummarizer: ConversationSummarizer,
     private val storyTokenUsage: StoryTokenUsagePort,
     private val usageTrackingPort: UsageTrackingPort,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val controlPlaneWorkflowService: ControlPlaneWorkflowService,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -112,7 +116,9 @@ class StoryService(
             conversationSummarizer.summarize(sanitizedConversation)
         } else null
         val baseCustomPrompt = safetyMiddleware.sanitizeParentCustomPrompt(parentCustomPrompt)
-        val mergedCustomPrompt = mergeCustomPrompts(baseCustomPrompt, conversationSummary?.customPrompt)
+        val sanitizedConversationPrompt =
+            conversationSummary?.customPrompt?.let { safetyMiddleware.sanitizeParentCustomPrompt(it) }
+        val mergedCustomPrompt = mergeCustomPrompts(baseCustomPrompt, sanitizedConversationPrompt)
         val normalizedEmotionMode = conversationSummary?.emotionMode?.takeIf { it in ALLOWED_EMOTION_MODES }
             ?: normalizeEmotionMode(emotionMode)
 
@@ -148,11 +154,36 @@ class StoryService(
         val savedRequested = storyRepository.save(requested)
         val storyId = savedRequested.id
 
+        var workflowRunId: UUID? = null
+        if (appProperties.controlPlane.storyWorkflowIntegrationEnabled) {
+            workflowRunId = controlPlaneWorkflowService.execute(
+                WorkflowExecutionRequest(
+                    projectCode = appProperties.controlPlane.storyProjectCode,
+                    workflowKey = appProperties.controlPlane.storyWorkflowKey,
+                    entityType = "STORY",
+                    entityId = storyId.toString(),
+                    requestedBy = parentEmail,
+                    input = mapOf(
+                        "theme" to sanitized.theme,
+                        "language" to childContext.language,
+                        "age" to childContext.age,
+                        "childName" to sanitized.childName,
+                        "emotionMode" to normalizedEmotionMode,
+                        "learningFocus" to learningFocus,
+                    ),
+                    requestSource = "STORY_SERVICE",
+                )
+            ).workflowRunId
+        }
+
+        try {
+        var payloadFromCache = false
         val payload = metrics.recordStoryGenerationLatency {
             val cached = if (cacheKey != null) storyCache.get(cacheKey) else null
             if (cached != null) {
                 metrics.recordCacheHit()
                 logStoryGenerationEvent(promptId, childContext.language, childContext.age, 0, null, 0)
+                payloadFromCache = true
                 parseCachedPayload(cached)
             } else {
                 metrics.recordCacheMiss()
@@ -171,24 +202,29 @@ class StoryService(
             }
         }
 
+        // Fresh generations are validated before cache write inside generateWithRetryAndFallback; re-validate cache hits
+        // so policy changes and corrupt/legacy cache entries cannot bypass StoryValidation.
+        if (payloadFromCache) {
+            storyValidation.validate(payload, childContext.age)
+        }
+
         val (wordCount, readingTimeMinutes) = computeReadingMeta(payload.storyText)
         enforceReadingTimeLimit(wordCount, readingTimeMinutes)
 
         storyRepository.updateStatus(storyId, StoryStatus.MODERATION_CHECK)
         val moderationContext = ModerationContext(promptId = promptId, language = childContext.language, age = childContext.age)
-        storyModeration.moderateBeforeSave(payload.storyText, moderationContext)
-        if (!safetyMiddleware.isGeneratedContentChildSafe(payload.storyText)) {
-            storyRepository.updateStatus(storyId, StoryStatus.FAILED)
-            throw ContentModerationException("Generated story contains disallowed vocabulary")
-        }
-
-        // Story safety score (0-100): reject if below threshold; store for auditing
         val safetyScore = try {
-            storySafetyScore.computeAndValidate(payload)
+            generatedStoryGuardrailPipeline.enforceStructuredStoryPayload(payload, moderationContext)
         } catch (e: ContentModerationException) {
             storyRepository.updateStatus(storyId, StoryStatus.FAILED)
             throw e
+        } catch (e: ExternalGuardrailUnavailableException) {
+            storyRepository.updateStatus(storyId, StoryStatus.FAILED)
+            throw e
         }
+
+        val afterModerationStatus =
+            if (appProperties.story.humanReviewBeforeNarration) StoryStatus.PENDING_REVIEW else StoryStatus.PENDING
 
         storyRepository.updateContentAndStatus(
             id = storyId,
@@ -197,16 +233,64 @@ class StoryService(
             moral = payload.moral.ifBlank { null },
             wordCount = wordCount,
             readingTimeMinutes = readingTimeMinutes,
-            status = StoryStatus.PENDING,
+            status = afterModerationStatus,
             safetyScore = safetyScore
         )
+
+        logAiGovernanceStoryCompleted(
+            storyId = storyId,
+            language = childContext.language,
+            safetyScore = safetyScore,
+            wordCount = wordCount,
+            fromCache = payloadFromCache,
+            workflowRunId = workflowRunId,
+        )
+
+        if (workflowRunId != null) {
+            controlPlaneWorkflowService.markRunCompleted(
+                workflowRunId,
+                mapOf(
+                    "storyId" to storyId,
+                    "status" to afterModerationStatus.name,
+                    "safetyScore" to safetyScore,
+                    "wordCount" to wordCount,
+                    "fromCache" to payloadFromCache,
+                    "humanReviewRequired" to appProperties.story.humanReviewBeforeNarration,
+                ),
+            )
+        }
 
         val currentMonth = YearMonth.now(ZoneOffset.UTC).toString()
         usageTrackingPort.incrementStories(parent.id, currentMonth)
 
-        storyEventPublisher.publishStoryCreated(storyId, payload.storyText)
+        if (appProperties.story.humanReviewBeforeNarration) {
+            log.info(
+                "story_pending_human_review narration deferred until admin approval storyId={}",
+                storyId,
+            )
+        } else {
+            storyEventPublisher.publishStoryCreated(storyId, payload.storyText)
+        }
         auditLog.logStoryGeneration(storyId, parent.id, sanitized.theme, traceId = null)
         return storyRepository.findById(storyId) ?: throw StoryNotFoundException(storyId)
+        } catch (t: Throwable) {
+            if (workflowRunId != null) {
+                try {
+                    controlPlaneWorkflowService.markRunFailed(
+                        workflowRunId,
+                        t::class.simpleName,
+                        t.message,
+                    )
+                } catch (e: Exception) {
+                    log.warn(
+                        "control_plane_mark_run_failed_secondary_failure runId={}",
+                        workflowRunId,
+                        e,
+                    )
+                }
+            }
+            throw t
+        }
     }
 
     /** Child context for personalization (age, language, interests, character builder fields). */
@@ -278,6 +362,20 @@ class StoryService(
                     storyTokenUsage.recordUsage(storyId, it.promptTokens, it.completionTokens, it.totalTokens)
                     logStoryGenerationEvent(promptId, language, age, it.totalTokens, null, if (isFallback) 1 else 0)
                 }
+                val generatedWords = result.payload.storyText.split(Regex("\\s+")).count { it.isNotBlank() }
+                val estimatedMinutesByWords = generatedWords.toDouble() / WORDS_PER_MINUTE
+                val modelEstimatedMinutes = result.payload.estimatedDurationSeconds / 60.0
+                log.info(
+                    "story_generation_profile promptId={} storyId={} language={} words={} targetMaxWords={} expectedMinutesByWords={} modelEstimatedMinutes={} wpmAssumption={}",
+                    promptId,
+                    storyId,
+                    language,
+                    generatedWords,
+                    maxWords,
+                    String.format("%.2f", estimatedMinutesByWords),
+                    String.format("%.2f", modelEstimatedMinutes),
+                    WORDS_PER_MINUTE
+                )
                 storyValidation.validate(result.payload, age)
                 cacheKey?.let { storyCache.set(it, objectMapper.writeValueAsString(result.payload)) }
                 result.payload
@@ -318,6 +416,32 @@ class StoryService(
             StructuredArguments.kv("tokenUsage", tokenUsage),
             StructuredArguments.kv("moderationSafe", moderationSafe),
             StructuredArguments.kv("retryCount", retryCount)
+        )
+    }
+
+    /**
+     * Structured line for observability / evaluation pipelines (AI SDLC docs: docs/AI_EVALUATION_SYSTEM.md).
+     * Query logs with key `event=ai_governance_output`.
+     */
+    private fun logAiGovernanceStoryCompleted(
+        storyId: Long,
+        language: String,
+        safetyScore: Int?,
+        wordCount: Int,
+        fromCache: Boolean,
+        workflowRunId: UUID?,
+    ) {
+        log.info(
+            "ai_governance_output",
+            StructuredArguments.kv("event", "ai_governance_output"),
+            StructuredArguments.kv("outputType", "generated_story"),
+            StructuredArguments.kv("taskClass", "story_generation"),
+            StructuredArguments.kv("storyId", storyId),
+            StructuredArguments.kv("language", language),
+            StructuredArguments.kv("safetyScore", safetyScore),
+            StructuredArguments.kv("wordCount", wordCount),
+            StructuredArguments.kv("fromCache", fromCache),
+            StructuredArguments.kv("workflowRunId", workflowRunId),
         )
     }
 

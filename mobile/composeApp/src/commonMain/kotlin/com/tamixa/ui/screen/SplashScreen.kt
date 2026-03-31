@@ -25,10 +25,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,18 +39,19 @@ import com.tamixa.composeapp.generated.resources.tamixa_logo_full
 import com.tamixa.ui.components.StarryNightBackground
 import com.tamixa.ui.strings.Strings
 import com.tamixa.platform.playSplashRevealSound
+import com.tamixa.ui.theme.TamixaColors
 import com.tamixa.ui.theme.TamixaDesignTokens
+import com.tamixa.ui.theme.TamixaGradients
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.painterResource
 import kotlin.math.PI
 import kotlin.math.sin
 
-private val TaglineWhite = Color(0xFFFFFFFF).copy(alpha = 0.88f)
-
-private const val SPLASH_DURATION_MS = 3200L
-private const val HERO_DELAY_MS = 250L
-private const val SPARKLE_START_MS = 850L
-private const val TAGLINE_DELAY_MS = 1750L
+private const val SPLASH_DURATION_MS = 4200L
+private const val TICK_MS = 16L
+private const val HERO_DELAY_MS = 200L
+private const val SPARKLE_START_MS = 780L
+private const val TAGLINE_DELAY_MS = 1680L
 
 @Composable
 fun SplashScreen(
@@ -62,7 +65,6 @@ fun SplashScreen(
     var skipRequested by remember { mutableStateOf(false) }
     var soundPlayed by remember { mutableStateOf(false) }
 
-    // Play reveal chime when logo lands (~850ms — ring expands, sparkles pop)
     LaunchedEffect(elapsed) {
         if (elapsed >= SPARKLE_START_MS && !soundPlayed) {
             soundPlayed = true
@@ -73,7 +75,7 @@ fun SplashScreen(
     LaunchedEffect(Unit, isLoggedIn, hasCompletedOnboarding, skipRequested) {
         fun navigateAfterSplash() {
             when {
-                isLoggedIn -> { /* LaunchedEffect in NavHost handles logged-in redirect */ }
+                isLoggedIn -> { }
                 !hasCompletedOnboarding -> onNavigateToHook()
                 else -> onNavigateToLogin()
             }
@@ -82,55 +84,63 @@ fun SplashScreen(
             navigateAfterSplash()
             return@LaunchedEffect
         }
-        var total: Long = 0
+        var total = 0L
         while (total < SPLASH_DURATION_MS) {
-            delay(50)
-            total += 50
+            delay(TICK_MS)
+            total += TICK_MS
             elapsed = total
         }
         navigateAfterSplash()
     }
 
-    // Hero: soft bounce + slight rotation on enter, then idle float
-    val heroProgress = ((elapsed - HERO_DELAY_MS) / 650f).coerceIn(0f, 1f)
+    // Smoother elastic-style landing (overshoot then settle)
+    val heroProgress = ((elapsed - HERO_DELAY_MS) / 820f).coerceIn(0f, 1f)
     val heroScale = when {
-        heroProgress < 0.5f -> 0.5f + (heroProgress / 0.5f) * 0.58f
-        heroProgress < 0.65f -> 1.08f - (heroProgress - 0.5f) / 0.15f * 0.1f
-        heroProgress < 0.8f -> 0.98f + (heroProgress - 0.65f) / 0.15f * 0.04f
-        else -> 1.02f
+        heroProgress <= 0f -> 0.32f
+        heroProgress < 0.62f -> {
+            val t = heroProgress / 0.62f
+            val smooth = t * t * (3f - 2f * t)
+            0.32f + smooth * (1.1f - 0.32f)
+        }
+        heroProgress < 0.82f -> {
+            val t = (heroProgress - 0.62f) / 0.2f
+            1.1f - t * 0.14f
+        }
+        else -> {
+            val t = (heroProgress - 0.82f) / 0.18f
+            0.96f + t * 0.04f
+        }
     }
-    val heroAlpha = (heroProgress * 2.5f).coerceIn(0f, 1f)
+    val heroAlpha = (heroProgress * 2.2f).coerceIn(0f, 1f)
     val heroOffsetY = when {
-        heroProgress < 0.5f -> 28f * (1f - heroProgress / 0.5f)
-        heroProgress < 0.65f -> -8f + (heroProgress - 0.5f) / 0.15f * 8f
-        else -> -2f * (1f - (heroProgress - 0.65f) / 0.35f).coerceIn(0f, 1f)
+        heroProgress < 0.55f -> 36f * (1f - heroProgress / 0.55f)
+        heroProgress < 0.75f -> -10f + (heroProgress - 0.55f) / 0.2f * 10f
+        else -> 0f
     }
     val heroRotationDeg = when {
-        heroProgress < 0.45f -> -8f + (heroProgress / 0.45f) * 10f
-        heroProgress < 0.65f -> 2f - (heroProgress - 0.45f) / 0.2f * 2.5f
-        else -> 0f
+        heroProgress < 0.5f -> -5f + (heroProgress / 0.5f) * 5f
+        heroProgress < 0.75f -> (heroProgress - 0.5f) / 0.25f * -2f
+        else -> -2f + (heroProgress - 0.75f) / 0.25f * 2f
     }
     val heroRotationRad = heroRotationDeg * (PI / 180).toFloat()
 
-    // Idle float + gentle rotation (starts after hero lands)
-    val idleProgress = ((elapsed - 900L) / 2400f).coerceIn(0f, 1f)
-    val idleFloat = if (elapsed >= 900L) sin(idleProgress * 2 * PI.toFloat()).toFloat() * 6f else 0f
-    val idleRotation = if (elapsed >= 900L) sin(idleProgress * 2 * PI.toFloat()).toFloat() * 0.025f else 0f
+    val idleProgress = ((elapsed - 950L) / 2600f).coerceIn(0f, 1f)
+    val idleFloat = if (elapsed >= 950L) sin(idleProgress * 2 * PI.toFloat()) * 5f else 0f
+    val idleRotation = if (elapsed >= 950L) sin(idleProgress * 2 * PI.toFloat()) * 0.018f else 0f
 
-    // Sparkles: pop in with scale overshoot + rotation, then twinkle (8 total)
-    val sparkleDelays = listOf(0L, 80L, 160L, 240L, 320L, 100L, 180L, 260L)
+    val sparkleDelays = listOf(0L, 70L, 140L, 210L, 280L, 90L, 170L, 250L)
     fun sparkleProgress(index: Int): Float {
         val start = SPARKLE_START_MS + sparkleDelays[index]
         if (elapsed < start) return 0f
-        return ((elapsed - start) / 550f).coerceIn(0f, 1f)
+        return ((elapsed - start) / 480f).coerceIn(0f, 1f)
     }
     fun sparkleScale(index: Int): Float {
         val p = sparkleProgress(index)
         if (p == 0f) return 0f
-        val overshoot = 1.35f
+        val overshoot = 1.42f
         return when {
-            p < 0.45f -> p / 0.45f * overshoot
-            p < 0.7f -> overshoot - (p - 0.45f) / 0.25f * (overshoot - 1f)
+            p < 0.42f -> p / 0.42f * overshoot
+            p < 0.68f -> overshoot - (p - 0.42f) / 0.26f * (overshoot - 1f)
             else -> 1f
         }
     }
@@ -139,26 +149,70 @@ fun SplashScreen(
         val p = sparkleProgress(index)
         if (p == 0f) return 0f
         val base = (p * 2f).coerceIn(0f, 1f)
-        val start = SPARKLE_START_MS + 400L
+        val start = SPARKLE_START_MS + 380L
         if (elapsed < start) return base
-        val phase = (elapsed - start) / 2000f
-        return base * (0.7f + 0.15f * (1f + sin(phase * 2 * PI.toFloat())))
+        val phase = (elapsed - start) / 1900f
+        return base * (0.72f + 0.18f * (1f + sin(phase * 2 * PI.toFloat())))
     }
 
-    // Tagline: word-by-word stagger (Listen, ·, Learn, ·, Shine)
-    val taglineItemDelays = listOf(0L, 120L, 240L, 360L, 480L)  // 5 items
+    val taglineItemDelays = listOf(0L, 100L, 220L, 340L, 460L)
     fun taglineItemProgress(itemIndex: Int): Float {
         val start = TAGLINE_DELAY_MS + taglineItemDelays[itemIndex]
         if (elapsed < start) return 0f
-        return ((elapsed - start) / 380f).coerceIn(0f, 1f)
+        val raw = ((elapsed - start) / 320f).coerceIn(0f, 1f)
+        return raw * raw * (3f - 2f * raw)
+    }
+
+    val logoPulse = if (elapsed > 1100L) {
+        1f + 0.035f * sin(((elapsed - 1100L) / 700f) * 2 * PI.toFloat())
+    } else {
+        1f
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val logoSize: Dp = (minOf(maxWidth, maxHeight) * 0.38f).coerceAtLeast(240.dp).coerceAtMost(320.dp)
-        StarryNightBackground(showStars = true, showClouds = true, animateStars = false)
+        val logoSize: Dp = (minOf(maxWidth, maxHeight) * 0.36f).coerceAtLeast(220.dp).coerceAtMost(300.dp)
+        val glowSize = (logoSize.value * 1.75f).dp.coerceAtMost(minOf(maxWidth, maxHeight) * 0.72f)
 
-        // Floating particles (behind hero)
-        val particlePhase = elapsed / 1200f * 2 * PI.toFloat()
+        StarryNightBackground(
+            showStars = true,
+            showClouds = true,
+            animateStars = true,
+            ambientPresence = true
+        )
+
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(TamixaGradients.splashStorybookVignetteBrush())
+        )
+
+        // Concentric shockwaves — modern, no logo “plate”
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cx = size.width * 0.5f
+            val cy = size.height * 0.46f
+            if (elapsed > 520L) {
+                repeat(3) { i ->
+                    val delay = i * 160L
+                    val pr = ((elapsed - 520L - delay).coerceAtLeast(0L) / 980f).coerceIn(0f, 1f)
+                    val radius = size.minDimension * 0.12f + pr * size.minDimension * 0.42f
+                    val alpha = (1f - pr) * 0.32f
+                    drawCircle(
+                        color = Color.White.copy(alpha = alpha),
+                        radius = radius,
+                        center = Offset(cx, cy),
+                        style = Stroke(width = 2.5.dp.toPx())
+                    )
+                    drawCircle(
+                        color = TamixaColors.goldAccent.copy(alpha = alpha * 0.55f),
+                        radius = radius * 0.92f,
+                        center = Offset(cx, cy),
+                        style = Stroke(width = 1.5.dp.toPx())
+                    )
+                }
+            }
+        }
+
+        val particlePhase = elapsed / 1100f * 2 * PI.toFloat()
         listOf(
             Triple(0.12f, 0.18f, 0f),
             Triple(0.22f, 0.85f, -1.5f),
@@ -169,9 +223,9 @@ fun SplashScreen(
             Triple(0.28f, 0.72f, -1f),
             Triple(0.55f, 0.12f, -2.5f)
         ).forEachIndexed { index, (xFrac, yFrac, phaseOff) ->
-            val driftX = sin(particlePhase + phaseOff) * 8f + sin(particlePhase * 0.7f + index) * 6f
-            val driftY = sin(particlePhase * 0.8f + phaseOff * 1.2f) * 10f
-            val alphaP = (0.35f + 0.2f * sin(particlePhase * 0.5f + index)).coerceIn(0.2f, 0.6f)
+            val driftX = sin(particlePhase + phaseOff) * 10f + sin(particlePhase * 0.65f + index) * 7f
+            val driftY = sin(particlePhase * 0.82f + phaseOff * 1.1f) * 12f
+            val alphaP = (0.38f + 0.22f * sin(particlePhase * 0.48f + index)).coerceIn(0.22f, 0.65f)
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -179,73 +233,71 @@ fun SplashScreen(
                         x = (xFrac * 360f + driftX).dp,
                         y = (yFrac * 640f + driftY).dp
                     )
-                    .size((4 + (index % 3)).dp)
+                    .size((5 + (index % 3)).dp)
                     .graphicsLayer { alpha = alphaP }
                     .background(
-                        color = Color.White.copy(alpha = 0.7f),
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.95f),
+                                TamixaColors.goldAccent.copy(alpha = 0.5f)
+                            )
+                        ),
                         shape = CircleShape
                     )
             )
         }
 
-        // Expanding ring when hero lands
-        if (elapsed in 850L..2200L) {
-            val ringProgress = ((elapsed - 850L) / 1200f).coerceIn(0f, 1f)
-            val ringScale = 0.6f + ringProgress * 1.8f
-            val ringAlpha = (1f - ringProgress) * 0.5f
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(120.dp)
-                    .graphicsLayer {
-                        scaleX = ringScale
-                        scaleY = ringScale
-                        alpha = ringAlpha
-                    }
-                    .background(
-                        color = Color.Transparent,
-                        shape = CircleShape
-                    )
-            ) {
-                Canvas(Modifier.fillMaxSize()) {
-                    val strokeWidth = 2.dp.toPx()
-                    drawCircle(
-                        center = Offset(size.width / 2f, size.height / 2f),
-                        radius = size.minDimension / 2f - strokeWidth / 2f,
-                        color = Color.White.copy(alpha = 0.4f),
-                        style = Stroke(width = strokeWidth)
-                    )
-                }
-            }
-        }
-
-        // Hero: logo (title in asset) — bounce + rotation on enter, idle float + pulse
         if (elapsed >= HERO_DELAY_MS) {
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .graphicsLayer {
-                        scaleX = heroScale
-                        scaleY = heroScale
+                        scaleX = heroScale * logoPulse
+                        scaleY = heroScale * logoPulse
                         translationY = heroOffsetY + idleFloat
                         rotationZ = heroRotationRad + idleRotation
                         alpha = heroAlpha
                     },
                 contentAlignment = Alignment.Center
             ) {
-                val pulse = if (elapsed > 1200L) 1f + 0.025f * sin(((elapsed - 1200L) / 800f) * 2 * PI.toFloat()) else 1f
+                Canvas(modifier = Modifier.size(glowSize)) {
+                    val c = Offset(size.width / 2f, size.height / 2f)
+                    val r = size.maxDimension / 2f * 0.92f
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                TamixaColors.goldAccent.copy(alpha = 0.5f),
+                                TamixaColors.deepTeal.copy(alpha = 0.28f),
+                                Color.Transparent
+                            ),
+                            center = c,
+                            radius = r
+                        ),
+                        radius = r,
+                        center = c
+                    )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.14f),
+                                Color.Transparent
+                            ),
+                            center = c,
+                            radius = r * 0.45f
+                        ),
+                        radius = r * 0.45f,
+                        center = c
+                    )
+                }
                 Image(
                     painter = painterResource(Res.drawable.tamixa_logo_full),
                     contentDescription = "Tamixa",
-                    modifier = Modifier
-                        .size(logoSize)
-                        .graphicsLayer { scaleX = pulse; scaleY = pulse },
+                    modifier = Modifier.size(logoSize),
                     contentScale = ContentScale.Fit
                 )
             }
         }
 
-        // Sparkles: each pops with scale overshoot + rotation (8 around logo)
         listOf(
             Pair(0.5f - 0.22f, 0.5f - 0.28f),
             Pair(0.5f - 0.22f, 0.5f + 0.22f),
@@ -267,7 +319,7 @@ fun SplashScreen(
                             x = (xFrac * 360f).dp,
                             y = (yFrac * 640f).dp
                         )
-                        .size(10.dp)
+                        .size(12.dp)
                         .graphicsLayer {
                             scaleX = scale
                             scaleY = scale
@@ -275,37 +327,48 @@ fun SplashScreen(
                             alpha = sparkleAlphaVal
                         }
                         .background(
-                            color = Color.White.copy(alpha = 0.95f),
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    Color.White,
+                                    TamixaColors.goldAccent.copy(alpha = 0.85f)
+                                )
+                            ),
                             shape = CircleShape
                         )
                 )
             }
         }
 
-        // Tagline: five items (Listen · Learn · Shine) with staggered slide-up + fade
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .offset(y = (-78).dp),
+                .offset(y = (-84).dp),
             contentAlignment = Alignment.Center
         ) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Strings.appTagline().split(" · ").flatMapIndexed { i, w -> if (i > 0) listOf(" · ", w) else listOf(w) }.forEachIndexed { index, word ->
+                Strings.appTagline().split(" · ").flatMapIndexed { i, w ->
+                    if (i > 0) listOf(" · ", w) else listOf(w)
+                }.forEachIndexed { index, word ->
                     val progress = taglineItemProgress(index)
-                    val offsetY = 10f * (1f - progress)
+                    val offsetY = 18f * (1f - progress)
+                    val wordScale = 0.88f + 0.12f * progress
                     Text(
                         text = word,
                         modifier = Modifier.graphicsLayer {
                             translationY = offsetY
                             alpha = progress
+                            scaleX = wordScale
+                            scaleY = wordScale
                         },
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            letterSpacing = if (word.startsWith(" ")) 0.sp else 2.sp
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = if (word.startsWith(" ")) 0.sp else 1.4.sp,
+                            lineHeight = 28.sp
                         ),
-                        color = TaglineWhite
+                        color = Color.White.copy(alpha = 0.96f)
                     )
                 }
             }
@@ -322,11 +385,10 @@ fun SplashScreen(
             ) {
                 Text(
                     text = Strings.skip(),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = TaglineWhite
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = Color.White.copy(alpha = 0.92f)
                 )
             }
         }
     }
 }
-

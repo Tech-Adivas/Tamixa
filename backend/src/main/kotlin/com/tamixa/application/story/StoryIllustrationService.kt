@@ -13,9 +13,10 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Service
 
 /**
- * Generates AI cover illustrations for generated stories. Produces static DALL-E image, then
- * optionally animated GIF (Sora image-to-video) when SORA_ENABLED. Theme: Tamil Nadu / South India,
- * culturally neutral (no religion/caste). HD quality.
+ * Generates AI cover illustrations for generated stories. Builds a DALL-E reference frame, then
+ * **prefers** animated GIF (Sora image-to-video + FFmpeg) when enabled; uploads GIF before static
+ * image. Falls back to static-only when Sora/storage/FFmpeg are unavailable or fail.
+ * Theme: Tamil Nadu / South India, culturally neutral (no religion/caste). HD quality.
  */
 @Service
 class StoryIllustrationService(
@@ -31,7 +32,7 @@ class StoryIllustrationService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * Generate and store cover image (DALL-E), then optionally animated GIF (Sora image-to-video).
+     * Generate cover: DALL-E image bytes, then try animated GIF first (upload), then static image (upload).
      * Idempotent: skips if already has cover. When force=true, deletes existing and regenerates.
      */
     fun generateCoverForStory(story: Story, force: Boolean = false): Story? {
@@ -59,15 +60,10 @@ class StoryIllustrationService(
             return null
         }
 
-        val path = imageStorage.storeCoverImage(current.id, imageBytes) ?: run {
-            log.warn("Story {} cover storage failed", current.id)
-            return null
-        }
-
         var coverAnimationPath: String? = null
         if (coverVideoGeneration != null && coverVideoStorage != null) {
             val motionPrompt = buildCoverVideoMotionPrompt(current)
-            log.info("Sora: generating cover animation for story {} (image-to-video, then GIF)", current.id)
+            log.info("Sora (preferred): generating cover animation for story {} before static upload", current.id)
             val videoBytes = coverVideoGeneration.generateVideoFromImage(imageBytes, motionPrompt)
             if (videoBytes != null) {
                 val gifBytes = videoToGifConverter?.convertMp4ToGif(videoBytes)
@@ -82,14 +78,22 @@ class StoryIllustrationService(
                     log.warn("Story {} MP4-to-GIF conversion failed (install FFmpeg, SORA_CONVERT_TO_GIF=true)", current.id)
                 }
             } else {
-                log.warn("Story {} cover video generation failed (Sora returned null)", current.id)
+                log.warn("Story {} cover video generation failed (Sora returned null); continuing with static cover only", current.id)
             }
         } else {
-            log.debug("Cover animation skipped: Sora or storage not configured (SORA_ENABLED=true for animated GIF)")
+            log.debug("Cover animation skipped: Sora or storage not configured — generating static cover only")
+        }
+
+        val path = imageStorage.storeCoverImage(current.id, imageBytes) ?: run {
+            log.warn("Story {} cover image storage failed", current.id)
+            if (coverAnimationPath != null) {
+                coverVideoStorage?.deleteGeneratedCoverVideo(coverAnimationPath)
+            }
+            return null
         }
 
         storyRepository.updateCover(current.id, path, coverAnimationPath)
-        log.info("Generated cover for story {} (image + {})", current.id, if (coverAnimationPath != null) "GIF" else "image only")
+        log.info("Generated cover for story {} (static + {})", current.id, if (coverAnimationPath != null) "GIF" else "no GIF")
         return storyRepository.findById(current.id)
     }
 

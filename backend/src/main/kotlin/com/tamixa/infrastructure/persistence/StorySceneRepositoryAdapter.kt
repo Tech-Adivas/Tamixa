@@ -34,6 +34,7 @@ class StorySceneRepositoryAdapter(
         }
     }
 
+    @Transactional
     override fun saveSceneWithSegments(
         translationId: Long,
         script: String,
@@ -167,10 +168,12 @@ class StorySceneRepositoryAdapter(
         }
     }
 
+    @Transactional
     override fun deleteByTranslationId(translationId: Long) {
         deleteExistingScenes(translationId)
     }
 
+    @Transactional
     override fun deleteAll(): Int {
         val count = sceneJpaRepository.count().toInt()
         sceneJpaRepository.findAll().forEach { scene ->

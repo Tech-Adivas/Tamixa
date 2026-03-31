@@ -36,7 +36,9 @@ fun rememberAvatarVideoExoPlayerController(
     storyTheme: String,
     scope: CoroutineScope,
     onProgressChanged: (Float) -> Unit,
-    onPlaybackError: (() -> Unit)? = null
+    onPlaybackError: (() -> Unit)? = null,
+    muteVideoAudio: Boolean = false,
+    repeatVideo: Boolean = false
 ): AvatarVideoControllerResult {
     val context = LocalContext.current
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
@@ -60,7 +62,7 @@ fun rememberAvatarVideoExoPlayerController(
         player = null
     )
 
-    DisposableEffect(videoUrl) {
+    DisposableEffect(videoUrl, muteVideoAudio, repeatVideo) {
         if (videoUrl.isNullOrBlank()) {
             onDispose { }
         } else {
@@ -97,6 +99,8 @@ fun rememberAvatarVideoExoPlayerController(
                     onPlaybackError?.invoke()
                 }
             })
+            exoPlayer.volume = if (muteVideoAudio) 0f else 1f
+            exoPlayer.repeatMode = if (repeatVideo) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             exoPlayer.setMediaItem(MediaItem.fromUri(videoUrl))
             exoPlayer.prepare()
             player = exoPlayer

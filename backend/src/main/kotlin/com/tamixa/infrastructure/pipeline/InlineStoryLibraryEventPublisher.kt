@@ -30,8 +30,12 @@ class InlineStoryLibraryEventPublisher(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    override fun publishLibraryStoryCreated(libraryStoryId: Long, content: String) {
+    override fun publishLibraryStoryCreated(libraryStoryId: Long, content: String, status: String) {
         try {
+            if (!status.equals("PUBLISHED", ignoreCase = true)) {
+                log.info("Pipeline NOT triggered on create for non-published story: masterStoryId={} status={}", libraryStoryId, status)
+                return
+            }
             if (appProperties.translationPipeline.pipelineOnSubmitOnly) {
                 log.info("Pipeline NOT triggered on create (pipelineOnSubmitOnly=true): masterStoryId={}. Pipeline runs only when Submit for review is used.", libraryStoryId)
                 return

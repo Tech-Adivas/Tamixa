@@ -2,6 +2,7 @@ package com.tamixa.ui.viewmodel
 
 import com.tamixa.application.port.PreferencesPort
 import com.tamixa.network.ConsentRecordDto
+import com.tamixa.repository.AuthRepository
 import com.tamixa.network.ExportJobDto
 import com.tamixa.network.ListeningProgressDto
 import com.tamixa.repository.SettingsRepository
@@ -29,12 +30,14 @@ data class SettingsState(
     val listeningStreakDays: Int? = null,
     val settingsLoading: Boolean = false,
     val settingsLoadError: String? = null,
-    val exporting: Boolean = false
+    val exporting: Boolean = false,
+    val storyArtPersonalizationOptIn: Boolean = false
 )
 
 class SettingsViewModel(
     private val repository: SettingsRepository,
     private val preferencesPort: PreferencesPort,
+    private val authRepository: AuthRepository,
     private val scope: CoroutineScope
 ) {
     private val _state = MutableStateFlow(SettingsState())
@@ -49,6 +52,7 @@ class SettingsViewModel(
             val hasCompletedOnboarding = preferencesPort.getHasCompletedOnboarding()
             val preferredVoiceProfile = preferencesPort.getPreferredVoiceProfile()
             val preferredThemes = preferencesPort.getPreferredThemes()
+            val storyArtOptIn = preferencesPort.getStoryArtPersonalizationOptIn()
             _state.value = _state.value.copy(
                 useSystemTheme = useSystemTheme,
                 darkMode = darkMode,
@@ -57,6 +61,7 @@ class SettingsViewModel(
                 hasCompletedOnboarding = hasCompletedOnboarding,
                 preferredVoiceProfile = preferredVoiceProfile.ifEmpty { com.tamixa.util.TamixaConstants.VOICE_PROFILE_DEFAULT },
                 preferredThemes = preferredThemes,
+                storyArtPersonalizationOptIn = storyArtOptIn,
                 settingsLoaded = true
             )
         }
@@ -123,6 +128,31 @@ class SettingsViewModel(
             preferencesPort.setBedtimeReminderEnabled(enabled)
             preferencesPort.setBedtimeReminderHour(hour)
             preferencesPort.setBedtimeReminderMinute(minute)
+        }
+    }
+
+    /** Apply value from GET /auth/me (server source of truth when logged in). */
+    fun applyServerStoryArtOptIn(optInFromServer: Boolean) {
+        if (_state.value.storyArtPersonalizationOptIn == optInFromServer) return
+        _state.value = _state.value.copy(storyArtPersonalizationOptIn = optInFromServer)
+        scope.launch { preferencesPort.setStoryArtPersonalizationOptIn(optInFromServer) }
+    }
+
+    fun setStoryArtPersonalizationOptIn(optIn: Boolean) {
+        if (!authRepository.isLoggedIn()) {
+            _state.value = _state.value.copy(storyArtPersonalizationOptIn = optIn)
+            scope.launch { preferencesPort.setStoryArtPersonalizationOptIn(optIn) }
+            return
+        }
+        val previous = _state.value.storyArtPersonalizationOptIn
+        _state.value = _state.value.copy(storyArtPersonalizationOptIn = optIn)
+        scope.launch {
+            authRepository.updateStoryArtPersonalizationOptIn(optIn).fold(
+                onSuccess = { preferencesPort.setStoryArtPersonalizationOptIn(optIn) },
+                onFailure = {
+                    _state.value = _state.value.copy(storyArtPersonalizationOptIn = previous)
+                }
+            )
         }
     }
 

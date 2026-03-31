@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import type { LibraryStorySummary, CreateLibraryStoryRequest, PagedResponse, PipelineStatusResponse } from "@/types/api";
 import { STORY_CATEGORIES, AGE_GROUPS, MIN_WORD_COUNT } from "@/types/api";
@@ -24,14 +25,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { RefreshCw, Eye, MessageSquare, CheckCircle, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { RefreshCw, Eye, CheckCircle, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { usePipelineActive } from "@/contexts/pipeline-active-context";
 import { useActionResult } from "@/contexts/action-result-context";
 import { canModerateStories } from "@/lib/admin-roles";
-import { cn, parseJsonStoryContent } from "@/lib/utils";
+import { cn, parseJsonStoryContent, resolveLibraryStoryEditorBody, parsePipelineLanguageSet } from "@/lib/utils";
+import { isLibraryStoryPipelineActivelyRunning, REGENERATE_THEN_TRANSLATIONS_HELP, REVIEW_QUEUE_EXPECTATION_HELP } from "@/lib/library-story-workflow";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 const LANG_LABELS: Record<string, string> = {
   ta: "Tamil",
   hi: "Hindi",
@@ -41,7 +43,18 @@ const LANG_LABELS: Record<string, string> = {
   ml: "Malayalam",
 };
 
-const PIPELINE_META_KEYS = ["processing", "progress", "overallStatus", "reviewedLanguages", "allLanguagesReviewed"];
+const PIPELINE_META_KEYS = [
+  "processing",
+  "progress",
+  "overallStatus",
+  "reviewedLanguages",
+  "reviewStaleLanguages",
+  "allLanguagesReviewed",
+  "durationSeconds",
+  "generatedAtIst",
+  "audioCoverageWarnings",
+  "failedLanguagesCount",
+];
 
 function langEntries(status?: PipelineStatusResponse | Record<string, string | undefined> | null) {
   if (!status) return [];
@@ -65,15 +78,7 @@ function getAllPipelineLanguages(status?: PipelineStatusResponse | Record<string
 
 /** True when pipeline is actively processing (TRANSLATING, REWRITING, TTS_PROCESSING). Disable approve/edit during this. */
 function isPipelineInProgress(status?: PipelineStatusResponse | Record<string, string | undefined> | null): boolean {
-  if (status?.overallStatus === "COMPLETED" || status?.overallStatus === "READY_FOR_REVIEW") return false;
-  const entries = langEntries(status);
-  return entries.some(
-    ([, s]) =>
-      s === "TRANSLATING" ||
-      s === "REWRITING" ||
-      s === "TTS_PROCESSING" ||
-      (typeof s === "string" && (s.startsWith("TRANSLATING") || s.startsWith("REWRITING") || s.startsWith("TTS_PROCESSING")))
-  );
+  return isLibraryStoryPipelineActivelyRunning(status);
 }
 
 const LANG_SHORT: Record<string, string> = {
@@ -86,9 +91,12 @@ const LANG_SHORT: Record<string, string> = {
 };
 
 export default function ApproveTabPage() {
+  const searchParams = useSearchParams();
   const { user } = useAuth();
-  const { refresh: refreshPipelineActive, registerTriggered } = usePipelineActive();
+  const { refresh: refreshPipelineActive } = usePipelineActive();
   const canModerate = canModerateStories(user ?? null);
+  const storyIdParam = searchParams?.get("storyId")?.trim() ?? "";
+  const focusedStoryId = /^\d+$/.test(storyIdParam) ? Number(storyIdParam) : null;
   // Only disable Approve/Edit for the specific story whose pipeline is in progress—not all stories
   const [data, setData] = useState<PagedResponse<LibraryStorySummary> | null>(null);
   const [page, setPage] = useState(0);
@@ -111,6 +119,8 @@ export default function ApproveTabPage() {
   const [editStoryLoading, setEditStoryLoading] = useState(false);
   const [editStorySubmitting, setEditStorySubmitting] = useState(false);
   const [editCoverVideoUrl, setEditCoverVideoUrl] = useState<string | null>(null);
+  const [focusedStory, setFocusedStory] = useState<LibraryStorySummary | null>(null);
+  const [focusedStoryLoading, setFocusedStoryLoading] = useState(false);
 
   const [translationModalOpen, setTranslationModalOpen] = useState(false);
   const [translationStoryId, setTranslationStoryId] = useState<number | null>(null);
@@ -120,10 +130,7 @@ export default function ApproveTabPage() {
     content: string;
     moral: string;
   } | null>(null);
-  const [translationComments, setTranslationComments] = useState("");
   const [translationLoading, setTranslationLoading] = useState(false);
-  /** Per story: languages the user has viewed (closed the view modal). Approve enabled only when all completed langs reviewed. */
-  const [reviewedByStory, setReviewedByStory] = useState<Record<number, Set<string>>>({});
   /** Per story: user has ticked "Reject" checkbox in the view modal. Enables the common Reject button. */
   const [rejectMarkedByStory, setRejectMarkedByStory] = useState<Record<number, boolean>>({});
 
@@ -134,19 +141,6 @@ export default function ApproveTabPage() {
       .then((batch) => {
         if (!batch || Object.keys(batch).length === 0) return;
         setPipelineStatusMap((m) => ({ ...m, ...batch }));
-        setReviewedByStory((prev) => {
-          const next = { ...prev };
-          for (const [idStr, status] of Object.entries(batch)) {
-            const id = Number(idStr);
-            const reviewedStr = status?.reviewedLanguages;
-            const dbLangs =
-              typeof reviewedStr === "string" && reviewedStr.trim()
-                ? reviewedStr.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
-                : [];
-            next[id] = new Set(dbLangs);
-          }
-          return next;
-        });
       })
       .catch(() => {});
   }, []);
@@ -158,15 +152,6 @@ export default function ApproveTabPage() {
         const status = await api.admin.getLibraryStoryPipelineStatus(storyId);
         if (!status) return;
         setPipelineStatusMap((m) => ({ ...m, [storyId]: status }));
-        const reviewedStr = status.reviewedLanguages;
-        const dbLangs =
-          typeof reviewedStr === "string" && reviewedStr.trim()
-            ? reviewedStr.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
-            : [];
-        setReviewedByStory((prev) => ({
-          ...prev,
-          [storyId]: new Set(dbLangs),
-        }));
         if (status.allLanguagesReviewed === "true") {
           showSuccess("Synced", "All languages reviewed. Approve is now enabled.");
         }
@@ -185,13 +170,6 @@ export default function ApproveTabPage() {
       if (!normalizedLang) return;
       try {
         await api.admin.markReviewedLanguages(storyId, [normalizedLang]);
-        setReviewedByStory((prev) => {
-          const next = { ...prev };
-          const set = new Set(next[storyId] ?? []);
-          set.add(normalizedLang);
-          next[storyId] = set;
-          return next;
-        });
         await refreshPipelineStatusForStory(storyId);
       } catch (e) {
         showError("Failed to save review", e instanceof Error ? e.message : "Could not persist reviewed state");
@@ -216,8 +194,9 @@ export default function ApproveTabPage() {
       setLoading(true);
       setError(null);
     }
+    // Dedicated pending-review endpoint: full page of queue rows + correct totalElements (avoids query-param edge cases on /stories).
     api.admin
-      .getLibraryStories(page, PAGE_SIZE, "PUBLISHED")
+      .getStoriesPendingReview(page, PAGE_SIZE)
       .then((res) => {
         setData(res);
         const marked: Record<number, boolean> = {};
@@ -242,15 +221,61 @@ export default function ApproveTabPage() {
     loadPipelineStatuses(data.content.map((r) => r.id));
   }, [data?.content, loadPipelineStatuses]);
 
+  useEffect(() => {
+    if (focusedStoryId == null) {
+      setFocusedStory(null);
+      setFocusedStoryLoading(false);
+      return;
+    }
+    setFocusedStoryLoading(true);
+    api.admin
+      .getLibraryStory(focusedStoryId)
+      .then((story) => {
+        if (story.narrationApprovedAt) {
+          setFocusedStory(null);
+          return;
+        }
+        setFocusedStory(story);
+        loadPipelineStatuses([story.id]);
+      })
+      .catch(() => setFocusedStory(null))
+      .finally(() => setFocusedStoryLoading(false));
+  }, [focusedStoryId, loadPipelineStatuses]);
+
   // Show all stories pending review (not yet approved), including those still in pipeline
-  const pendingStories = (data?.content ?? []).filter((row) => !row.narrationApprovedAt);
+  const queueStories = (data?.content ?? []).filter((row) => !row.narrationApprovedAt);
+  const pendingStories = focusedStoryId == null
+    ? queueStories
+    : focusedStory && focusedStory.id === focusedStoryId
+      ? [focusedStory]
+      : queueStories.filter((row) => row.id === focusedStoryId);
 
   const handleApprove = async (storyId: number) => {
     setApprovingId(storyId);
-    registerTriggered(storyId); // Show pipeline banner immediately
     try {
       await api.admin.approveLibraryStoryNarration(storyId);
-      showSuccess("Approved for delivery", "Story is content-approved. Go to Narration (Story to Speech) and click Generate audio to create audio. Story will appear on the app when audio is ready.");
+      // Optimistic UI update: immediately move approved story out of Review queue.
+      setData((prev) => {
+        if (!prev) return prev;
+        const nextContent = (prev.content ?? []).filter((row) => row.id !== storyId);
+        if (nextContent.length === (prev.content ?? []).length) return prev;
+        return {
+          ...prev,
+          content: nextContent,
+          totalElements: Math.max(0, (prev.totalElements ?? nextContent.length) - 1),
+        };
+      });
+      setFocusedStory((prev) => (prev?.id === storyId ? null : prev));
+      setRejectMarkedByStory((prev) => {
+        if (!(storyId in prev)) return prev;
+        const next = { ...prev };
+        delete next[storyId];
+        return next;
+      });
+      showSuccess(
+        "Approved for delivery",
+        "Story is approved for the app. Open Narration (Story to Speech) and use Generate audio when you are ready to produce narration MP3s."
+      );
       load(true);
       setPipelineStatusMap((m) => {
         const next = { ...m };
@@ -277,7 +302,10 @@ export default function ApproveTabPage() {
     setRejectingId(rejectStoryId);
     try {
       await api.admin.rejectLibraryStory(rejectStoryId, rejectNotes || undefined);
-      showSuccess("Story rejected", "The story has been rejected and removed from the review queue.");
+      showSuccess(
+        "Story rejected",
+        "The story was not deleted. Open it from Story library → Edit, make changes, then Submit for review to send it back to this queue."
+      );
       setRejectModalOpen(false);
       setRejectStoryId(null);
       setRejectNotes("");
@@ -309,7 +337,8 @@ export default function ApproveTabPage() {
     api.admin
       .getLibraryStory(storyId)
       .then((story) => {
-        const contentRaw = story.content ?? "";
+        const contentRaw =
+          typeof story.sourceContent === "string" ? story.sourceContent : story.content ?? "";
         const parsed = parseJsonStoryContent(contentRaw);
         const resolved = parsed ?? { content: contentRaw };
         setEditForm({
@@ -323,6 +352,7 @@ export default function ApproveTabPage() {
           status: story.status ?? "DRAFT",
           coverImageUrl: story.coverImageUrl ?? "",
           emotionMode: story.emotionMode ?? "CALM",
+          narratedContent: story.narratedContent ?? "",
         });
         setEditCoverVideoUrl(story.coverVideoUrl ?? null);
       })
@@ -341,7 +371,6 @@ export default function ApproveTabPage() {
       return;
     }
     setEditStorySubmitting(true);
-    registerTriggered(editStoryId); // Show pipeline banner immediately
     try {
       await api.admin.updateLibraryStory(editStoryId, {
         ...editForm,
@@ -350,9 +379,13 @@ export default function ApproveTabPage() {
         status: "PUBLISHED",
         coverImageUrl: editForm.coverImageUrl ?? null,
         coverVideoUrl: editCoverVideoUrl ?? null,
+        narratedContent: editForm.narratedContent ?? "",
       });
       await api.admin.approveLibraryStoryNarration(editStoryId);
-      showSuccess("Approved for delivery", "Pipeline is running (translate + audio). The story will display on the app when ready.");
+      showSuccess(
+        "Approved for delivery",
+        "Open Narration (Story to Speech) and use Generate audio when you are ready. The story is approved for delivery; MP3s are produced when you trigger TTS there."
+      );
       setEditStoryModalOpen(false);
       setEditStoryId(null);
       setEditForm(null);
@@ -375,14 +408,13 @@ export default function ApproveTabPage() {
     setTranslationStoryId(storyId);
     setTranslationLang(language);
     setTranslationForm(null);
-    setTranslationComments("");
     setTranslationModalOpen(true);
     setTranslationLoading(true);
     const langCode = language.trim().toLowerCase();
     api.admin
       .getLibraryStory(storyId, langCode)
       .then((story) => {
-        const contentToEdit = (story.narratedContent?.trim() || story.content) ?? "";
+        const contentToEdit = resolveLibraryStoryEditorBody(story);
         const parsed = parseJsonStoryContent(contentToEdit);
         const resolved = parsed ?? { content: contentToEdit };
         // Prefer API-returned title/moral (from DB) so they stay in the correct language
@@ -410,15 +442,29 @@ export default function ApproveTabPage() {
       <div>
         <h1 className="page-header">Review</h1>
         <p className="page-subheader mt-1">
-          Stories appear here after you <strong>Submit for review</strong> in Library. The pipeline runs on submit (translate + TTS for all languages). Refresh to see content as it populates. <strong>Approve</strong> to publish or <strong>Reject</strong> to send back. If the pipeline gets stuck, use Run pipeline in Library.
+          Stories appear here after <strong>Submit for review</strong>. {REVIEW_QUEUE_EXPECTATION_HELP} For Tamixa-style
+          rewrites before scripts exist: Story library → <strong>Edit</strong> → <strong>Regenerate with prompt</strong>, then{" "}
+          <strong>Save draft</strong> (or <strong>Move to draft</strong> if in review), then <strong>Generate translations</strong>.{" "}
+          {REGENERATE_THEN_TRANSLATIONS_HELP} Refresh to see per-language status. <strong>Approve</strong> for delivery or{" "}
+          <strong>Reject</strong> to send back. After approval, use <strong>Narration</strong> → <strong>Generate audio</strong>. If a job hangs, clear the banner when offered or retry from edit / Stories with issues.
         </p>
       </div>
 
       <Card className="border-border shadow-sm overflow-hidden">
         <CardHeader className="card-header-responsive border-b bg-muted/30 px-4 py-3 sm:px-6 sm:py-4">
-          <CardTitle className="text-base font-semibold tracking-tight">
-            Stories ready for verification
-          </CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base font-semibold tracking-tight">
+              Stories ready for verification
+            </CardTitle>
+            {focusedStoryId != null ? (
+              <span className="text-xs text-muted-foreground">
+                Filtered to story #{focusedStoryId}{" "}
+                <Link className="underline-offset-2 hover:underline" href="/dashboard/stories/approve">
+                  Clear
+                </Link>
+              </span>
+            ) : null}
+          </div>
           <Button
               variant="outline"
               size="sm"
@@ -442,7 +488,13 @@ export default function ApproveTabPage() {
             </div>
           ) : pendingStories.length === 0 ? (
             <div className="px-6 py-12 text-center">
-              <p className="text-muted-foreground mb-2">No stories pending review.</p>
+              <p className="text-muted-foreground mb-2">
+                {focusedStoryId != null
+                  ? focusedStoryLoading
+                    ? `Looking up story #${focusedStoryId}...`
+                    : `Story #${focusedStoryId} is not currently in the pending-review queue.`
+                  : "No stories pending review."}
+              </p>
               <p className="text-sm text-muted-foreground mb-4">
                 Submit stories for review from Story library; they will appear here. Approve them for delivery to publish on the app.
               </p>
@@ -477,19 +529,19 @@ export default function ApproveTabPage() {
                         apiReviewedStr.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean).forEach((l) => dbReviewedLangs.add(l));
                       }
                       const requiredLangs = allLangs.map(({ lang }) => lang.trim().toLowerCase());
+                      const staleReviewLangs = parsePipelineLanguageSet(pipelineStatus?.reviewStaleLanguages);
                       // Use backend allLanguagesReviewed flag; fallback to client check if backend hasn't deployed
                       const apiAllReviewed = pipelineStatus?.allLanguagesReviewed;
                       const allLanguagesReviewed =
                         apiAllReviewed === "true" ||
                         (apiAllReviewed == null &&
-                          requiredLangs.length > 0 &&
-                          requiredLangs.every((l) => dbReviewedLangs.has(l)));
-                      const reviewedLangsForBadge = new Set(dbReviewedLangs);
-                      (reviewedByStory[row.id] ?? []).forEach((l) => reviewedLangsForBadge.add(l.trim().toLowerCase()));
+                          (requiredLangs.length === 0 ||
+                            (requiredLangs.every((l) => dbReviewedLangs.has(l)) &&
+                              requiredLangs.every((l) => !staleReviewLangs.has(l)))));
+                      const reviewedLangsForBadge = dbReviewedLangs;
                       // Enable Approve when all languages reviewed (from DB). Don't block on pipeline progress.
                       const approveDisabled =
                         approvingId === row.id ||
-                        requiredLangs.length === 0 ||
                         !allLanguagesReviewed;
                       const rejectDisabled =
                         rejectingId === row.id ||
@@ -499,7 +551,11 @@ export default function ApproveTabPage() {
                         <tr
                           key={row.id}
                           className="transition-colors hover:bg-muted/20"
-                          title={!pipelineComplete ? "Approve to run pipeline (translate + TTS) and publish" : "Approve for delivery"}
+                          title={
+                            !pipelineComplete
+                              ? "Pipeline may still be filling languages; open each language and mark reviewed when ready, then Approve for delivery"
+                              : "Approve for delivery (then Narration → Generate audio for MP3s)"
+                          }
                         >
                           <td className="px-4 py-3 font-mono font-medium text-right align-middle tabular-nums">{row.id}</td>
                           <td className="px-4 py-3 text-left align-middle">
@@ -515,19 +571,29 @@ export default function ApproveTabPage() {
                                 <>
                                   {allLangs.map(({ lang, stage }) => {
                                   const isCompleted = stage.startsWith("COMPLETED");
-                                  const isReviewed = reviewedLangsForBadge.has(lang.trim().toLowerCase());
+                                  const langKey = lang.trim().toLowerCase();
+                                  const isReviewed = reviewedLangsForBadge.has(langKey);
+                                  const isReviewStale = isReviewed && staleReviewLangs.has(langKey);
                                   return (
                                     <div
                                       key={lang}
                                       className={cn(
                                         "group inline-flex items-center gap-0.5 rounded-md border px-2 py-1.5 text-sm transition-colors",
-                                        isReviewed
-                                          ? "border-green-500/60 bg-green-500/15 text-green-800 dark:text-green-200"
-                                          : isCompleted
-                                            ? "border-border bg-muted/40"
-                                            : "border-border bg-muted/20 text-muted-foreground"
+                                        isReviewStale
+                                          ? "border-red-500/60 bg-red-500/15 text-red-900 dark:text-red-200"
+                                          : isReviewed
+                                            ? "border-green-500/60 bg-green-500/15 text-green-800 dark:text-green-200"
+                                            : isCompleted
+                                              ? "border-border bg-muted/40"
+                                              : "border-border bg-muted/20 text-muted-foreground"
                                       )}
-                                      title={`${LANG_LABELS[lang] ?? lang}${isReviewed ? " (reviewed)" : ` — view & mark reviewed (${stage})`}`}
+                                      title={`${LANG_LABELS[lang] ?? lang}${
+                                        isReviewStale
+                                          ? " — content changed since review; open and tap Have reviewed"
+                                          : isReviewed
+                                            ? " (reviewed)"
+                                            : ` — view & mark reviewed (${stage})`
+                                      }`}
                                     >
                                       <span className="font-medium text-foreground w-6 text-center">
                                         {LANG_SHORT[lang] ?? lang}
@@ -589,10 +655,8 @@ export default function ApproveTabPage() {
                                     title={
                                       approveDisabled
                                         ? pipelineInProgress
-                                          ? "Pipeline in progress"
-                                          : requiredLangs.length === 0
-                                            ? "Waiting for pipeline languages to load"
-                                            : !allLanguagesReviewed
+                                          ? "Pipeline queued or running"
+                                          : !allLanguagesReviewed
                                               ? `API allReviewed=${apiAllReviewed ?? "missing"}; DB reviewed: ${Array.from(dbReviewedLangs).join(",") || "none"}; missing: ${requiredLangs.filter((l) => !dbReviewedLangs.has(l)).join(",") || "all"}. Click Sync to refresh.`
                                               : "Approving…"
                                         : "Approve for delivery"
@@ -619,7 +683,7 @@ export default function ApproveTabPage() {
                                     title={
                                       rejectDisabled
                                         ? pipelineInProgress
-                                          ? "Pipeline in progress"
+                                          ? "Pipeline queued or running"
                                           : !rejectMarkedByStory[row.id]
                                             ? "Tick the Reject checkbox in a language view to enable"
                                             : "Rejecting…"
@@ -784,6 +848,20 @@ export default function ApproveTabPage() {
                 </p>
               </div>
               <div>
+                <Label htmlFor="edit-narrated">Narration script (optional)</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Stored separately from story text; clear the field and save to remove the script row.
+                </p>
+                <textarea
+                  id="edit-narrated"
+                  value={editForm.narratedContent ?? ""}
+                  onChange={(e) =>
+                    setEditForm((f) => (f ? { ...f, narratedContent: e.target.value } : f))
+                  }
+                  className="mt-1 flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
                 <Label htmlFor="edit-moral">Moral (optional)</Label>
                 <Input
                   id="edit-moral"
@@ -896,19 +974,6 @@ export default function ApproveTabPage() {
                 <div className="mt-1 rounded-md border border-input bg-muted/30 px-3 py-2 text-sm">
                   {translationForm.moral || "—"}
                 </div>
-              </div>
-              <div>
-                <Label htmlFor="translation-comments">
-                  <MessageSquare className="h-3.5 w-3.5 inline mr-1" />
-                  Comments (optional)
-                </Label>
-                <textarea
-                  id="translation-comments"
-                  value={translationComments}
-                  onChange={(e) => setTranslationComments(e.target.value)}
-                  placeholder="Notes for this language…"
-                  className="mt-1 flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                />
               </div>
               {translationStoryId != null && (
                 <div className="flex items-center gap-2 pt-2 border-t">

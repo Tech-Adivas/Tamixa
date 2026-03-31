@@ -7,13 +7,24 @@ import java.time.Instant
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 
 @Component
 class StoryLibraryRepositoryAdapter(
     private val jpaRepository: LibraryStoryJpaRepository
 ) : StoryLibraryRepositoryPort {
+
+    companion object {
+        private const val BULK_UPDATE_CHUNK = 500
+    }
     private fun touch(entity: LibraryStoryEntity) {
         entity.updatedAt = Instant.now()
+    }
+
+    private fun requireActiveEntity(id: Long): LibraryStoryEntity {
+        val e = jpaRepository.findById(id).orElseThrow { IllegalArgumentException("Library story not found: $id") }
+        require(e.deletedAt == null) { "Library story is deleted: $id" }
+        return e
     }
 
     override fun findListingByLanguage(language: String, pageable: Pageable): Page<LibraryStoryListing> =
@@ -30,6 +41,9 @@ class StoryLibraryRepositoryAdapter(
 
     override fun findDistinctThemesByNarrationApprovedAndTranslationLanguage(language: String): List<String> =
         jpaRepository.findDistinctThemesByNarrationApprovedAndTranslationLanguage(language)
+
+    override fun findDistinctThemesByNarrationApprovedAndTranslationLanguageWithMasterAudio(language: String): List<String> =
+        jpaRepository.findDistinctThemesByNarrationApprovedAndTranslationLanguageWithMasterAudio(language)
 
     override fun findListingByIdIn(ids: List<Long>): List<LibraryStoryListing> =
         if (ids.isEmpty()) emptyList() else jpaRepository.findListingByIdIn(ids).map(::toListing)
@@ -55,23 +69,45 @@ class StoryLibraryRepositoryAdapter(
             convertPromptUsed = story.convertPromptUsed,
             emotionMode = story.emotionMode,
             narrationApprovedAt = story.narrationApprovedAt,
-            rejectMarkedAt = story.rejectMarkedAt
+            rejectMarkedAt = story.rejectMarkedAt,
+            regeneratePromptLocked = story.regeneratePromptLocked,
+            regeneratePromptLockApproved = story.regeneratePromptLockApproved,
+            regeneratePromptUnlockRequestedAt = story.regeneratePromptUnlockRequestedAt,
+            deletedAt = null
         )
         val saved = jpaRepository.save(entity)
         return saved.toDomain()
     }
 
     override fun findById(id: Long): LibraryStory? =
-        jpaRepository.findById(id).orElse(null)?.toDomain()
+        jpaRepository.findById(id).orElse(null)?.takeIf { it.deletedAt == null }?.toDomain()
 
     override fun findAll(pageable: Pageable): Page<LibraryStory> =
-        jpaRepository.findAll(pageable).map { it.toDomain() }
+        jpaRepository.findAllActiveByIdDesc(pageable).map { it.toDomain() }
 
     override fun findAllWithProcessingFirst(pageable: Pageable): Page<LibraryStory> =
         jpaRepository.findAllWithProcessingFirst(pageable).map { it.toDomain() }
 
+    override fun findAllWithProcessingFirstAndNarrationApprovedAtNotNull(pageable: Pageable): Page<LibraryStory> =
+        jpaRepository.findAllWithProcessingFirstAndNarrationApprovedAtNotNull(pageable).map { it.toDomain() }
+
+    override fun findAllWithProcessingFirstAndNarrationApprovedAtNull(pageable: Pageable): Page<LibraryStory> =
+        jpaRepository.findAllWithProcessingFirstAndNarrationApprovedAtNull(pageable).map { it.toDomain() }
+
     override fun findByStatusInWithProcessingFirst(statuses: List<String>, pageable: Pageable): Page<LibraryStory> =
         jpaRepository.findByStatusInWithProcessingFirst(statuses, pageable).map { it.toDomain() }
+
+    override fun findByStatusInWithProcessingFirstAndNarrationApprovedAtNotNull(
+        statuses: List<String>,
+        pageable: Pageable
+    ): Page<LibraryStory> =
+        jpaRepository.findByStatusInWithProcessingFirstAndNarrationApprovedAtNotNull(statuses, pageable).map { it.toDomain() }
+
+    override fun findByStatusInWithProcessingFirstAndNarrationApprovedAtNull(
+        statuses: List<String>,
+        pageable: Pageable
+    ): Page<LibraryStory> =
+        jpaRepository.findByStatusInWithProcessingFirstAndNarrationApprovedAtNull(statuses, pageable).map { it.toDomain() }
 
     override fun findByLanguage(language: String, pageable: Pageable): Page<LibraryStory> =
         jpaRepository.findByLanguage(language, pageable).map { it.toDomain() }
@@ -85,6 +121,12 @@ class StoryLibraryRepositoryAdapter(
     override fun findByStatus(status: String, pageable: Pageable): Page<LibraryStory> =
         jpaRepository.findByStatus(status, pageable).map { it.toDomain() }
 
+    override fun findByStatusAndNarrationApprovedAtNotNull(status: String, pageable: Pageable): Page<LibraryStory> =
+        jpaRepository.findByStatusAndNarrationApprovedAtIsNotNull(status, pageable).map { it.toDomain() }
+
+    override fun findByStatusAndNarrationApprovedAtNull(status: String, pageable: Pageable): Page<LibraryStory> =
+        jpaRepository.findByStatusAndNarrationApprovedAtIsNull(status, pageable).map { it.toDomain() }
+
     override fun findByStatusPublishedAndNarrationApprovedAtNull(pageable: Pageable): Page<LibraryStory> =
         jpaRepository.findByStatusPublishedAndNarrationApprovedAtNull(pageable).map { it.toDomain() }
 
@@ -95,54 +137,50 @@ class StoryLibraryRepositoryAdapter(
         jpaRepository.findByStatusIn(statuses, pageable).map { it.toDomain() }
 
     override fun existsByTitle(title: String): Boolean =
-        jpaRepository.existsByTitleIgnoreCase(title)
+        jpaRepository.countByTitleIgnoreCaseActive(title) > 0
 
     override fun updateAudioUrl(id: Long, audioFileUrl: String) {
-        val entity = jpaRepository.findById(id).orElseThrow { IllegalArgumentException("Library story not found: $id") }
+        val entity = requireActiveEntity(id)
         entity.audioFileUrl = audioFileUrl
         touch(entity)
         jpaRepository.save(entity)
     }
 
     override fun updateStatus(id: Long, status: String) {
-        val entity = jpaRepository.findById(id).orElseThrow { IllegalArgumentException("Library story not found: $id") }
+        val entity = requireActiveEntity(id)
         entity.status = status
         touch(entity)
         jpaRepository.save(entity)
     }
 
     override fun updateStatusAndReviewNotes(id: Long, status: String, reviewNotes: String?) {
-        val entity = jpaRepository.findById(id).orElseThrow { IllegalArgumentException("Library story not found: $id") }
+        val entity = requireActiveEntity(id)
         entity.status = status
         entity.reviewNotes = reviewNotes
         touch(entity)
         jpaRepository.save(entity)
     }
 
+    @Transactional
     override fun updateStatusBulk(ids: List<Long>, status: String): Int {
         if (ids.isEmpty()) return 0
-        val entities = jpaRepository.findAllById(ids)
-        entities.forEach {
-            it.status = status
-            touch(it)
+        val now = Instant.now()
+        return ids.distinct().chunked(BULK_UPDATE_CHUNK).sumOf { chunk ->
+            jpaRepository.bulkUpdateStatusForActiveIds(chunk, status, now)
         }
-        jpaRepository.saveAll(entities)
-        return entities.size
     }
 
+    @Transactional
     override fun updateThemeBulk(ids: List<Long>, theme: String): Int {
         if (ids.isEmpty()) return 0
-        val entities = jpaRepository.findAllById(ids)
-        entities.forEach {
-            it.theme = theme
-            touch(it)
+        val now = Instant.now()
+        return ids.distinct().chunked(BULK_UPDATE_CHUNK).sumOf { chunk ->
+            jpaRepository.bulkUpdateThemeForActiveIds(chunk, theme, now)
         }
-        jpaRepository.saveAll(entities)
-        return entities.size
     }
 
     override fun updateContent(id: Long, content: String, wordCount: Int, readingTimeMinutes: Double) {
-        val entity = jpaRepository.findById(id).orElseThrow { IllegalArgumentException("Library story not found: $id") }
+        val entity = requireActiveEntity(id)
         entity.content = content
         entity.wordCount = wordCount
         entity.readingTimeMinutes = readingTimeMinutes
@@ -151,7 +189,7 @@ class StoryLibraryRepositoryAdapter(
     }
 
     override fun clearAudioUrl(id: Long) {
-        val entity = jpaRepository.findById(id).orElseThrow { IllegalArgumentException("Library story not found: $id") }
+        val entity = requireActiveEntity(id)
         entity.audioFileUrl = null
         touch(entity)
         jpaRepository.save(entity)
@@ -162,12 +200,37 @@ class StoryLibraryRepositoryAdapter(
     override fun searchByThemeOrTitle(query: String, language: String, pageable: Pageable): Page<LibraryStory> =
         jpaRepository.searchByThemeOrTitle(query.trim().take(100), language, pageable).map { it.toDomain() }
 
-    override fun deleteById(id: Long) {
+    override fun hardDeleteById(id: Long) {
         jpaRepository.deleteById(id)
+    }
+
+    override fun findSoftDeleted(pageable: Pageable): Page<LibraryStory> =
+        jpaRepository.findSoftDeleted(pageable).map { it.toDomain() }
+
+    override fun findIdsSoftDeletedBefore(cutoff: Instant): List<Long> =
+        jpaRepository.findIdsSoftDeletedBefore(cutoff)
+
+    override fun markSoftDeleted(id: Long, deletedAt: Instant): Boolean {
+        val e = jpaRepository.findById(id).orElse(null) ?: return false
+        if (e.deletedAt != null) return false
+        e.deletedAt = deletedAt
+        touch(e)
+        jpaRepository.save(e)
+        return true
+    }
+
+    override fun restoreSoftDeleted(id: Long): Boolean {
+        val e = jpaRepository.findById(id).orElse(null) ?: return false
+        if (e.deletedAt == null) return false
+        e.deletedAt = null
+        touch(e)
+        jpaRepository.save(e)
+        return true
     }
 
     override fun update(story: LibraryStory): LibraryStory {
         val existing = jpaRepository.findById(story.id).orElseThrow { IllegalArgumentException("Library story not found: ${story.id}") }
+        require(existing.deletedAt == null) { "Library story is deleted: ${story.id}" }
         val entity = LibraryStoryEntity(
             id = story.id,
             title = story.title,
@@ -191,22 +254,41 @@ class StoryLibraryRepositoryAdapter(
             convertPromptUsed = story.convertPromptUsed,
             narrationApprovedAt = story.narrationApprovedAt,
             reviewNotes = story.reviewNotes,
-            rejectMarkedAt = story.rejectMarkedAt
+            rejectMarkedAt = story.rejectMarkedAt,
+            regeneratePromptLocked = story.regeneratePromptLocked,
+            regeneratePromptLockApproved = story.regeneratePromptLockApproved,
+            regeneratePromptUnlockRequestedAt = story.regeneratePromptUnlockRequestedAt,
+            deletedAt = existing.deletedAt
         )
         val saved = jpaRepository.save(entity)
         return saved.toDomain()
     }
 
     override fun updateRejectMarkedAt(id: Long, markedAt: Instant?) {
-        val entity = jpaRepository.findById(id).orElseThrow { IllegalArgumentException("Library story not found: $id") }
+        val entity = requireActiveEntity(id)
         entity.rejectMarkedAt = markedAt
         touch(entity)
         jpaRepository.save(entity)
     }
 
     override fun updateNarrationApprovedAt(id: Long, approvedAt: Instant?) {
-        val entity = jpaRepository.findById(id).orElseThrow { IllegalArgumentException("Library story not found: $id") }
+        val entity = requireActiveEntity(id)
         entity.narrationApprovedAt = approvedAt
+        touch(entity)
+        jpaRepository.save(entity)
+    }
+
+    override fun updateRegeneratePromptUnlockRequestedAt(id: Long, requestedAt: Instant?) {
+        val entity = requireActiveEntity(id)
+        entity.regeneratePromptUnlockRequestedAt = requestedAt
+        touch(entity)
+        jpaRepository.save(entity)
+    }
+
+    override fun approveRegeneratePromptUnlock(id: Long) {
+        val entity = requireActiveEntity(id)
+        entity.regeneratePromptLockApproved = true
+        entity.regeneratePromptUnlockRequestedAt = null
         touch(entity)
         jpaRepository.save(entity)
     }
@@ -251,5 +333,9 @@ private fun LibraryStoryEntity.toDomain() = LibraryStory(
     emotionMode = emotionMode,
     narrationApprovedAt = narrationApprovedAt,
     reviewNotes = reviewNotes,
-    rejectMarkedAt = rejectMarkedAt
+    rejectMarkedAt = rejectMarkedAt,
+    regeneratePromptLocked = regeneratePromptLocked,
+    regeneratePromptLockApproved = regeneratePromptLockApproved,
+    regeneratePromptUnlockRequestedAt = regeneratePromptUnlockRequestedAt,
+    deletedAt = deletedAt
 )

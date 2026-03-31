@@ -59,8 +59,10 @@ class PipelineProgressTracker(
         return ((System.currentTimeMillis() - entry.startedAt) / (60 * 1000)).toInt()
     }
 
-    fun getProcessingLanguage(masterStoryId: Long): String? =
-        activeEntries[masterStoryId]?.language
+    fun getProcessingLanguage(masterStoryId: Long): String? {
+        removeStaleEntries()
+        return activeEntries[masterStoryId]?.language
+    }
 
     /** True if any story pipeline is currently running. Cleans stale entries before checking. */
     fun hasAnyProcessing(): Boolean {

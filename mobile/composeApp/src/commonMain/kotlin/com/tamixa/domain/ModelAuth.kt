@@ -15,7 +15,8 @@ data class CurrentUser(
     val email: String,
     val role: String,
     val nickname: String? = null,
-    val displayName: String? = null
+    val displayName: String? = null,
+    val storyArtPersonalizationOptIn: Boolean = false
 ) {
     /** Display name shown across the app: nickname > displayName > email part (not synthetic) > fallback */
     fun displayNameOrFallback(fallback: String): String {

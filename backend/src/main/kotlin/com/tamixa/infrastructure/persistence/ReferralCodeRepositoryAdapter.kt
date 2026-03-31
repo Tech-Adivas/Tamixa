@@ -2,6 +2,8 @@ package com.tamixa.infrastructure.persistence
 
 import com.tamixa.application.port.ReferralCodeRepositoryPort
 import com.tamixa.domain.ReferralCode
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 
@@ -45,8 +47,8 @@ class ReferralCodeRepositoryAdapter(
     override fun findByShortcode(shortcode: String): ReferralCode? =
         jpaRepository.findByShortcodeIgnoreCase(shortcode.trim().uppercase())?.let { toDomain(it) }
 
-    override fun findAll(): List<ReferralCode> =
-        jpaRepository.findAllByOrderByCreatedAtDesc().map { toDomain(it) }
+    override fun findAll(pageable: Pageable): Page<ReferralCode> =
+        jpaRepository.findAllByOrderByCreatedAtDesc(pageable).map { toDomain(it) }
 
     @Transactional
     override fun deleteById(id: Long) {

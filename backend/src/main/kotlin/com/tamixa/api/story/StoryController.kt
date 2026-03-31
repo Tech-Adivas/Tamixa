@@ -144,7 +144,7 @@ class StoryController(
 
     /**
      * Parent-facing: regenerate AI cover for a generated story they own.
-     * Produces static DALL-E image + animated GIF (when SORA_ENABLED). Tamil Nadu/South India theme, HD.
+     * Prefers animated GIF (Sora + FFmpeg when enabled), then static DALL-E image. Tamil Nadu/South India theme, HD.
      * Always deletes the old cover then generates a new one.
      */
     @PostMapping("/{id}/regenerate-cover")
@@ -172,6 +172,8 @@ class StoryController(
         @PathVariable id: Long,
         @Valid @RequestBody body: RemixRequest
     ): ResponseEntity<StoryResponse> {
+        val parentEmail = currentParentEmail()
+        storyService.findByParentAndId(parentEmail, id)
         log.debug("Remix requested for story id={} (not yet implemented)", id)
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build()
     }

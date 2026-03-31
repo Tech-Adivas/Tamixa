@@ -1,29 +1,28 @@
-# Production overrides. REQUIRED: CORS_ALLOWED_ORIGINS, JWT_SECRET, DATABASE_*
-# Storage: S3 default. Set S3_BUCKET, S3_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
-# When using Stripe: set SUBSCRIPTION_WEBHOOK_ENCRYPTION_KEY (32-byte Base64) so webhook payloads are encrypted at rest (PCI/compliance).
+spring:
+  datasource:
+    hikari:
+      # Scale with instance count × pool ≤ DB max_connections (leave headroom for migrations, console).
+      maximum-pool-size: ${HIKARI_MAXIMUM_POOL_SIZE:30}
+      minimum-idle: ${HIKARI_MINIMUM_IDLE:5}
+
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: db,redis,diskSpace
 
 app:
-  subscription:
-    require-webhook-payload-encryption: true
-
-spring:
-  flyway:
-    # For horizontally scaled prod, disable on app pods by default and
-    # run one dedicated migration job with FLYWAY_ENABLED=true.
-    enabled: ${FLYWAY_ENABLED:false}
-  jpa:
-    show-sql: false
-    hibernate:
-      ddl-auto: validate
-  datasource:
-    url: ${DATABASE_URL}
-    username: ${DATABASE_USERNAME}
-    password: ${DATABASE_PASSWORD}
-    hikari:
-      maximum-pool-size: 20
-
-logging:
-  level:
-    root: ${LOG_LEVEL_ROOT:WARN}
-    com.tamixa: ${LOG_LEVEL_COM_TAMIXA:INFO}
-    org.hibernate.SQL: ${LOG_LEVEL_HIBERNATE_SQL:WARN}
+  openai:
+    # Production: require moderation API unless explicitly disabled (never ship without a key in prod).
+    moderation-required: ${OPENAI_MODERATION_REQUIRED:true}
+  rate-limit:
+    # Multi-instance prod: use Redis for distributed rate limiting.
+    # Requires Redis (REDIS_HOST / REDIS_PORT). Overrides the default false in application.yml.
+    use-redis: ${RATE_LIMIT_USE_REDIS:true}
+    # Fail closed when Redis is unavailable so abuse cannot bypass limits.
+    redis-fail-open: ${RATE_LIMIT_REDIS_FAIL_OPEN:false}
+  bulk-job:
+    # Multi-instance prod: use Redis for bulk job state.
+    # Requires Redis. Overrides the default false in application.yml.
+    use-redis: ${BULK_JOB_USE_REDIS:true}

@@ -57,10 +57,10 @@ fun StoryCarouselCard(
             .height(height)
             .then(
                 Modifier.shadow(
-                    elevation = 6.dp,
+                    elevation = TamixaDesignTokens.carouselCardShadowElevation,
                     shape = carouselShape,
-                    ambientColor = Color.Black.copy(alpha = 0.12f),
-                    spotColor = Color.Black.copy(alpha = 0.1f)
+                    ambientColor = TamixaDesignTokens.carouselCardShadowAmbient,
+                    spotColor = TamixaDesignTokens.carouselCardShadowSpot
                 )
             ),
         shape = carouselShape,

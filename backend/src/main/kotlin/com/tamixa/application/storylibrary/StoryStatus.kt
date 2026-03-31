@@ -15,7 +15,7 @@ object StoryStatus {
     /** Statuses that indicate story is in the review queue (awaiting approve/reject). */
     val REVIEW_QUEUE = setOf(PUBLISHED, PROCESSING, READY)
 
-    /** Statuses that mean admin already acted; pipeline must not overwrite them. */
+    /** Admin sent the story back; row remains in DB. Pipeline must not overwrite master status until author re-submits (e.g. PUBLISHED). */
     val TERMINAL_REVIEW = setOf(CHANGES_REQUESTED, REJECTED)
 
     /** Statuses for which "content unchanged" check applies when resubmitting for review. */

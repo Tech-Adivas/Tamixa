@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tamixa.composeapp.generated.resources.Res
 import com.tamixa.composeapp.generated.resources.onboarding_home_hero
+import com.tamixa.composeapp.generated.resources.onboarding_home_hero_animated
 import com.tamixa.ui.components.TamixaPrimaryButton
 import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.OnboardingCardColors
@@ -115,6 +116,7 @@ private fun HomePreviewCard() {
             ) {
                 OnboardingImageBanner(
                     image = Res.drawable.onboarding_home_hero,
+                    animatedGif = Res.drawable.onboarding_home_hero_animated,
                     contentDescription = "Home story preview",
                     height = 140.dp
                 )

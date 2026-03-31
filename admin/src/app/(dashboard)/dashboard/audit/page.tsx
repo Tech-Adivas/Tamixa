@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { PagedResponse } from "@/types/api";
+import type { AuditEntry, PagedResponse } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,16 +20,6 @@ import { ClipboardList } from "lucide-react";
 
 const PAGE_SIZE = 20;
 
-interface AuditEntry {
-  id: number;
-  adminEmail: string;
-  action: string;
-  resourceType: string;
-  resourceId: string;
-  details: string;
-  createdAt: string;
-}
-
 export default function AuditPage() {
   const [data, setData] = useState<PagedResponse<AuditEntry> | null>(null);
   const [page, setPage] = useState(0);
@@ -41,7 +31,7 @@ export default function AuditPage() {
     setError(null);
     api.admin
       .getAuditTrail(page, PAGE_SIZE)
-      .then((res) => setData(res as unknown as PagedResponse<AuditEntry>))
+      .then((res) => setData(res))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [page]);

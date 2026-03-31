@@ -8,7 +8,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.tamixa.ui.theme.TamixaDesignTokens
 
 /**
@@ -26,7 +25,11 @@ fun AppScreenLayout(
     scroll: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val bottomPadding = if (withBottomNav) TamixaDesignTokens.screenPaddingBottomWithNav else 32.dp
+    val bottomPadding = if (withBottomNav) {
+        TamixaDesignTokens.screenPaddingBottomWithNav
+    } else {
+        TamixaDesignTokens.screenPaddingBottomWithoutNav
+    }
     val contentModifier = modifier
         .fillMaxSize()
         .padding(

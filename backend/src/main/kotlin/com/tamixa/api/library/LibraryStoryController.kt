@@ -29,7 +29,8 @@ class LibraryStoryController(
 
     /**
      * Lists library stories approved for delivery (human-verified in admin "Story for review").
-     * Only stories with narration approved appear on the app.
+     * Only stories with narration approved **and** ready default-voice audio appear on the app
+     * (re-edits stay hidden until new MP3s exist after approval + TTS).
      * Optional theme filter (category) for browse by category.
      * Returns paginated response for load-more support.
      */
@@ -84,6 +85,10 @@ class LibraryStoryController(
             log.debug("LibraryStory id={} not approved for delivery", id)
             return ResponseEntity.notFound().build()
         }
+        if (story.audioFileUrl.isNullOrBlank()) {
+            log.debug("LibraryStory id={} has no playable audio yet for language={}", id, language)
+            return ResponseEntity.notFound().build()
+        }
         return ResponseEntity.ok(story)
     }
 
@@ -96,7 +101,7 @@ class LibraryStoryController(
         @PathVariable id: Long
     ): ResponseEntity<ShareUrlResponse> {
         val story = storyLibraryService.findByIdAndLanguage(id, "ta")
-        if (story == null || story.narrationApprovedAt == null) {
+        if (story == null || story.narrationApprovedAt == null || story.audioFileUrl.isNullOrBlank()) {
             return ResponseEntity.notFound().build()
         }
         val baseUrl = appProperties.shareClip.shareBaseUrl.trimEnd('/')

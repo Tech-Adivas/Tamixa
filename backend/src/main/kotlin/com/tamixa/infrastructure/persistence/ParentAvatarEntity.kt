@@ -28,6 +28,9 @@ class ParentAvatarEntity(
     @Column(name = "file_size_bytes", nullable = false)
     val fileSizeBytes: Long = 0,
 
+    @Column(name = "heygen_talking_photo_id", length = 128)
+    val heygenTalkingPhotoId: String? = null,
+
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now(),
 
@@ -40,6 +43,7 @@ class ParentAvatarEntity(
         storagePath = storagePath,
         contentType = contentType,
         fileSizeBytes = fileSizeBytes,
+        heygenTalkingPhotoId = heygenTalkingPhotoId,
         createdAt = createdAt,
         updatedAt = updatedAt
     )

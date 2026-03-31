@@ -5,6 +5,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** Parse comma-separated language codes from pipeline API (e.g. reviewedLanguages, reviewStaleLanguages). */
+export function parsePipelineLanguageSet(raw?: string): Set<string> {
+  if (typeof raw !== "string" || !raw.trim()) return new Set()
+  return new Set(raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean))
+}
+
 /** API error body shape (backend ErrorResponse + validation errors). */
 type ApiErrorBody = {
   message?: string
@@ -32,6 +38,24 @@ export function getApiErrorMessage(error: unknown, fallback = "Something went wr
     return msg
   }
   return fallback
+}
+
+/**
+ * Text to load in admin story/review editors for the **story text** field (not the narration script).
+ * Prefers `sourceContent` when the API sends it; otherwise merged `content`, then narrated as last resort.
+ */
+export function resolveLibraryStoryEditorBody(story: {
+  content?: string | null
+  sourceContent?: string | null
+  narratedContent?: string | null
+  preferNarratedContentForEditor?: boolean
+}): string {
+  if (typeof story.sourceContent === "string") return story.sourceContent
+  const body = story.content?.trim() ?? ""
+  const narrated = story.narratedContent?.trim() ?? ""
+  if (body) return body
+  if (story.preferNarratedContentForEditor && narrated) return narrated
+  return narrated || ""
 }
 
 /** When content looks like JSON (e.g. from prompt that returned structured output), parse and extract fields for form display. */

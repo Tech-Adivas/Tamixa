@@ -8,6 +8,7 @@ import com.tamixa.domain.toStory
 import com.tamixa.domain.GenerateStoryRequest
 import com.tamixa.domain.StoriesPageResponse
 import com.tamixa.domain.Story
+import com.tamixa.domain.StoryStatus
 import io.ktor.client.*
 import io.ktor.client.call.body
 import io.ktor.client.plugins.ResponseException
@@ -18,6 +19,9 @@ import io.ktor.http.*
 
 /** Extended timeout for cloned voice (on-demand TTS can take 60–90s). */
 private const val CLONED_VOICE_REQUEST_TIMEOUT_MS = 120_000L
+
+/** Max pages when aggregating GET /stories/library (50 × LIBRARY_PAGE_SIZE stories cap). */
+private const val MAX_LIBRARY_LIST_PAGES = 50
 
 /** Voice option from GET /stories/{id}/voices */
 @kotlinx.serialization.Serializable
@@ -53,18 +57,40 @@ class StoryApi(private val client: HttpClient) {
                 setBody(request)
             }.body()
         } catch (e: ResponseException) {
-            if (e.response.status.value == 402) {
-                val body = try {
-                    e.response.body<LimitReachedResponseDto>()
-                } catch (_: Exception) {
-                    LimitReachedResponseDto()
+            when (e.response.status.value) {
+                402 -> {
+                    val body = try {
+                        e.response.body<LimitReachedResponseDto>()
+                    } catch (_: Exception) {
+                        LimitReachedResponseDto()
+                    }
+                    throw LimitReachedException(
+                        message = "Story limit reached. Upgrade for unlimited stories.",
+                        recommendedPlan = body.recommendedPlan
+                    )
                 }
-                throw LimitReachedException(
-                    message = "Story limit reached. Upgrade for unlimited stories.",
-                    recommendedPlan = body.recommendedPlan
-                )
+                422 -> {
+                    val msg = try {
+                        e.response.body<ApiErrorResponse>().message
+                    } catch (_: Exception) {
+                        ""
+                    }
+                    throw ContentModerationFailureException(
+                        msg.ifBlank { "Content could not be created. Try different theme or wording." }
+                    )
+                }
+                503 -> {
+                    val msg = try {
+                        e.response.body<ApiErrorResponse>().message
+                    } catch (_: Exception) {
+                        ""
+                    }
+                    throw StoryValidationServiceUnavailableException(
+                        msg.ifBlank { "Validation service temporarily unavailable. Please try again." }
+                    )
+                }
+                else -> throw e
             }
-            throw e
         }
     }
 
@@ -93,26 +119,37 @@ class StoryApi(private val client: HttpClient) {
             StoriesPageResponse(content = emptyList(), totalElements = 0, totalPages = 0, first = true, last = true)
         }
 
-    /** Fetches curated stories approved for delivery (admin "Story for review" → Approve). Only approved stories appear. */
+    /**
+     * Fetches curated stories approved for delivery (`narration_approved_at` set on master for Tamil).
+     * Loads **all pages** from GET /stories/library (not only page 0) so lists beyond [LIBRARY_PAGE_SIZE] appear.
+     */
     suspend fun getLibraryStories(
         language: String = TamixaConstants.DEFAULT_LANGUAGE,
-        page: Int = 0,
         theme: String? = null
     ): List<LibraryStoryResponse> =
         try {
-            val resp = client.get("${ApiConfig.API_VERSION}/stories/library") {
-                parameter("language", language)
-                parameter("page", page)
-                parameter("size", TamixaConstants.LIBRARY_PAGE_SIZE)
-                theme?.takeIf { it.isNotBlank() }?.let { parameter("theme", it) }
-            }
-            if (resp.status.value in 200..299) {
+            val all = mutableListOf<LibraryStoryResponse>()
+            val size = TamixaConstants.LIBRARY_PAGE_SIZE
+            var page = 0
+            while (page < MAX_LIBRARY_LIST_PAGES) {
+                val resp = client.get("${ApiConfig.API_VERSION}/stories/library") {
+                    parameter("language", language)
+                    parameter("page", page)
+                    parameter("size", size)
+                    theme?.takeIf { it.isNotBlank() }?.let { parameter("theme", it) }
+                }
+                if (resp.status.value !in 200..299) {
+                    if (page == 0) {
+                        TamixaLog.w("StoryApi", "getLibraryStories status=${resp.status.value}")
+                    }
+                    break
+                }
                 val paged = resp.body<LibraryStoriesPageResponse>()
-                paged.content
-            } else {
-                TamixaLog.w("StoryApi", "getLibraryStories status=${resp.status.value}")
-                emptyList()
+                all.addAll(paged.content)
+                if (paged.last || paged.content.isEmpty()) break
+                page++
             }
+            all
         } catch (e: Exception) {
             TamixaLog.w("StoryApi", "getLibraryStories failed", e)
             emptyList()
@@ -264,7 +301,17 @@ class StoryApi(private val client: HttpClient) {
                 402 -> StreamUrlResult.UpgradeRequired
                 in 200..299 -> {
                     val body = resp.body<StreamUrlResponse>()
-                    StreamUrlResult.Url(body.streamUrl, body.avatarUrl, body.avatarVideoUrl, body.avatarStatus, body.voiceFallback, body.wordTimings, body.durationSeconds)
+                    StreamUrlResult.Url(
+                        body.streamUrl,
+                        body.avatarUrl,
+                        body.avatarVideoUrl,
+                        body.avatarStatus,
+                        body.voiceFallback,
+                        body.wordTimings,
+                        body.durationSeconds,
+                        body.narrativeScenes,
+                        body.hostStoryClipUrl
+                    )
                 }
                 else -> StreamUrlResult.NotFound
             }
@@ -283,7 +330,10 @@ class StoryApi(private val client: HttpClient) {
             val avatarStatus: String? = null,
             val voiceFallback: Boolean = false,
             val wordTimings: List<WordTiming>? = null,
-            val durationSeconds: Int? = null
+            val durationSeconds: Int? = null,
+            val narrativeScenes: List<NarrativeSceneVisual>? = null,
+            /** Optional muted loop video (e.g. host); main playback stays story audio. */
+            val hostStoryClipUrl: String? = null
         ) : StreamUrlResult()
         data object UpgradeRequired : StreamUrlResult()
         data object NotFound : StreamUrlResult()
@@ -348,6 +398,13 @@ class StoryApi(private val client: HttpClient) {
     suspend fun getRecentPlayback(limit: Int = TamixaConstants.RECENT_PLAYBACK_LIMIT): List<PlaybackPositionDto> =
         client.get("${ApiConfig.API_VERSION}/playback/recent") { parameter("limit", limit) }.body()
 
+    /** Title, cover, and progress from the server — use for dashboard "Continue listening" without N+1 story fetches. */
+    suspend fun getRecentPlaybackEnriched(limit: Int = TamixaConstants.RECENT_PLAYBACK_LIMIT): List<PlaybackPositionEnrichedDto> =
+        client.get("${ApiConfig.API_VERSION}/playback/recent") {
+            parameter("limit", limit)
+            parameter("enriched", true)
+        }.body()
+
     suspend fun searchStories(q: String, language: String = TamixaConstants.DEFAULT_LANGUAGE, page: Int = 0, size: Int = TamixaConstants.SEARCH_PAGE_SIZE): SearchStoriesResponse =
         try {
             client.get("${ApiConfig.API_VERSION}/stories/search") {
@@ -404,6 +461,47 @@ data class PlaybackPositionDto(
 )
 
 @kotlinx.serialization.Serializable
+data class PlaybackPositionEnrichedDto(
+    val storyId: Long,
+    val storySource: String,
+    val positionSeconds: Int,
+    val updatedAt: String,
+    val title: String,
+    val coverImageUrl: String? = null,
+    val progress: Double? = null
+)
+
+/** READY [Story] for carousel rows from enriched playback (avoids extra GET /story per row). */
+fun PlaybackPositionEnrichedDto.toContinueListeningStory(language: String): Story {
+    val isLibrary = storySource.equals("library", ignoreCase = true)
+    val p = progress
+    val durationMinutes: Double = when {
+        p != null && p > 0.001 -> (positionSeconds / 60.0) / p
+        positionSeconds > 0 -> kotlin.math.max(positionSeconds / 60.0 * 1.25, 1.0)
+        else -> 5.0
+    }.coerceIn(1.0, 240.0)
+    return Story(
+        id = storyId,
+        parentId = if (isLibrary) 0L else 1L,
+        childId = null,
+        content = "",
+        theme = title,
+        language = language,
+        age = 5,
+        childName = "",
+        wordCount = 0,
+        readingTimeMinutes = durationMinutes,
+        title = title,
+        moral = null,
+        status = StoryStatus.READY,
+        audioFileUrl = null,
+        coverImageUrl = coverImageUrl,
+        coverVideoUrl = null,
+        createdAt = updatedAt
+    )
+}
+
+@kotlinx.serialization.Serializable
 internal data class PlaybackPositionResponse(val positionSeconds: Int)
 
 @kotlinx.serialization.Serializable
@@ -421,7 +519,9 @@ internal data class StreamUrlResponse(
     val avatarStatus: String? = null,
     val voiceFallback: Boolean = false,
     val wordTimings: List<WordTiming>? = null,
-    val durationSeconds: Int? = null
+    val durationSeconds: Int? = null,
+    val narrativeScenes: List<NarrativeSceneVisual>? = null,
+    val hostStoryClipUrl: String? = null
 )
 
 @kotlinx.serialization.Serializable

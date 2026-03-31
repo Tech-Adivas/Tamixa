@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component
 @Profile("test")
 class NoOpStoryLibraryEventPublisher : StoryLibraryEventPublisherPort {
 
-    override fun publishLibraryStoryCreated(libraryStoryId: Long, content: String) {
+    override fun publishLibraryStoryCreated(libraryStoryId: Long, content: String, status: String) {
         // No-op in tests; Kafka is disabled
     }
 }

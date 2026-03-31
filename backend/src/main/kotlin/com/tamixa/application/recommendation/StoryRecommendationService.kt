@@ -5,6 +5,7 @@ import com.tamixa.application.port.FavoriteStoryRepositoryPort
 import com.tamixa.application.port.ParentRepositoryPort
 import com.tamixa.application.port.StoryRepositoryPort
 import com.tamixa.application.port.StoryTranslationRepositoryPort
+import com.tamixa.infrastructure.config.AppProperties
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -18,7 +19,8 @@ class StoryRecommendationService(
     private val favoriteRepository: FavoriteStoryRepositoryPort,
     private val storyRepository: StoryRepositoryPort,
     private val storyLibraryRepository: StoryLibraryRepositoryPort,
-    private val storyTranslationRepository: StoryTranslationRepositoryPort
+    private val storyTranslationRepository: StoryTranslationRepositoryPort,
+    private val appProperties: AppProperties
 ) {
 
     @Transactional(readOnly = true)
@@ -33,10 +35,18 @@ class StoryRecommendationService(
         val interests = emptyList<String>() // Child feature removed
         val effectiveLang = language.trim().lowercase().take(10).ifEmpty { "ta" }
 
-        val library = if (effectiveLang == "ta") {
-            storyLibraryRepository.findByLanguageAndNarrationApproved("ta", PageRequest.of(0, 30)).content
+        val primaryCatalog = appProperties.translationPipeline.sourceLanguage.trim().lowercase().take(10)
+        val library = if (effectiveLang.equals(primaryCatalog, ignoreCase = true)) {
+            storyLibraryRepository.findByLanguageAndNarrationApproved(effectiveLang, PageRequest.of(0, 30)).content
         } else {
-            val translations = storyTranslationRepository.findByLanguageAndMasterNarrationApproved(effectiveLang, PageRequest.of(0, 30)).content
+            val pageable = PageRequest.of(0, 30)
+            val translations = (
+                if (appProperties.translationPipeline.masterOnlyNarration) {
+                    storyTranslationRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudio(effectiveLang, pageable)
+                } else {
+                    storyTranslationRepository.findByLanguageAndMasterNarrationApproved(effectiveLang, pageable)
+                }
+                ).content
             val masterIds = translations.map { it.masterStoryId }.distinct()
             if (masterIds.isEmpty()) emptyList()
             else {

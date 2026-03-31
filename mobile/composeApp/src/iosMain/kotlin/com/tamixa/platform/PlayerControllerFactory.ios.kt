@@ -21,7 +21,9 @@ import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
+import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSURL
+import platform.darwin.NSObjectProtocol
 import platform.Foundation.NSError
 import platform.darwin.NSEC_PER_SEC
 import androidx.compose.ui.Modifier
@@ -61,7 +63,8 @@ private fun createAvPlayerController(
     isPlayingState: androidx.compose.runtime.MutableState<Boolean>,
     progressState: androidx.compose.runtime.MutableState<Float>,
     onProgressChanged: (Float) -> Unit,
-    onPlaybackError: (() -> Unit)?
+    onPlaybackError: (() -> Unit)?,
+    muteVideoAudio: Boolean = false
 ): Pair<AVPlayer?, StoryPlaybackController> {
     TamixaLog.d("PlayerIOS", "createAvPlayerController urlType=${TamixaLog.maskUrl(mediaUrl)}")
     configureAudioSessionForBackgroundPlayback()
@@ -74,6 +77,7 @@ private fun createAvPlayerController(
     val item = AVPlayerItem(uRL = nsUrl)
     val avPlayer = AVPlayer()
     avPlayer.replaceCurrentItemWithPlayerItem(item)
+    avPlayer.setMuted(muteVideoAudio)
     TamixaLog.d("PlayerIOS", "AVPlayer created and item set")
     var sleepTimerJob: Job? = null
     scope.launch {
@@ -180,7 +184,8 @@ actual fun rememberStreamingController(
                 isPlayingState,
                 progressState,
                 onProgressChanged,
-                onPlaybackError
+                onPlaybackError,
+                muteVideoAudio = false
             )
             avPlayer = player
             controller = ctrl
@@ -220,7 +225,8 @@ actual fun rememberLocalFileController(
                 isPlayingState,
                 progressState,
                 onProgressChanged,
-                null
+                null,
+                muteVideoAudio = false
             )
             avPlayer = player
             controller = ctrl
@@ -243,17 +249,21 @@ actual fun rememberAvatarVideoController(
     storyTheme: String,
     scope: CoroutineScope,
     onProgressChanged: (Float) -> Unit,
-    onPlaybackError: (() -> Unit)?
+    onPlaybackError: (() -> Unit)?,
+    muteVideoAudio: Boolean,
+    repeatVideo: Boolean
 ): AvatarVideoControllerResult {
-    val isReadyState = remember(videoUrl) { mutableStateOf(false) }
-    val isPlayingState = remember(videoUrl) { mutableStateOf(false) }
-    val progressState = remember(videoUrl) { mutableFloatStateOf(0f) }
-    var result by remember(videoUrl) {
+    val isReadyState = remember(videoUrl, muteVideoAudio, repeatVideo) { mutableStateOf(false) }
+    val isPlayingState = remember(videoUrl, muteVideoAudio, repeatVideo) { mutableStateOf(false) }
+    val progressState = remember(videoUrl, muteVideoAudio, repeatVideo) { mutableFloatStateOf(0f) }
+    var result by remember(videoUrl, muteVideoAudio, repeatVideo) {
         mutableStateOf(
             AvatarVideoControllerResult(controller = noOpController(), player = null)
         )
     }
-    DisposableEffect(videoUrl) {
+    DisposableEffect(videoUrl, muteVideoAudio, repeatVideo) {
+        var endObserver: NSObjectProtocol? = null
+        var createdPlayer: AVPlayer? = null
         if (!videoUrl.isNullOrBlank()) {
             val (player, ctrl) = createAvPlayerController(
                 videoUrl,
@@ -264,14 +274,30 @@ actual fun rememberAvatarVideoController(
                 isPlayingState,
                 progressState,
                 onProgressChanged,
-                onPlaybackError
+                onPlaybackError,
+                muteVideoAudio = muteVideoAudio
             )
+            createdPlayer = player
+            if (repeatVideo && player != null) {
+                player.currentItem?.let { item ->
+                    endObserver = NSNotificationCenter.defaultCenter.addObserverForName(
+                        name = AVPlayerItemDidPlayToEndTimeNotification,
+                        `object` = item,
+                        queue = null
+                    ) { _ ->
+                        player.seekToTime(CMTimeMakeWithSeconds(0.0, NSEC_PER_SEC.toInt()))
+                        player.play()
+                    }
+                }
+            }
             result = AvatarVideoControllerResult(controller = ctrl, player = player)
             TamixaLog.d("PlayerIOS", "rememberAvatarVideoController player=${if (player != null) "non-null" else "null"}")
         }
         onDispose {
-            (result.player as? AVPlayer)?.replaceCurrentItemWithPlayerItem(null)
-            (result.player as? AVPlayer)?.pause()
+            endObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
+            val p = createdPlayer ?: (result.player as? AVPlayer)
+            p?.replaceCurrentItemWithPlayerItem(null)
+            p?.pause()
             result = AvatarVideoControllerResult(controller = noOpController(), player = null)
         }
     }

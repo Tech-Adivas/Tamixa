@@ -11,6 +11,7 @@ import com.tamixa.api.auth.dto.PasswordlessSendResponse
 import com.tamixa.api.auth.dto.PasswordlessVerifyRequest
 import com.tamixa.infrastructure.logging.PiiMask
 import com.tamixa.api.auth.dto.LoginRequest
+import com.tamixa.api.auth.dto.StoryArtPersonalizationRequest
 import com.tamixa.api.auth.dto.UpdateProfileRequest
 import com.tamixa.api.auth.dto.RefreshTokenRequest
 import com.tamixa.api.auth.dto.RegisterRequest
@@ -101,7 +102,13 @@ class AuthController(
         log.info("OTP send request phone={}", maskPhone(request.phone))
         val result = otpService.sendOtp(request.phone)
         log.info("OTP send completed phone={} sent={}", maskPhone(request.phone), result.sent)
-        return ResponseEntity.ok(OtpSendResponse(sent = result.sent, code = result.devCode))
+        // Only expose devCode in dev profile — never in production
+        val activeProfiles = System.getProperty("spring.profiles.active", "")
+            .split(",").map { it.trim() }
+        val isDev = "dev" in activeProfiles || System.getenv("SPRING_PROFILES_ACTIVE")
+            ?.split(",")?.map { it.trim() }?.contains("dev") == true
+        val exposedCode = if (isDev) result.devCode else null
+        return ResponseEntity.ok(OtpSendResponse(sent = result.sent, code = exposedCode))
     }
 
     @PostMapping("/otp/verify")
@@ -165,9 +172,20 @@ class AuthController(
                 role = roleStr,
                 nickname = nickname,
                 displayName = displayName,
-                permissions = permissions
+                permissions = permissions,
+                storyArtPersonalizationOptIn = parent?.storyArtPersonalizationOptIn == true
             )
         )
+    }
+
+    @PatchMapping("/me/story-art-personalization")
+    @PreAuthorize("hasRole('PARENT')")
+    fun updateStoryArtPersonalization(@Valid @RequestBody request: StoryArtPersonalizationRequest): ResponseEntity<Map<String, Boolean>> {
+        val email = SecurityContextHolder.getContext().authentication?.name
+            ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
+        val updated = profileService.updateStoryArtPersonalizationOptIn(email, request.optIn)
+        return if (updated) ResponseEntity.ok(mapOf("optIn" to request.optIn))
+        else ResponseEntity.status(HttpStatus.NOT_FOUND).build()
     }
 
     @PatchMapping("/profile")

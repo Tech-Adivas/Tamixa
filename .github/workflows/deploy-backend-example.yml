@@ -1,0 +1,58 @@
+name: Deploy backend (example)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "production"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy backend placeholder
+        run: |
+          echo "Replace this step with your real backend deployment command."
+          echo "Example: ./scripts/deploy-backend.sh --env=${{ inputs.environment }}"
+          # Keep exit 0 for sample success path.
+          # To test failure reporting, uncomment the next line:
+          # exit 1
+
+  report-dora-deployment-success:
+    needs: deploy-backend
+    if: ${{ needs.deploy-backend.result == 'success' }}
+    uses: ./.github/workflows/dora-metrics-report.yml
+    with:
+      mode: deployment
+      status: SUCCESS
+      service: backend
+      environment: ${{ inputs.environment }}
+      change_id: ${{ github.sha }}
+      summary: "GitHub Actions deploy workflow succeeded"
+    secrets:
+      DORA_API_BASE_URL: ${{ secrets.DORA_API_BASE_URL }}
+      DORA_ADMIN_BEARER_TOKEN: ${{ secrets.DORA_ADMIN_BEARER_TOKEN }}
+
+  report-dora-deployment-failed:
+    needs: deploy-backend
+    if: ${{ needs.deploy-backend.result == 'failure' }}
+    uses: ./.github/workflows/dora-metrics-report.yml
+    with:
+      mode: deployment
+      status: FAILED
+      service: backend
+      environment: ${{ inputs.environment }}
+      change_id: ${{ github.sha }}
+      summary: "GitHub Actions deploy workflow failed"
+    secrets:
+      DORA_API_BASE_URL: ${{ secrets.DORA_API_BASE_URL }}
+      DORA_ADMIN_BEARER_TOKEN: ${{ secrets.DORA_ADMIN_BEARER_TOKEN }}

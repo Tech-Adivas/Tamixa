@@ -15,9 +15,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -287,7 +287,7 @@ fun SubscriptionScreen(
                         verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
                     ) {
                         BenefitRow(icon = Icons.Outlined.Mic, text = Strings.benefitRecordYourVoice())
-                        BenefitRow(icon = Icons.Outlined.MenuBook, text = Strings.benefitUnlimitedStories())
+                        BenefitRow(icon = Icons.AutoMirrored.Outlined.MenuBook, text = Strings.benefitUnlimitedStories())
                         BenefitRow(icon = Icons.Outlined.Block, text = Strings.benefitAdFree())
                     }
                 }

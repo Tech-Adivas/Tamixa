@@ -34,6 +34,25 @@ object Strings {
         else -> "Register"
     }
 
+    /** Login screen: alternative path when the user prefers email + password. */
+    fun registerWithEmail(): String = when (languageCode) {
+        "ta" -> "மின்னஞ்சலுடன் பதிவு செய்யவும்"
+        "hi" -> "ईमेल से पंजीकरण करें"
+        else -> "Register with email"
+    }
+
+    fun storyQuiz(): String = when (languageCode) {
+        "ta" -> "கதை வினாடி வினா"
+        "hi" -> "कहानी क्विज़"
+        else -> "Story quiz"
+    }
+
+    fun storyQuizNeedsChildProfile(): String = when (languageCode) {
+        "ta" -> "வினாடி வினாவுக்கு குழந்தை சுயவிவரம் தேவை. இந்தக் கதையில் குழந்தை இணைக்கப்படவில்லை."
+        "hi" -> "क्विज़ के लिए बच्चे की प्रोफ़ाइल चाहिए. इस कहानी में बच्चा लिंक नहीं है."
+        else -> "A child profile is needed for the quiz. This story is not linked to a child."
+    }
+
     fun email(): String = when (languageCode) {
         "ta" -> "மின்னஞ்சல்"
         "hi" -> "ईमेल"
@@ -1050,6 +1069,13 @@ object Strings {
         else -> "Story with your avatar"
     }
 
+    /** Optional host / brand clip (muted) shown with story audio. */
+    fun hostStoryClipSectionLabel(): String = when (languageCode) {
+        "ta" -> "சிறப்பு காட்சி"
+        "hi" -> "विशेष दृश्य"
+        else -> "Story moment"
+    }
+
     /** Avatar menu label on story screen. */
     fun avatarMenuLabel(): String = when (languageCode) {
         "ta" -> "அவதாரம்"
@@ -1401,6 +1427,116 @@ object Strings {
         "ta" -> "கேட்டது தொடர்"
         "hi" -> "सुनना जारी रखें"
         else -> "Continue Listening"
+    }
+
+    fun playerCategoryDuration(category: String, minutes: Int): String = when (languageCode) {
+        "ta" -> "வகை: $category | நேரம்: $minutes நிமி"
+        "hi" -> "श्रेणी: $category | अवधि: $minutes मिनट"
+        else -> "Category: $category | Duration: $minutes min"
+    }
+
+    fun playerAddToList(): String = when (languageCode) {
+        "ta" -> "பட்டியலில் சேர்"
+        "hi" -> "सूची में जोड़ें"
+        else -> "Add to list"
+    }
+
+    /** Audio player quick action when story is already in favorites / list. */
+    fun playerInList(): String = when (languageCode) {
+        "ta" -> "பட்டியலில் உள்ளது"
+        "hi" -> "सूची में है"
+        else -> "In your list"
+    }
+
+    fun playerAddedToListSnackbar(): String = when (languageCode) {
+        "ta" -> "பட்டியலில் சேர்க்கப்பட்டது"
+        "hi" -> "सूची में जोड़ दिया गया"
+        else -> "Saved to your list"
+    }
+
+    fun playerAlreadyInListSnackbar(): String = when (languageCode) {
+        "ta" -> "இது ஏற்கனவே உங்கள் பட்டியலில் உள்ளது"
+        "hi" -> "यह पहले से आपकी सूची में है"
+        else -> "Already in your list"
+    }
+
+    fun playerLike(): String = when (languageCode) {
+        "ta" -> "விருப்பம்"
+        "hi" -> "पसंद"
+        else -> "Like"
+    }
+
+    /** Short trust label on player hero art (generated / story illustration). */
+    fun illustrationGeneratedArt(): String = when (languageCode) {
+        "ta" -> "சித்திரம்"
+        "hi" -> "चित्रण"
+        else -> "Illustration"
+    }
+
+    fun storyCoverContentDescription(storyTitle: String?, theme: String): String {
+        val label = storyTitle?.takeIf { it.isNotBlank() } ?: theme
+        return when (languageCode) {
+            "ta" -> "கதை அட்டை: $label"
+            "hi" -> "कहानी कवर: $label"
+            else -> "Story cover: $label"
+        }
+    }
+
+    /** Settings: title for optional future story-art personalization consent. */
+    fun storyArtPersonalizationSettingTitle(): String = when (languageCode) {
+        "ta" -> "கதை கலை தனிப்பயனாக்கம்"
+        "hi" -> "कहानी कला वैयक्तिकरण"
+        else -> "Story art personalization"
+    }
+
+    fun storyArtPersonalizationSettingSummary(): String = when (languageCode) {
+        "ta" -> "எதிர்காலத்தில், உங்கள் ஒப்புதலுடன் கதைப் படங்கள் மேலும் தனிப்பயனாக அமையலாம். புகைப்படங்கள் சேமிப்பு கொள்கைக்கு உட்பட்டவை."
+        "hi" -> "भविष्य में, आपकी सहमति से कहानी की तस्वीरें और अनुकूलित हो सकती हैं। फ़ोटो हमारी गोपनीयता नीति के अधीन हैं।"
+        else -> "With your consent, we may personalize story visuals further in the future. Photos follow our privacy policy; you can turn this off anytime."
+    }
+
+    fun storyArtPersonalizationPlayerNote(): String = when (languageCode) {
+        "ta" -> "தனிப்பயன் கதைக் கலை முன்னுரிமைகள் இயக்கத்தில் உள்ளன."
+        "hi" -> "वैयक्तिकृत कला वरीयताएँ चालू हैं।"
+        else -> "Personalized story-art preferences are on (see Settings)."
+    }
+
+    fun playerStartReading(): String = when (languageCode) {
+        "ta" -> "வாசிப்பைத் தொடங்கு"
+        "hi" -> "पढ़ना शुरू करें"
+        else -> "Start reading"
+    }
+
+    fun playerShowLess(): String = when (languageCode) {
+        "ta" -> "குறைவாகக் காட்டு"
+        "hi" -> "कम दिखाएँ"
+        else -> "Show less"
+    }
+
+    fun playerVoiceAndPlayMode(): String = when (languageCode) {
+        "ta" -> "குரல் மற்றும் பயன்முறை"
+        "hi" -> "आवाज़ और मोड"
+        else -> "Voice & play mode"
+    }
+
+    /** Overflow ⋮ on audio player hero (opens voice & related actions). */
+    fun playerMoreActions(): String = when (languageCode) {
+        "ta" -> "மேலும் செயல்கள்"
+        "hi" -> "और विकल्प"
+        else -> "More actions"
+    }
+
+    fun playerSkipSeconds(sec: Int): String = when (languageCode) {
+        "ta" -> "${sec}s"
+        "hi" -> "${sec}s"
+        else -> "${sec}s"
+    }
+
+    /** Shown under Continue Listening on the home dashboard. */
+    fun latestListeningSubtitle(): String = when (languageCode) {
+        "ta" -> "சமீபத்திய கேட்ட கதைகள் — புதியவை முதலில்"
+        "hi" -> "आपकी हाल की सुनी कहानियाँ — नई पहले"
+        else -> "Your latest listens — newest first"
     }
 
     fun noStoriesYet(): String = when (languageCode) {
@@ -1833,10 +1969,23 @@ object Strings {
         else -> "Server error. Please try again later."
     }
 
+    fun requestTimedOut(): String = when (languageCode) {
+        "ta" -> "கோரிக்கை நேரம் முடிந்தது. மீண்டும் முயற்சிக்கவும்."
+        "hi" -> "अनुरोध का समय समाप्त हो गया। कृपया पुनः प्रयास करें।"
+        else -> "Request timed out. Please try again."
+    }
+
     fun noInternet(): String = when (languageCode) {
         "ta" -> "இணைய இணைப்பு இல்லை. உங்கள் வலையமைப்பை சரிபார்க்கவும்."
         "hi" -> "इंटरनेट कनेक्शन नहीं। अपना नेटवर्क जांचें।"
         else -> "No internet connection. Check your network."
+    }
+
+    /** Same intent as [noInternet]; used by shared API error mapping. */
+    fun noInternetConnection(): String = when (languageCode) {
+        "ta" -> "இணைய இணைப்பு இல்லை. உங்கள் இணைப்பை சரிபார்க்கவும்."
+        "hi" -> "इंटरनेट कनेक्शन नहीं है। कृपया अपना कनेक्शन जांचें।"
+        else -> "No internet connection. Please check your connection."
     }
 
     fun connectionProblem(): String = when (languageCode) {
@@ -1856,6 +2005,20 @@ object Strings {
         "ta" -> "ஏதோ தவறியது. மீண்டும் முயற்சிக்கவும்."
         "hi" -> "कुछ गलत हो गया। फिर कोशिश करें।"
         else -> "Something went wrong. Please try again."
+    }
+
+    /** Fallback when moderation rejects content and the API returns no message body. */
+    fun storyContentNotAllowed(): String = when (languageCode) {
+        "ta" -> "இந்த உள்ளடக்கத்தை உருவாக்க முடியவில்லை. வேறு தீம் அல்லது வார்த்தைகளை முயற்சிக்கவும்."
+        "hi" -> "यह सामग्री नहीं बनाई जा सकी। कोई दूसरा विषय या शब्द आज़माएँ।"
+        else -> "We couldn’t create that content. Try a different theme or wording."
+    }
+
+    /** When the optional structured-output guardrails sidecar is unavailable (HTTP 503). */
+    fun storyValidationTemporarilyUnavailable(): String = when (languageCode) {
+        "ta" -> "சரிபார்ப்பு சேவை தற்காலிகமாக கிடைக்கவில்லை. சிறிது நேரம் கழித்து முயற்சிக்கவும்."
+        "hi" -> "सत्यापन सेवा अस्थायी रूप से उपलब्ध नहीं है। कृपया थोड़ी देर बाद पुनः प्रयास करें।"
+        else -> "We couldn’t verify that story right now. Please try again in a moment."
     }
 
     fun noMoralAvailable(): String = when (languageCode) {

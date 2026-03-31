@@ -12,8 +12,8 @@ export const REFRESH_THRESHOLD_MS = 2 * 60 * 1000; // 2 min
 /** How often to check for proactive refresh (ms). */
 export const REFRESH_CHECK_INTERVAL_MS = 60 * 1000; // 1 min
 
-/** Show "session expiring" warning when token expires in less than this (ms). */
-export const SESSION_WARNING_THRESHOLD_MS = 5 * 60 * 1000; // 5 min
+/** Show "stay signed in" dialog after this much continuous inactivity (ms). */
+export const INACTIVITY_SESSION_WARNING_MS = 15 * 60 * 1000; // 15 min
 
 /** BroadcastChannel name for cross-tab session events. */
 export const SESSION_CHANNEL = "tamixa-admin-session";

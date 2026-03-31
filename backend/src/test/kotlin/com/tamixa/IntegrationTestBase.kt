@@ -4,6 +4,7 @@ import com.tamixa.application.port.StoryCachePort
 import com.tamixa.application.port.StoryEventPublisherPort
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.context.annotation.Import
@@ -15,6 +16,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.utility.DockerImageName
 
 @Testcontainers(disabledWithoutDocker = true)
+@AutoConfigureMockMvc
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = ["spring.profiles.active=test"]

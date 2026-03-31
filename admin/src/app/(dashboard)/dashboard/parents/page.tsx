@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { mockApi } from "@/lib/mock-api";
+import { useAuth } from "@/contexts/auth-context";
+import { isSuperAdmin } from "@/lib/admin-roles";
 import type { ParentSummary, ParentDetail, PagedResponse, CreateParentRequest, UpdateParentRequest } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -48,13 +50,15 @@ const STATUS_OPTIONS = [
 
 const ROLE_OPTIONS = [
   { value: "PARENT", label: "Parent" },
-  { value: "SUPER_ADMIN", label: "Super Admin" },
   { value: "REVENUE_ANALYST", label: "Revenue Analyst" },
   { value: "CONTENT_MANAGER", label: "Content Manager" },
   { value: "SUPPORT", label: "Support" },
-];
+  // SUPER_ADMIN only shown to super admins — gated in the component
+  { value: "SUPER_ADMIN", label: "Super Admin", superAdminOnly: true },
+] as const;
 
 export default function ParentsPage() {
+  const { user: currentUser } = useAuth();
   const { showSuccess, showError } = useActionResult();
   const [data, setData] = useState<PagedResponse<ParentSummary> | null>(null);
   const [page, setPage] = useState(0);
@@ -188,23 +192,31 @@ export default function ParentsPage() {
   };
 
   const handleEditOpen = async (row: ParentSummary) => {
+    // Use row data directly — avoids an extra API call on every row click.
+    // Only fetch full detail if phone is needed and not present in the summary.
+    const detail: ParentDetail = {
+      id: row.id,
+      email: row.email,
+      role: row.role,
+      status: row.status ?? "ACTIVE",
+      plan: row.plan ?? "FREE",
+      phone: (row as ParentDetail).phone ?? null,
+      createdAt: row.createdAt,
+      suspendedAt: (row as ParentDetail).suspendedAt ?? null,
+    };
     if (mockApi.useMock()) {
-      setEditDetail({
-        id: row.id,
-        email: row.email,
-        role: row.role,
-        status: row.status ?? "ACTIVE",
-        plan: row.plan ?? "FREE",
-        phone: null,
-        createdAt: row.createdAt,
-        suspendedAt: null,
-      });
+      setEditDetail(detail);
       setEditForm({ email: row.email, phone: undefined, role: row.role });
+    } else if ((row as ParentDetail).phone !== undefined) {
+      // Row already has phone (e.g. from a previous fetch or enriched response)
+      setEditDetail(detail);
+      setEditForm({ email: detail.email, phone: detail.phone ?? undefined, role: detail.role });
     } else {
+      // Fetch only when phone is missing from the summary
       try {
-        const detail = await api.admin.getParent(row.id);
-        setEditDetail(detail);
-        setEditForm({ email: detail.email, phone: detail.phone ?? undefined, role: detail.role });
+        const fetched = await api.admin.getParent(row.id);
+        setEditDetail(fetched);
+        setEditForm({ email: fetched.email, phone: fetched.phone ?? undefined, role: fetched.role });
       } catch {
         showError("Load failed", "Could not load parent details.");
         return;
@@ -488,7 +500,9 @@ export default function ParentsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLE_OPTIONS.map((opt) => (
+                  {ROLE_OPTIONS.filter((opt) =>
+                    !("superAdminOnly" in opt && opt.superAdminOnly) || isSuperAdmin(currentUser?.role ?? "")
+                  ).map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
                     </SelectItem>
@@ -546,7 +560,9 @@ export default function ParentsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLE_OPTIONS.map((opt) => (
+                    {ROLE_OPTIONS.filter((opt) =>
+                      !("superAdminOnly" in opt && opt.superAdminOnly) || isSuperAdmin(currentUser?.role ?? "")
+                    ).map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>
                         {opt.label}
                       </SelectItem>

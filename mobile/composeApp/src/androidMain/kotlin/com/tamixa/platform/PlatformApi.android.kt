@@ -131,5 +131,9 @@ private var _appContext: Context? = null
 fun setPlatformAppContext(ctx: Context) {
     _appContext = ctx.applicationContext
 }
+
+/** Application context after [setPlatformAppContext]; used for image prefetch and similar. */
+fun tamixaApplicationContextOrNull(): Context? = _appContext
+
 private fun getApplicationContext(): Context =
     _appContext ?: error("Platform not initialized: call setPlatformAppContext in Application.onCreate")

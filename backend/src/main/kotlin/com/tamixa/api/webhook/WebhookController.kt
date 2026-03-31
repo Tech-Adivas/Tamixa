@@ -72,7 +72,7 @@ class WebhookController(
             log.error("Stripe webhook processing failed: type={} eventId={}", type, eventId, e)
             status = WebhookEventStatus.FAILED
             webhookEventPort.record("STRIPE", eventId, type, status, rawBody)
-            idempotency.markProcessed("STRIPE", eventId)
+            // Do NOT mark idempotency on failure — allow retries to reprocess
             throw e
         }
         webhookEventPort.record("STRIPE", eventId, type, status, rawBody)
@@ -112,7 +112,7 @@ class WebhookController(
             log.error("Zoho webhook processing failed: event={} eventId={}", eventType, eventId, e)
             status = WebhookEventStatus.FAILED
             webhookEventPort.record("ZOHO", eventId, eventType, status, rawBody)
-            idempotency.markProcessed("ZOHO", eventId)
+            // Do NOT mark idempotency on failure — allow retries to reprocess
             throw e
         }
         webhookEventPort.record("ZOHO", eventId, eventType, status, rawBody)

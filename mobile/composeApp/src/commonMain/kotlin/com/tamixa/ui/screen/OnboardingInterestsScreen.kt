@@ -40,6 +40,7 @@ import com.tamixa.ui.components.TamixaPrimaryButton
 import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.OnboardingCardColors
 import com.tamixa.ui.theme.TamixaColors
+import com.tamixa.ui.theme.TamixaDesignTokens
 
 data class ThemeOption(val id: String, val label: () -> String)
 
@@ -142,7 +143,7 @@ fun OnboardingInterestsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(TamixaDesignTokens.cardSpacing),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -211,8 +212,8 @@ private fun InterestsHeroCard(selectedCount: Int) {
         border = BorderStroke(1.dp, OnboardingCardColors.cardBorder.copy(alpha = 0.6f))
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            modifier = Modifier.padding(TamixaDesignTokens.headerPaddingHorizontal),
+            verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
         ) {
             Surface(
                 shape = RoundedCornerShape(14.dp),

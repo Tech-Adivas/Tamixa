@@ -10,6 +10,8 @@ enum class TranslationPipelineStatus {
     TRANSLATION_FAILED,
     REWRITING,
     REWRITE_FAILED,
+    /** Conversational script saved; TTS runs after content approval when using audio-after-approval flow. */
+    AWAITING_AUDIO,
     TTS_PROCESSING,
     TTS_FAILED,
     COMPLETED;
@@ -19,5 +21,6 @@ enum class TranslationPipelineStatus {
     fun isTerminal(): Boolean = this == COMPLETED || isFailed()
 
     /** Includes in-progress and failed states so stuck or failed translations get retried by job/admin. */
-    fun canRetry(): Boolean = this == REWRITING || this == TRANSLATING || this == TTS_PROCESSING || isFailed()
+    fun canRetry(): Boolean =
+        this == REWRITING || this == TRANSLATING || this == TTS_PROCESSING || this == AWAITING_AUDIO || isFailed()
 }

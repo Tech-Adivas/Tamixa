@@ -1,19 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { deleteAccount } from "../lib/api";
-
-function useAccessibility() {
-  const [fontScale, setFontScale] = useState(1);
-  const [highContrast, setHighContrast] = useState(false);
-  useEffect(() => {
-    document.documentElement.style.setProperty("--font-size-scale", String(fontScale));
-  }, [fontScale]);
-  useEffect(() => {
-    document.body.classList.toggle("high-contrast", highContrast);
-  }, [highContrast]);
-  return { fontScale, setFontScale, highContrast, setHighContrast };
-}
+import { useAccessibility } from "../hooks/useAccessibility";
+import { deleteAccount, updateStoryArtPersonalizationOptIn } from "../lib/api";
 import {
   getConsentRecords,
   requestDataExport,
@@ -25,7 +14,7 @@ import {
 } from "../lib/api";
 
 export default function Settings() {
-  useAuth();
+  const { user, setUser, logout } = useAuth();
   const { fontScale, setFontScale, highContrast, setHighContrast } = useAccessibility();
   const [consent, setConsent] = useState<ConsentRecord[]>([]);
   const [exportJobs, setExportJobs] = useState<ExportJob[]>([]);
@@ -35,8 +24,13 @@ export default function Settings() {
   const [exporting, setExporting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [storyArtOptIn, setStoryArtOptIn] = useState<boolean>(user?.storyArtPersonalizationOptIn === true);
+  const [savingStoryArt, setSavingStoryArt] = useState(false);
   const navigate = useNavigate();
-  const { logout } = useAuth();
+
+  useEffect(() => {
+    setStoryArtOptIn(user?.storyArtPersonalizationOptIn === true);
+  }, [user?.storyArtPersonalizationOptIn]);
 
   useEffect(() => {
     Promise.all([getConsentRecords(), getDataExportJobs(), getListeningProgress()])
@@ -75,6 +69,25 @@ export default function Settings() {
       setError(err instanceof Error ? err.message : "Account deletion failed");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleStoryArtToggle = async (next: boolean) => {
+    const previous = storyArtOptIn;
+    setStoryArtOptIn(next);
+    setSavingStoryArt(true);
+    setError("");
+    try {
+      const saved = await updateStoryArtPersonalizationOptIn(next);
+      setStoryArtOptIn(saved);
+      if (user) {
+        setUser({ ...user, storyArtPersonalizationOptIn: saved });
+      }
+    } catch (err) {
+      setStoryArtOptIn(previous);
+      setError(err instanceof Error ? err.message : "Failed to update setting");
+    } finally {
+      setSavingStoryArt(false);
     }
   };
 
@@ -129,6 +142,26 @@ export default function Settings() {
               </div>
             </section>
           )}
+
+          <section className="page-section generate-section">
+            <h2 className="page-section-title">Story personalization</h2>
+            <div className="page-section-card">
+              <div className="field">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={storyArtOptIn}
+                    onChange={(e) => handleStoryArtToggle(e.target.checked)}
+                    disabled={savingStoryArt}
+                  />
+                  {" "}Allow Tamixa to personalize story artwork from my preferences
+                </label>
+              </div>
+              <p className="muted" style={{ marginTop: "0.5rem" }}>
+                {savingStoryArt ? "Saving..." : "You can change this anytime."}
+              </p>
+            </div>
+          </section>
 
           <section className="page-section generate-section">
             <h2 className="page-section-title">Consent history</h2>

@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
+import { mockApi } from "@/lib/mock-api";
+import type { StoryLengthProfileDto } from "@/types/api";
 import {
   Users,
   DollarSign,
@@ -48,12 +53,12 @@ const KPI_CONFIG = [
     borderAccent: "border-l-tamixa-blue",
   },
   {
-    key: "storyGenerationsToday" as const,
-    label: "Story generations today",
+    key: "storyGenerationsTotal" as const,
+    label: "Story generations",
     value: (k: ReturnType<typeof useDashboard>["kpis"]) =>
-      k?.storyGenerationsToday?.toLocaleString() ?? "—",
+      k?.storyGenerationsTotal?.toLocaleString() ?? "—",
     icon: BookOpen,
-    description: "Last 24h",
+    description: "All time total",
     iconBg: "bg-tamixa-yellow/20 text-tamixa-orange",
     borderAccent: "border-l-tamixa-orange",
   },
@@ -85,6 +90,45 @@ const KPI_CONFIG = [
 
 export default function DashboardPage() {
   const { kpis, revenue, storyUsage, loading, error } = useDashboard();
+  const [storyLengthProfile, setStoryLengthProfile] = useState<StoryLengthProfileDto | null>(null);
+  const [storyProfileLoading, setStoryProfileLoading] = useState(true);
+  const [storyProfileDays, setStoryProfileDays] = useState<7 | 30>(7);
+
+  useEffect(() => {
+    let mounted = true;
+    setStoryProfileLoading(true);
+    if (mockApi.useMock()) {
+      setStoryLengthProfile({
+        windowDays: storyProfileDays,
+        totalStories: 42,
+        avgWordCount: 900,
+        avgReadingTimeMinutes: 7.5,
+        avgExpectedMinutesByWords: 7.5,
+        wpmAssumption: 120,
+      });
+      setStoryProfileLoading(false);
+      return () => {
+        mounted = false;
+      };
+    }
+    api.admin
+      .getStoryLengthProfile(storyProfileDays)
+      .then((profile) => {
+        if (!mounted) return;
+        setStoryLengthProfile(profile);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setStoryLengthProfile(null);
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setStoryProfileLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [storyProfileDays]);
 
   if (error) {
     return (
@@ -153,6 +197,117 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card className="border-l-4 border-l-tamixa-purple">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-sm font-semibold text-muted-foreground">
+                Avg story words ({storyProfileDays}d)
+              </CardTitle>
+              <div className="inline-flex items-center rounded-md border p-0.5">
+                <Button
+                  size="sm"
+                  variant={storyProfileDays === 7 ? "default" : "ghost"}
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setStoryProfileDays(7)}
+                >
+                  7d
+                </Button>
+                <Button
+                  size="sm"
+                  variant={storyProfileDays === 30 ? "default" : "ghost"}
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setStoryProfileDays(30)}
+                >
+                  30d
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {storyProfileLoading ? (
+              <Skeleton className="h-8 w-24 rounded-lg" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold tracking-tight text-foreground">
+                  {storyLengthProfile ? Math.round(storyLengthProfile.avgWordCount) : "—"}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {storyLengthProfile?.totalStories ?? 0} stories sampled
+                </p>
+                <Link
+                  href={`/dashboard/monitoring?storyProfileDays=${storyProfileDays}`}
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  Open in monitoring
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              </>
+            )}
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-tamixa-blue">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold text-muted-foreground">
+              Avg expected minutes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {storyProfileLoading ? (
+              <Skeleton className="h-8 w-24 rounded-lg" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold tracking-tight text-foreground">
+                  {storyLengthProfile
+                    ? `${storyLengthProfile.avgExpectedMinutesByWords.toFixed(2)} min`
+                    : "—"}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Word-based ({storyLengthProfile?.wpmAssumption ?? 120} WPM)
+                </p>
+                <Link
+                  href={`/dashboard/monitoring?storyProfileDays=${storyProfileDays}`}
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  Open in monitoring
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              </>
+            )}
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-tamixa-teal">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold text-muted-foreground">
+              Avg reading minutes (model)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {storyProfileLoading ? (
+              <Skeleton className="h-8 w-24 rounded-lg" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold tracking-tight text-foreground">
+                  {storyLengthProfile
+                    ? `${storyLengthProfile.avgReadingTimeMinutes.toFixed(2)} min`
+                    : "—"}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Stored readingTimeMinutes
+                </p>
+                <Link
+                  href={`/dashboard/monitoring?storyProfileDays=${storyProfileDays}`}
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  Open in monitoring
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Charts */}

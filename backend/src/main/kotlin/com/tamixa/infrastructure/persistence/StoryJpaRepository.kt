@@ -33,10 +33,27 @@ interface StoryJpaRepository : JpaRepository<StoryEntity, Long> {
     fun countByDaySince(@Param("since") since: Instant): List<Array<Any>>
 
     @Query(
+        value = """
+            SELECT
+                COUNT(*) AS total_stories,
+                COALESCE(AVG(word_count), 0) AS avg_word_count,
+                COALESCE(AVG(reading_time_minutes), 0) AS avg_reading_time_minutes
+            FROM stories
+            WHERE created_at >= :since
+              AND word_count > 0
+        """,
+        nativeQuery = true
+    )
+    fun storyLengthProfileSince(@Param("since") since: Instant): Array<Any>?
+
+    @Query(
         "SELECT s FROM StoryEntity s WHERE s.parent.id = :parentId " +
             "AND (LOWER(s.theme) LIKE LOWER(CONCAT('%', :q, '%')) " +
             "OR (s.title IS NOT NULL AND LOWER(s.title) LIKE LOWER(CONCAT('%', :q, '%'))))"
     )
     fun searchByThemeOrTitle(@Param("parentId") parentId: Long, @Param("q") query: String, pageable: Pageable): Page<StoryEntity>
     fun deleteByParent_Id(parentId: Long)
+
+    @Query("SELECT s.id, s.title FROM StoryEntity s WHERE s.id IN :ids")
+    fun findTitlesByIds(@Param("ids") ids: List<Long>): List<Array<Any>>
 }

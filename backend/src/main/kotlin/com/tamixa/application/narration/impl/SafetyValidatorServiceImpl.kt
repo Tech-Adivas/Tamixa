@@ -10,7 +10,8 @@ import org.springframework.stereotype.Service
 /**
  * Validates AI-formatted narration:
  * - No new characters introduced
- * - Word count within configured tolerance of original (default 35%: 65%-135%)
+ * - Word count within configured tolerance of original (default 35%: 65%-135% on the low side; high side may exceed ratio if still under [maxPipelineStoryWords])
+ * - Hard cap: formatted script must not exceed [maxPipelineStoryWords] (default from app.story.max-words, typically 900). Set to 0 to disable cap (ratio-only).
  * - No unsafe keywords
  * - Moral preserved
  * - Age-appropriate vocabulary (basic heuristic)
@@ -20,7 +21,8 @@ import org.springframework.stereotype.Service
 @Service
 class SafetyValidatorServiceImpl(
     @Value("\${app.narration.word-count-tolerance-percent:35}") private val wordCountTolerancePercent: Int,
-    @Value("\${app.narration.blocklist-keywords:}") blocklist: String
+    @Value("\${app.narration.blocklist-keywords:}") blocklist: String,
+    @Value("\${app.story.max-words:900}") private val maxPipelineStoryWords: Int
 ) : SafetyValidatorService {
 
     private val blocklistKeywords: Set<String> = blocklist
@@ -37,10 +39,21 @@ class SafetyValidatorServiceImpl(
         val originalWords = request.originalContent.split(Regex("\\s+")).filter { it.isNotBlank() }.size
         val scriptWords = request.formattedScript.split(Regex("\\s+")).filter { it.isNotBlank() }.size
 
+        val cap = maxPipelineStoryWords.coerceIn(0, 5000)
+        if (cap > 0 && scriptWords > cap) {
+            violations.add("Word count $scriptWords exceeds maximum $cap words for narration")
+        }
         if (originalWords > 0) {
             val ratio = scriptWords.toDouble() / originalWords
-            if (ratio < wordCountMinRatio || ratio > wordCountMaxRatio) {
-                violations.add("Word count $scriptWords is outside ${wordCountTolerancePercent}% of original $originalWords")
+            if (ratio < wordCountMinRatio) {
+                violations.add("Word count $scriptWords is outside ${wordCountTolerancePercent}% of original $originalWords (too short)")
+            } else if (ratio > wordCountMaxRatio) {
+                when {
+                    cap > 0 && scriptWords <= cap -> { /* longer rewrite allowed up to word cap (creative storytelling) */ }
+                    cap <= 0 ->
+                        violations.add("Word count $scriptWords is outside ${wordCountTolerancePercent}% of original $originalWords (too long)")
+                    else -> { /* exceeded cap — already reported above */ }
+                }
             }
         }
 

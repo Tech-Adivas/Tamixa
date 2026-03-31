@@ -19,7 +19,8 @@ class ParentRepositoryAdapter(
             phone = parent.phone,
             nickname = parent.nickname,
             displayName = parent.displayName,
-            suspendedAt = parent.suspendedAt
+            suspendedAt = parent.suspendedAt,
+            storyArtPersonalizationOptIn = parent.storyArtPersonalizationOptIn
         )
         val saved = jpaRepository.save(entity)
         return saved.toDomain()
@@ -62,5 +63,6 @@ private fun ParentEntity.toDomain(): Parent = Parent(
     phone = phone,
     nickname = nickname,
     displayName = displayName,
-    suspendedAt = suspendedAt
+    suspendedAt = suspendedAt,
+    storyArtPersonalizationOptIn = storyArtPersonalizationOptIn
 )

@@ -6,6 +6,7 @@ import com.tamixa.application.narration.impl.NarrationFormatterServiceImpl
 import com.tamixa.application.narration.impl.TokenUsageServiceImpl
 import com.tamixa.domain.narration.ToneMode
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
@@ -51,5 +52,15 @@ class NarrationFormatterServiceTest {
         val result = formatterWithLimit.formatNarration(original, 5, ToneMode.CALM, "en")
         assertEquals(original, result.scriptText)
         assertEquals(0, result.promptTokens)
+    }
+
+    @Test
+    fun `formatNarration preserves leading tts marker lines`() {
+        val llmOutput = "[Pause 500ms]\nAnd then the moon rose."
+        whenever(mockLlm.formatNarration(any(), any(), any(), any(), any()))
+            .thenReturn(NarrationLLMResult(llmOutput, 80, 40))
+        val result = formatter.formatNarration("Raw story", 6, ToneMode.CALM, "ta")
+        assertTrue(result.scriptText.startsWith("[Pause 500ms]"))
+        assertTrue(result.scriptText.contains("And then the moon rose."))
     }
 }

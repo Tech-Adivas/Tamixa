@@ -41,6 +41,7 @@ import { useActionResult } from "@/contexts/action-result-context";
 const PAGE_SIZE = 20;
 const STATUS_OPTIONS = [
   { value: "ALL", label: "All" },
+  { value: "PENDING_REVIEW", label: "Pending review" },
   { value: "READY", label: "Ready" },
   { value: "FLAGGED", label: "Flagged" },
   { value: "FAILED", label: "Failed" },
@@ -107,11 +108,16 @@ export default function ModerationPage() {
     setFlagReason("");
   };
 
-  const handleApprove = async (storyId: number) => {
+  const handleApprove = async (storyId: number, wasPendingReview: boolean) => {
     setActioningId(storyId);
     try {
       await api.admin.approveStory(storyId);
-      showSuccess("Story approved", "The story has been approved and the action has been logged.");
+      showSuccess(
+        wasPendingReview ? "Review approved" : "Story approved",
+        wasPendingReview
+          ? "Narration and cover will generate in the background. The action has been logged."
+          : "The story has been approved and the action has been logged."
+      );
       closePreview();
       load();
     } catch {
@@ -131,7 +137,6 @@ export default function ModerationPage() {
       load();
     } catch {
       showError("Rejection failed", "Unable to reject the story. Please try again.");
-      throw new Error("Rejection failed");
     } finally {
       setActioningId(null);
     }
@@ -166,7 +171,7 @@ export default function ModerationPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <PageHeader
           title="Story moderation"
-          description="Review generated stories. Approve, reject, or flag. All actions are logged in the audit trail."
+          description="Review generated stories. When human review is enabled (STORY_HUMAN_REVIEW_BEFORE_NARRATION), new stories appear as Pending review until you approve—then narration runs. Approve, reject, or flag. All actions are audited."
           breadcrumbs
         />
         <div className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
@@ -259,10 +264,12 @@ export default function ModerationPage() {
                                   ? "default"
                                   : row.status === "FAILED"
                                     ? "destructive"
-                                    : "secondary"
+                                    : row.status === "PENDING_REVIEW"
+                                      ? "outline"
+                                      : "secondary"
                               }
                             >
-                              {row.status}
+                              {row.status === "PENDING_REVIEW" ? "PENDING REVIEW" : row.status}
                             </Badge>
                           </TableCell>
                           <TableCell>
@@ -368,10 +375,17 @@ export default function ModerationPage() {
             <Button
               variant="outline"
               disabled={actioningId !== null}
-              onClick={() => previewStory && handleApprove(previewStory.id)}
+              onClick={() =>
+                previewStory &&
+                handleApprove(previewStory.id, previewStory.status === "PENDING_REVIEW")
+              }
             >
               <CheckCircle className="mr-2 h-4 w-4" />
-              {actioningId === previewStory?.id ? "…" : "Approve"}
+              {actioningId === previewStory?.id
+                ? "…"
+                : previewStory?.status === "PENDING_REVIEW"
+                  ? "Approve & start narration"
+                  : "Approve"}
             </Button>
             <Button
               variant="outline"

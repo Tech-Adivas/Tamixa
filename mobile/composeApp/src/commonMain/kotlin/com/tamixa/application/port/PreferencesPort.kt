@@ -52,4 +52,9 @@ interface PreferencesPort {
     suspend fun getBedtimeReminderMinute(): Int
 
     suspend fun setBedtimeReminderMinute(minute: Int)
+
+    /** Parent opt-in for future cautious story-art personalization (Phase 3). Default false. */
+    suspend fun getStoryArtPersonalizationOptIn(): Boolean
+
+    suspend fun setStoryArtPersonalizationOptIn(optIn: Boolean)
 }

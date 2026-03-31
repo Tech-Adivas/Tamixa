@@ -28,6 +28,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tamixa.composeapp.generated.resources.themeBackgroundDrawable
 import com.tamixa.ui.theme.TamixaGradients
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.sin
 import kotlin.random.Random
 import org.jetbrains.compose.resources.painterResource
 
@@ -36,19 +40,35 @@ private val FallbackNightBg = Color(0xFF1A1812)
 /**
  * Ultra HD starry night background with soft gradient, golden stars, and ethereal glow.
  * Uses a solid fallback so content is always visible even if gradient doesn't render.
+ * 
+ * Performance optimizations:
+ * - Single Canvas for gradient + stars (reduces layer count)
+ * - Reduced star count on low-end devices
+ * - Simplified glow calculation
+ * - Respects system reduce motion preference
+ * 
  * @param animateStars when true, stars drift slowly for a calm bedtime feel (e.g. on login).
+ * @param ambientPresence slow drifting dual-tone halo (terracotta + teal). When reduce motion is on,
+ *   the same wash is shown **statically** so accessibility settings never remove the designed atmosphere.
  */
 @Composable
 fun StarryNightBackground(
     modifier: Modifier = Modifier,
     showStars: Boolean = true,
     showClouds: Boolean = true,
-    animateStars: Boolean = false
+    animateStars: Boolean = false,
+    ambientPresence: Boolean = false
 ) {
     val gradient = TamixaGradients.nightSkyBackground
     val starPositions = rememberStarPositions()
     val cloudPositions = rememberCloudPositions()
-    val starPhase = if (animateStars) {
+    
+    // Respect system reduce motion preference
+    val reduceMotion = isReduceMotionEnabled()
+    val shouldAnimate = animateStars && !reduceMotion
+    val presenceActive = ambientPresence
+
+    val starPhase = if (shouldAnimate) {
         val infinite = rememberInfiniteTransition(label = "stars")
         val phase by infinite.animateFloat(
             initialValue = 0f,
@@ -69,7 +89,10 @@ fun StarryNightBackground(
     ) {
         val screenWidthDp = maxWidth.value.toInt()
         val screenHeightDp = maxHeight.value.toInt()
+        
+        // Single Canvas for gradient + stars (performance optimization)
         Canvas(modifier = Modifier.fillMaxSize()) {
+            // Draw gradient background
             drawRect(
                 brush = Brush.verticalGradient(
                     colors = gradient,
@@ -77,42 +100,56 @@ fun StarryNightBackground(
                     endY = size.height
                 )
             )
+            
             // Storybook Dusk: subtle terracotta glow near top (warm, distinctive)
             drawRect(
                 brush = Brush.verticalGradient(
                     colors = listOf(
                         Color(0xFF1A1812).copy(alpha = 0f),
-                        Color(0xFFC4625A).copy(alpha = 0.04f),
+                        Color(0xFFC4625A).copy(alpha = 0.072f),
                         Color(0xFF1A1812).copy(alpha = 0f)
                     ),
                     startY = 0f,
                     endY = size.height * 0.4f
                 )
             )
-        }
-
-        if (showStars) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            
+            // Draw stars in same Canvas (reduces layer count)
+            if (showStars) {
                 val minDim = minOf(size.width, size.height)
                 val driftAmplitude = 0.008f
+                
                 starPositions.forEachIndexed { index, star ->
+                    // Calculate drift and twinkle
                     val drift = (star.x * 2f + star.y + index * 0.1f) * (2 * kotlin.math.PI).toFloat()
-                    val dx = (kotlin.math.sin(starPhase * 2 * kotlin.math.PI + drift) * driftAmplitude * size.width).toFloat()
-                    val dy = (kotlin.math.cos(starPhase * 2 * kotlin.math.PI * 0.7 + drift * 1.3) * driftAmplitude * size.height).toFloat()
+                    val dx = if (shouldAnimate) {
+                        (kotlin.math.sin(starPhase * 2 * kotlin.math.PI + drift) * driftAmplitude * size.width).toFloat()
+                    } else 0f
+                    val dy = if (shouldAnimate) {
+                        (kotlin.math.cos(starPhase * 2 * kotlin.math.PI * 0.7 + drift * 1.3) * driftAmplitude * size.height).toFloat()
+                    } else 0f
+                    
                     val center = Offset(
                         star.x * size.width + dx,
                         star.y * size.height + dy
                     )
-                    val twinkle = if (animateStars) {
+                    
+                    val twinkle = if (shouldAnimate) {
                         0.5f + 0.5f * kotlin.math.sin(starPhase * 4 * kotlin.math.PI + index).toFloat()
                     } else 1f
+                    
                     val color = if (star.isYellow) {
                         Color(0xFFE8DCC8).copy(alpha = star.alpha * 0.8f * twinkle)
                     } else {
                         Color(0xFFC4625A).copy(alpha = star.alpha * 0.35f * twinkle)
                     }
+                    
                     val radius = star.radius * minDim * 0.012f
+                    
+                    // Draw star
                     drawCircle(color = color, radius = radius, center = center)
+                    
+                    // Only draw glow for larger stars (performance optimization)
                     if (star.radius > 1.2f) {
                         drawCircle(
                             color = color.copy(alpha = star.alpha * 0.18f * twinkle),
@@ -143,6 +180,82 @@ fun StarryNightBackground(
                 }
             }
         }
+
+        if (presenceActive) {
+            StorybookPresenceHalo(animate = !reduceMotion)
+        }
+    }
+}
+
+/**
+ * Ultra-slow “living” light wash — distinctive Storybook Dusk palette, not generic AI purple gradients.
+ * Evokes ambient companion / attentive space without competing with foreground UI.
+ *
+ * @param animate when false (e.g. system reduce motion), draws a fixed frame so the look stays premium
+ *   without violating motion preferences.
+ */
+@Composable
+private fun StorybookPresenceHalo(animate: Boolean) {
+    val phase: Float = if (animate) {
+        val infinite = rememberInfiniteTransition(label = "presenceHalo")
+        val p by infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(7_500, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "presencePhase"
+        )
+        p
+    } else {
+        0.5f
+    }
+    val breathe = (sin(phase * 2 * PI).toFloat() * 0.5f + 0.5f)
+    val strengthBoost = if (animate) 1f else 1.08f
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        val driftX = (0.5f + 0.1f * sin(phase * 2 * PI * 0.35).toFloat()) * w
+        val driftY = (0.62f + 0.08f * cos(phase * 2 * PI * 0.28).toFloat()) * h
+        val baseAlpha = (0.11f + breathe * 0.14f) * strengthBoost
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFFC4625A).copy(alpha = baseAlpha),
+                    Color(0xFF2D5A5A).copy(alpha = baseAlpha * 0.5f),
+                    Color.Transparent
+                ),
+                center = Offset(driftX, driftY),
+                radius = w * 0.88f
+            ),
+            radius = w * 0.88f,
+            center = Offset(driftX, driftY)
+        )
+        val topY = (0.12f + 0.05f * breathe) * h
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFF3D6B6B).copy(alpha = baseAlpha * 0.65f),
+                    Color.Transparent
+                ),
+                center = Offset(w * 0.18f, topY),
+                radius = w * 0.42f
+            ),
+            radius = w * 0.42f,
+            center = Offset(w * 0.18f, topY)
+        )
+        // Soft rim so edges of the screen feel “alive” without a flat vignette.
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color(0xFFC4625A).copy(alpha = (0.045f + breathe * 0.035f) * strengthBoost)
+                ),
+                center = Offset(w * 0.5f, h * 0.45f),
+                radius = max(w, h) * 0.95f
+            )
+        )
     }
 }
 
@@ -154,6 +267,7 @@ fun FloatingLantern(
     modifier: Modifier = Modifier,
     lanternSize: Dp = 72.dp
 ) {
+    val allowMotion = !platformIsReduceMotionEnabled() && !platformIsLowEndDevice()
     val infinite = rememberInfiniteTransition(label = "lantern")
     val driftX by infinite.animateFloat(
         initialValue = 0f,
@@ -173,8 +287,16 @@ fun FloatingLantern(
         ),
         label = "lanternY"
     )
-    val offsetXDp = (kotlin.math.sin(driftX * 2 * kotlin.math.PI).toFloat() * 12).toInt().dp
-    val offsetYDp = (kotlin.math.cos(driftY * 2 * kotlin.math.PI).toFloat() * 8).toInt().dp
+    val offsetXDp = if (allowMotion) {
+        (sin(driftX * 2 * PI).toFloat() * 12).toInt().dp
+    } else {
+        0.dp
+    }
+    val offsetYDp = if (allowMotion) {
+        (cos(driftY * 2 * PI).toFloat() * 8).toInt().dp
+    } else {
+        0.dp
+    }
 
     Box(
         modifier = modifier
@@ -214,11 +336,30 @@ fun FloatingLantern(
     }
 }
 
+/**
+ * Detects if system reduce motion preference is enabled.
+ * On Android: checks Settings.Global.TRANSITION_ANIMATION_SCALE
+ * On iOS: checks UIAccessibility.isReduceMotionEnabled
+ */
+@Composable
+private fun isReduceMotionEnabled(): Boolean {
+    // Platform-specific implementation via expect/actual
+    return platformIsReduceMotionEnabled()
+}
+
+/**
+ * Generate star positions with adaptive count based on device performance.
+ * Reduces star count on low-end devices for better performance.
+ */
 @Composable
 private fun rememberStarPositions(): List<StarInfo> {
-    return androidx.compose.runtime.remember {
+    val lowEnd = isLowEndDevice()
+    return androidx.compose.runtime.remember(lowEnd) {
         val random = Random(42)
-        (1..55).map {
+        // Adaptive star count: 55 on high-end, 35 on low-end
+        val starCount = if (lowEnd) 35 else 55
+
+        (1..starCount).map {
             StarInfo(
                 x = random.nextFloat(),
                 y = random.nextFloat(),
@@ -228,6 +369,16 @@ private fun rememberStarPositions(): List<StarInfo> {
             )
         }
     }
+}
+
+/**
+ * Detects low-end devices to reduce animation complexity.
+ * Uses platform-specific heuristics (RAM, CPU cores, etc.)
+ */
+@Composable
+private fun isLowEndDevice(): Boolean {
+    // Platform-specific implementation via expect/actual
+    return platformIsLowEndDevice()
 }
 
 private data class StarInfo(
@@ -410,12 +561,19 @@ fun AppScreenBackground(
     modifier: Modifier = Modifier,
     showStars: Boolean = true,
     showClouds: Boolean = true,
-    animateStars: Boolean = false
+    animateStars: Boolean = false,
+    /**
+     * Storybook Dusk halo — drifts when motion is allowed; **same look, held still** when reduce motion is on
+     * (users never lose the atmosphere because of accessibility).
+     * Off for tests or minimal mode: pass `false`.
+     */
+    ambientPresence: Boolean = true
 ) {
     StarryNightBackground(
         modifier = modifier,
         showStars = showStars,
         showClouds = showClouds,
-        animateStars = animateStars
+        animateStars = animateStars,
+        ambientPresence = ambientPresence
     )
 }

@@ -25,6 +25,13 @@ import org.springframework.stereotype.Service
 @Service
 class EmotionTaggingServiceImpl : EmotionTaggingService {
 
+    /**
+     * Detect dialogue spans across common quote styles used in multilingual content.
+     * Supports ASCII quotes, curly quotes, and guillemets.
+     */
+    private val dialogueRegex = Regex("""(?:"[^"]+"|“[^”]+”|‘[^’]+’|«[^»]+»)""")
+    private val markerRegex = Regex("""[\[\［]\s*([^\]\］]+)\s*[\]\］]""")
+
     override fun tagEmotions(scriptText: String, language: String): EmotionTaggedScript {
         val paragraphs = scriptText.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotBlank() }
         val segments = mutableListOf<EmotionSegment>()
@@ -41,27 +48,74 @@ class EmotionTaggingServiceImpl : EmotionTaggingService {
     }
 
     private fun splitAndTagParagraph(para: String, language: String): List<EmotionSegment> {
-        val quoted = Regex(""""[^"]*"""")
-        val matches = quoted.findAll(para)
+        val markerMatches = markerRegex.findAll(para)
         val parts = mutableListOf<EmotionSegment>()
+        var forcedEmotion: EmotionTag? = null
         var lastEnd = 0
-        for (m in matches) {
+        for (m in markerMatches) {
             val before = para.substring(lastEnd, m.range.first).trim()
             if (before.isNotBlank()) {
-                parts.add(EmotionSegment(before, detectEmotion(before, language)))
+                parts.addAll(splitDialogueAndTag(before, language, forcedEmotion))
             }
-            parts.add(EmotionSegment(m.value, EmotionTag.DIALOGUE))
+            val markerLabel = m.groupValues.getOrNull(1)?.trim().orEmpty()
+            val mappedEmotion = markerToEmotion(markerLabel)
+            if (mappedEmotion != null) {
+                forcedEmotion = mappedEmotion
+            }
             lastEnd = m.range.last + 1
         }
         val remainder = para.substring(lastEnd).trim()
         if (remainder.isNotBlank()) {
-            parts.add(EmotionSegment(remainder, detectEmotion(remainder, language)))
+            parts.addAll(splitDialogueAndTag(remainder, language, forcedEmotion))
         }
         return parts.ifEmpty { listOf(EmotionSegment(para, detectEmotion(para, language))) }
     }
 
+    private fun splitDialogueAndTag(text: String, language: String, forcedEmotion: EmotionTag?): List<EmotionSegment> {
+        val matches = dialogueRegex.findAll(text)
+        val segments = mutableListOf<EmotionSegment>()
+        var start = 0
+        for (m in matches) {
+            val before = text.substring(start, m.range.first).trim()
+            if (before.isNotBlank()) {
+                segments.add(EmotionSegment(before, forcedEmotion ?: detectEmotion(before, language)))
+            }
+            // Keep quoted text explicitly as dialogue unless an emotion marker forces a different style.
+            segments.add(EmotionSegment(m.value, forcedEmotion ?: EmotionTag.DIALOGUE))
+            start = m.range.last + 1
+        }
+        val rest = text.substring(start).trim()
+        if (rest.isNotBlank()) {
+            segments.add(EmotionSegment(rest, forcedEmotion ?: detectEmotion(rest, language)))
+        }
+        return segments.ifEmpty {
+            listOf(EmotionSegment(text, forcedEmotion ?: detectEmotion(text, language)))
+        }
+    }
+
+    private fun markerToEmotion(markerLabel: String): EmotionTag? {
+        if (markerLabel.isBlank()) return null
+        val normalized = markerLabel.trim().lowercase()
+        if (normalized.matches(Regex("""pause\s*\d+(?:ms|s)"""))) return null
+        return when {
+            normalized.contains("soft emotional") -> EmotionTag.WHISPER
+            normalized.contains("soft voice") || normalized.contains("whisper") -> EmotionTag.WHISPER
+            normalized.contains("excited") || normalized.contains("celebration") || normalized.contains("joyful") -> EmotionTag.EXCITED
+            normalized.contains("playful") || normalized.contains("curious") || normalized.contains("wonder") ||
+                normalized.contains("reassuring") || normalized.contains("thoughtful") || normalized.contains("storyteller") -> EmotionTag.CONVERSATIONAL
+            normalized.contains("warm") || normalized.contains("gentle") || normalized.contains("calm") ||
+                normalized.contains("scene") || normalized.contains("closing") || normalized.contains("pacing") ||
+                normalized.contains("audio imagination") || normalized.contains("clear tone") -> EmotionTag.CALM
+            else -> null
+        }
+    }
+
     private fun detectEmotion(text: String, language: String = "en"): EmotionTag {
         val lower = text.lowercase()
+        val hasExclamation = text.contains('!')
+        val hasQuestion = text.contains('?')
+        val hasDialoguePunctuation = text.contains('“') || text.contains('”') ||
+            text.contains('‘') || text.contains('’') || text.contains('«') || text.contains('»')
         if (lower.contains("whisper") || lower.contains("softly") || lower.contains("quietly") ||
             lower.contains("murmured") || lower.contains("mumbled")
         ) {
@@ -80,7 +134,7 @@ class EmotionTaggingServiceImpl : EmotionTaggingService {
         }
         // Conversational: questions and engaging phrases → warm, inviting prosody
         // English + transliterated
-        if (text.contains("?") || lower.contains("imagine") || lower.contains("guess what") ||
+        if (hasQuestion || lower.contains("imagine") || lower.contains("guess what") ||
             lower.contains("you know what") || lower.contains("can you believe") ||
             lower.contains("what do you think") || lower.contains("can you guess") ||
             lower.contains("can you see") || lower.contains("would you like") ||
@@ -89,6 +143,7 @@ class EmotionTaggingServiceImpl : EmotionTaggingService {
         ) {
             return EmotionTag.CONVERSATIONAL
         }
+        if (hasDialoguePunctuation) return EmotionTag.DIALOGUE
         // Native language conversational cues (script-specific)—more phrases for natural warmth
         when (language) {
             "ta" -> if (text.contains("அடடா") || text.contains("ஆஹா") || text.contains("ஓ") || text.contains("என்ன") ||
@@ -110,6 +165,7 @@ class EmotionTaggingServiceImpl : EmotionTaggingService {
                 text.contains("എന്ത്") || text.contains("അറിയാമോ") || text.contains("കേട്ടോ") || text.contains("നോക്കുക")
             ) return EmotionTag.CONVERSATIONAL
         }
+        if (hasExclamation) return EmotionTag.EXCITED
         return EmotionTag.CALM
     }
 }

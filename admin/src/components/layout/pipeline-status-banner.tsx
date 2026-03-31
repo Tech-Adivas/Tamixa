@@ -11,8 +11,7 @@ import { useState } from "react";
 const STUCK_THRESHOLD_MIN = 5;
 
 /**
- * Global banner shown when the story pipeline (translate + TTS) is running in the background.
- * Visible across all dashboard pages so users know to wait before Approve / resubmit.
+ * Global banner when a story pipeline job is running (translate/rewrite from Generate translations, or TTS from Generate audio).
  */
 export function PipelineStatusBanner() {
   const { isPipelineActive, activeStories, refresh } = usePipelineActive();
@@ -37,7 +36,7 @@ export function PipelineStatusBanner() {
       const res = await api.admin.clearStuckPipeline(storyId);
       if (res?.cleared) {
         await refresh();
-        showSuccess("Pipeline cleared", "Stuck pipeline cleared. You can run the pipeline again from Story library.");
+        showSuccess("Pipeline cleared", "Stuck entry cleared. Retry from story Edit → Generate translations, Narration → Generate audio, or Stories with issues → Run pipeline as appropriate.");
       } else {
         showError("Clear failed", res?.message ?? "Could not clear. Pipeline may still be running.");
       }
@@ -59,12 +58,20 @@ export function PipelineStatusBanner() {
         aria-hidden
       />
       <span className="flex-1">
-        <strong>Background pipeline running</strong> — Generating translations and audio for {statusLine}. Typically 10–30 min for 6 languages. Approve and Submit for review are disabled until complete.{" "}
+        <strong>Background pipeline active</strong> — Translate/rewrite and/or TTS is queued or running for {statusLine}. Often about 10–30 minutes for six languages. Typical triggers: <strong>Generate translations</strong> on story edit, or <strong>Generate audio</strong> on Narration after approval.{" "}
+        <strong>Submit for review</strong> stays disabled on the story <strong>Publish</strong> step while any pipeline is active.{" "}
         <Link
           href="/dashboard/stories/approve"
           className="underline underline-offset-2 hover:no-underline font-medium"
         >
-          View Story for review
+          Open Review
+        </Link>
+        {" · "}
+        <Link
+          href="/dashboard/stories"
+          className="underline underline-offset-2 hover:no-underline font-medium"
+        >
+          Story library
         </Link>
         {" "}
         {stuckStories.length > 0 ? (
@@ -84,11 +91,11 @@ export function PipelineStatusBanner() {
               </span>
             ))}
             {" "}
-            then Run pipeline in Story library.
+            then retry from story <strong>Edit</strong> (Generate translations), <strong>Narration</strong> (Generate audio), or Stories with issues.
           </>
         ) : (
           <>
-            If stuck, use Run pipeline in Story library.
+            If stuck, retry from story <strong>Edit</strong> → Generate translations, or <strong>Narration</strong> → Generate audio.
           </>
         )}
       </span>

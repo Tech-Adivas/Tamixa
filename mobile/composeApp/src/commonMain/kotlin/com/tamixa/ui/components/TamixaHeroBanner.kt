@@ -14,9 +14,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
@@ -159,7 +159,7 @@ fun TamixaHeroBanner(
                                 Icon(
                                     Icons.Default.PlayArrow,
                                     contentDescription = Strings.play(),
-                                    tint = Color.Black,
+                                    tint = Color.White,
                                     modifier = Modifier.size(28.dp)
                                 )
                             }
@@ -181,17 +181,23 @@ fun TamixaHeroBanner(
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    .padding(bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 displayStories.forEachIndexed { index, _ ->
+                    val selected = index == currentIndex
                     Box(
                         modifier = Modifier
-                            .size(if (index == currentIndex) 8.dp else 6.dp)
-                            .padding(2.dp)
+                            .height(6.dp)
+                            .width(if (selected) 22.dp else 6.dp)
+                            .clip(RoundedCornerShape(50))
                             .background(
-                                color = if (index == currentIndex) TamixaColors.goldAccent else Color.White.copy(alpha = 0.5f),
-                                shape = CircleShape
+                                color = if (selected) {
+                                    TamixaColors.goldAccent
+                                } else {
+                                    Color.White.copy(alpha = 0.42f)
+                                }
                             )
                     )
                 }

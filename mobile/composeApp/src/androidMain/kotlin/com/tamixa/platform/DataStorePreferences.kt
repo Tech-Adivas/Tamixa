@@ -116,6 +116,15 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
         }
     }
 
+    override suspend fun getStoryArtPersonalizationOptIn(): Boolean =
+        context.dataStore.data.first()[STORY_ART_PERSONALIZATION_OPT_IN_KEY] ?: false
+
+    override suspend fun setStoryArtPersonalizationOptIn(optIn: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[STORY_ART_PERSONALIZATION_OPT_IN_KEY] = optIn
+        }
+    }
+
     companion object {
         private val USE_SYSTEM_THEME_KEY = booleanPreferencesKey("use_system_theme")
         private val DARK_MODE_KEY = booleanPreferencesKey("dark_mode")
@@ -127,5 +136,6 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
         private val BEDTIME_REMINDER_ENABLED_KEY = booleanPreferencesKey("bedtime_reminder_enabled")
         private val BEDTIME_REMINDER_HOUR_KEY = intPreferencesKey("bedtime_reminder_hour")
         private val BEDTIME_REMINDER_MINUTE_KEY = intPreferencesKey("bedtime_reminder_minute")
+        private val STORY_ART_PERSONALIZATION_OPT_IN_KEY = booleanPreferencesKey("story_art_personalization_opt_in")
     }
 }

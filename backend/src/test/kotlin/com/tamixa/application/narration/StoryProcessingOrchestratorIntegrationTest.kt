@@ -19,6 +19,7 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
+import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.mock.mockito.MockBean
@@ -46,6 +47,10 @@ class StoryProcessingOrchestratorIntegrationTest : IntegrationTestBase() {
 
     @MockBean
     private lateinit var narrationFormatter: NarrationFormatterService
+
+    /** [NarrationFormatterServiceImpl] implements both formatter and [RewriteService]; mocking the formatter removes that bean. */
+    @MockBean
+    private lateinit var rewriteService: RewriteService
 
     @MockBean
     private lateinit var safetyValidator: SafetyValidatorService
@@ -75,6 +80,10 @@ class StoryProcessingOrchestratorIntegrationTest : IntegrationTestBase() {
         ).thenReturn(true)
         org.mockito.Mockito.`when`(concurrencyLimiter.tryAcquire(org.mockito.ArgumentMatchers.anyLong()))
             .thenReturn(true)
+        `when`(rewriteService.rewrite(anyString(), anyInt(), eq(ToneMode.CALM), anyString()))
+            .thenReturn(RewriteResult("Formatted story", 10, 5))
+        `when`(rewriteService.rewrite(anyString(), anyInt(), eq(ToneMode.EXPRESSIVE), anyString()))
+            .thenReturn(RewriteResult("Formatted story", 10, 5))
     }
 
     @Test

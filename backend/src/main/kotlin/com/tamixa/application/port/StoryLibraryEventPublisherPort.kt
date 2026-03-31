@@ -6,5 +6,5 @@ package com.tamixa.application.port
  */
 interface StoryLibraryEventPublisherPort {
 
-    fun publishLibraryStoryCreated(libraryStoryId: Long, content: String)
+    fun publishLibraryStoryCreated(libraryStoryId: Long, content: String, status: String)
 }

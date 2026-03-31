@@ -7,6 +7,10 @@ import {
   verifyPasswordlessCode,
 } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
+import { logger } from "../lib/logger";
+
+const OTP_LENGTH = 6;
+const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
 
 export default function Login() {
   const navigate = useNavigate();
@@ -43,7 +47,9 @@ export default function Login() {
     if (ambientPlaying) {
       audio.pause();
     } else {
-      audio.play().catch(() => {});
+      audio.play().catch((err) => {
+        logger.warn("login", "Ambient audio play failed", { message: err instanceof Error ? err.message : String(err) });
+      });
     }
   };
 
@@ -51,6 +57,10 @@ export default function Login() {
     e.preventDefault();
     if (!email) {
       setError("Enter your email");
+      return;
+    }
+    if (!EMAIL_REGEX.test(email)) {
+      setError("Enter a valid email address");
       return;
     }
     setError("");
@@ -85,7 +95,7 @@ export default function Login() {
         acceptedPrivacy,
         acceptedParentalAttestation
       );
-      authStorage.setTokens(tokens.accessToken, tokens.refreshToken);
+      authStorage.setTokens(tokens.accessToken, tokens.refreshToken, tokens.expiresInSeconds);
       const user = await getMe();
       setUser(user);
       navigate(from, { replace: true });
@@ -170,7 +180,7 @@ export default function Login() {
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
-              maxLength={6}
+              maxLength={OTP_LENGTH}
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
               placeholder="000000"

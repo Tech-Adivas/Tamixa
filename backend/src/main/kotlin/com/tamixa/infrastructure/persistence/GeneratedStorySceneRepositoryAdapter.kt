@@ -79,6 +79,7 @@ class GeneratedStorySceneRepositoryAdapter(
                 language = scene.language,
                 sceneIndex = scene.sceneIndex,
                 backgroundHint = scene.backgroundHint,
+                illustrationImagePath = scene.illustrationImagePath,
                 createdAt = scene.createdAt,
                 segments = segments
             )

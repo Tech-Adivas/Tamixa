@@ -24,6 +24,9 @@ class StorySceneEntity(
     @Column(name = "background_hint", length = 255)
     val backgroundHint: String? = null,
 
+    @Column(name = "illustration_image_path", length = 512)
+    val illustrationImagePath: String? = null,
+
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now()
 ) {
@@ -32,6 +35,7 @@ class StorySceneEntity(
         translationId = translationId,
         sceneIndex = sceneIndex,
         backgroundHint = backgroundHint,
+        illustrationImagePath = illustrationImagePath,
         createdAt = createdAt,
         segments = segments
     )

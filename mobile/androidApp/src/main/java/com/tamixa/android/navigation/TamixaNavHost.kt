@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.tamixa.ui.data.SampleData
@@ -20,6 +21,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.tamixa.ui.components.TamixaTab
 import com.tamixa.ui.navigation.Screen
 import com.tamixa.ui.screen.*
 import com.tamixa.ui.strings.Strings
@@ -31,19 +33,26 @@ import com.tamixa.ui.viewmodel.AvatarViewModel
 import com.tamixa.ui.viewmodel.VoiceViewModel
 import com.tamixa.application.port.OnboardingReminderPort
 import org.koin.compose.koinInject
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tamixa.ui.theme.TamixaDesignTokens
 import com.tamixa.ui.theme.TamixaDialogDefaults
 import com.tamixa.ui.AppMessageNotifier
+import com.tamixa.analytics.AppAnalytics
 
 /** Parses tamixa://story/{id} or /s/{id} redirects to story ID, or null if invalid. */
 private fun parseStoryIdFromDeepLink(uri: String?): Long? {
@@ -114,6 +123,14 @@ fun TamixaNavHost(
     }
 
     val appMessageNotifier: AppMessageNotifier = koinInject()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val appMessage by appMessageNotifier.message.collectAsState()
+    LaunchedEffect(appMessage) {
+        appMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg.text)
+            appMessageNotifier.clear()
+        }
+    }
     val showErrorDialog by appMessageNotifier.showErrorDialog.collectAsState()
     if (showErrorDialog) {
         AlertDialog(
@@ -130,6 +147,7 @@ fun TamixaNavHost(
         )
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     NavHost(
         navController = navController,
         startDestination = startDestination
@@ -170,7 +188,8 @@ fun TamixaNavHost(
                 onClearPasswordlessState = { authViewModel.clearPasswordlessState() },
                 onSendOtp = { authViewModel.sendOtp(it) },
                 onVerifyOtp = { phone, code -> authViewModel.loginWithOtp(phone, code) },
-                onClearOtpState = { authViewModel.clearOtpState() }
+                onClearOtpState = { authViewModel.clearOtpState() },
+                onNavigateToRegister = { navController.navigate(Screen.Register.route) }
             )
         }
         composable(Screen.OnboardingHook.route) {
@@ -371,12 +390,15 @@ fun TamixaNavHost(
             arguments = listOf(navArgument("storyId") { type = NavType.LongType })
         ) { backStackEntry ->
             val storyId = backStackEntry.arguments?.getLong("storyId") ?: 0L
+            val scope = rememberCoroutineScope()
             val prefLang = settingsState.languageCode.ifEmpty { "ta" }
             val curated by storyViewModel.libraryStories.collectAsState()
+            val favorites by storyViewModel.favorites.collectAsState()
             val allStories = storyViewModel.allStories()
+            val appAnalytics: AppAnalytics = koinInject()
             var story by remember(storyId) { mutableStateOf<com.tamixa.domain.Story?>(null) }
             var progress by remember { mutableStateOf(0f) }
-            var showMoralDialog by remember { mutableStateOf(false) }
+            LaunchedEffect(prefLang) { storyViewModel.loadFavorites(prefLang) }
             LaunchedEffect(storyId, allStories, curated, prefLang) {
                 story = allStories.find { it.id == storyId }
                     ?: SampleData.sampleStories().find { it.id == storyId }
@@ -395,58 +417,127 @@ fun TamixaNavHost(
                     onStoppedEarly = { s, pos -> tracker.onStoppedEarly(s, pos) }
                 )
             }
-            story?.let { currentStory ->
-                if (showMoralDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showMoralDialog = false },
-                        shape = TamixaDialogDefaults.shape,
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        title = { Text(Strings.moralOfStory(), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) },
-                        text = {
-                            Column {
-                                Text(Strings.moralDialogIntro(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.height(12.dp))
-                                Text(currentStory.moral ?: Strings.noMoralAvailable(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(16.dp))
-                                Text(Strings.talkAboutIt(), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.height(8.dp))
-                                Text("• ${Strings.discussionPromptWhatLearned()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(4.dp))
-                                Text("• ${Strings.discussionPromptFavoritePart()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        },
-                        confirmButton = {
-                            Button(onClick = { showMoralDialog = false }, shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius)) { Text(Strings.continueWith()) }
-                        }
-                    )
-                }
-            }
             AudioPlayerScreen(
                 story = story,
                 isPlaying = false,
                 onPlayPause = { /* ExoPlayer in app */ },
                 onBack = {
-                    story?.let { s ->
-                        if (progress < 0.99f) {
-                            val pos = (progress * s.readingTimeMinutes * 60).toInt()
-                            tracker.onStoppedEarly(s, pos)
+                    scope.launch {
+                        story?.let { s ->
+                            if (progress < 0.99f) {
+                                val totalSec = (s.readingTimeMinutes * 60).toInt().coerceAtLeast(1)
+                                val pos = (progress * totalSec).toInt().coerceAtLeast(0)
+                                tracker.onStoppedEarly(s, pos)
+                            }
+                            delay(400)
                         }
+                        storyViewModel.loadRecentPlayback(
+                            com.tamixa.util.TamixaConstants.RECENT_PLAYBACK_LIMIT,
+                            prefLang
+                        )
+                        navController.popBackStack()
                     }
-                    navController.popBackStack()
                 },
                 progress = progress,
                 onSleepTimer = { },
                 onDownload = { },
                 onShare = { },
                 analytics = analytics,
-                onMoralClick = { showMoralDialog = true },
-                upNextStories = (allStories + curated)
-                    .filter { it.status == com.tamixa.domain.StoryStatus.READY && it.id != storyId }
-                    .distinctBy { it.id }
-                    .take(12),
-                onUpNextStoryClick = { s ->
-                    val src = if (s.parentId == 0L) com.tamixa.util.TamixaConstants.STORY_SOURCE_LIBRARY else com.tamixa.util.TamixaConstants.STORY_SOURCE_GENERATED
-                    navController.navigate(Screen.AudioPlayer.withId(s.id, src)) { launchSingleTop = true }
+                bottomNavSelectedTab = TamixaTab.Home,
+                onBottomNavHome = {
+                    scope.launch {
+                        story?.let { s ->
+                            if (progress < 0.99f) {
+                                val totalSec = (s.readingTimeMinutes * 60).toInt().coerceAtLeast(1)
+                                val pos = (progress * totalSec).toInt().coerceAtLeast(0)
+                                tracker.onStoppedEarly(s, pos)
+                            }
+                        }
+                        storyViewModel.loadRecentPlayback(
+                            com.tamixa.util.TamixaConstants.RECENT_PLAYBACK_LIMIT,
+                            prefLang
+                        )
+                        navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } }
+                    }
+                },
+                onBottomNavLibrary = {
+                    scope.launch {
+                        story?.let { s ->
+                            if (progress < 0.99f) {
+                                val totalSec = (s.readingTimeMinutes * 60).toInt().coerceAtLeast(1)
+                                val pos = (progress * totalSec).toInt().coerceAtLeast(0)
+                                tracker.onStoppedEarly(s, pos)
+                            }
+                        }
+                        storyViewModel.loadRecentPlayback(
+                            com.tamixa.util.TamixaConstants.RECENT_PLAYBACK_LIMIT,
+                            prefLang
+                        )
+                        navController.navigate(Screen.Library.route) {
+                            popUpTo(Screen.Dashboard.route) { inclusive = false }
+                        }
+                    }
+                },
+                onBottomNavFunAndLearn = {
+                    scope.launch {
+                        story?.let { s ->
+                            if (progress < 0.99f) {
+                                val totalSec = (s.readingTimeMinutes * 60).toInt().coerceAtLeast(1)
+                                val pos = (progress * totalSec).toInt().coerceAtLeast(0)
+                                tracker.onStoppedEarly(s, pos)
+                            }
+                        }
+                        storyViewModel.loadRecentPlayback(
+                            com.tamixa.util.TamixaConstants.RECENT_PLAYBACK_LIMIT,
+                            prefLang
+                        )
+                        navController.navigate(Screen.ShortContent.route) {
+                            popUpTo(Screen.Dashboard.route) { inclusive = false }
+                        }
+                    }
+                },
+                onBottomNavProfile = {
+                    scope.launch {
+                        story?.let { s ->
+                            if (progress < 0.99f) {
+                                val totalSec = (s.readingTimeMinutes * 60).toInt().coerceAtLeast(1)
+                                val pos = (progress * totalSec).toInt().coerceAtLeast(0)
+                                tracker.onStoppedEarly(s, pos)
+                            }
+                        }
+                        storyViewModel.loadRecentPlayback(
+                            com.tamixa.util.TamixaConstants.RECENT_PLAYBACK_LIMIT,
+                            prefLang
+                        )
+                        navController.navigate(Screen.Profile.route) {
+                            popUpTo(Screen.Dashboard.route) { inclusive = false }
+                        }
+                    }
+                },
+                isFavorite = story?.let { s -> favorites.any { it.id == s.id } } == true,
+                onFavoriteToggle = story?.let { s ->
+                    {
+                        val src = if (s.parentId == 0L) com.tamixa.util.TamixaConstants.STORY_SOURCE_LIBRARY else com.tamixa.util.TamixaConstants.STORY_SOURCE_GENERATED
+                        val fav = favorites.any { it.id == s.id }
+                        if (fav) {
+                            storyViewModel.removeFavorite(s.id) { appAnalytics.trackFavoriteRemove(s.id, src) }
+                        } else {
+                            storyViewModel.addFavorite(s.id, src) { appAnalytics.trackFavoriteAdd(s.id, src) }
+                        }
+                    }
+                },
+                onAddToList = story?.let { s ->
+                    {
+                        val src = if (s.parentId == 0L) com.tamixa.util.TamixaConstants.STORY_SOURCE_LIBRARY else com.tamixa.util.TamixaConstants.STORY_SOURCE_GENERATED
+                        if (favorites.any { it.id == s.id }) {
+                            appMessageNotifier.show(Strings.playerAlreadyInListSnackbar())
+                        } else {
+                            storyViewModel.addFavorite(s.id, src) {
+                                appMessageNotifier.show(Strings.playerAddedToListSnackbar())
+                                appAnalytics.trackFavoriteAdd(s.id, src)
+                            }
+                        }
+                    }
                 }
             )
         }
@@ -691,6 +782,17 @@ fun TamixaNavHost(
                 onNavigateToLibrary = { navController.navigate(Screen.Library.route) },
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+            )
+        }
+    }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) { data ->
+            Snackbar(
+                snackbarData = data,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface
             )
         }
     }

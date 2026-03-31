@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { CreateLibraryStoryRequest } from "@/types/api";
@@ -22,24 +22,73 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useActionResult } from "@/contexts/action-result-context";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Save, ExternalLink } from "lucide-react";
+import {
+  StoryWorkflowStepper,
+  StoryWorkflowStepFooter,
+  LIBRARY_STORY_WORKFLOW_STEPS,
+} from "@/components/story-workflow-stepper";
+import { REGENERATE_THEN_TRANSLATIONS_HELP } from "@/lib/library-story-workflow";
 
 const AUTOSAVE_KEY = "tamixa_story_draft";
 const AUTOSAVE_DEBOUNCE_MS = 2000;
+const WORKFLOW_STEP_COUNT = LIBRARY_STORY_WORKFLOW_STEPS.length;
+
+const SOURCE_LANGUAGES = [
+  { code: "ta", label: "Tamil (recommended)" },
+  { code: "en", label: "English" },
+  { code: "hi", label: "Hindi" },
+  { code: "te", label: "Telugu" },
+  { code: "kn", label: "Kannada" },
+  { code: "ml", label: "Malayalam" },
+] as const;
+
+/** Script validation per language (matches backend StoryLibraryValidation) */
+function hasScriptForLanguage(text: string, lang: string): boolean {
+  if (!text?.trim()) return false;
+  const normalized = lang.trim().toLowerCase();
+  if (normalized === "en") return true;
+  if (normalized === "ta") return /[\u0B80-\u0BFF]/.test(text);
+  if (normalized === "hi") return /[\u0900-\u097F]/.test(text);
+  if (normalized === "te") return /[\u0C00-\u0C7F]/.test(text);
+  if (normalized === "kn") return /[\u0C80-\u0CFF]/.test(text);
+  if (normalized === "ml") return /[\u0D00-\u0D7F]/.test(text);
+  return true;
+}
 
 export default function NewLibraryStoryPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { showSuccess, showError, showWarning } = useActionResult();
+
+  const workflowStep = (() => {
+    const raw = searchParams.get("step");
+    const n = raw !== null ? Number.parseInt(raw, 10) : 0;
+    if (Number.isNaN(n)) return 0;
+    return Math.min(WORKFLOW_STEP_COUNT - 1, Math.max(0, n));
+  })();
+
+  const setWorkflowStep = useCallback(
+    (i: number) => {
+      const next = Math.min(WORKFLOW_STEP_COUNT - 1, Math.max(0, i));
+      const q = new URLSearchParams(searchParams.toString());
+      q.set("step", String(next));
+      router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
   const [form, setForm] = useState<CreateLibraryStoryRequest>({
     title: "",
     content: "",
-    theme: STORY_CATEGORIES[0], // Default: first category
+    theme: STORY_CATEGORIES[0],
     language: "ta",
     age: 5,
     childName: "Child",
     moral: "",
     status: "DRAFT",
-    emotionMode: "CALM", // Default: calming for bedtime narration
+    emotionMode: "CALM",
   });
   const [submitting, setSubmitting] = useState(false);
   const [coverGenerating, setCoverGenerating] = useState(false);
@@ -51,7 +100,6 @@ export default function NewLibraryStoryPage() {
     : 0;
   const isValidWordCount = wordCount >= MIN_WORD_COUNT;
 
-  // Load draft from localStorage on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem(AUTOSAVE_KEY);
@@ -69,7 +117,6 @@ export default function NewLibraryStoryPage() {
     }
   }, []);
 
-  // Autosave draft
   useEffect(() => {
     if (form.content || form.title) {
       autosaveRef.current = setTimeout(() => {
@@ -80,28 +127,6 @@ export default function NewLibraryStoryPage() {
       if (autosaveRef.current) clearTimeout(autosaveRef.current);
     };
   }, [form]);
-
-  /** Script validation per language (matches backend StoryLibraryValidation) */
-  const hasScriptForLanguage = (text: string, lang: string): boolean => {
-    if (!text?.trim()) return false;
-    const normalized = lang.trim().toLowerCase();
-    if (normalized === "en") return true; // English has no script requirement
-    if (normalized === "ta") return /[\u0B80-\u0BFF]/.test(text);   // Tamil
-    if (normalized === "hi") return /[\u0900-\u097F]/.test(text);   // Devanagari
-    if (normalized === "te") return /[\u0C00-\u0C7F]/.test(text);   // Telugu
-    if (normalized === "kn") return /[\u0C80-\u0CFF]/.test(text);   // Kannada
-    if (normalized === "ml") return /[\u0D00-\u0D7F]/.test(text);   // Malayalam
-    return true;
-  };
-
-  const SOURCE_LANGUAGES = [
-    { code: "ta", label: "Tamil (recommended)" },
-    { code: "en", label: "English" },
-    { code: "hi", label: "Hindi" },
-    { code: "te", label: "Telugu" },
-    { code: "kn", label: "Kannada" },
-    { code: "ml", label: "Malayalam" },
-  ];
 
   const validate = useCallback((): boolean => {
     const errs: Record<string, string> = {};
@@ -116,6 +141,26 @@ export default function NewLibraryStoryPage() {
     setValidationErrors(errs);
     return Object.keys(errs).length === 0;
   }, [form, wordCount]);
+
+  const handleStepChange = useCallback(
+    (i: number) => {
+      const next = Math.min(WORKFLOW_STEP_COUNT - 1, Math.max(0, i));
+      if (next > workflowStep && workflowStep === 0 && next >= 1 && !validate()) {
+        showError("Check story", "Fix the highlighted fields before leaving the Content step.");
+        return;
+      }
+      setWorkflowStep(next);
+    },
+    [workflowStep, validate, setWorkflowStep, showError]
+  );
+
+  const goNextStep = useCallback(() => {
+    if (workflowStep === 0 && !validate()) {
+      showError("Check story", "Fix the highlighted fields before continuing.");
+      return;
+    }
+    setWorkflowStep(workflowStep + 1);
+  }, [workflowStep, validate, setWorkflowStep, showError]);
 
   const handleSubmit = async (publish: boolean, regenerateCover: boolean = true) => {
     if (!validate()) {
@@ -139,8 +184,8 @@ export default function NewLibraryStoryPage() {
           showSuccess(
             publish ? "Story published" : "Story saved",
             publish
-              ? "Story published with AI cover. Audio will be generated automatically."
-              : "Story saved with AI cover. You can publish it when ready."
+              ? "Story published with AI cover. Open it from the list to continue translations and review in the same 5-step workflow."
+              : "Story saved with AI cover. Open it from the list to continue the workflow (cover, languages, submit, review, narration)."
           );
         } catch (coverErr) {
           showWarning(
@@ -154,8 +199,8 @@ export default function NewLibraryStoryPage() {
         showSuccess(
           publish ? "Story published" : "Story saved",
           publish
-            ? "Story published. Audio will be generated automatically."
-            : "Story saved as draft. You can publish it when ready."
+            ? "Story published. Open it from the list to continue the workflow."
+            : "Story saved as draft. Open it from the list to continue the workflow."
         );
       }
       router.push("/dashboard/stories");
@@ -167,10 +212,12 @@ export default function NewLibraryStoryPage() {
     }
   };
 
+  const langLabel = (code: string) =>
+    SOURCE_LANGUAGES.find((l) => l.code === code)?.label?.replace(/ \(recommended\)/, "") ?? code;
+
   return (
-    <div className="space-y-8 max-w-4xl">
-      {/* Page header */}
-      <div className="rounded-2xl border-2 border-border bg-gradient-to-r from-primary/5 via-primary/[0.03] to-transparent p-6">
+    <div className="space-y-6 max-w-5xl">
+      <div className="rounded-2xl border-2 border-border bg-gradient-to-r from-primary/5 via-primary/[0.03] to-transparent p-6 space-y-5">
         <div className="flex flex-wrap items-center gap-4">
           <Link href="/dashboard/stories">
             <Button variant="outline" size="sm" className="rounded-xl">
@@ -178,169 +225,190 @@ export default function NewLibraryStoryPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">
-              Create Story
-            </h1>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">Create Story</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Autosave · Min {MIN_WORD_COUNT} words · {SOURCE_LANGUAGES.find((l) => l.code === form.language)?.label ?? "Tamil"} · Version history coming soon
+              Same 5-step workflow as Edit · Autosave · Min {MIN_WORD_COUNT} words · {langLabel(form.language ?? "ta")}
             </p>
           </div>
         </div>
+        <StoryWorkflowStepper
+          steps={LIBRARY_STORY_WORKFLOW_STEPS}
+          currentStep={workflowStep}
+          onStepChange={handleStepChange}
+          className="border border-border/60 bg-background/80"
+        />
+        <p className="text-xs text-muted-foreground">
+          Steps 1–3 are on this page. After the story exists, open it from <strong>Stories</strong> → <strong>Edit</strong>.{" "}
+          {REGENERATE_THEN_TRANSLATIONS_HELP} Then <strong>Submit for review</strong>, <strong>Story for review</strong>, and{" "}
+          <strong>Narration</strong> (steps 4–5).
+        </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-6">
-          <Card className="border-2 border-border overflow-hidden">
-            <CardHeader className="border-b border-border/50 bg-muted/20">
-              <CardTitle className="text-base font-bold">Story details</CardTitle>
-              <p className="text-sm text-muted-foreground mt-0.5">Title, category, content, and metadata.</p>
-            </CardHeader>
-            <CardContent className="space-y-5 pt-6">
-              <div>
-                <Label htmlFor="sourceLang">Language *</Label>
-                <Select value={form.language ?? "ta"} onValueChange={(v) => setForm((f) => ({ ...f, language: v }))}>
-                  <SelectTrigger id="sourceLang" className="mt-1 rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SOURCE_LANGUAGES.map((l) => (
-                      <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="title">Title ({SOURCE_LANGUAGES.find((l) => l.code === form.language)?.label?.replace(/ \(recommended\)/, "") ?? "Tamil"}) *</Label>
-                <Input
-                  id="title"
-                  value={form.title ?? ""}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, title: e.target.value }))
-                  }
-                  placeholder="e.g. அறிவுள்ள காகம்"
-                  className="mt-1 rounded-xl"
-                  dir="ltr"
-                />
-                {validationErrors.title && (
-                  <p className="text-sm text-destructive mt-1">
-                    {validationErrors.title}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="theme">Category *</Label>
-                <Select
-                  value={form.theme}
-                  onValueChange={(v) => setForm((f) => ({ ...f, theme: v }))}
-                >
-                  <SelectTrigger className="mt-1 rounded-xl">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STORY_CATEGORIES.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {validationErrors.theme && (
-                  <p className="text-sm text-destructive mt-1">
-                    {validationErrors.theme}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="content">Story text ({SOURCE_LANGUAGES.find((l) => l.code === form.language)?.label?.replace(/ \(recommended\)/, "") ?? "Tamil"}) *</Label>
-                <textarea
-                  id="content"
-                  value={form.content}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, content: e.target.value }))
-                  }
-                  placeholder={`Enter full story text in ${SOURCE_LANGUAGES.find((l) => l.code === form.language)?.label?.replace(/ \(recommended\)/, "") ?? "Tamil"}...`}
-                  className="mt-1 flex min-h-[280px] w-full rounded-xl border-2 border-input bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  dir="ltr"
-                />
-                <div className="flex justify-between mt-1">
-                  <span
-                    className={`text-xs ${
-                      isValidWordCount ? "text-muted-foreground" : "text-destructive"
-                    }`}
-                  >
-                    {wordCount} / {MIN_WORD_COUNT} words
-                  </span>
-                </div>
-                {validationErrors.content && (
-                  <p className="text-sm text-destructive">{validationErrors.content}</p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="moral">Moral (optional)</Label>
-                <Input
-                  id="moral"
-                  value={form.moral ?? ""}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, moral: e.target.value }))
-                  }
-                  placeholder="e.g. Sharing brings joy"
-                  className="mt-1 rounded-xl"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+        <div className="space-y-6 min-h-[120px]">
+          {workflowStep === 0 && (
+            <Card className="border-2 border-border overflow-hidden">
+              <CardHeader className="border-b border-border/50 bg-muted/20">
+                <CardTitle className="text-base font-bold">Content</CardTitle>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Master language, title, category, story text, and metadata (step 1 of 5).
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-5 pt-6">
                 <div>
-                  <Label>Age group</Label>
-                  <Select
-                    value={String(form.age)}
-                    onValueChange={(v) =>
-                      setForm((f) => ({ ...f, age: parseInt(v, 10) }))
-                    }
-                  >
-                    <SelectTrigger className="mt-1 rounded-xl">
+                  <Label htmlFor="sourceLang">Language *</Label>
+                  <Select value={form.language ?? "ta"} onValueChange={(v) => setForm((f) => ({ ...f, language: v }))}>
+                    <SelectTrigger id="sourceLang" className="mt-1 rounded-xl">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {AGE_GROUPS.map((a) => (
-                        <SelectItem key={a.value} value={String(a.value)}>
-                          {a.label}
+                      {SOURCE_LANGUAGES.map((l) => (
+                        <SelectItem key={l.code} value={l.code}>
+                          {l.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="childName">Child name placeholder</Label>
+                  <Label htmlFor="title">Title ({langLabel(form.language ?? "ta")}) *</Label>
                   <Input
-                    id="childName"
-                    value={form.childName ?? "Child"}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, childName: e.target.value }))
-                    }
+                    id="title"
+                    value={form.title ?? ""}
+                    onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                    placeholder="e.g. அறிவுள்ள காகம்"
+                    className="mt-1 rounded-xl"
+                    dir="ltr"
+                  />
+                  {validationErrors.title && (
+                    <p className="text-sm text-destructive mt-1">{validationErrors.title}</p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="theme">Category *</Label>
+                  <Select value={form.theme} onValueChange={(v) => setForm((f) => ({ ...f, theme: v }))}>
+                    <SelectTrigger className="mt-1 rounded-xl">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STORY_CATEGORIES.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {validationErrors.theme && (
+                    <p className="text-sm text-destructive mt-1">{validationErrors.theme}</p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="content">Story text ({langLabel(form.language ?? "ta")}) *</Label>
+                  <textarea
+                    id="content"
+                    value={form.content}
+                    onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
+                    placeholder={`Enter full story text in ${langLabel(form.language ?? "ta")}…`}
+                    className="mt-1 flex min-h-[280px] w-full rounded-xl border-2 border-input bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    dir="ltr"
+                  />
+                  <div className="flex justify-between mt-1">
+                    <span
+                      className={`text-xs ${isValidWordCount ? "text-muted-foreground" : "text-destructive"}`}
+                    >
+                      {wordCount} / {MIN_WORD_COUNT} words
+                    </span>
+                  </div>
+                  {validationErrors.content && (
+                    <p className="text-sm text-destructive">{validationErrors.content}</p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="moral">Moral (optional)</Label>
+                  <Input
+                    id="moral"
+                    value={form.moral ?? ""}
+                    onChange={(e) => setForm((f) => ({ ...f, moral: e.target.value }))}
+                    placeholder="e.g. Sharing brings joy"
                     className="mt-1 rounded-xl"
                   />
                 </div>
-              </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Age group</Label>
+                    <Select
+                      value={String(form.age)}
+                      onValueChange={(v) => setForm((f) => ({ ...f, age: parseInt(v, 10) }))}
+                    >
+                      <SelectTrigger className="mt-1 rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AGE_GROUPS.map((a) => (
+                          <SelectItem key={a.value} value={String(a.value)}>
+                            {a.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="childName">Child name placeholder</Label>
+                    <Input
+                      id="childName"
+                      value={form.childName ?? "Child"}
+                      onChange={(e) => setForm((f) => ({ ...f, childName: e.target.value }))}
+                      className="mt-1 rounded-xl"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-              <div>
-                <Label>Cover image</Label>
-                <p className="text-xs text-muted-foreground mt-0.5 mb-1">
-                  AI cover will be generated when saving (or add URL manually)
+          {workflowStep === 1 && (
+            <Card className="border-2 border-border overflow-hidden">
+              <CardHeader className="border-b border-border/50 bg-muted/20">
+                <CardTitle className="text-base font-bold">Cover &amp; languages</CardTitle>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Optional cover URL before save. Other languages and <strong>Generate translations</strong> run in{" "}
+                  <strong>Edit</strong> after the story exists.
                 </p>
-                <Input
-                  value={form.coverImageUrl ?? ""}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, coverImageUrl: e.target.value || null }))
-                  }
-                  placeholder="Leave empty for AI cover, or paste https://..."
-                  className="mt-1 rounded-xl"
-                />
-              </div>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-6">
+                <div>
+                  <Label>Cover image URL (optional)</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-1">
+                    Leave empty to let AI generate a cover when you save or publish.
+                  </p>
+                  <Input
+                    value={form.coverImageUrl ?? ""}
+                    onChange={(e) => setForm((f) => ({ ...f, coverImageUrl: e.target.value || null }))}
+                    placeholder="https://… or leave empty for AI cover"
+                    className="mt-1 rounded-xl"
+                  />
+                </div>
+                <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
+                  <li>After create, open the story → Edit → step <strong>Cover &amp; languages</strong>.</li>
+                  <li>
+                    Optional: <strong>Regenerate with prompt</strong> on step 1, then <strong>Save draft</strong>, then{" "}
+                    <strong>Generate translations</strong> for server-side scripts (no MP3s). After approval, use{" "}
+                    <strong>Narration</strong> → <strong>Generate audio</strong>.
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
+          )}
 
-              <div className="flex flex-wrap gap-3 pt-6 border-t border-border">
+          {workflowStep === 2 && (
+            <Card className="border-2 border-border overflow-hidden">
+              <CardHeader className="border-b border-border/50 bg-muted/20">
+                <CardTitle className="text-base font-bold">Save &amp; submit</CardTitle>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Save a draft to the library or publish. Then continue the same workflow from the story list (Edit).
+                </p>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-3 pt-6">
                 <Button
                   onClick={() => handleSubmit(false, !form.coverImageUrl)}
                   variant="outline"
@@ -357,11 +425,86 @@ export default function NewLibraryStoryPage() {
                 >
                   {submitting ? (coverGenerating ? "Generating cover…" : "Publishing…") : "Publish"}
                 </Button>
-              </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {workflowStep === 3 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">Review</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  After you submit the story for review from <strong>Edit</strong>, approvers use the{" "}
+                  <strong>Story for review</strong> tab.
+                </p>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-3">
+                <Button variant="default" asChild>
+                  <Link href="/dashboard/stories/approve">
+                    Open Story for review <ExternalLink className="h-4 w-4 ml-1 opacity-70" />
+                  </Link>
+                </Button>
+                <p className="text-xs text-muted-foreground w-full">
+                  Create the story first (step 3 on this page), then submit it from Edit when ready.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {workflowStep === 4 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">Narration</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Approved stories show under <strong>Narration</strong>. Audio is usually generated automatically after
+                  approval.
+                </p>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-3">
+                <Button variant="outline" asChild>
+                  <Link href="/dashboard/stories/to-speech">
+                    Open Narration <ExternalLink className="h-4 w-4 ml-1 opacity-70" />
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold">On this page</CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground space-y-2">
+              {workflowStep <= 2 ? (
+                <>
+                  <p>
+                    <strong>Content</strong> → <strong>Cover &amp; languages</strong> → <strong>Save &amp; submit</strong>
+                  </p>
+                  <p>Steps 4–5 are a preview of tabs you will use after the story is created.</p>
+                </>
+              ) : (
+                <p>
+                  Go back to step <strong>Save &amp; submit</strong> to create the story, or open <strong>Stories</strong>{" "}
+                  if you already saved it.
+                </p>
+              )}
             </CardContent>
           </Card>
+          <Button variant="outline" size="sm" className="w-full rounded-xl" asChild>
+            <Link href="/dashboard/stories">All stories</Link>
+          </Button>
         </div>
       </div>
+
+      <StoryWorkflowStepFooter
+        currentStep={workflowStep}
+        totalSteps={WORKFLOW_STEP_COUNT}
+        onBack={() => setWorkflowStep(workflowStep - 1)}
+        onNext={goNextStep}
+        nextLabel={workflowStep === 0 ? "Cover & languages" : workflowStep === 1 ? "Save & submit" : "Next step"}
+      />
     </div>
   );
 }

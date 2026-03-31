@@ -7,4 +7,6 @@ interface StoryNarrationScriptRepositoryPort {
     fun save(script: StoryNarrationScript): StoryNarrationScript
 
     fun findByTranslationId(translationId: Long): StoryNarrationScript?
+
+    fun deleteByTranslationId(translationId: Long)
 }

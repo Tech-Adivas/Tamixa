@@ -19,6 +19,7 @@ class ParentAvatarRepositoryAdapter(
             storagePath = avatar.storagePath,
             contentType = avatar.contentType,
             fileSizeBytes = avatar.fileSizeBytes,
+            heygenTalkingPhotoId = avatar.heygenTalkingPhotoId,
             createdAt = avatar.createdAt,
             updatedAt = avatar.updatedAt
         )

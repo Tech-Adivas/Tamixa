@@ -7,6 +7,7 @@ import com.tamixa.application.port.StoryLibraryRepositoryPort
 import com.tamixa.application.recommendation.RecommendedStoryDto
 import com.tamixa.application.recommendation.StoryRecommendationService
 import com.tamixa.application.storylibrary.StoryLibraryService
+import com.tamixa.infrastructure.config.AppProperties
 import com.tamixa.infrastructure.persistence.StoryAnalyticsJpaRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -22,6 +23,7 @@ class HomeService(
     private val storyLibraryService: StoryLibraryService,
     private val storyLibraryRepository: StoryLibraryRepositoryPort,
     private val storyAnalyticsJpaRepository: StoryAnalyticsJpaRepository,
+    private val appProperties: AppProperties,
     @org.springframework.beans.factory.annotation.Autowired(required = false) private val familyVoiceRepository: StoryFamilyVoiceRepositoryPort?
 ) {
 
@@ -43,7 +45,8 @@ class HomeService(
         val categories = storyLibraryService.getCategories(effectiveLang)
 
         val since = Instant.now().minusSeconds(60L * 60 * 24 * 30) // last 30 days
-        val popularIds = if (effectiveLang == "ta") {
+        val primaryCatalog = appProperties.translationPipeline.sourceLanguage.trim().lowercase().take(10)
+        val popularIds = if (effectiveLang.equals(primaryCatalog, ignoreCase = true)) {
             storyAnalyticsJpaRepository.findPopularLibraryStoryIdsTamil(effectiveLang, since, 15)
         } else {
             storyAnalyticsJpaRepository.findPopularLibraryStoryIdsByTranslationLanguage(effectiveLang, since, 15)

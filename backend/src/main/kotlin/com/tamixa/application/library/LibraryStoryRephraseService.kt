@@ -1,8 +1,12 @@
 package com.tamixa.application.library
 
 import com.tamixa.application.port.OpenAIPort
+import com.tamixa.application.story.ContentModerationException
+import com.tamixa.application.story.ModerationContext
+import com.tamixa.application.story.StoryModerationService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import java.util.UUID
 
 data class RephraseSuggestion(val suggestedTitle: String?, val suggestedContent: String)
 
@@ -11,7 +15,8 @@ data class RephraseSuggestion(val suggestedTitle: String?, val suggestedContent:
  */
 @Service
 class LibraryStoryRephraseService(
-    private val openAI: OpenAIPort
+    private val openAI: OpenAIPort,
+    private val storyModeration: StoryModerationService
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -33,7 +38,22 @@ Do not add any extra text before TITLE: or after the content. Preserve paragraph
             log.warn("Rephrase suggestion failed: empty OpenAI response")
             return null
         }
-        return parseRephraseResponse(response)
+        val suggestion = parseRephraseResponse(response) ?: return null
+        val promptId = "library-rephrase-${UUID.randomUUID()}"
+        val textToModerate = buildString {
+            suggestion.suggestedTitle?.let { append(it).append('\n') }
+            append(suggestion.suggestedContent)
+        }.trim()
+        try {
+            storyModeration.moderateBeforeSave(
+                textToModerate,
+                ModerationContext(promptId = promptId, language = "ta", age = 8)
+            )
+        } catch (e: ContentModerationException) {
+            log.warn("Library rephrase rejected by guardrails promptId={}: {}", promptId, e.message)
+            return null
+        }
+        return suggestion
     }
 
     private fun parseRephraseResponse(response: String): RephraseSuggestion? {

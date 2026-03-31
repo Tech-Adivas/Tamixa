@@ -30,5 +30,13 @@ data class LibraryStory(
     /** Reviewer feedback when status is CHANGES_REQUESTED or REJECTED. */
     val reviewNotes: String? = null,
     /** When set, admin has marked this story for reject from the language view (enables Reject button). */
-    val rejectMarkedAt: Instant? = null
+    val rejectMarkedAt: Instant? = null,
+    /** When true, content managers need elevated approval before Regenerate with prompt. */
+    val regeneratePromptLocked: Boolean = false,
+    /** SUPER_ADMIN/ADMIN can set true so CONTENT_MANAGER may use Regenerate with prompt again. */
+    val regeneratePromptLockApproved: Boolean = false,
+    /** When a content manager requested unlock for admin review. */
+    val regeneratePromptUnlockRequestedAt: Instant? = null,
+    /** Soft-delete timestamp; null = active. */
+    val deletedAt: Instant? = null
 )

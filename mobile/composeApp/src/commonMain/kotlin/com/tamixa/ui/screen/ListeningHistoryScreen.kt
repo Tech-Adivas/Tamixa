@@ -62,11 +62,11 @@ fun ListeningHistoryScreen(
     LaunchedEffect(languageCode) {
         storyViewModel.loadRecentPlayback(TamixaConstants.RECENT_PLAYBACK_LIMIT, languageCode)
     }
-    val items = recentPlaybackWithStories.map { (dto, story) ->
+    val items = recentPlaybackWithStories.map { row ->
         ListeningHistoryItem(
-            story = story,
-            positionSeconds = dto.positionSeconds,
-            storySource = dto.storySource
+            story = row.story,
+            positionSeconds = row.dto.positionSeconds,
+            storySource = row.dto.storySource
         )
     }
 

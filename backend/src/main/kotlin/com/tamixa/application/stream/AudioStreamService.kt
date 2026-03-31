@@ -10,6 +10,7 @@ import com.tamixa.application.port.StoryRepositoryPort
 import com.tamixa.application.port.VoiceRepositoryPort
 import com.tamixa.application.port.narration.StoryNarrationAudioRepositoryPort
 import com.tamixa.application.port.StoryTranslationRepositoryPort
+import com.tamixa.domain.Story
 import com.tamixa.domain.StoryStatus
 import com.tamixa.domain.narration.NarrationAudioStatus
 import com.tamixa.domain.narration.StoryNarrationAudio
@@ -140,7 +141,18 @@ class AudioStreamService(
             val translation = translationRepository.findByMasterStoryIdAndLanguage(storyId, effectiveLang)
                 ?: return null
             var audio = narrationAudioRepository.findByTranslationIdAndVoiceProfile(translation.id, voiceProfile)
-            if (audio == null && voiceProfile.startsWith(CLONED_PREFIX) && parentId != null) {
+            if (voiceProfile.startsWith(CLONED_PREFIX) && parentId != null &&
+                (audio == null || audio.status == NarrationAudioStatus.FAILED)
+            ) {
+                if (audio?.status == NarrationAudioStatus.FAILED) {
+                    log.info(
+                        "Retrying cloned narration on-demand after FAILED status. storyId={} lang={} voiceProfile={} parentId={}",
+                        storyId,
+                        effectiveLang,
+                        voiceProfile,
+                        parentId
+                    )
+                }
                 audio = generateClonedVoiceOnDemand(storyId, effectiveLang, voiceProfile, translation.id, parentId)
             }
             if (audio == null || audio.status != NarrationAudioStatus.READY) return null
@@ -172,7 +184,18 @@ class AudioStreamService(
             val translation = translationRepository.findByMasterStoryIdAndLanguage(storyId, effectiveLang)
                 ?: return null
             var audio = narrationAudioRepository.findByTranslationIdAndVoiceProfile(translation.id, voiceProfile)
-            if (audio == null && voiceProfile.startsWith(CLONED_PREFIX) && parentId != null) {
+            if (voiceProfile.startsWith(CLONED_PREFIX) && parentId != null &&
+                (audio == null || audio.status == NarrationAudioStatus.FAILED)
+            ) {
+                if (audio?.status == NarrationAudioStatus.FAILED) {
+                    log.info(
+                        "Retrying external cloned narration on-demand after FAILED status. storyId={} lang={} voiceProfile={} parentId={}",
+                        storyId,
+                        effectiveLang,
+                        voiceProfile,
+                        parentId
+                    )
+                }
                 audio = generateClonedVoiceOnDemand(storyId, effectiveLang, voiceProfile, translation.id, parentId)
             }
             if (audio == null || audio.status != NarrationAudioStatus.READY) return null
@@ -197,7 +220,18 @@ class AudioStreamService(
         val translation = translationRepository.findByMasterStoryIdAndLanguage(storyId, effectiveLang)
             ?: return null
         var audio = narrationAudioRepository.findByTranslationIdAndVoiceProfile(translation.id, voiceProfile)
-        if (audio == null && voiceProfile.startsWith(CLONED_PREFIX) && parentId != null) {
+        if (voiceProfile.startsWith(CLONED_PREFIX) && parentId != null &&
+            (audio == null || audio.status == NarrationAudioStatus.FAILED)
+        ) {
+            if (audio?.status == NarrationAudioStatus.FAILED) {
+                log.info(
+                    "Retrying preview cloned narration on-demand after FAILED status. storyId={} lang={} voiceProfile={} parentId={}",
+                    storyId,
+                    effectiveLang,
+                    voiceProfile,
+                    parentId
+                )
+            }
             audio = generateClonedVoiceOnDemand(storyId, effectiveLang, voiceProfile, translation.id, parentId)
         }
         return if (audio != null && audio.status == NarrationAudioStatus.READY && !audio.audioUrl.isNullOrBlank())
@@ -298,6 +332,7 @@ class AudioStreamService(
             profile.referenceAudioPath.isNullOrBlank() && profile.heygenVoiceId.isNullOrBlank()
         ) return null
         val story = storyRepository.findById(storyId) ?: return null
+        if (!isGeneratedStoryOwnedBy(story, parentId)) return null
         if (story.status != StoryStatus.READY || story.content.isBlank()) return null
         subscriptionGuard.enforcePremiumVoiceAccess(voiceProfile, parentId, language)
         val effectiveLang = language.trim().lowercase().take(10).ifEmpty { story.language.take(10).ifEmpty { "en" } }
@@ -330,6 +365,7 @@ class AudioStreamService(
         val start = System.nanoTime()
         return try {
             val story = storyRepository.findById(storyId) ?: return null
+            if (!isGeneratedStoryOwnedBy(story, parentId)) return null
             if (story.status != StoryStatus.READY) {
                 log.info("Stream URL null: generated story {} not READY (status={}). Mobile may fall back to device TTS (dry reading).", storyId, story.status)
                 return null
@@ -344,6 +380,26 @@ class AudioStreamService(
         } finally {
             streamMetrics.recordStreamUrlGenerationLatency(System.nanoTime() - start)
         }
+    }
+
+    /**
+     * Generated stories are private to the owning parent. Deny when [parentId] is null or does not match [Story.parentId].
+     */
+    private fun isGeneratedStoryOwnedBy(story: Story, parentId: Long?): Boolean {
+        if (parentId == null) {
+            log.warn("Generated story access denied: parentId required storyId={}", story.id)
+            return false
+        }
+        if (story.parentId != parentId) {
+            log.warn(
+                "Generated story access denied: storyId={} ownerParentId={} requesterParentId={}",
+                story.id,
+                story.parentId,
+                parentId
+            )
+            return false
+        }
+        return true
     }
 
     private fun preferProxy(): Boolean {

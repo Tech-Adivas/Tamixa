@@ -26,6 +26,7 @@ import com.tamixa.api.config.RequestTracingFilter
 import com.tamixa.application.auth.EmailAlreadyExistsException
 import com.tamixa.application.auth.PhoneAlreadyInUseException
 import com.tamixa.application.port.AuditLogPort
+import com.tamixa.application.port.StoryEventPublisherPort
 import com.tamixa.application.subscription.RevenueMetricsService
 import com.tamixa.application.port.RevenueSnapshotPort
 import com.tamixa.domain.InvoiceStatus
@@ -56,8 +57,11 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import kotlin.math.round
 
 private val PLAN_MONTHLY_PRICE = mapOf(
     SubscriptionPlan.FREE to 0.0,
@@ -83,7 +87,8 @@ class AdminService(
     private val revenueSnapshotPort: RevenueSnapshotPort,
     private val auditLog: AuditLogPort,
     private val registry: MeterRegistry,
-    private val passwordEncoder: PasswordEncoder
+    private val passwordEncoder: PasswordEncoder,
+    private val storyEventPublisher: StoryEventPublisherPort,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -224,7 +229,7 @@ class AdminService(
             parentJpaRepository.count()
             "UP"
         } catch (e: Exception) {
-            log.warn("Health check: database unreachable: {}", e.message)
+            log.error("Health check: database unreachable", e)
             "DOWN"
         }
         val components = mapOf(
@@ -372,25 +377,38 @@ class AdminService(
         val tokenRows = try {
             storyTokenUsageJpaRepository.sumTokensByStoryId()
         } catch (e: Exception) {
-            log.warn("AI metrics: failed to load token usage: {}", e.message)
+            log.warn("AI metrics: failed to load token usage: {}", e.message, e)
             emptyList()
         }
         val avatarRows = try {
             storyAvatarVideoJpaRepository.countByStoryId()
         } catch (e: Exception) {
-            log.warn("AI metrics: failed to load avatar counts: {}", e.message)
+            log.warn("AI metrics: failed to load avatar counts: {}", e.message, e)
             emptyList()
         }
         val avatarByStory = avatarRows.mapNotNull { row ->
             if (row.size >= 2 && row[0] is Number && row[1] is Number) (row[0] as Number).toLong() to (row[1] as Number).toLong()
             else null
         }.toMap()
+
+        // Batch-fetch all story titles in one query to avoid N+1
+        val storyIds = tokenRows.mapNotNull { row ->
+            if (row.isNotEmpty() && row[0] is Number) (row[0] as Number).toLong() else null
+        }
+        val titlesByStoryId = if (storyIds.isNotEmpty()) {
+            storyJpaRepository.findTitlesByIds(storyIds)
+                .mapNotNull { row ->
+                    if (row.size >= 2 && row[0] is Number) (row[0] as Number).toLong() to row[1]?.toString()
+                    else null
+                }.toMap()
+        } else emptyMap()
+
         val list = tokenRows.mapNotNull { row ->
             if (row.size >= 2 && row[0] is Number && row[1] is Number) {
                 val storyId = (row[0] as Number).toLong()
                 val totalTokens = (row[1] as Number).toLong()
                 val avatarCount = avatarByStory[storyId] ?: 0L
-                val title = storyJpaRepository.findById(storyId).orElse(null)?.title
+                val title = titlesByStoryId[storyId]
                 val costUsd = (totalTokens / 1_000_000.0) * 0.001 + avatarCount * 0.10
                 val costInr = costUsd * USD_TO_INR
                 StoryAiUsageDto(storyId = storyId, title = title, totalTokens = totalTokens, avatarVideoCount = avatarCount, costInr = costInr)
@@ -517,6 +535,35 @@ class AdminService(
     fun approveStory(adminEmail: String, storyId: Long) {
         val story = storyJpaRepository.findById(storyId).orElse(null)
             ?: throw StoryNotFoundException(storyId)
+        if (story.status == StoryStatus.PENDING_REVIEW) {
+            val content = story.content
+            story.status = StoryStatus.PENDING
+            storyJpaRepository.save(story)
+            recordAdminAction(
+                adminEmail,
+                "approve_story",
+                "story",
+                storyId.toString(),
+                "Human review passed; narration pipeline scheduled",
+            )
+            val id = storyId
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(
+                    object : TransactionSynchronization {
+                        override fun afterCommit() {
+                            try {
+                                storyEventPublisher.publishStoryCreated(id, content)
+                            } catch (e: Exception) {
+                                log.error("publishStoryCreated after human review failed storyId={}", id, e)
+                            }
+                        }
+                    },
+                )
+            } else {
+                storyEventPublisher.publishStoryCreated(id, content)
+            }
+            return
+        }
         story.status = StoryStatus.READY
         storyJpaRepository.save(story)
         recordAdminAction(adminEmail, "approve_story", "story", storyId.toString(), "Approved by admin")
@@ -584,6 +631,26 @@ class AdminService(
             }
             StoryUsagePointDto(date = dateStr, count = cnt)
         }
+    }
+
+    @Transactional(readOnly = true)
+    fun getStoryLengthProfile(days: Int): Map<String, Any> {
+        val safeDays = days.coerceIn(1, 90)
+        val since = java.time.Instant.now().minus(safeDays.toLong(), ChronoUnit.DAYS)
+        val row = storyJpaRepository.storyLengthProfileSince(since)
+        val totalStories = (row?.getOrNull(0) as? Number)?.toLong() ?: 0L
+        val avgWordCount = (row?.getOrNull(1) as? Number)?.toDouble() ?: 0.0
+        val avgReadingTimeMinutes = (row?.getOrNull(2) as? Number)?.toDouble() ?: 0.0
+        val expectedMinutesByWords = avgWordCount / 120.0
+        fun round2(value: Double): Double = round(value * 100.0) / 100.0
+        return mapOf(
+            "windowDays" to safeDays,
+            "totalStories" to totalStories,
+            "avgWordCount" to round2(avgWordCount),
+            "avgReadingTimeMinutes" to round2(avgReadingTimeMinutes),
+            "avgExpectedMinutesByWords" to round2(expectedMinutesByWords),
+            "wpmAssumption" to 120
+        )
     }
 
     @Transactional(readOnly = true)

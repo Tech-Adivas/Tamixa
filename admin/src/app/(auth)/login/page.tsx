@@ -23,7 +23,7 @@ import { getApiErrorMessage } from "@/lib/utils";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { refreshUser } = useAuth();
+  const { hydrateUser } = useAuth();
   const { showSuccess, showError } = useActionResult();
   const errorParam = searchParams.get("error");
   const expiredParam = searchParams.get("expired");
@@ -52,7 +52,7 @@ function LoginForm() {
         showError("Access denied", "An admin role is required to sign in.");
         return;
       }
-      await refreshUser();
+      hydrateUser(me);
       showSuccess("Signed in", "You have been successfully signed in.");
       router.push("/dashboard");
     } catch (err) {
@@ -143,9 +143,11 @@ function LoginForm() {
           <p className="text-center text-sm text-muted-foreground">
             Admin uses email + password (same backend as web). Ensure the backend is running and the user has an admin role.
           </p>
-          <p className="text-center text-xs text-muted-foreground">
-            Local dev: set <code className="rounded-lg bg-muted px-1.5 py-0.5 font-medium">SEED_ADMIN_ENABLED=true</code>, then POST <code className="rounded-lg bg-muted px-1.5 py-0.5 font-medium">/api/v1/dev/seed-admin</code>. Sign in with <strong>admin@techadivas.com</strong> / <strong>Admin123!</strong>
-          </p>
+          {process.env.NODE_ENV === "development" && (
+            <p className="text-center text-xs text-muted-foreground">
+              Local dev: set <code className="rounded-lg bg-muted px-1.5 py-0.5 font-medium">SEED_ADMIN_ENABLED=true</code>, then POST <code className="rounded-lg bg-muted px-1.5 py-0.5 font-medium">/api/v1/dev/seed-admin</code> to seed the admin account.
+            </p>
+          )}
           <p className="border-t-2 border-border pt-4 text-center text-sm text-muted-foreground">
             Back to{" "}
             <Link href="/" className="font-semibold text-primary underline-offset-2 hover:underline">

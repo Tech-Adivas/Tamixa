@@ -2,10 +2,10 @@ package com.tamixa.application.story
 
 import org.springframework.stereotype.Component
 
-/** Target narration length: 10 minutes at ~150 words per minute. */
-private const val TARGET_NARRATION_MINUTES = 10
-private const val WORDS_PER_MINUTE = 150
-private const val TARGET_WORDS_10_MIN = WORDS_PER_MINUTE * TARGET_NARRATION_MINUTES
+/** Target narration length: ~8 minutes at natural pacing. */
+private const val TARGET_NARRATION_MINUTES = 8
+private const val WORDS_PER_MINUTE = 120
+private const val TARGET_WORDS_FULL_LENGTH = WORDS_PER_MINUTE * TARGET_NARRATION_MINUTES
 
 /**
  * Builds story generation prompts with strict safety rules. Use only with
@@ -23,11 +23,14 @@ class StoryPromptBuilder {
         "empathy", "problem_solving", "vocabulary", "curiosity", "perseverance",
         "sharing", "honesty", "courage", "kindness", "friendship", "responsibility"
     )
-    /** Max words by age; upper ages target ~10 min (~1500 words at 150 wpm). */
+    /** Max words by age; upper ages target full-length (~850–950 words). */
     private val maxWordsByAge = mapOf(
         1 to 150, 2 to 200, 3 to 250, 4 to 300,
-        5 to 600, 6 to 900, 7 to 1100, 8 to 1300,
-        9 to TARGET_WORDS_10_MIN, 10 to TARGET_WORDS_10_MIN, 11 to TARGET_WORDS_10_MIN, 12 to TARGET_WORDS_10_MIN
+        5 to 550, 6 to 700, 7 to 820, 8 to 900,
+        9 to StoryPromptTemplates.FULL_LENGTH_WORDS_MAX,
+        10 to StoryPromptTemplates.FULL_LENGTH_WORDS_MAX,
+        11 to StoryPromptTemplates.FULL_LENGTH_WORDS_MAX,
+        12 to StoryPromptTemplates.FULL_LENGTH_WORDS_MAX
     )
 
     /**
@@ -58,9 +61,35 @@ Generate exactly one original story in the language specified in the user reques
 - Warm, friendly, emotionally gentle. No sarcasm, cynicism, fear, or harshness. No difficult vocabulary or complex sentence structures that lose the listener.
 - Make the story feel safe to hear: reassuring, uplifting, and memorable.
 
+## Continuity & narrative flow (mandatory)
+- Clear timeline: tell the story in logical cause-and-effect order. When time, place, or viewpoint shifts, add an explicit bridge in the output language (e.g. equivalent of "The next morning", "After that", "Meanwhile")—never jump without orientation.
+- No gaps or discontinuity: do not skip essential beats between setup and payoff; do not drop characters or threads without closure or a clear handoff. If something is introduced, follow through or explain why it no longer matters.
+- Each paragraph must follow naturally from the last; avoid abrupt cuts, unexplained leaps, or missing resolutions. The listener should never wonder "what happened in between?"
+
 ## Narration structure
 - Short blocks: 1–3 sentences per paragraph. Natural transitions: "Once upon a time…", "One day…", "Then…", "After that…" (or equivalent in the output language). Smooth rhythm for spoken narration.
 - Storytelling Script format for story_text: narrator lines plus dialogue. Use "Character: dialogue text" or clear attribution so a single narrator can perform both. Include inline tone/pause markers where they help: [Pause 500ms], [Pause 1s], [Happy tone], [Soft voice], [Warm tone], [Calm], [Whisper], [Excited]. Output must be suitable for SSML and OpenAI TTS.
+
+================================
+VOICE SPLIT DESIGN
+================================
+- Narrator -> warm, calm voice (default female)
+- Child characters -> energetic, expressive voices
+- Adult/elder characters -> slower, softer tone
+- Group voices -> playful tone
+
+Ensure:
+- Clear separation between narrator and dialogue
+- Emotional variation across voices
+
+================================
+SSML CONVERSION REQUIREMENTS
+================================
+- Convert voice tags into SSML prosody and break tags
+- Map tones to pitch, rate, and volume changes
+- Map pauses to <break> tags
+- Use <voice> tags for different roles
+- Ensure compatibility with Azure / Polly / Google TTS
 
 ## Cultural context (Indian)
 - Draw on Indian folklore and mythology where appropriate: e.g. Tenali Rama–style wit and wisdom, Panchatantra-style animal tales and morals, and regional folktales. Use festival themes in the story's language when they fit—e.g. Diwali, Pongal, Onam, Ugadi—with names, customs, and terms in the native language (Tamil, Hindi, Telugu, Kannada, Malayalam). Keep retellings family-friendly and respectful; no sectarian or divisive portrayal.
@@ -82,7 +111,7 @@ Stories must be both delightful and developmentally meaningful. Weave in learnin
 - Prohibited in all cases: violence, weapons, death, war, politics, religious conflict, drugs, alcohol, self-harm, advertising, brand names, real celebrities, real sensitive places, adult or romantic themes. Story must be purely fictional and uplifting.
 
 ## Length & multilingual naturalness
-- Length: approximately 900–1500 words unless the user requests otherwise.
+    - Length: target ${StoryPromptTemplates.FULL_LENGTH_WORDS_MIN}–${StoryPromptTemplates.FULL_LENGTH_WORDS_MAX} words (about 7–8 minutes of natural spoken pacing) unless the user requests otherwise. Prefer short sentences and breath-friendly phrasing for TTS. If runtime word caps are stricter, the story will remain within those limits.
 - Tamil: Tamil script; correct verb suffixes and SOV order; everyday Tamil words and native terms; avoid literal English translation.
 - English: Standard grammar (SVO); clear, everyday words; conversational narration.
 - Hindi: Devanagari; correct conjugation and postpositions; common words and honorifics where natural; conversational audiobook style.
@@ -96,7 +125,7 @@ Keys exactly: "title", "category", "theme", "moral", "story_text", "estimated_du
 - theme: Short theme phrase in the story's language.
 - story_text: Full narrative in Storytelling Script format (narrator + dialogue) with tone markers; magical, comforting, joyful; SSML/OpenAI TTS ready.
 - moral: One short sentence; positive value; age-appropriate; earned by the story.
-- estimated_duration_seconds: Number only (e.g. 600 for 10 minutes).
+- estimated_duration_seconds: Number only (e.g. ${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MIN} for ~7 minutes).
 Before responding: confirm no prohibited content; confirm language and grammar; confirm JSON is valid and complete.
 """.trimIndent()
 
@@ -120,21 +149,24 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         learningFocus: String? = null
     ): String {
         val safeLang = normalizeLanguage(language)
-        val maxWords = maxWordsOverride ?: maxWordsByAge[age.coerceIn(1, 12)] ?: TARGET_WORDS_10_MIN
+        val maxWords = maxWordsOverride ?: maxWordsByAge[age.coerceIn(1, 12)] ?: TARGET_WORDS_FULL_LENGTH
         val vocab = vocabularyHint(age)
         val culture = culturalHint(safeLang)
         val tonePhrase = emotionMode?.let { emotionHint(it) } ?: "Warm, positive, and age-appropriate."
 
         val opener = buildUserRequest(safeLang, childName, age, theme, tonePhrase)
-        val clarityHint = "Use clear sentences in every language: one idea per sentence, clear subject and action, short to medium length, easy to narrate. English is the reference for structure and clarity; when writing in another language, apply the same clarity then express in that language. Use varied, precise vocabulary; avoid repeating the same word in close succession; prefer everyday and native terms that sound natural when spoken."
+        val clarityHint = "Use clear sentences in every language: one idea per sentence, clear subject and action, short to medium length, easy to narrate. English is the reference for structure and clarity; when writing in another language, apply the same clarity then express in that language. Use varied, precise vocabulary; avoid repeating the same word in close succession; prefer everyday and native terms that sound natural when spoken. Keep one continuous storyline: no missing scenes, no jumps in time or logic without a bridging line—spoken, conversational style in the output language, not stiff book prose."
         val learningLine = learningFocusHint(learningFocus)
         val extras = buildConversationalExtras(
             childInterests, childFavoriteColor, childFavoriteAnimal, childTraits, childAvatarChoice, customPrompt
         )
-        val durationHint = if (maxWords >= 1000) "Aim for about $TARGET_NARRATION_MINUTES minutes of narration (estimated_duration_seconds around 600). " else ""
+        val voiceSplitAndSsml = voiceSplitAndSsmlRequirements()
+        val durationHint = if (maxWords >= 850) "Aim for about 7–8 minutes of narration (estimated_duration_seconds around ${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MIN}–${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MAX}). " else ""
         val constraints = "${durationHint}Keep to at most $maxWords words. Return only valid JSON: title, category, theme, moral, story_text, estimated_duration_seconds (number, in seconds). No markdown, no code block."
 
-        return listOf(opener, vocab, clarityHint, learningLine, culture, extras, constraints).filter { it.isNotBlank() }.joinToString("\n\n")
+        return listOf(opener, vocab, clarityHint, learningLine, culture, extras, voiceSplitAndSsml, constraints)
+            .filter { it.isNotBlank() }
+            .joinToString("\n\n")
     }
 
     private fun buildUserRequest(lang: String, childName: String, age: Int, theme: String, tonePhrase: String): String {
@@ -175,20 +207,23 @@ Generate a story in $lang based on this request: for my child $childName (age $a
         customPrompt: String? = null
     ): String {
         val safeLang = normalizeLanguage(language)
-        val maxWords = maxWordsOverride ?: maxWordsByAge[age.coerceIn(1, 12)] ?: TARGET_WORDS_10_MIN
+        val maxWords = maxWordsOverride ?: maxWordsByAge[age.coerceIn(1, 12)] ?: TARGET_WORDS_FULL_LENGTH
         val vocab = vocabularyHint(age)
         val culture = culturalHint(safeLang)
         val tonePhrase = emotionMode?.let { emotionHint(it) } ?: "Warm, positive, and age-appropriate."
         val opener = buildUserRequest(safeLang, childName, age, theme, tonePhrase)
-        val clarityHint = "Use clear sentences: one idea per sentence, clear subject and action, short to medium length. English is the reference for clarity; when writing in another language, apply the same clarity then express in that language. Use varied, precise vocabulary; avoid repetition; prefer everyday and native terms."
+        val clarityHint = "Use clear sentences: one idea per sentence, clear subject and action, short to medium length. English is the reference for clarity; when writing in another language, apply the same clarity then express in that language. Use varied, precise vocabulary; avoid repetition; prefer everyday and native terms. One continuous storyline with clear transitions—no unexplained gaps; conversational spoken style in the output language."
         val customLine = customPrompt?.takeIf { it.isNotBlank() }?.let { "Specific request: $it" } ?: ""
-        val durationHint = if (maxWords >= 1000) "Aim for about $TARGET_NARRATION_MINUTES minutes of narration (estimated_duration_seconds around 600). " else ""
+        val voiceSplitAndSsml = voiceSplitAndSsmlRequirements()
+        val durationHint = if (maxWords >= 850) "Aim for about 7–8 minutes of narration (estimated_duration_seconds around ${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MIN}–${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MAX}). " else ""
         val constraints = "${durationHint}Keep to at most $maxWords words. Return only valid JSON: title, category, theme, moral, story_text, estimated_duration_seconds (number, in seconds). No markdown, no code block."
-        return listOf(opener, vocab, clarityHint, culture, customLine, constraints).filter { it.isNotBlank() }.joinToString("\n\n")
+        return listOf(opener, vocab, clarityHint, culture, customLine, voiceSplitAndSsml, constraints)
+            .filter { it.isNotBlank() }
+            .joinToString("\n\n")
     }
 
     /** Effective max words for age (capped). */
-    fun maxWordsForAge(age: Int): Int = maxWordsByAge[age.coerceIn(1, 12)] ?: TARGET_WORDS_10_MIN
+    fun maxWordsForAge(age: Int): Int = maxWordsByAge[age.coerceIn(1, 12)] ?: TARGET_WORDS_FULL_LENGTH
 
     private fun normalizeLanguage(lang: String): String =
         lang.trim().lowercase().take(10).let { if (it in allowedLanguages) it else "en" }
@@ -215,6 +250,29 @@ Generate a story in $lang based on this request: for my child $childName (age $a
         else -> "Tone: Warm, positive, and age-appropriate."
     }
 
+    private fun voiceSplitAndSsmlRequirements(): String = """
+================================
+VOICE SPLIT DESIGN
+================================
+- Narrator -> warm, calm voice (default female)
+- Child characters -> energetic, expressive voices
+- Adult/elder characters -> slower, softer tone
+- Group voices -> playful tone
+
+Ensure:
+- Clear separation between narrator and dialogue
+- Emotional variation across voices
+
+================================
+SSML CONVERSION REQUIREMENTS
+================================
+- Convert voice tags into SSML prosody and break tags
+- Map tones to pitch, rate, and volume changes
+- Map pauses to <break> tags
+- Use <voice> tags for different roles
+- Ensure compatibility with Azure / Polly / Google TTS
+    """.trimIndent()
+
     /**
      * Returns a one-line hint when [learningFocus] is non-null and allowed; otherwise blank.
      * Used to steer the model toward a specific educational emphasis (e.g. empathy, vocabulary).
@@ -239,52 +297,88 @@ Generate a story in $lang based on this request: for my child $childName (age $a
     }
 
     /**
-     * Default prompt for admin "Regenerate with prompt" — rewrites story to Tamixa style.
-     * When [outputLanguage] is specified, title, moral, and story_text MUST be entirely in that language.
-     * CRITICAL: Never mix languages; never output in Chinese or any unsupported language.
+     * Default prompt for admin "Regenerate with prompt" — rewrites story into Tamixa TTS storytelling script style
+     * (voice modulation tags, 7–8 min target, continuity, values). When [outputLanguage] is set, that is the primary locale.
+     * CRITICAL: Never mix languages in JSON fields; never output in Chinese or any unsupported language.
      */
     fun buildDefaultConversionPrompt(allowedCategories: List<String>, outputLanguage: String? = null): String {
         val categoryList = allowedCategories.joinToString(", ")
         val normalizedLang = outputLanguage?.trim()?.lowercase()?.take(10)
+        val primaryLangCode = when (normalizedLang) {
+            "ta", "tamil" -> "ta"
+            "en" -> "en"
+            "hi" -> "hi"
+            "te" -> "te"
+            "kn" -> "kn"
+            "ml" -> "ml"
+            else -> normalizedLang ?: "ta"
+        }
+        val ttsSpec = AdminTtsStoryConversionPromptBody.build(primaryLangCode)
         val singleLanguageRule = """
-- CRITICAL — Single language only: The entire story_text, title, and moral MUST be in ONE language only. Do NOT mix languages. Do NOT switch to another language mid-story. Do NOT output in Chinese (中文) or any language other than the specified output language. Every sentence must be in the same language."""
+- CRITICAL — Single language only: The entire story_text, title, and moral MUST be in ONE language only (the primary language). Do NOT mix languages. Do NOT switch language mid-story. Do NOT output in Chinese (中文) or any language other than the specified output language. Every sentence must be in the same language."""
         val languageRequirement = when (normalizedLang) {
             "ta", "tamil" -> """
-- Language (mandatory): Output MUST be in Tamil script (தமிழ்). Title, moral, and story_text must be written entirely in Tamil (Unicode U+0B80–U+0BFF). If the input is in English or another language, translate it into Tamil. Use correct Tamil grammar, verb forms (past/present/future suffixes), and SOV order. Use everyday Tamil words and native terms; avoid literal English. Do not output in English, Malayalam, Hindi, or any other language."""
+- Language (mandatory): story_text, title, and moral MUST be in Tamil script (தமிழ்). If the input is in another language, translate into Tamil. Correct Tamil grammar, verb forms, SOV order; everyday Tamil; avoid literal English."""
             "ml" -> """
-- Language (mandatory): Output MUST be in Malayalam script (മലയാളം). Title, moral, and story_text must be written entirely in Malayalam. Use correct Malayalam grammar, verb forms and agglutination; everyday Malayalam words; avoid literal translation from other languages. Do NOT output in Tamil, English, Hindi, Chinese, or any other language."""
+- Language (mandatory): Output entirely in Malayalam script. Correct Malayalam grammar and agglutination; everyday words."""
             "hi" -> """
-- Language (mandatory): Output MUST be in Hindi (Devanagari script). Title, moral, and story_text must be written entirely in Hindi. Use correct Hindi grammar, conjugation and postpositions; common words and honorifics where natural. Do NOT output in Tamil, English, Malayalam, Chinese, or any other language."""
+- Language (mandatory): Output entirely in Hindi (Devanagari). Correct conjugation and postpositions."""
             "te" -> """
-- Language (mandatory): Output MUST be in Telugu script. Title, moral, and story_text must be written entirely in Telugu. Use correct Telugu grammar and case suffixes; everyday Telugu words. Do NOT output in Tamil, English, Hindi, Chinese, or any other language."""
+- Language (mandatory): Output entirely in Telugu script. Correct case suffixes and natural Telugu."""
             "kn" -> """
-- Language (mandatory): Output MUST be in Kannada script. Title, moral, and story_text must be written entirely in Kannada. Use correct Kannada grammar; common Kannada words. Do NOT output in Tamil, English, Hindi, Chinese, or any other language."""
+- Language (mandatory): Output entirely in Kannada script. Correct Kannada grammar."""
             "en" -> """
-- Language (mandatory): Output MUST be in English. Title, moral, and story_text must be written entirely in English. Use standard English grammar (SVO); clear everyday words. Do NOT output in Tamil, Malayalam, Hindi, Chinese, or any other language."""
+- Language (mandatory): Output entirely in English. SVO; clear everyday words."""
             else -> """
-- Language: Keep the SAME LANGUAGE as the input. If the story is in Tamil, output entirely in Tamil; if Malayalam, entirely in Malayalam; if Hindi, entirely in Hindi; if English, entirely in English. Do NOT translate. Do NOT mix languages. Do NOT output in Chinese or any unsupported language."""
+- Language: Match the input story's language end-to-end in title, moral, and story_text. Do NOT mix languages."""
         }
         return """
 ## Role
-You are Tamixa's story editor. Rewrite the following story into publication-ready Tamixa style. Preserve plot, characters, and moral. Output must be suitable for family listening and TTS.
+You are Tamixa's story editor. Follow the TTS storytelling specification below. Then rewrite the user's story input accordingly.
 
-## Requirements
+$ttsSpec
+
+## Editor constraints (mandatory)
 $singleLanguageRule
 $languageRequirement
-- Prose: Natural, fluent, conversational spoken style. Short paragraphs (1–3 sentences). Natural transitions (Once upon a time…, One day…, Then…, or equivalent in the output language). Every sentence must sound smooth when read aloud.
-- Tone: Warm, friendly, emotionally gentle. Magical, comforting, and joyful. No violence, horror, or harsh content.
-- Length: Approximately 900–1500 words (~10 min at 150 words/min). Set estimated_duration_seconds to 600.
-- Category: Choose exactly ONE that best fits the story (use the exact string): $categoryList. Set "category" to that value. Set "theme" to the same as category or a short theme phrase in the story's language.
-- Story_text format: Storytelling Script (narrator + dialogue). Use "Character: dialogue". Include inline markers where they help: [Pause 500ms], [Pause 1s], [Happy tone], [Soft voice], [Warm tone], [Calm], [Whisper], [Excited]. SSML/OpenAI TTS ready.
+- Plot fidelity: Preserve every important beat from the source—no skipped scenes or dropped resolutions. You may trim repetition only.
+- Length target (mandatory): rewrite into rich storytelling around 900 words (acceptable range: 800-1000) unless safety rules require shorter.
+- Creativity & imagination: enhance scenes with vivid sensory detail, playful child-safe dialogue, emotional transitions, and magical-but-coherent imagery while preserving the same core plot, characters, and moral.
+- story_text: Storytelling script with narrator lines and dialogue; use the voice modulation tag vocabulary from the spec meaningfully (not every tag every sentence).
+- Category: Choose exactly ONE that best fits (exact string): $categoryList. Set "category". Set "theme" to a short theme phrase in the story's language (may match category).
+
+================================
+VOICE SPLIT DESIGN
+================================
+- Narrator -> warm, calm voice (default female)
+- Child characters -> energetic, expressive voices
+- Adult/elder characters -> slower, softer tone
+- Group voices -> playful tone
+
+Ensure:
+- Clear separation between narrator and dialogue
+- Emotional variation across voices
+
+================================
+SSML CONVERSION REQUIREMENTS
+================================
+- Convert voice tags into SSML prosody and break tags
+- Map tones to pitch, rate, and volume changes
+- Map pauses to <break> tags
+- Use <voice> tags for different roles
+- Ensure compatibility with Azure / Polly / Google TTS
 
 ## Cultural context (Indian)
-Where it fits, draw on Indian folklore and mythology (e.g. Tenali Rama, Panchatantra, regional tales) or festival themes (Diwali, Pongal, Onam, Ugadi) in the story's language—use native terms and culturally familiar names. Keep retellings family-friendly and respectful.
+Where it fits, use Indian folklore or festive context in the output language—native terms; family-friendly and respectful.
 
 ## Security & compliance (mandatory)
-Content must be suitable for minors and align with Indian family-viewing standards. No violence, weapons, politics, religious conflict, drugs, alcohol, self-harm, or adult themes. Positive values only; conflicts resolved peacefully.
+Suitable for minors; Indian family standards. No violence, weapons, politics, religious conflict, drugs, alcohol, self-harm, adult themes. Peaceful resolution; positive values.
 
-## Output
-Return only a valid JSON object with keys: title, category, theme, moral, story_text, estimated_duration_seconds (number, 600 for 10 min). No markdown, no code block, no commentary.
+## Output (strict)
+Return only one valid JSON object. Keys exactly: title, category, theme, moral, story_text, estimated_duration_seconds.
+- estimated_duration_seconds: integer, typically ${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MIN}–${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MAX} for ~7–8 minutes of natural TTS pacing.
+- story_text: single JSON string; escape characters so JSON is valid.
+No markdown, no code fence, no commentary before or after the JSON.
 """.trimIndent()
     }
 }

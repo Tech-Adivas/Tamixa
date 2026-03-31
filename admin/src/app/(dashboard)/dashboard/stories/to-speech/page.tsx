@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { api, authStorage } from "@/lib/api";
 import type { LibraryStorySummary, PagedResponse, PipelineStatusResponse } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,14 +18,37 @@ import { useActionResult } from "@/contexts/action-result-context";
 import { usePipelineActive } from "@/contexts/pipeline-active-context";
 import { StoryProgressBar } from "@/components/design-system/story-progress-bar";
 import { cn } from "@/lib/utils";
+import {
+  POST_APPROVAL_CONTENT_CHANGE_HELP,
+  isLibraryStoryPipelineActivelyRunning,
+  isLibraryStoryPipelineBusy,
+} from "@/lib/library-story-workflow";
 
-const PIPELINE_META_KEYS = ["processing", "progress", "overallStatus", "reviewedLanguages", "allLanguagesReviewed", "generatedAtIst", "durationSeconds", "audioCoverageWarnings", "failedLanguagesCount"];
+const PIPELINE_META_KEYS = [
+  "processing",
+  "progress",
+  "overallStatus",
+  "reviewedLanguages",
+  "reviewStaleLanguages",
+  "allLanguagesReviewed",
+  "generatedAtIst",
+  "durationSeconds",
+  "audioCoverageWarnings",
+  "failedLanguagesCount",
+];
 const LANG_SHORT: Record<string, string> = { ta: "Ta", hi: "Hi", en: "En", te: "Te", kn: "Kn", ml: "Ml" };
 
 function getCompletedLanguages(status?: PipelineStatusResponse | null): string[] {
   if (!status || typeof status !== "object") return [];
   return Object.entries(status)
     .filter(([k, s]) => !PIPELINE_META_KEYS.includes(k) && s === "COMPLETED")
+    .map(([lang]) => lang);
+}
+
+function getIncompleteLanguages(status?: PipelineStatusResponse | null): string[] {
+  if (!status || typeof status !== "object") return [];
+  return Object.entries(status)
+    .filter(([k, s]) => !PIPELINE_META_KEYS.includes(k) && s !== "COMPLETED")
     .map(([lang]) => lang);
 }
 
@@ -48,6 +72,7 @@ const PAGE_SIZE = 20;
 const POLL_INTERVAL_MS = 3000;
 const POLL_DURATION_MS = 6 * 60 * 1000;
 const SHOW_STARTING_FOR_MS = 60000;
+const MANUALLY_TRIGGERED_STORAGE_KEY = "admin_narration_manually_triggered_story_ids";
 /** Extra refetches after trigger so UI sees COMPLETED when pipeline completes (~1–2 min). */
 const COMPLETION_REFETCH_DELAYS_MS = [70000, 110000];
 /** When a status fetch fails (e.g. 401), retry after these delays to recover after token refresh. */
@@ -74,10 +99,6 @@ function progressLabel(status: string): string {
   }
 }
 
-function isPipelineRunning(status: string): boolean {
-  return ["TRANSLATING_LANGUAGES", "TTS_PROCESSING", "FINALIZING_STORY"].includes(status);
-}
-
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -86,19 +107,68 @@ function formatDuration(seconds: number): string {
   return `${s} sec`;
 }
 
+function mapNarrationActionErrorMessage(raw: unknown): string {
+  const msg = (raw instanceof Error ? raw.message : String(raw ?? "")).trim();
+  const lower = msg.toLowerCase();
+  if (!msg) return "Failed to trigger pipeline";
+  if (lower.includes("not approved yet")) {
+    return "Story is not approved yet. Open Story for review, approve it, then return to Narration.";
+  }
+  if (lower.includes("not found")) {
+    return "Story was not found. Refresh the list and try again.";
+  }
+  if (lower.includes("access denied") || lower.includes("forbidden")) {
+    return "Access denied for narration action. You need story-management permissions.";
+  }
+  if (lower.includes("unauthorized") || lower.includes("session expired") || lower.includes("401")) {
+    return "Session expired. Please log in again and retry.";
+  }
+  return msg;
+}
+
+function mapNarrationPreviewErrorMessage(raw: unknown): string {
+  const msg = (raw instanceof Error ? raw.message : String(raw ?? "")).trim();
+  const lower = msg.toLowerCase();
+  if (!msg) return "Preview failed";
+  if (
+    lower.includes("audio not ready") ||
+    lower.includes("audio file missing in storage") ||
+    lower.includes("no audio for story")
+  ) {
+    return "Audio is not ready for this language yet. Run Generate/Regenerate audio and try preview again.";
+  }
+  if (lower.includes("not approved yet")) {
+    return "Story is not approved yet. Approve in Story for review first.";
+  }
+  if (lower.includes("not found")) {
+    return "Story/audio not found. Refresh the list and try again.";
+  }
+  if (lower.includes("unauthorized") || lower.includes("session expired") || lower.includes("401")) {
+    return "Session expired. Please log in again and retry preview.";
+  }
+  return msg;
+}
+
 export default function StoryToSpeechTabPage() {
+  const searchParams = useSearchParams();
+  const storyIdParam = searchParams?.get("storyId")?.trim() ?? "";
+  const focusedStoryId = /^\d+$/.test(storyIdParam) ? Number(storyIdParam) : null;
   const [mounted, setMounted] = useState(false);
   const [data, setData] = useState<PagedResponse<LibraryStorySummary> | null>(null);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [triggeringId, setTriggeringId] = useState<number | null>(null);
+  const [previewFailedLanguagesByStory, setPreviewFailedLanguagesByStory] = useState<Record<number, string[]>>({});
+  const [manuallyTriggeredByStory, setManuallyTriggeredByStory] = useState<Record<number, boolean>>({});
   const [pipelineStatusMap, setPipelineStatusMap] = useState<Record<number, PipelineStatusResponse>>({});
   const [pollUntil, setPollUntil] = useState<number | null>(null);
   const [recentlyTriggered, setRecentlyTriggered] = useState<{ storyId: number; at: number } | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<number | null>(null);
   const [playingAudio, setPlayingAudio] = useState<{ storyId: number; language: string } | null>(null);
   const [isPaused, setIsPaused] = useState(false);
+  const [focusedStory, setFocusedStory] = useState<LibraryStorySummary | null>(null);
+  const [focusedStoryLoading, setFocusedStoryLoading] = useState(false);
   const audioRef = useRef<{ element: HTMLAudioElement; objectUrl: string } | null>(null);
   const { showSuccess, showError } = useActionResult();
   const { refresh: refreshPipelineActive, registerTriggered } = usePipelineActive();
@@ -130,8 +200,72 @@ export default function StoryToSpeechTabPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(MANUALLY_TRIGGERED_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return;
+      const restored: Record<number, boolean> = {};
+      for (const item of parsed) {
+        const id = Number(item);
+        if (!Number.isNaN(id) && id > 0) restored[id] = true;
+      }
+      if (Object.keys(restored).length > 0) {
+        setManuallyTriggeredByStory((prev) => ({ ...restored, ...prev }));
+      }
+    } catch {
+      // Ignore malformed localStorage payload and continue with in-memory defaults.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const ids = Object.entries(manuallyTriggeredByStory)
+        .filter(([, triggered]) => triggered)
+        .map(([id]) => Number(id))
+        .filter((id) => !Number.isNaN(id));
+      localStorage.setItem(MANUALLY_TRIGGERED_STORAGE_KEY, JSON.stringify(ids));
+    } catch {
+      // Ignore storage write failures (private mode / quota).
+    }
+  }, [manuallyTriggeredByStory]);
+
+  useEffect(() => {
     if (mounted) load();
   }, [mounted, load]);
+
+  useEffect(() => {
+    if (!mounted || focusedStoryId == null) {
+      setFocusedStory(null);
+      setFocusedStoryLoading(false);
+      return;
+    }
+    setFocusedStoryLoading(true);
+    api.admin
+      .getLibraryStory(focusedStoryId)
+      .then((story) => {
+        if (!story.narrationApprovedAt) {
+          setFocusedStory(null);
+          return;
+        }
+        setFocusedStory(story);
+      })
+      .catch(() => setFocusedStory(null))
+      .finally(() => setFocusedStoryLoading(false));
+  }, [mounted, focusedStoryId]);
+
+  useEffect(() => {
+    if (!mounted || focusedStoryId == null) return;
+    api.admin
+      .getLibraryStoryPipelineStatus(focusedStoryId)
+      .then((status) => {
+        if (!status) return;
+        setPipelineStatusMap((m) => ({ ...m, [focusedStoryId]: status }));
+      })
+      .catch(() => {});
+  }, [mounted, focusedStoryId]);
 
   const fetchPipelineStatus = useCallback(() => {
     if (!data?.content?.length) return;
@@ -158,8 +292,8 @@ export default function StoryToSpeechTabPage() {
         });
         // When any visible story is in progress or queued, keep polling so progress bar updates
         const hasInProgress = ids.some((id) => {
-          const s = (next[id] ?? batch?.[id])?.overallStatus;
-          return isPipelineRunning(s ?? "") || (s ?? "") === "PENDING";
+          const st = next[id] ?? (batch as Record<string | number, PipelineStatusResponse> | undefined)?.[id];
+          return isLibraryStoryPipelineBusy(st ?? null);
         });
         if (hasInProgress) {
           setPollUntil((prev) => {
@@ -251,18 +385,7 @@ export default function StoryToSpeechTabPage() {
       stopCurrentPlayback();
       setPreviewLoadingId(id);
       try {
-        const base = (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) || "";
-        const url = `${base}/api/v1/admin/stories/${id}/preview-audio?language=${encodeURIComponent(language)}`;
-        const token = typeof window !== "undefined" ? localStorage.getItem("admin_access_token") : null;
-        const res = await fetch(url, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          const msg = (err as { message?: string }).message;
-          throw new Error(msg ?? (res.status === 404 ? "Audio not ready for this language" : "Preview failed"));
-        }
-        const blob = await res.blob();
+        const blob = await api.admin.getLibraryStoryPreviewAudioBlob(id, language);
         const objectUrl = URL.createObjectURL(blob);
         const audio = new Audio(objectUrl);
         audio.addEventListener("ended", stopCurrentPlayback);
@@ -271,7 +394,15 @@ export default function StoryToSpeechTabPage() {
         setIsPaused(false);
         await audio.play();
       } catch (e) {
-        showError("Preview failed", e instanceof Error ? e.message : "Preview failed");
+        const previewErrorMessage = mapNarrationPreviewErrorMessage(e);
+        showError("Preview failed", previewErrorMessage);
+        if (previewErrorMessage.toLowerCase().includes("audio is not ready")) {
+          setPreviewFailedLanguagesByStory((prev) => {
+            const existing = prev[id] ?? [];
+            if (existing.includes(language)) return prev;
+            return { ...prev, [id]: [...existing, language] };
+          });
+        }
         setPlayingAudio(null);
         audioRef.current = null;
         // Refetch pipeline status for this story so "Done" / "Ready 100%" updates after backend cleared stale audio
@@ -308,6 +439,7 @@ export default function StoryToSpeechTabPage() {
 
   const handleRetryFailed = async (storyId: number) => {
     setTriggeringId(storyId);
+    setManuallyTriggeredByStory((prev) => ({ ...prev, [storyId]: true }));
     registerTriggered(storyId);
     try {
       await api.admin.retryLibraryStory(storyId);
@@ -319,7 +451,7 @@ export default function StoryToSpeechTabPage() {
       setTimeout(() => fetchPipelineStatus(), 1500);
       setTimeout(() => fetchPipelineStatus(), 4000);
     } catch (e) {
-      showError("Retry failed", e instanceof Error ? e.message : "Failed to retry");
+      showError("Retry failed", mapNarrationActionErrorMessage(e));
     } finally {
       setTriggeringId(null);
     }
@@ -327,20 +459,38 @@ export default function StoryToSpeechTabPage() {
 
   const handleGenerateOrRegenerateAudio = async (storyId: number, languages?: string[]) => {
     setTriggeringId(storyId);
+    setManuallyTriggeredByStory((prev) => ({ ...prev, [storyId]: true }));
     registerTriggered(storyId); // Show banner immediately; backend poll will take over when active
     const isRegenerate = hasAudio(storyId);
     try {
       if (isRegenerate) {
+        const statusObj = pipelineStatusMap[storyId] ?? null;
+        const incompleteFromStatus = getIncompleteLanguages(statusObj);
+        const effectiveLanguages = languages?.length
+          ? languages
+          : previewFailedLanguagesByStory[storyId]?.length
+            ? previewFailedLanguagesByStory[storyId]
+            : incompleteFromStatus.length
+              ? incompleteFromStatus
+            : undefined;
         await api.admin.regenerateLibraryStoryNarration(
           storyId,
-          languages?.length ? { languages } : undefined
+          effectiveLanguages?.length ? { languages: effectiveLanguages } : undefined
         );
         const scope =
-          languages?.length ? `flagged languages (${languages.map((l) => LANG_SHORT[l] ?? l).join(", ")})` : "all languages";
-        showSuccess("Regenerate started", `${scope} — pipeline running. Progress will update below.`);
+          effectiveLanguages?.length
+            ? `languages (${effectiveLanguages.map((l) => LANG_SHORT[l] ?? l).join(", ")})`
+            : "all languages";
+        showSuccess("Regenerate started", `${scope} — pipeline queued or running. Progress will update below.`);
+        setPreviewFailedLanguagesByStory((prev) => {
+          if (!(storyId in prev)) return prev;
+          const next = { ...prev };
+          delete next[storyId];
+          return next;
+        });
       } else {
         await api.admin.triggerLibraryStoryPipeline(storyId);
-        showSuccess("Generate audio started", "Pipeline running. Progress will update below.");
+        showSuccess("Generate audio started", "Pipeline queued or running. Progress will update below.");
       }
       setRecentlyTriggered({ storyId, at: Date.now() });
       setPollUntil(Date.now() + POLL_DURATION_MS);
@@ -353,20 +503,29 @@ export default function StoryToSpeechTabPage() {
       setTimeout(pollAgain, 1500);
       setTimeout(pollAgain, 4000);
     } catch (e) {
-      showError(isRegenerate ? "Regenerate failed" : "Generate failed", e instanceof Error ? e.message : "Failed to trigger pipeline");
+      showError(
+        isRegenerate ? "Regenerate failed" : "Generate failed",
+        mapNarrationActionErrorMessage(e)
+      );
     } finally {
       setTriggeringId(null);
     }
   };
 
   const rows = data?.content ?? [];
+  const visibleRows = focusedStoryId == null
+    ? rows
+    : focusedStory && focusedStory.id === focusedStoryId
+      ? [focusedStory]
+      : rows.filter((row) => row.id === focusedStoryId);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="page-header">Narration</h1>
         <p className="page-subheader mt-1">
-          Only <strong>approved</strong> stories appear here. If a story has changes, it shows as <strong>Ready for review</strong> until approved; after approval you can use <strong>Generate audio</strong> or <strong>Regenerate audio</strong>. Enable <code className="text-xs bg-muted px-1 rounded">AUDIO_AFTER_APPROVAL=true</code> so Submit for review only saves content; approval happens in Story for review; then trigger audio here.
+          Only <strong>approved</strong> stories appear here. Use <strong>Generate audio</strong> or <strong>Regenerate audio</strong> per row to run TTS (default: Approve does not start audio automatically — set <code className="text-xs bg-muted px-1 rounded">AUTO_TTS_ON_APPROVE=true</code> on the backend if you want TTS to kick off on approve).{" "}
+          {POST_APPROVAL_CONTENT_CHANGE_HELP}
         </p>
       </div>
 
@@ -375,6 +534,14 @@ export default function StoryToSpeechTabPage() {
           <CardTitle className="text-base font-semibold tracking-tight">
             Approved stories — trigger TTS
           </CardTitle>
+          {focusedStoryId != null ? (
+            <span className="text-xs text-muted-foreground">
+              Filtered to story #{focusedStoryId}{" "}
+              <Link className="underline-offset-2 hover:underline" href="/dashboard/stories/to-speech">
+                Clear
+              </Link>
+            </span>
+          ) : null}
           <Button variant="outline" size="sm" className="h-8" onClick={() => load()} disabled={loading}>
             <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
             Refresh
@@ -393,9 +560,15 @@ export default function StoryToSpeechTabPage() {
           )}
           {loading && !data ? (
             <div className="px-6 py-12 text-center text-muted-foreground">Loading…</div>
-          ) : rows.length === 0 ? (
+          ) : visibleRows.length === 0 ? (
             <div className="px-6 py-12 text-center">
-              <p className="text-muted-foreground mb-2">No approved stories.</p>
+              <p className="text-muted-foreground mb-2">
+                {focusedStoryId != null
+                  ? focusedStoryLoading
+                    ? `Looking up story #${focusedStoryId}...`
+                    : `Story #${focusedStoryId} is not currently in approved-narration queue.`
+                  : "No approved stories."}
+              </p>
               <p className="text-sm text-muted-foreground mb-4">
                 Approve stories in Story for review first; they will appear here for audio generation.
               </p>
@@ -419,19 +592,28 @@ export default function StoryToSpeechTabPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {rows.map((row) => {
+                    {visibleRows.map((row) => {
                       const rowId = Number(row.id);
                       const statusObj = pipelineStatusMap[rowId];
                       const status = statusObj?.overallStatus ?? "—";
                       const isTriggering = triggeringId === row.id;
-                      const isRunning = isPipelineRunning(status);
+                      const isRunning = isLibraryStoryPipelineActivelyRunning(statusObj ?? null);
                       const showStarting =
                         (recentlyTriggered?.storyId === row.id &&
                           Date.now() - recentlyTriggered.at < SHOW_STARTING_FOR_MS &&
                           status === "PENDING") ||
                         isTriggering;
                       const progressText = progressLabel(status);
-                      const statusDisplay = showStarting ? "Starting…" : progressText;
+                      const showNotGeneratedYet =
+                        status === "PENDING" &&
+                        !isRunning &&
+                        !showStarting &&
+                        !manuallyTriggeredByStory[row.id];
+                      const statusDisplay = showStarting
+                        ? "Starting…"
+                        : showNotGeneratedYet
+                          ? "Not generated yet"
+                          : progressText;
                       const progressPct = statusObj?.progress;
                       const isMarkedComplete = status === "COMPLETED" || status === "READY_FOR_REVIEW";
                       // Do not show "100% ready" for marked-complete; show clear status only (reset if no audio).

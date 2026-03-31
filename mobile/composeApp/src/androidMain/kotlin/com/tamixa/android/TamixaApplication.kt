@@ -1,8 +1,11 @@
 package com.tamixa.android
 
 import android.app.Application
+import android.os.Build
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
+import coil3.gif.AnimatedImageDecoder
+import coil3.gif.GifDecoder
 import coil3.network.ktor2.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import com.tamixa.di.androidPlatformModule
@@ -36,6 +39,11 @@ class TamixaApplication : Application() {
             ImageLoader.Builder(it)
                 .components {
                     add(KtorNetworkFetcherFactory(httpClient))
+                    if (Build.VERSION.SDK_INT >= 28) {
+                        add(AnimatedImageDecoder.Factory())
+                    } else {
+                        add(GifDecoder.Factory())
+                    }
                 }
                 .crossfade(100)
                 .build()

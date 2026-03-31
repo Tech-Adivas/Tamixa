@@ -4,6 +4,8 @@ import com.tamixa.api.ApiVersion
 import com.tamixa.api.stream.dto.StreamUrlResponse
 import com.tamixa.application.port.ParentRepositoryPort
 import com.tamixa.application.stream.AudioStreamService
+import com.tamixa.infrastructure.config.AppProperties
+import com.tamixa.infrastructure.config.resolvedHostStoryClipUrl
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.context.SecurityContextHolder
@@ -23,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController
 @PreAuthorize("hasRole('PARENT')")
 class StoriesApiController(
     private val audioStreamService: AudioStreamService,
-    private val parentRepository: ParentRepositoryPort
+    private val parentRepository: ParentRepositoryPort,
+    private val appProperties: AppProperties
 ) {
 
+    @Deprecated("Use GET /api/v1/stories/{id}/stream-url for host clip, avatar metadata, and timings.")
     @GetMapping("/{id}/stream")
     fun getStreamUrl(
         @PathVariable id: Long,
@@ -43,8 +47,14 @@ class StoriesApiController(
             else ->
                 audioStreamService.getLibraryStreamUrl(id, language, parentId)
         } ?: audioStreamService.getGeneratedStreamUrl(id, language, parentId)
-        return if (url != null) ResponseEntity.ok(StreamUrlResponse(url))
-        else ResponseEntity.notFound().build()
+        return if (url != null) {
+            ResponseEntity.ok(
+                StreamUrlResponse(
+                    streamUrl = url,
+                    hostStoryClipUrl = appProperties.resolvedHostStoryClipUrl()
+                )
+            )
+        } else ResponseEntity.notFound().build()
     }
 
     private fun resolveParentId(): Long? {

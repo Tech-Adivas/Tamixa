@@ -54,6 +54,22 @@ class StoryPipelineMetrics(
     fun recordTtsSuccess() = ttsSuccess.increment()
     fun recordTtsFailure() = ttsFailure.increment()
 
+    /**
+     * Admin curated-story update latency. Tag by [scope] ("service" | "controller"), [outcome] ("success" | "error"),
+     * and requested/effective [status] to inspect p95/p99 for submit-for-review vs draft saves.
+     */
+    fun recordAdminStoryUpdateLatency(durationMs: Long, scope: String, outcome: String, status: String) {
+        val safeScope = scope.ifBlank { "unknown" }.take(20)
+        val safeOutcome = outcome.ifBlank { "unknown" }.take(20)
+        val safeStatus = status.ifBlank { "unknown" }.take(20).uppercase()
+        registry.timer(
+            "admin_story_update_latency",
+            "scope", safeScope,
+            "outcome", safeOutcome,
+            "status", safeStatus
+        ).record(durationMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
+
     /** Translation failure rate = translation_failure_count / (success + failure). Computed in Prometheus. */
     /** TTS failure rate = tts_failure_count / (success + failure). Computed in Prometheus. */
 }

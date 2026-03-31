@@ -11,6 +11,7 @@ import com.tamixa.application.port.narration.StoryNarrationScriptRepositoryPort
 import com.tamixa.application.translation.TranslationService
 import com.tamixa.application.storylibrary.StoryStatus
 import com.tamixa.application.narration.EmotionToToneMapper
+import com.tamixa.domain.LibraryStory
 import com.tamixa.domain.StoryTranslation
 import com.tamixa.domain.narration.EmotionValidationException
 import com.tamixa.domain.TranslationPipelineStatus
@@ -18,6 +19,8 @@ import com.tamixa.domain.narration.NarrationAudioStatus
 import com.tamixa.domain.narration.StoryNarrationScript
 import com.tamixa.domain.narration.ToneMode
 import com.tamixa.infrastructure.config.AppProperties
+import com.tamixa.infrastructure.narration.Mp3DurationReader
+import com.tamixa.infrastructure.narration.NarrationTruncationPolicy
 import com.tamixa.infrastructure.narration.PipelineStatusUpdater
 import com.tamixa.infrastructure.observability.NarrationMetrics
 import com.tamixa.infrastructure.observability.NarrationPipelineMetrics
@@ -73,6 +76,38 @@ class StoryProcessingService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val maxRetries = 3
+    private val failedPlaceholderContent = "[Pipeline failed]"
+    /** Upper bound for translated + rewritten story body (see app.story.max-words, default 900). */
+    private val maxPipelineStoryWords: Int
+        get() = appProperties.story.maxWords.coerceIn(200, 2500)
+
+    private data class PipelineSourceText(
+        val languageCode: String,
+        val content: String,
+        val title: String?,
+        val moral: String?
+    )
+
+    /** Use the story's master language row/translation as translation API source (not fixed pipeline default). */
+    private fun resolvePipelineSourceText(story: LibraryStory, targetLang: String): PipelineSourceText {
+        val masterLang = story.language.trim().lowercase().take(10).ifEmpty { sourceLanguage }
+        if (targetLang == masterLang) {
+            return PipelineSourceText(masterLang, story.content, story.title, story.moral)
+        }
+        val tr = translationRepository.findByMasterStoryIdAndLanguage(story.id, masterLang)
+        val content = tr?.content?.takeIf { it.isNotBlank() && !it.startsWith(failedPlaceholderContent) }
+            ?: story.content
+        val title = tr?.title?.takeIf { it.isNotBlank() } ?: story.title
+        val moral = tr?.moral?.takeIf { it.isNotBlank() } ?: story.moral
+        return PipelineSourceText(masterLang, content, title, moral)
+    }
+
+    private data class CuratedTtsOutcome(
+        val audioUrl: String,
+        val durationSeconds: Int,
+        val segmentAudioUrls: List<String>?,
+        val truncationWarning: Boolean
+    )
 
     private val terminalReviewStatuses = StoryStatus.TERMINAL_REVIEW
 
@@ -84,6 +119,22 @@ class StoryProcessingService(
     private val sourceLanguage: String
         get() = appProperties.translationPipeline.sourceLanguage.trim().lowercase()
     private val defaultVoice = "default"
+
+    /** Languages that receive translate/rewrite/TTS in the curated pipeline for this story. */
+    private fun pipelineLanguagesForStory(story: LibraryStory): List<String> {
+        if (!appProperties.translationPipeline.masterOnlyNarration) return supportedLanguages
+        val m = story.language.trim().lowercase().take(10).ifEmpty { sourceLanguage }
+        return listOf(m)
+    }
+
+    private fun masterHasPlayableAudio(masterStoryId: Long, story: LibraryStory): Boolean {
+        val masterLang = story.language.trim().lowercase().take(10).ifEmpty { sourceLanguage }
+        if (!story.audioFileUrl.isNullOrBlank()) return true
+        val translation = translationRepository.findByMasterStoryIdAndLanguage(masterStoryId, masterLang) ?: return false
+        return narrationAudioRepository.existsByTranslationIdAndVoiceProfileAndStatus(
+            translation.id, defaultVoice, NarrationAudioStatus.READY
+        )
+    }
 
     /** Non-blocking status update via JdbcTemplate (no JPA). Avoids lock contention in pipeline hot path. */
     private fun updatePipelineStatus(translationId: Long, status: TranslationPipelineStatus, lastError: String?) {
@@ -117,6 +168,9 @@ class StoryProcessingService(
 
     /** Returns true if language has playable audio (library_stories.audio_file_url for source, else narration READY). */
     private fun languageHasAudio(masterStoryId: Long, lang: String, story: com.tamixa.domain.LibraryStory): Boolean {
+        if (appProperties.translationPipeline.masterOnlyNarration) {
+            return masterHasPlayableAudio(masterStoryId, story)
+        }
         if (lang == sourceLanguage && !story.audioFileUrl.isNullOrBlank()) return true
         val translation = translationRepository.findByMasterStoryIdAndLanguage(masterStoryId, lang) ?: return false
         return narrationAudioRepository.existsByTranslationIdAndVoiceProfileAndStatus(
@@ -129,8 +183,15 @@ class StoryProcessingService(
      * @param sequential When true (retry path), process one language at a time to avoid permit contention and timeouts.
      *                   When false (fresh publish), process in parallel for speed.
      * @param forceRegenerate When true (regenerate path), do not skip based on existing READY audio; always run pipeline.
+     * @param translationOnly When true, stop after translate + rewrite; persist script and set [TranslationPipelineStatus.AWAITING_AUDIO] (no TTS).
      */
-    private fun processLanguagesInternal(masterStoryId: Long, languagesToProcess: List<String>, sequential: Boolean = false, forceRegenerate: Boolean = false) {
+    private fun processLanguagesInternal(
+        masterStoryId: Long,
+        languagesToProcess: List<String>,
+        sequential: Boolean = false,
+        forceRegenerate: Boolean = false,
+        translationOnly: Boolean = false
+    ) {
         if (languagesToProcess.isEmpty()) {
             log.warn("processLanguagesInternal: empty languages list, skipping masterStoryId={}", masterStoryId)
             return
@@ -156,9 +217,12 @@ class StoryProcessingService(
             startedAt = now,
             finishedAt = null,
             errorMessage = null,
-            metadata = """{"languages":${languagesToProcess.size},"sequential":$sequential}"""
+            metadata = """{"languages":${languagesToProcess.size},"sequential":$sequential,"translationOnly":$translationOnly}"""
         )
-        log.info("PIPELINE >>> masterStoryId={} languages={} jobId={} sequential={}", masterStoryId, languagesToProcess, jobId, sequential)
+        log.info(
+            "PIPELINE >>> masterStoryId={} languages={} jobId={} sequential={} translationOnly={}",
+            masterStoryId, languagesToProcess, jobId, sequential, translationOnly
+        )
         val toneMode = EmotionToToneMapper.toToneMode(story.emotionMode)
         try {
             val timeoutMinutes = appProperties.translationPipeline.languageTimeoutMinutes.coerceIn(2, 15)
@@ -169,7 +233,11 @@ class StoryProcessingService(
                     try {
                         val langStart = System.nanoTime()
                         val future = java.util.concurrent.CompletableFuture.runAsync(
-                            { self.processLanguage(masterStoryId, language, story.content, story.title, story.moral, story.age, toneMode, forceRegenerate) },
+                            {
+                                self.processLanguage(
+                                    masterStoryId, language, story, story.age, toneMode, forceRegenerate, translationOnly
+                                )
+                            },
                             pipelineLanguageExecutor
                         )
                         future.get(timeoutMinutes.toLong(), TimeUnit.MINUTES)
@@ -191,7 +259,9 @@ class StoryProcessingService(
                         MDC.put("language", language)
                         try {
                             val langStart = System.nanoTime()
-                            self.processLanguage(masterStoryId, language, story.content, story.title, story.moral, story.age, toneMode, forceRegenerate)
+                            self.processLanguage(
+                                masterStoryId, language, story, story.age, toneMode, forceRegenerate, translationOnly
+                            )
                             val langMs = (System.nanoTime() - langStart) / 1_000_000
                             log.info("PIPELINE >>> masterStoryId={} lang={} DONE {}ms", masterStoryId, language, langMs)
                         } finally {
@@ -241,18 +311,52 @@ class StoryProcessingService(
                 jobId?.let { processingJobRepository?.updateStatus(it, "CANCELLED", 0, Instant.now(), "Story sent for changes or rejected during pipeline") }
                 return
             }
-            val allLangsHaveAudio = supportedLanguages.all { languageHasAudio(masterStoryId, it, storyNow) }
+            val pipelineLangs = pipelineLanguagesForStory(storyNow)
+            val allLangsHaveAudio = pipelineLangs.all { languageHasAudio(masterStoryId, it, storyNow) }
             if (allLangsHaveAudio) {
                 storyLibraryRepository.updateStatus(masterStoryId, StoryStatus.READY)
                 pipelineMetrics.recordDailyGeneration()
                 jobId?.let { processingJobRepository?.updateStatus(it, "COMPLETED", 100, Instant.now(), null) }
-                log.info("PIPELINE >>> COMPLETE masterStoryId={} READY (all {} languages)", masterStoryId, supportedLanguages.size)
+                log.info("PIPELINE >>> COMPLETE masterStoryId={} READY (all {} languages)", masterStoryId, pipelineLangs.size)
             } else {
-                val translations = translationRepository.findByMasterStoryId(masterStoryId)
-                val statusesStr = translations.joinToString(",") { "${it.language}=${it.status}" }
-                log.warn("Story masterStoryId={} not ready: statusByLang=[{}]", masterStoryId, statusesStr)
-                storyLibraryRepository.updateStatus(masterStoryId, StoryStatus.PUBLISHED)
-                jobId?.let { processingJobRepository?.updateStatus(it, "FAILED", 0, Instant.now(), "Not all languages have audio: $statusesStr") }
+                val translationsAfter = translationRepository.findByMasterStoryId(masterStoryId)
+                val hasFailed = translationsAfter.any { it.status.isFailed() }
+                if (translationOnly && !hasFailed) {
+                    val allScriptsReady = pipelineLangs.all { lang ->
+                        val t = translationsAfter.find { it.language.equals(lang, ignoreCase = true) }
+                        t != null &&
+                            t.status == TranslationPipelineStatus.AWAITING_AUDIO &&
+                            t.content.isNotBlank() &&
+                            !t.content.startsWith(failedPlaceholderContent)
+                    }
+                    if (allScriptsReady) {
+                        storyLibraryRepository.updateStatus(masterStoryId, StoryStatus.PUBLISHED)
+                        jobId?.let { processingJobRepository?.updateStatus(it, "COMPLETED", 100, Instant.now(), null) }
+                        log.info(
+                            "PIPELINE >>> TRANSLATION-ONLY COMPLETE masterStoryId={} ({} languages, awaiting approval for TTS)",
+                            masterStoryId,
+                            pipelineLangs.size
+                        )
+                    } else {
+                        val statusesStr = translationsAfter.joinToString(",") { "${it.language}=${it.status}" }
+                        log.warn("Story masterStoryId={} translation-only incomplete: [{}]", masterStoryId, statusesStr)
+                        storyLibraryRepository.updateStatus(masterStoryId, StoryStatus.PUBLISHED)
+                        jobId?.let {
+                            processingJobRepository?.updateStatus(
+                                it, "FAILED", 0, Instant.now(), "Translation-only: not all languages have scripts: $statusesStr"
+                            )
+                        }
+                    }
+                } else {
+                    val statusesStr = translationsAfter.joinToString(",") { "${it.language}=${it.status}" }
+                    log.warn("Story masterStoryId={} not ready: statusByLang=[{}]", masterStoryId, statusesStr)
+                    storyLibraryRepository.updateStatus(masterStoryId, StoryStatus.PUBLISHED)
+                    jobId?.let {
+                        processingJobRepository?.updateStatus(
+                            it, "FAILED", 0, Instant.now(), "Not all languages have audio: $statusesStr"
+                        )
+                    }
+                }
             }
         } catch (e: Exception) {
             jobId?.let { processingJobRepository?.updateStatus(it, "FAILED", 0, Instant.now(), extractPipelineErrorMessage(e)) }
@@ -263,15 +367,17 @@ class StoryProcessingService(
     /**
      * Run pipeline synchronously in caller thread. Use when async does not run (e.g. story stuck at PENDING).
      * Blocks until complete; use for debugging or manual recovery.
-     * Uses REQUIRES_NEW so pipeline has its own transaction (avoids long transaction from caller).
+     *
+     * **No class-level @Transactional here:** each [processLanguage] uses REQUIRES_NEW. A long outer transaction
+     * would hold a row lock on `library_stories` after [processLanguagesInternal] sets PROCESSING, blocking admin
+     * saves (PUT story) until the pipeline finishes — matching 120s client timeouts on draft save / submit.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun processSync(masterStoryId: Long) {
+    fun processSync(masterStoryId: Long, translationOnly: Boolean = false) {
         if (!tryClaimOrRecoverStale(masterStoryId)) {
             log.info("PIPELINE >>> SKIP masterStoryId={} (already running)", masterStoryId)
             return
         }
-        log.info("PIPELINE >>> START masterStoryId={} (processSync)", masterStoryId)
+        log.info("PIPELINE >>> START masterStoryId={} (processSync translationOnly={})", masterStoryId, translationOnly)
         MDC.put("masterStoryId", masterStoryId.toString())
         try {
             val story = storyLibraryRepository.findById(masterStoryId)
@@ -280,14 +386,25 @@ class StoryProcessingService(
                 return
             }
             val translationsByLang = translationRepository.findByMasterStoryId(masterStoryId).associateBy { it.language }
-            val languagesToProcess = supportedLanguages.filter { lang ->
+            val languagesToProcess = pipelineLanguagesForStory(story).filter { lang ->
+                if (translationOnly) {
+                    val t = translationsByLang[lang]
+                    when {
+                        t == null -> true
+                        t.content.isBlank() || t.content.startsWith(failedPlaceholderContent) -> true
+                        t.status == TranslationPipelineStatus.AWAITING_AUDIO -> false
+                        t.status.isFailed() -> t.retryCount < maxRetries
+                        else -> t.status.canRetry() && t.retryCount < maxRetries
+                    }
+                } else {
                 val hasAudio = languageHasAudio(masterStoryId, lang, story)
                 if (!hasAudio) return@filter true
                 val translation = translationsByLang[lang] ?: return@filter false
                 translation.status.canRetry() && translation.retryCount < maxRetries
+                }
             }
             if (languagesToProcess.isEmpty()) {
-                val allLangsHaveAudio = supportedLanguages.all { languageHasAudio(masterStoryId, it, story) }
+                val allLangsHaveAudio = pipelineLanguagesForStory(story).all { languageHasAudio(masterStoryId, it, story) }
                 if (allLangsHaveAudio && canPipelineUpdateStatus(masterStoryId)) {
                     storyLibraryRepository.updateStatus(masterStoryId, StoryStatus.READY)
                 }
@@ -295,7 +412,7 @@ class StoryProcessingService(
                 return
             }
             log.info("PIPELINE >>> masterStoryId={} selectedLanguages={}", masterStoryId, languagesToProcess)
-            processLanguagesInternal(masterStoryId, languagesToProcess)
+            processLanguagesInternal(masterStoryId, languagesToProcess, translationOnly = translationOnly)
         } catch (e: Exception) {
             if (isShutdownRelated(e)) {
                 log.warn("PIPELINE >>> ABORTED masterStoryId={} (application shutting down)", masterStoryId)
@@ -314,7 +431,6 @@ class StoryProcessingService(
 
     /** Process only the given languages. Used for retry and republish. */
     @Async
-    @Transactional
     fun processLanguagesAsync(masterStoryId: Long, languagesToProcess: List<String>) {
         MDC.put("masterStoryId", masterStoryId.toString())
         val start = System.nanoTime()
@@ -340,9 +456,10 @@ class StoryProcessingService(
     /**
      * Trigger async processing when admin publishes story.
      * Sets status to PROCESSING, processes all languages, marks READY when all COMPLETED.
+     *
+     * **No @Transactional on this method** — see [processSync] kdoc (admin PUT must not block on library row lock).
      */
     @Async
-    @Transactional
     fun processAsync(masterStoryId: Long) {
         log.info("processAsync ASYNC START masterStoryId={}", masterStoryId)
         MDC.put("masterStoryId", masterStoryId.toString())
@@ -358,7 +475,7 @@ class StoryProcessingService(
                 return
             }
             storyLibraryRepository.updateStatus(masterStoryId, StoryStatus.PROCESSING)
-            val languages = supportedLanguages
+            val languages = pipelineLanguagesForStory(story)
             log.info("Pipeline START masterStoryId={} languages={} (parallel)", masterStoryId, languages)
             val toneMode = EmotionToToneMapper.toToneMode(story.emotionMode)
             val timeoutMinutes = appProperties.translationPipeline.languageTimeoutMinutes.coerceIn(2, 15)
@@ -368,7 +485,7 @@ class StoryProcessingService(
                     MDC.put("language", language)
                     try {
                         val langStart = System.nanoTime()
-                        self.processLanguage(masterStoryId, language, story.content, story.title, story.moral, story.age, toneMode)
+                        self.processLanguage(masterStoryId, language, story, story.age, toneMode)
                         val langMs = (System.nanoTime() - langStart) / 1_000_000
                         log.info("PIPELINE >>> masterStoryId={} lang={} DONE {}ms", masterStoryId, language, langMs)
                     } finally {
@@ -397,14 +514,15 @@ class StoryProcessingService(
                 log.info("PIPELINE >>> masterStoryId={} (processAsync) completed but status already {}; leaving unchanged", masterStoryId, storyNow.status)
                 return
             }
-            val allLangsHaveAudio = supportedLanguages.all { languageHasAudio(masterStoryId, it, storyNow) }
+            val pipelineLangsAsync = pipelineLanguagesForStory(storyNow)
+            val allLangsHaveAudio = pipelineLangsAsync.all { languageHasAudio(masterStoryId, it, storyNow) }
             if (allLangsHaveAudio) {
                 storyLibraryRepository.updateStatus(masterStoryId, StoryStatus.READY)
                 pipelineMetrics.recordDailyGeneration()
                 val totalMs = (System.nanoTime() - start) / 1_000_000
-                log.info("Story masterStoryId={} READY: all {} languages have audio in {}ms (~{} min)", masterStoryId, supportedLanguages.size, totalMs, totalMs / 60000)
+                log.info("Story masterStoryId={} READY: all {} languages have audio in {}ms (~{} min)", masterStoryId, pipelineLangsAsync.size, totalMs, totalMs / 60000)
             } else {
-                val missingLangs = supportedLanguages.filter { !languageHasAudio(masterStoryId, it, storyNow) }
+                val missingLangs = pipelineLangsAsync.filter { !languageHasAudio(masterStoryId, it, storyNow) }
                 val allTranslations = translationRepository.findByMasterStoryId(masterStoryId)
                 val statusesStr = allTranslations.joinToString(",") { "${it.language}=${it.status}" }
                 log.warn("Story masterStoryId={} not ready: missing languages {} statusByLang=[{}]", masterStoryId, missingLangs, statusesStr)
@@ -430,18 +548,29 @@ class StoryProcessingService(
             translationId, defaultVoice, NarrationAudioStatus.READY
         )
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    /**
+     * Process one language: translate, rewrite, optional TTS, scenes.
+     *
+     * **No @Transactional:** a single long transaction would keep locks on `story_translations` (e.g. after
+     * setting [TranslationPipelineStatus.TTS_PROCESSING]) for the entire LLM/TTS window. Admin
+     * [com.tamixa.application.storylibrary.StoryLibraryService.update] then blocks on those rows after
+     * updating `library_stories`, producing multi‑minute waits and client timeouts (Generate translations /
+     * save draft). Repository `save` calls each run in short Spring Data transactions.
+     */
     fun processLanguage(
         masterStoryId: Long,
         language: String,
-        sourceContent: String,
-        sourceTitle: String?,
-        sourceMoral: String?,
+        story: LibraryStory,
         age: Int,
         toneMode: ToneMode = ToneMode.CALM,
-        forceRegenerate: Boolean = false
+        forceRegenerate: Boolean = false,
+        translationOnly: Boolean = false
     ) {
-        log.info("processLanguage START masterStoryId={} lang={} forceRegenerate={}", masterStoryId, language, forceRegenerate)
+        log.info(
+            "processLanguage START masterStoryId={} lang={} forceRegenerate={} translationOnly={}",
+            masterStoryId, language, forceRegenerate, translationOnly
+        )
+        val pipelineSource = resolvePipelineSourceText(story, language)
         val translation = translationRepository.findByMasterStoryIdAndLanguage(masterStoryId, language)
 
         if (translation != null && !forceRegenerate) {
@@ -480,13 +609,16 @@ class StoryProcessingService(
             try {
                 var t1 = System.currentTimeMillis()
                 val scriptText: String
-                if (forceRegenerate && currentTranslation != null) {
-                    // Regenerate: TTS only. Use existing narration script or translation content; skip translate + rewrite.
+                val ttsOnlyFromSavedScript =
+                    currentTranslation != null && !translationOnly &&
+                        (forceRegenerate || currentTranslation.status == TranslationPipelineStatus.AWAITING_AUDIO)
+                if (ttsOnlyFromSavedScript) {
+                    // TTS only: regeneration or post–content-approval pass. Use narration_script or translation.content.
                     val existingScript = narrationScriptRepository.findByTranslationId(currentTranslation.id)?.scriptText?.takeIf { it.isNotBlank() }
                     val text = existingScript ?: currentTranslation.content?.takeIf { it.isNotBlank() }
                     if (text.isNullOrBlank()) {
                         log.warn(
-                            "Regenerate masterStoryId={} lang={}: no existing script or content, skipping. " +
+                            "TTS-only masterStoryId={} lang={}: no existing script or content, skipping. " +
                                 "Has narration_script={}, translation.content blank={}",
                             masterStoryId, language,
                             narrationScriptRepository.findByTranslationId(currentTranslation.id) != null,
@@ -495,16 +627,28 @@ class StoryProcessingService(
                         pipelineStatusUpdater.updateStatus(currentTranslation.id, TranslationPipelineStatus.TTS_FAILED, "No script or content for regeneration")
                         continue
                     }
-                    scriptText = text
-                    log.info("PIPELINE >>> masterStoryId={} lang={} REGENERATE (TTS only, reusing existing script)", masterStoryId, language)
+                    scriptText = StoryPipelineWordLimit.clampToMaxWords(text, maxPipelineStoryWords)
+                    log.info(
+                        "PIPELINE >>> masterStoryId={} lang={} TTS_ONLY (forceRegenerate={} awaitingAudio={})",
+                        masterStoryId, language, forceRegenerate, currentTranslation.status == TranslationPipelineStatus.AWAITING_AUDIO
+                    )
                     currentTranslation = translationRepository.save(
                         currentTranslation.copy(status = TranslationPipelineStatus.TTS_PROCESSING, lastError = null)
                     )
                 } else {
-                    // Generate: translate -> rewrite -> TTS
-                    log.info("PIPELINE >>> masterStoryId={} lang={} TRANSLATE_START", masterStoryId, language)
+                    // Generate: translate -> rewrite -> (optional TTS)
+                    log.info(
+                        "PIPELINE >>> masterStoryId={} lang={} TRANSLATE_START (sourceLang={})",
+                        masterStoryId, language, pipelineSource.languageCode
+                    )
                     val contentToProcess = runTranslationStep(
-                        masterStoryId, language, sourceContent, sourceTitle, sourceMoral, age, currentTranslation
+                        masterStoryId = masterStoryId,
+                        language = language,
+                        translationSourceLang = pipelineSource.languageCode,
+                        sourceContent = pipelineSource.content,
+                        sourceTitle = pipelineSource.title,
+                        sourceMoral = pipelineSource.moral,
+                        existing = currentTranslation
                     ) ?: continue
                     log.info("PIPELINE >>> masterStoryId={} lang={} TRANSLATE_DONE", masterStoryId, language)
                     val t0 = System.currentTimeMillis()
@@ -513,8 +657,43 @@ class StoryProcessingService(
                     val waitMs = System.currentTimeMillis() - t0
                     if (waitMs > 5000) log.warn("PIPELINE >>> masterStoryId={} lang={} blocked {}ms between TRANSLATE_DONE and REWRITE_START", masterStoryId, language, waitMs)
                     log.info("PIPELINE >>> masterStoryId={} lang={} REWRITE_START", masterStoryId, language)
-                    scriptText = runRewriteStep(currentTranslation, age, toneMode) ?: continue
+                    scriptText = StoryPipelineWordLimit.clampToMaxWords(
+                        runRewriteStep(currentTranslation, age, toneMode) ?: continue,
+                        maxPipelineStoryWords
+                    )
                     log.info("PIPELINE >>> masterStoryId={} lang={} REWRITE_DONE", masterStoryId, language)
+
+                    if (translationOnly) {
+                        currentTranslation = translationRepository.findByMasterStoryIdAndLanguage(masterStoryId, language)!!
+                        val scriptWordCount = scriptText.split(Regex("\\s+")).filter { it.isNotBlank() }.size
+                        val scriptReadingTime = (scriptWordCount / 150.0).coerceIn(0.5, 30.0)
+                        val existingScriptRow = narrationScriptRepository.findByTranslationId(currentTranslation.id)
+                        narrationScriptRepository.save(
+                            StoryNarrationScript(
+                                id = existingScriptRow?.id ?: 0,
+                                translationId = currentTranslation.id,
+                                toneMode = toneMode,
+                                scriptText = scriptText,
+                                safetyScore = 100,
+                                createdAt = existingScriptRow?.createdAt ?: Instant.now()
+                            )
+                        )
+                        translationRepository.save(
+                            currentTranslation.copy(
+                                content = scriptText,
+                                wordCount = scriptWordCount,
+                                readingTimeMinutes = scriptReadingTime,
+                                status = TranslationPipelineStatus.AWAITING_AUDIO,
+                                lastError = null
+                            )
+                        )
+                        log.info(
+                            "PIPELINE >>> masterStoryId={} lang={} TRANSLATION-ONLY DONE (script saved, no TTS yet)",
+                            masterStoryId,
+                            language
+                        )
+                        return
+                    }
 
                     t1 = System.currentTimeMillis()
                     val audioAlreadyReady = narrationAudioRepository.existsByTranslationIdAndVoiceProfileAndStatus(
@@ -537,7 +716,7 @@ class StoryProcessingService(
                 }
 
                 val emotionTagged = getEmotionTaggedOrNull(scriptText, language, currentTranslation.id)
-                val story = storyLibraryRepository.findById(masterStoryId)
+                val storyFresh = storyLibraryRepository.findById(masterStoryId)
                 val perSegmentTts = appProperties.narration.perSegmentTts
                 if (!forceRegenerate) {
                     val preTtsMs = System.currentTimeMillis() - t1
@@ -546,10 +725,13 @@ class StoryProcessingService(
                 log.info("PIPELINE >>> masterStoryId={} lang={} TTS_START (perSegment={})", masterStoryId, language, perSegmentTts)
                 val ttsStartMs = System.currentTimeMillis()
                 val timeoutMinutes = appProperties.translationPipeline.languageTimeoutMinutes.coerceIn(2, 15)
-                val (audioUrl, durationSeconds, segmentAudioUrls) = if (perSegmentTts) {
+                val scriptWordCount = scriptText.split(Regex("\\s+")).filter { it.isNotBlank() }.size.coerceAtLeast(1)
+                val expectedSpeechSecs = (scriptWordCount / 150.0 * 60).toInt().coerceAtLeast(10)
+                val ttsOutcome = if (perSegmentTts) {
                     runPerSegmentTts(
                         masterStoryId, language, defaultVoice, scriptText, emotionTagged,
-                        story?.theme, age, toneMode, timeoutMinutes
+                        storyFresh?.theme, age, toneMode, timeoutMinutes,
+                        scriptWordCount, expectedSpeechSecs
                     )
                 } else {
                     val ssml = if (emotionTagged != null) {
@@ -557,21 +739,28 @@ class StoryProcessingService(
                     } else {
                         ssmlBuilder.buildSSML(scriptText, language, age, toneMode)
                     }
-                    val ttsStartMs = System.currentTimeMillis()
+                    val ttsStartMsInner = System.currentTimeMillis()
                     val future = pipelineTtsExecutor.submit(Callable { ttsService.synthesize(ssml, language, defaultVoice) })
                     val audioBytes = future.get(timeoutMinutes.toLong(), TimeUnit.MINUTES)
                         ?: throw IllegalStateException("TTS returned null")
                     if (audioBytes.isEmpty()) throw IllegalStateException("TTS returned empty")
-                    log.info("TTS_PROCESSING masterStoryId={} lang={} synthesized {} bytes in {}ms", masterStoryId, language, audioBytes.size, System.currentTimeMillis() - ttsStartMs)
+                    log.info("TTS_PROCESSING masterStoryId={} lang={} synthesized {} bytes in {}ms", masterStoryId, language, audioBytes.size, System.currentTimeMillis() - ttsStartMsInner)
                     val url = audioStorage.uploadNarrationAudio(masterStoryId, language, defaultVoice, audioBytes)
-                    Triple(url, (audioBytes.size / 16000).coerceAtLeast(1), null)
+                    val measured = Mp3DurationReader.durationSecondsOrNull(audioBytes)
+                    val durationSeconds = measured ?: expectedSpeechSecs
+                    val truncationWarning =
+                        measured != null && measured < (expectedSpeechSecs * NarrationTruncationPolicy.MIN_AUDIO_VS_EXPECTED_SPEECH_FRACTION)
+                    CuratedTtsOutcome(url, durationSeconds, null, truncationWarning)
                 }
-                val scriptWordCount = scriptText.split(Regex("\\s+")).filter { it.isNotBlank() }.size
-                val expectedSecs = (scriptWordCount / 150.0 * 60).toInt().coerceAtLeast(10)
-                val truncationWarning = durationSeconds < (expectedSecs * 0.5)
+                val audioUrl = ttsOutcome.audioUrl
+                val durationSeconds = ttsOutcome.durationSeconds
+                val segmentAudioUrls = ttsOutcome.segmentAudioUrls
+                val truncationWarning = ttsOutcome.truncationWarning
                 if (truncationWarning) {
-                    log.warn("PIPELINE >>> masterStoryId={} lang={} possible truncation: duration={}s expected>={}s",
-                        masterStoryId, language, durationSeconds, expectedSecs)
+                    log.warn(
+                        "PIPELINE >>> masterStoryId={} lang={} possible truncation: duration={}s vs expected~{}s speech (perSegment={})",
+                        masterStoryId, language, durationSeconds, expectedSpeechSecs, perSegmentTts
+                    )
                 }
                 val existingAudio = narrationAudioRepository.findByTranslationIdAndVoiceProfile(
                     currentTranslation.id, defaultVoice
@@ -601,7 +790,8 @@ class StoryProcessingService(
                 }
                 narrationAudioRepository.save(audio)
 
-                if (language == sourceLanguage) {
+                val masterLang = story.language.trim().lowercase().take(10).ifEmpty { sourceLanguage }
+                if (language.equals(masterLang, ignoreCase = true)) {
                     storyLibraryRepository.updateAudioUrl(masterStoryId, audioUrl)
                 }
 
@@ -611,7 +801,7 @@ class StoryProcessingService(
                     script = scriptText,
                     totalDurationSeconds = durationSeconds,
                     audioUrl = audioUrl,
-                    theme = story?.theme,
+                    theme = storyFresh?.theme,
                     emotionTaggedScript = emotionTagged,
                     segmentAudioUrls = segmentAudioUrls
                 )
@@ -642,7 +832,6 @@ class StoryProcessingService(
                 if (language == sourceLanguage) {
                     storyLibraryRepository.updateContent(masterStoryId, scriptText, scriptWordCount, scriptReadingTime)
                 }
-                // Keep final status update in the same transaction to avoid lock contention with REQUIRES_NEW processLanguage.
                 translationRepository.save(
                     currentTranslation.copy(
                         status = TranslationPipelineStatus.COMPLETED,
@@ -718,8 +907,6 @@ class StoryProcessingService(
         }
     }
 
-    private val failedPlaceholderContent = "[Pipeline failed]"
-
     /** Get emotion-tagged script when valid; null to fall back to plain SSML. */
     private fun getEmotionTaggedOrNull(
         scriptText: String,
@@ -739,14 +926,23 @@ class StoryProcessingService(
     private fun runTranslationStep(
         masterStoryId: Long,
         language: String,
+        translationSourceLang: String,
         sourceContent: String,
         sourceTitle: String?,
         sourceMoral: String?,
-        age: Int,
         existing: StoryTranslation?
     ): String? {
         return try {
-            if (existing != null && existing.content.isNotBlank() && !existing.content.startsWith(failedPlaceholderContent)) {
+            val isSameLanguage = language.trim().equals(translationSourceLang.trim(), ignoreCase = true)
+            val forceParaphraseForSameLanguageInThisStep =
+                isSameLanguage && (existing == null || existing.status == TranslationPipelineStatus.PENDING)
+
+            if (
+                existing != null &&
+                    existing.content.isNotBlank() &&
+                    !existing.content.startsWith(failedPlaceholderContent) &&
+                    !forceParaphraseForSameLanguageInThisStep
+            ) {
                 var existingForProcessing = existing
                 // Skip redundant status update when already REWRITING (avoids DB lock contention)
                 if (existingForProcessing.status != TranslationPipelineStatus.REWRITING) {
@@ -757,27 +953,7 @@ class StoryProcessingService(
                         )
                     )
                 }
-                // If title/moral are empty but content exists (e.g. from translationContents), translate them so they match the language
-                val needsTitleMoral = (existing.title.isNullOrBlank() || existing.moral.isNullOrBlank()) && language != sourceLanguage
-                if (needsTitleMoral) {
-                    try {
-                        val translated = translationService.translateIfNeeded(
-                            sourceLang = sourceLanguage,
-                            targetLang = language,
-                            title = sourceTitle,
-                            content = sourceContent,
-                            moral = sourceMoral
-                        )
-                        translationRepository.save(
-                            existingForProcessing.copy(
-                                title = existingForProcessing.title?.takeIf { it.isNotBlank() } ?: translated.title,
-                                moral = existingForProcessing.moral?.takeIf { it.isNotBlank() } ?: translated.moral
-                            )
-                        )
-                    } catch (e: Exception) {
-                        log.warn("Failed to fill title/moral for existing translation masterId={} lang={}: {}", masterStoryId, language, e.message)
-                    }
-                }
+                // Use persisted translation text only; do not call translation API during narration when content exists.
                 return existingForProcessing.content
             }
             if (existing != null) {
@@ -785,18 +961,20 @@ class StoryProcessingService(
             }
             val result = pipelineMetrics.recordTranslationLatency {
                 translationService.translateIfNeeded(
-                    sourceLang = sourceLanguage,
+                    sourceLang = translationSourceLang,
                     targetLang = language,
                     title = sourceTitle,
                     content = sourceContent,
-                    moral = sourceMoral
+                    moral = sourceMoral,
+                    forceParaphraseForSameLanguage = forceParaphraseForSameLanguageInThisStep
                 )
             }
-            val wordCount = result.content.split(Regex("\\s+")).filter { it.isNotBlank() }.size
+            val body = StoryPipelineWordLimit.clampToMaxWords(result.content, maxPipelineStoryWords)
+            val wordCount = body.split(Regex("\\s+")).filter { it.isNotBlank() }.size
             val readingTimeMinutes = (wordCount / 150.0).coerceAtMost(5.0)
             val toSave = if (existing != null) {
                 existing.copy(
-                    content = result.content,
+                    content = body,
                     title = result.title,
                     moral = result.moral,
                     wordCount = wordCount,
@@ -809,7 +987,7 @@ class StoryProcessingService(
                     masterStoryId = masterStoryId,
                     language = language,
                     title = result.title,
-                    content = result.content,
+                    content = body,
                     moral = result.moral,
                     wordCount = wordCount,
                     readingTimeMinutes = readingTimeMinutes,
@@ -818,7 +996,7 @@ class StoryProcessingService(
                 )
             }
             translationRepository.save(toSave)
-            result.content
+            body
         } catch (e: Exception) {
             val msg = extractPipelineErrorMessage(e)
             translationRepository.findByMasterStoryIdAndLanguage(masterStoryId, language)?.let {
@@ -828,7 +1006,10 @@ class StoryProcessingService(
         }
     }
 
-    /** Per-segment TTS: N synthesizes, N uploads; returns (primaryUrl, totalDurationSeconds, segmentUrls). */
+    /**
+     * Per-segment TTS: N synthesizes, N uploads. Duration from decoded MP3 length; [CuratedTtsOutcome.truncationWarning]
+     * if any segment or total run is materially shorter than script-based expected speech time (~150 wpm).
+     */
     private fun runPerSegmentTts(
         masterStoryId: Long,
         language: String,
@@ -838,8 +1019,10 @@ class StoryProcessingService(
         theme: String?,
         age: Int,
         toneMode: ToneMode,
-        timeoutMinutes: Int
-    ): Triple<String, Int, List<String>> {
+        timeoutMinutes: Int,
+        scriptWordCount: Int,
+        expectedSpeechSecs: Int
+    ): CuratedTtsOutcome {
         val segmentInfos = storySceneRepository.computeSegmentInfosForTts(scriptText, theme, emotionTagged)
         if (segmentInfos.isEmpty()) {
             val ssml = if (emotionTagged != null) ssmlBuilder.buildSSMLFromEmotionTagged(emotionTagged, language, age, toneMode)
@@ -847,10 +1030,14 @@ class StoryProcessingService(
             val audioBytes = pipelineTtsExecutor.submit(Callable { ttsService.synthesize(ssml, language, defaultVoice) })
                 .get(timeoutMinutes.toLong(), TimeUnit.MINUTES) ?: throw IllegalStateException("TTS returned null")
             val url = audioStorage.uploadNarrationAudio(masterStoryId, language, defaultVoice, audioBytes)
-            return Triple(url, (audioBytes.size / 16000).coerceAtLeast(1), emptyList())
+            val measured = Mp3DurationReader.durationSecondsOrNull(audioBytes)
+            val duration = measured ?: expectedSpeechSecs
+            val trunc = measured != null && measured < (expectedSpeechSecs * NarrationTruncationPolicy.MIN_AUDIO_VS_EXPECTED_SPEECH_FRACTION)
+            return CuratedTtsOutcome(url, duration, null, trunc)
         }
         val segmentUrls = mutableListOf<String>()
         var totalDurationSec = 0
+        var anySegmentTruncated = false
         for ((i, info) in segmentInfos.withIndex()) {
             val singleSeg = com.tamixa.domain.narration.EmotionTaggedScript(
                 info.text,
@@ -862,10 +1049,21 @@ class StoryProcessingService(
                 .get(timeoutMinutes.toLong(), TimeUnit.MINUTES) ?: throw IllegalStateException("TTS returned null for segment $i")
             val segUrl = audioStorage.uploadSegmentAudio(masterStoryId, language, defaultVoice, i, bytes)
             segmentUrls.add(segUrl)
-            totalDurationSec += (bytes.size / 16000).coerceAtLeast(1)
+            val measured = Mp3DurationReader.durationSecondsOrNull(bytes)
+            val segWords = info.text.split(Regex("\\s+")).filter { it.isNotBlank() }.size.coerceAtLeast(1)
+            val segExpected =
+                (segWords.toDouble() / scriptWordCount.toDouble() * expectedSpeechSecs).toInt().coerceAtLeast(2)
+            val segDur = measured ?: segExpected
+            totalDurationSec += segDur
+            if (measured != null && measured < (segExpected * NarrationTruncationPolicy.MIN_AUDIO_VS_EXPECTED_SPEECH_FRACTION)) {
+                anySegmentTruncated = true
+            }
         }
         val primaryUrl = segmentUrls.first()
-        return Triple(primaryUrl, totalDurationSec.coerceAtLeast(1), segmentUrls)
+        val aggregateShort =
+            totalDurationSec < (expectedSpeechSecs * NarrationTruncationPolicy.MIN_AUDIO_VS_EXPECTED_SPEECH_FRACTION)
+        val truncationWarning = anySegmentTruncated || aggregateShort
+        return CuratedTtsOutcome(primaryUrl, totalDurationSec.coerceAtLeast(1), segmentUrls, truncationWarning)
     }
 
     private fun runRewriteStep(translation: StoryTranslation, age: Int, toneMode: ToneMode = ToneMode.CALM): String? {
@@ -917,22 +1115,26 @@ class StoryProcessingService(
             val translations = translationRepository.findByMasterStoryId(masterStoryId)
 
             // Languages to process: (1) failed/retriable translations, (2) languages with no audio (never started or missing)
+            val allowed = pipelineLanguagesForStory(story).toSet()
             val retriableLangs = translations
-                .filter { it.status.canRetry() && it.retryCount < maxRetries }
-                .map { it.language }
-            val missingLangs = supportedLanguages.filter { !languageHasAudio(masterStoryId, it, story) }
+                .filter {
+                    allowed.contains(it.language.trim().lowercase()) &&
+                        it.status.canRetry() && it.retryCount < maxRetries
+                }
+                .map { it.language.trim().lowercase() }
+            val missingLangs = pipelineLanguagesForStory(story).filter { !languageHasAudio(masterStoryId, it, story) }
             // Reset retry count for languages that hit max retries but have no audio (manual Retry gives another chance)
             missingLangs.forEach { lang ->
-                val trans = translations.find { it.language == lang }
+                val trans = translations.find { it.language.equals(lang, ignoreCase = true) }
                 if (trans != null && trans.retryCount >= maxRetries) {
                     translationRepository.resetRetryCountByMasterStoryIdAndLanguage(masterStoryId, lang)
                     log.info("Reset retry count for masterStoryId={} lang={} (admin retry)", masterStoryId, lang)
                 }
             }
-            val languagesToProcess = (retriableLangs + missingLangs).distinct()
+            val languagesToProcess = (retriableLangs + missingLangs).distinct().filter { it in allowed }
 
             if (languagesToProcess.isEmpty()) {
-                log.info("No missing or retriable languages for masterStoryId={}, all {} languages have audio", masterStoryId, supportedLanguages.size)
+                log.info("No missing or retriable languages for masterStoryId={}, all pipeline languages have audio", masterStoryId)
                 return
             }
 
@@ -942,7 +1144,15 @@ class StoryProcessingService(
                 return
             }
             try {
-                processLanguagesInternal(masterStoryId, languagesToProcess, sequential = false)
+                val translationOnly =
+                    appProperties.translationPipeline.audioAfterApproval && story.narrationApprovedAt == null
+                processLanguagesInternal(
+                    masterStoryId,
+                    languagesToProcess,
+                    sequential = false,
+                    forceRegenerate = false,
+                    translationOnly = translationOnly
+                )
             } finally {
                 progressTracker.clearProcessing(masterStoryId)
             }
@@ -978,7 +1188,6 @@ class StoryProcessingService(
      * @param masterStoryId Story to republish
      * @param languages Empty = all supported languages; otherwise only these (e.g. ["te", "hi"])
      */
-    @Transactional
     fun republishLanguages(masterStoryId: Long, languages: List<String>) {
         log.info("republishLanguages START masterStoryId={} languages={}", masterStoryId, languages)
         MDC.put("masterStoryId", masterStoryId.toString())
@@ -987,11 +1196,25 @@ class StoryProcessingService(
                 log.warn("Master story {} not found for republish", masterStoryId)
                 return
             }
+            val allowed = pipelineLanguagesForStory(story).toSet()
             val targetLanguages = if (languages.isEmpty()) {
-                log.info("Republish masterStoryId={}: empty languages list → processing all {} supported languages", masterStoryId, supportedLanguages.size)
-                supportedLanguages
+                log.info("Republish masterStoryId={}: empty languages list → processing all {} pipeline languages", masterStoryId, allowed.size)
+                pipelineLanguagesForStory(story)
             } else {
-                languages.map { it.trim().lowercase() }.filter { it in supportedLanguages }
+                val normalized = languages.map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
+                val primary = normalized.filter { it in allowed && (it in supportedLanguages || appProperties.translationPipeline.masterOnlyNarration) }
+                when {
+                    primary.isNotEmpty() -> primary
+                    appProperties.translationPipeline.masterOnlyNarration && normalized.isNotEmpty() -> {
+                        val fallback = pipelineLanguagesForStory(story)
+                        log.info(
+                            "Republish masterStoryId={}: requested langs {} not in master pipeline set; using {}",
+                            masterStoryId, normalized, fallback
+                        )
+                        fallback
+                    }
+                    else -> normalized.filter { it in supportedLanguages }.filter { it in allowed }
+                }
             }
             if (targetLanguages.isEmpty()) {
                 log.warn("Republish masterStoryId={}: no valid languages (requested={})", masterStoryId, languages)
@@ -1000,7 +1223,9 @@ class StoryProcessingService(
             storyLibraryService.invalidateNarrationAudioForLanguages(masterStoryId, targetLanguages)
             log.info("Republish masterStoryId={} languages={} (old audio deleted, running pipeline sequentially)", masterStoryId, targetLanguages)
             try {
-                processLanguagesInternal(masterStoryId, targetLanguages, sequential = true)
+                // Republish must bypass idempotent READY-audio skip, because stale DB rows can point to
+                // missing S3 objects (e.g. after async invalidation/delete races). Force TTS regeneration.
+                processLanguagesInternal(masterStoryId, targetLanguages, sequential = true, forceRegenerate = true)
             } catch (e: Exception) {
                 log.error("Republish pipeline failed masterStoryId={} error={}", masterStoryId, e.message, e)
                 pipelineMetrics.recordNarrationFailure()
@@ -1024,7 +1249,6 @@ class StoryProcessingService(
      *
      * @param languages When non-empty, only these languages are invalidated and regenerated. When null/empty, all supported languages.
      */
-    @Transactional
     fun regenerateNarration(masterStoryId: Long, languages: List<String>? = null) {
         val story = storyLibraryRepository.findById(masterStoryId)
             ?: run {
@@ -1036,13 +1260,27 @@ class StoryProcessingService(
             log.warn("No translations for masterStoryId={}, nothing to regenerate", masterStoryId)
             return
         }
+        val allowed = pipelineLanguagesForStory(story).toSet()
         val targetLanguages = when {
             languages.isNullOrEmpty() -> {
-                log.info("Regenerate narration masterStoryId={}: all {} languages", masterStoryId, supportedLanguages.size)
-                supportedLanguages
+                log.info("Regenerate narration masterStoryId={}: all {} pipeline languages", masterStoryId, allowed.size)
+                pipelineLanguagesForStory(story)
             }
             else -> {
-                languages.map { it.trim().lowercase() }.filter { it in supportedLanguages }.distinct()
+                val normalized = languages.map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()
+                val primary = normalized.filter { it in allowed && (it in supportedLanguages || appProperties.translationPipeline.masterOnlyNarration) }
+                when {
+                    primary.isNotEmpty() -> primary
+                    appProperties.translationPipeline.masterOnlyNarration && normalized.isNotEmpty() -> {
+                        val fallback = pipelineLanguagesForStory(story)
+                        log.info(
+                            "Regenerate narration masterStoryId={}: requested langs {} not in master pipeline set; using {}",
+                            masterStoryId, normalized, fallback
+                        )
+                        fallback
+                    }
+                    else -> normalized.filter { it in supportedLanguages }.filter { it in allowed }.distinct()
+                }
             }
         }
         if (targetLanguages.isEmpty()) {
@@ -1082,7 +1320,8 @@ class StoryProcessingService(
         log.info("Invalidate and reprocess masterStoryId={} (story content edited)", masterStoryId)
         try {
             invalidateContent(masterStoryId)  // commits on return
-            processSync(masterStoryId)        // runs in new tx, sees committed deletes
+            val translationOnly = appProperties.translationPipeline.audioAfterApproval
+            processSync(masterStoryId, translationOnly = translationOnly)
             log.info("InvalidateAndReprocess pipeline completed for story id={}", masterStoryId)
         } catch (e: Exception) {
             log.error("invalidateAndReprocess FAILED for masterStoryId={} error={} cause={}", masterStoryId, e.message, e.cause?.message, e)

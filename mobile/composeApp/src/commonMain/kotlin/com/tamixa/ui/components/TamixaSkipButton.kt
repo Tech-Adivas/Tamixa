@@ -11,15 +11,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
 import com.tamixa.ui.theme.TamixaColors
 import com.tamixa.ui.theme.TamixaDesignTokens
 
 /**
- * Skip button per Tamixa design system: white background, warm orange border.
- * Use for optional onboarding steps (voice, avatar, etc.).
+ * Secondary / skip CTA: theme surface, terracotta border, soft elevation (M3 outlined style).
  */
 @Composable
 fun TamixaSkipButton(
@@ -28,18 +28,27 @@ fun TamixaSkipButton(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius)
+    val scheme = MaterialTheme.colorScheme
     Box(
         modifier = modifier
             .height(56.dp)
+            .shadow(
+                elevation = 2.dp,
+                shape = shape,
+                ambientColor = TamixaDesignTokens.listCardShadowAmbient,
+                spotColor = TamixaDesignTokens.listCardShadowSpot
+            )
             .clip(shape)
-            .background(Color.White)
-            .border(2.dp, TamixaColors.goldAccent, shape)
+            .background(scheme.surfaceContainerLow)
+            .border(1.5.dp, TamixaColors.goldAccent.copy(alpha = 0.9f), shape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.SemiBold
+            ),
             color = TamixaColors.goldAccent
         )
     }

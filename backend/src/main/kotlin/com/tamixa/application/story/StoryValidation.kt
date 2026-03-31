@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component
 private const val MAX_TITLE_LENGTH = 80
 
 /** Words per minute for reading-time calculation; duration must match word count within tolerance. */
-private const val WORDS_PER_MINUTE = 150
+private const val WORDS_PER_MINUTE = 120
 
 /** Tolerance: estimated duration may be ±40% of expected from word count. */
 private const val DURATION_TOLERANCE = 0.4
@@ -24,7 +24,7 @@ private const val DURATION_TOLERANCE = 0.4
  */
 @Component
 class StoryValidation(
-    @Value("\${app.story.max-words:1500}") private val maxWords: Int,
+    @Value("\${app.story.max-words:900}") private val maxWords: Int,
     private val safetyMiddleware: StorySafetyMiddleware,
     private val safetyValidationRules: StorySafetyValidationRules,
     private val storyPromptBuilder: StoryPromptBuilder

@@ -10,6 +10,7 @@ data class StoryScene(
     val translationId: Long,
     val sceneIndex: Int,
     val backgroundHint: String? = null,
+    val illustrationImagePath: String? = null,
     val createdAt: Instant,
     val segments: List<StorySegment> = emptyList()
 )

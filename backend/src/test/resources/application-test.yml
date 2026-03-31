@@ -7,11 +7,20 @@ spring:
       - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      # `create-drop` runs a large delayed DROP on SessionFactory shutdown; with Testcontainers the DB
+      # connection often dies first (EOF / broken connection), flooding logs with HHH000478. `create`
+      # still rebuilds schema on startup without teardown DDL.
+      ddl-auto: create
     show-sql: false  # Use org.hibernate.SQL logger; set LOG_LEVEL_HIBERNATE_SQL=DEBUG for SQL in tests
 
 # Rate limit: low for tests so we can hit 429 quickly
 app:
+  control-plane:
+    # Integration tests use Hibernate `create` schema without V76 seed; keep story runs off unless a test seeds workflows.
+    story-workflow-integration-enabled: false
+  cors:
+    # SecurityConfig requires non-empty origins when profile is not "dev"
+    allowed-origins: http://localhost:8080,http://localhost:3000
   rate-limit:
     requests-per-minute: 2
 

@@ -4,7 +4,6 @@ import com.tamixa.application.port.FamilyVoiceStoragePort
 import com.tamixa.infrastructure.config.AppProperties
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.context.annotation.Primary
 import org.springframework.stereotype.Component
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
@@ -19,7 +18,6 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest
  * Enable with app.storage.type=s3 (default).
  */
 @Component
-@Primary
 @ConditionalOnProperty(name = ["app.storage.type"], havingValue = "s3")
 class S3FamilyVoiceStorageAdapter(
     private val s3Client: S3Client,

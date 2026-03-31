@@ -12,11 +12,16 @@ enum class AdminPermission {
     MODERATE_STORIES,
     VIEW_VOICE_LOGS,
     VIEW_PARENTS,
+    MANAGE_PARENTS,
     VIEW_CHILDREN,
     VIEW_STORIES,
     MANAGE_USERS,
     VIEW_HEALTH,
     VIEW_AI_METRICS,
+    /** Read AI control plane registry (prompts, workflows, runs). */
+    VIEW_AI_CONTROL_PLANE,
+    /** Publish prompts, execute workflows, mutate control-plane state. */
+    MANAGE_AI_CONTROL_PLANE,
     VIEW_AUDIT,
     VIEW_KAFKA,
     VIEW_MONITORING,

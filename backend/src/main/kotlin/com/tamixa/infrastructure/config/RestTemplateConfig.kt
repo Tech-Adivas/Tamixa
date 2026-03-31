@@ -22,6 +22,16 @@ class RestTemplateConfig {
 
     private val log = LoggerFactory.getLogger(RestTemplateConfig::class.java)
 
+    /**
+     * Outbound HTTP for SendGrid, Twilio, FCM, APNs — bounded timeouts so slow providers do not pin servlet threads indefinitely.
+     */
+    @Bean("notificationRestTemplate")
+    fun notificationRestTemplate(builder: RestTemplateBuilder): RestTemplate =
+        builder
+            .setConnectTimeout(Duration.ofSeconds(15))
+            .setReadTimeout(Duration.ofSeconds(60))
+            .build()
+
     @Bean
     fun restTemplate(
         builder: RestTemplateBuilder,

@@ -5,20 +5,21 @@ import java.time.Instant
 enum class BulkJobStatus { PENDING, RUNNING, COMPLETED, FAILED }
 
 /**
- * In-memory state for an async bulk story generation job.
+ * State for an async bulk story generation job.
  * Used for progress polling and one-at-a-time guard.
+ * Immutable for Redis serialization; use copy() to update.
  */
 data class BulkJobState(
     val jobId: String,
-    var status: BulkJobStatus,
+    val status: BulkJobStatus,
     val requestedTotal: Int,
     val publish: Boolean,
-    var currentIndex: Int,
-    var createdCount: Int,
-    var failedCount: Int,
-    var created: List<Map<String, Any?>>,
-    var failed: List<Map<String, Any?>>,
-    var errorMessage: String?,
-    var startedAt: Instant?,
-    var completedAt: Instant?
+    val currentIndex: Int,
+    val createdCount: Int,
+    val failedCount: Int,
+    val created: List<Map<String, Any?>>,
+    val failed: List<Map<String, Any?>>,
+    val errorMessage: String?,
+    val startedAt: Instant?,
+    val completedAt: Instant?
 )

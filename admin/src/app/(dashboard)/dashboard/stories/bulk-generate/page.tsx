@@ -12,25 +12,12 @@ import { Input } from "@/components/ui/input";
 import { useActionResult } from "@/contexts/action-result-context";
 import { getApiErrorMessage } from "@/lib/utils";
 
-const LANG_OPTIONS = [
-  { code: "ta", label: "Tamil" },
-  { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
-  { code: "te", label: "Telugu" },
-  { code: "kn", label: "Kannada" },
-  { code: "ml", label: "Malayalam" },
-] as const;
-
-const ALL_LANG_CODES = LANG_OPTIONS.map((o) => o.code);
-
 export default function BulkGenerateStoriesPage() {
   const { showSuccess, showError } = useActionResult();
-  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(["ta"]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(["Friendship"]);
   const [totalStories, setTotalStories] = useState<number>(25);
   const [publish, setPublish] = useState<boolean>(false);
 
-  const isAllLanguages = selectedLanguages.length === ALL_LANG_CODES.length && ALL_LANG_CODES.every((c) => selectedLanguages.includes(c));
   const isAllCategories = selectedCategories.length === STORY_CATEGORIES.length && STORY_CATEGORIES.every((c) => selectedCategories.includes(c));
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
@@ -61,10 +48,6 @@ export default function BulkGenerateStoriesPage() {
     items.includes(value) ? items.filter((v) => v !== value) : [...items, value];
 
   const handleGenerate = async () => {
-    if (selectedLanguages.length === 0) {
-      showError("Validation failed", "Select at least one language or check All.");
-      return;
-    }
     if (selectedCategories.length === 0) {
       showError("Validation failed", "Select at least one category or check All.");
       return;
@@ -78,7 +61,7 @@ export default function BulkGenerateStoriesPage() {
     setResult(null);
     try {
       const { jobId } = await api.admin.bulkGenerateLibraryStoriesAsync({
-        languages: selectedLanguages,
+        languages: ["ta"],
         categories: selectedCategories,
         totalStories: totalRequested,
         publish,
@@ -150,36 +133,12 @@ export default function BulkGenerateStoriesPage() {
           <CardTitle className="text-base">Generation settings</CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div>
-            <Label>Languages (each story in its corresponding language; default Tamil)</Label>
-            <p className="text-xs text-muted-foreground mt-1 mb-2">
-              Default: Tamil only. Each story is generated entirely in one language — Tamil stories in Tamil, Hindi in Hindi, etc. Select more languages to get stories in each.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <label className="inline-flex items-center gap-2 rounded-md border border-primary bg-muted/30 px-3 py-2 text-sm cursor-pointer font-medium">
-                <input
-                  type="checkbox"
-                  checked={isAllLanguages}
-                  onChange={() => {
-                    setSelectedLanguages(isAllLanguages ? [] : ALL_LANG_CODES);
-                  }}
-                />
-                All
-              </label>
-              {LANG_OPTIONS.map((l) => (
-                <label
-                  key={l.code}
-                  className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedLanguages.includes(l.code)}
-                    onChange={() => setSelectedLanguages((prev) => toggleValue(prev, l.code))}
-                  />
-                  {l.label}
-                </label>
-              ))}
-            </div>
+          <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">How languages work:</span> Each story is generated and saved as
+            a <strong>Tamil master</strong> (same as manual create and the edit screen). Right after each story is
+            created, the server pre-fills text for <strong>English, Hindi, Telugu, Kannada, and Malayalam</strong>{" "}
+            (from server pipeline settings) so all languages appear in the editor. Narration/audio still follow your
+            usual review and Story-to-Speech flow.
           </div>
 
           <div>
@@ -245,7 +204,8 @@ export default function BulkGenerateStoriesPage() {
               <span className="font-medium">Total requested:</span> {totalRequested} stories (max 25 per run)
             </div>
             <div className="text-muted-foreground mt-1">
-              Each story is generated in its corresponding language (no mixing: a Hindi story has Hindi content, Tamil has Tamil, etc.). Stories are spread across your selected languages and categories. On Submit for review, the pipeline creates translations and audio for other languages.
+              Tamil story text is generated per slot (categories rotate). Translated text for other languages is seeded
+              automatically; Submit for review still drives your approval and narration pipeline as before.
             </div>
             {totalRequested > 5 && (
               <p className="text-amber-600 dark:text-amber-500 mt-2 text-sm font-medium">

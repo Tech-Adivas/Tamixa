@@ -3,6 +3,7 @@ package com.tamixa.infrastructure.notification
 import com.tamixa.application.port.SmsSenderPort
 import com.tamixa.infrastructure.logging.PiiMask
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.HttpHeaders
@@ -20,12 +21,12 @@ import java.net.URI
 @org.springframework.context.annotation.Primary
 @ConditionalOnProperty(name = ["app.sms.twilio-account-sid"])
 class TwilioSmsSender(
+    @Qualifier("notificationRestTemplate") private val rest: RestTemplate,
     @Value("\${app.sms.twilio-account-sid}") private val accountSid: String,
     @Value("\${app.sms.twilio-auth-token}") private val authToken: String,
     @Value("\${app.sms.twilio-from-number:}") private val fromNumber: String
 ) : SmsSenderPort {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val rest = RestTemplate()
 
     override fun sendOtp(toPhone: String, code: String): Boolean {
         if (fromNumber.isBlank()) {

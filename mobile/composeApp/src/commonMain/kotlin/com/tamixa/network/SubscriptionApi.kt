@@ -2,9 +2,11 @@ package com.tamixa.network
 
 import com.tamixa.domain.SubscriptionInfo
 import com.tamixa.domain.UsageInfo
+import com.tamixa.util.TamixaLog
 import io.ktor.client.*
 import io.ktor.client.call.body
 import io.ktor.client.request.*
+import kotlinx.coroutines.CancellationException
 
 class SubscriptionApi(private val client: HttpClient) {
 
@@ -36,7 +38,10 @@ class SubscriptionApi(private val client: HttpClient) {
     suspend fun cancelSubscription(): Boolean = try {
         client.post("${ApiConfig.API_VERSION}/subscription/cancel")
         true
-    } catch (_: Exception) {
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        TamixaLog.w("SubscriptionApi", "cancelSubscription failed", e)
         false
     }
 
@@ -46,7 +51,10 @@ class SubscriptionApi(private val client: HttpClient) {
             parameter("code", code.trim().uppercase())
         }
         resp.body<ReferralCodeValidateResponse>()
-    } catch (_: Exception) {
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        TamixaLog.w("SubscriptionApi", "validateReferralCode failed", e)
         null
     }
 
@@ -65,7 +73,10 @@ class SubscriptionApi(private val client: HttpClient) {
             setBody(body)
         }
         resp.body<UpgradeResponse>().checkoutUrl
-    } catch (_: Exception) {
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        TamixaLog.w("SubscriptionApi", "createCheckoutSession failed", e)
         null
     }
 }

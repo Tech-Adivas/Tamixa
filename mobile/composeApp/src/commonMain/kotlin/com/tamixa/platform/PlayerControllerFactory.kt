@@ -35,7 +35,11 @@ expect fun rememberAvatarVideoController(
     storyTheme: String,
     scope: CoroutineScope,
     onProgressChanged: (Float) -> Unit,
-    onPlaybackError: (() -> Unit)?
+    onPlaybackError: (() -> Unit)?,
+    /** When true, video audio is silent (e.g. Phase 4 host clip while story audio plays). */
+    muteVideoAudio: Boolean = false,
+    /** When true, loop the clip (host story bumper). */
+    repeatVideo: Boolean = false
 ): AvatarVideoControllerResult
 
 /** Looping, muted video for story cover. Use when coverVideoUrl is present; image remains as fallback behind. */

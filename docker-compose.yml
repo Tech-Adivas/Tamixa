@@ -64,6 +64,24 @@ services:
       retries: 5
       start_period: 30s
 
+  # Reusable structured-output guardrails API (own repo: copy guardrails-service/). Optional for local dev.
+  guardrails-service:
+    build:
+      context: ./guardrails-service
+      dockerfile: Dockerfile
+    image: guardrails-service:latest
+    container_name: guardrails-service
+    environment:
+      GUARDRAILS_API_KEY: ${GUARDRAILS_SERVICE_API_KEY:-}
+    ports:
+      - "${GUARDRAILS_PORT:-8090}:8090"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   backend:
     build:
       context: .
@@ -76,6 +94,8 @@ services:
       redis:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      guardrails-service:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
@@ -103,6 +123,11 @@ services:
       # Optional: OpenAI, Translation, Voice encryption (set in production)
       TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-simulated}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Optional: Python guardrails sidecar (enable when running guardrails-service)
+      GUARDRAILS_SERVICE_ENABLED: ${GUARDRAILS_SERVICE_ENABLED:-true}
+      GUARDRAILS_SERVICE_URL: ${GUARDRAILS_SERVICE_URL:-http://guardrails-service:8090}
+      GUARDRAILS_SERVICE_API_KEY: ${GUARDRAILS_SERVICE_API_KEY:-}
+      GUARDRAILS_SERVICE_FAIL_OPEN: ${GUARDRAILS_SERVICE_FAIL_OPEN:-false}
       VOICE_ENCRYPTION_KEY: ${VOICE_ENCRYPTION_KEY:-}
       # Audio stream fallback: use 10.0.2.2 for Android emulator
       AUDIO_PUBLIC_BASE_URL: ${AUDIO_PUBLIC_BASE_URL:-http://localhost:8080}

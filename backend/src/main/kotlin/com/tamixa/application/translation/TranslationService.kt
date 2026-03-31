@@ -29,7 +29,10 @@ class TranslationService(
         val title: String?,
         val content: String,
         val moral: String?,
-        val translated: Boolean
+        val translated: Boolean,
+        val titleBeforeParaphrase: String? = null,
+        val contentBeforeParaphrase: String? = null,
+        val moralBeforeParaphrase: String? = null
     )
 
     /**
@@ -41,23 +44,32 @@ class TranslationService(
         targetLang: String,
         title: String?,
         content: String,
-        moral: String?
+        moral: String?,
+        forceParaphraseForSameLanguage: Boolean = false,
+        bypassCache: Boolean = false
     ): TranslationResult {
         val src = sourceLang.trim().lowercase()
         val tgt = targetLang.trim().lowercase()
-        if (src == tgt) {
+        if (src == tgt && !forceParaphraseForSameLanguage) {
             log.debug("Translation skipped: source==target ({})", tgt)
-            return TranslationResult(title = title, content = content, moral = moral, translated = false)
+            return TranslationResult(
+                title = title,
+                content = content,
+                moral = moral,
+                translated = false
+            )
         }
         val sourceHash = contentHash(title, content, moral)
-        translationCache?.getByContentHash(sourceHash, tgt)?.let { cached ->
-            log.info("Translation cache HIT {}->{} (hash={})", src, tgt, sourceHash.take(8))
-            return TranslationResult(
-                title = cached.title,
-                content = cached.content,
-                moral = cached.moral,
-                translated = true
-            )
+        if (!bypassCache) {
+            translationCache?.getByContentHash(sourceHash, tgt)?.let { cached ->
+                log.info("Translation cache HIT {}->{} (hash={})", src, tgt, sourceHash.take(8))
+                return TranslationResult(
+                    title = cached.title,
+                    content = cached.content,
+                    moral = cached.moral,
+                    translated = true
+                )
+            }
         }
         // Non-Tamil languages get 1.5x timeout (translate+rewrite can be slower for hi,te,kn,ml)
         val timeoutMs = (baseTimeoutMs * 1.5).toLong()
@@ -69,23 +81,31 @@ class TranslationService(
             moral = moral,
             timeoutMs = timeoutMs
         )
+        val beforeTitle = translated.titleBeforeParaphrase?.let { trimLeadingSpecialSymbols(it) }
+        val beforeContent = translated.contentBeforeParaphrase?.let { trimLeadingSpecialSymbols(it) }
+        val beforeMoral = translated.moralBeforeParaphrase?.let { trimLeadingSpecialSymbols(it) }
         val result = TranslationResult(
             title = translated.title?.let { trimLeadingSpecialSymbols(it) },
             content = trimLeadingSpecialSymbols(translated.content),
             moral = translated.moral?.let { trimLeadingSpecialSymbols(it) },
-            translated = true
+            translated = true,
+            titleBeforeParaphrase = beforeTitle,
+            contentBeforeParaphrase = beforeContent,
+            moralBeforeParaphrase = beforeMoral
         )
-        translationCache?.setByContentHash(
-            sourceHash,
-            tgt,
-            CachedTranslation(
-                title = result.title,
-                content = result.content,
-                moral = result.moral,
-                wordCount = result.content.split(Regex("\\s+")).filter { it.isNotBlank() }.size,
-                readingTimeMinutes = 0.0
+        if (!bypassCache) {
+            translationCache?.setByContentHash(
+                sourceHash,
+                tgt,
+                CachedTranslation(
+                    title = result.title,
+                    content = result.content,
+                    moral = result.moral,
+                    wordCount = result.content.split(Regex("\\s+")).filter { it.isNotBlank() }.size,
+                    readingTimeMinutes = 0.0
+                )
             )
-        )
+        }
         return result
     }
 
@@ -104,9 +124,19 @@ class TranslationService(
         var t = text.trim()
         t = Regex("^\\s*\"?(content|title|moral)\"?:?\\s*[\"']?", RegexOption.IGNORE_CASE).replace(t, "")
         t = Regex("^[\"',;:\\s]+").replace(t, "")
-        t = t.replace(Regex("^[^\\p{L}\\p{N}]+"), "").trimStart()
+        t = stripLeadingNonLetterUnlessTtsMarker(t)
         return t.split("\n").joinToString("\n") { para ->
-            para.replace(Regex("^[^\\p{L}\\p{N}]+"), "").trimStart()
+            stripLeadingNonLetterUnlessTtsMarker(para)
         }.trim()
+    }
+
+    /**
+     * Strips leading punctuation/brackets unless the line is an inline TTS marker like `[Pause 500ms]`
+     * (previously `^[^\\p{L}\\p{N}]+` ate `[` and broke markers).
+     */
+    private fun stripLeadingNonLetterUnlessTtsMarker(line: String): String {
+        val trimmed = line.trimStart()
+        if (trimmed.startsWith("[") && trimmed.contains("]")) return trimmed
+        return line.replace(Regex("^[^\\p{L}\\p{N}]+"), "").trimStart()
     }
 }

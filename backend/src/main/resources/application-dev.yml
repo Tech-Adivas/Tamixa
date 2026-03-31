@@ -14,9 +14,11 @@ spring:
     hibernate:
       ddl-auto: update
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:araro_kids}
-    username: ${POSTGRES_USER:postgres}
-    password: ${POSTGRES_PASSWORD:postgres}
+    # Keep dev aligned with Flyway/CI/staging precedence to avoid accidental split DB usage.
+    # If DATABASE_* is present, use it; otherwise fall back to local POSTGRES_* defaults.
+    url: ${DATABASE_URL:jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:araro_kids}}
+    username: ${DATABASE_USERNAME:${POSTGRES_USER:postgres}}
+    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:postgres}}
     hikari:
       maximum-pool-size: 20
 

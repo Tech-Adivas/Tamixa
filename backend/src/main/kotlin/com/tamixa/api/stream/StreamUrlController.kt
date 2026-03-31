@@ -15,9 +15,13 @@ import com.tamixa.application.avatar.FamilyAvatarService
 import com.tamixa.application.familyvoice.FamilyVoiceService
 import com.tamixa.application.playback.PlaybackManifest
 import com.tamixa.application.playback.PlaybackManifestService
+import com.tamixa.application.playback.toNarrativeSceneVisualDtos
+import com.tamixa.api.stream.dto.NarrativeSceneVisualDto
 import com.tamixa.application.port.ParentRepositoryPort
 import com.tamixa.application.subscription.SubscriptionService
 import com.tamixa.application.stream.AudioStreamService
+import com.tamixa.infrastructure.config.AppProperties
+import com.tamixa.infrastructure.config.resolvedHostStoryClipUrl
 import com.tamixa.application.stream.NarrationScriptService
 import com.tamixa.application.stream.StoryVoicePreferenceService
 import com.tamixa.application.stream.StoryVoicesService
@@ -61,9 +65,25 @@ class StreamUrlController(
     private val avatarVideoService: AvatarVideoService,
     private val playbackManifestService: PlaybackManifestService,
     private val parentRepository: ParentRepositoryPort,
-    private val subscriptionService: SubscriptionService
+    private val subscriptionService: SubscriptionService,
+    private val appProperties: AppProperties
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+
+    private fun narrativeScenesFor(
+        storyId: Long,
+        language: String,
+        storySource: String?,
+        voiceProfile: String?,
+        parentId: Long?
+    ): List<NarrativeSceneVisualDto>? =
+        playbackManifestService.getPlaybackManifest(
+            storyId = storyId,
+            language = language,
+            storySource = storySource,
+            voiceProfile = voiceProfile,
+            parentId = parentId
+        )?.toNarrativeSceneVisualDtos()?.takeIf { it.isNotEmpty() }
 
     @GetMapping("/library/{id}/stream-url")
     fun getLibraryStreamUrl(
@@ -102,8 +122,18 @@ class StreamUrlController(
             } ?: "NONE"
         } else "NONE"
         val durationSeconds = if (url != null) audioStreamService.getLibraryStoryDurationSeconds(id, language, voice.takeIf { it.isNotBlank() } ?: "default") else null
+        val voiceForManifest = voice.takeIf { it.isNotBlank() } ?: "default"
         return if (url != null) ResponseEntity.ok(
-            StreamUrlResponse(url, avatarUrl, avatarVideoUrl, avatarStatus, voiceFallback, durationSeconds = durationSeconds)
+            StreamUrlResponse(
+                url,
+                avatarUrl,
+                avatarVideoUrl,
+                avatarStatus,
+                voiceFallback,
+                durationSeconds = durationSeconds,
+                narrativeScenes = narrativeScenesFor(id, language, "library", voiceForManifest, parentId),
+                hostStoryClipUrl = appProperties.resolvedHostStoryClipUrl()
+            )
         ) else ResponseEntity.notFound().build()
     }
 
@@ -132,7 +162,16 @@ class StreamUrlController(
                 else "NONE"
             } ?: "NONE"
         } else "NONE"
-        return if (url != null) ResponseEntity.ok(StreamUrlResponse(url, avatarUrl, avatarVideoUrl, avatarStatus))
+        return if (url != null) ResponseEntity.ok(
+            StreamUrlResponse(
+                url,
+                avatarUrl,
+                avatarVideoUrl,
+                avatarStatus,
+                narrativeScenes = narrativeScenesFor(id, language, "generated", "default", parentId),
+                hostStoryClipUrl = appProperties.resolvedHostStoryClipUrl()
+            )
+        )
         else ResponseEntity.notFound().build()
     }
 
@@ -225,7 +264,16 @@ class StreamUrlController(
         } else "NONE"
         val durationSeconds = if (url != null) audioStreamService.getLibraryStoryDurationSeconds(id, language, voice) else null
         return if (url != null) ResponseEntity.ok(
-            StreamUrlResponse(url, avatarUrl, avatarVideoUrl, avatarStatus, voiceFallback, durationSeconds = durationSeconds)
+            StreamUrlResponse(
+                url,
+                avatarUrl,
+                avatarVideoUrl,
+                avatarStatus,
+                voiceFallback,
+                durationSeconds = durationSeconds,
+                narrativeScenes = narrativeScenesFor(id, language, effectiveSource, voice, parentId),
+                hostStoryClipUrl = appProperties.resolvedHostStoryClipUrl()
+            )
         ) else ResponseEntity.notFound().build()
     }
 
@@ -313,9 +361,11 @@ class StreamUrlController(
     @GetMapping("/{id}/narration-script")
     fun getNarrationScript(
         @PathVariable id: Long,
-        @RequestParam(defaultValue = "ta") language: String
+        @RequestParam(defaultValue = "ta") language: String,
+        @AuthenticationPrincipal user: UserDetails?
     ): ResponseEntity<NarrationScriptResponse> {
-        val script = narrationScriptService.getNarrationScript(id, language)
+        val parentId = resolveParentId(user)
+        val script = narrationScriptService.getNarrationScript(id, language, parentId)
         return if (script != null) ResponseEntity.ok(NarrationScriptResponse(script))
         else ResponseEntity.notFound().build()
     }

@@ -2,13 +2,20 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, authStorage, ApiError, registerSessionExpiredHandler, unregisterSessionExpiredHandler, refreshTokensIfNeeded } from "@/lib/api";
-import { shouldProactivelyRefresh, getJwtExpiry } from "@/lib/session-utils";
+import {
+  api,
+  authStorage,
+  ApiError,
+  registerSessionExpiredHandler,
+  unregisterSessionExpiredHandler,
+  refreshTokensIfNeeded,
+} from "@/lib/api";
+import { shouldProactivelyRefresh } from "@/lib/session-utils";
 import {
   REFRESH_CHECK_INTERVAL_MS,
-  SESSION_WARNING_THRESHOLD_MS,
+  INACTIVITY_SESSION_WARNING_MS,
 } from "@/lib/session-config";
-import { startActivityTracking, isUserActive } from "@/lib/activity-tracker";
+import { startActivityTracking, isUserActive, getMsSinceLastUserInteraction } from "@/lib/activity-tracker";
 import { subscribeSessionEvents, broadcastLogout } from "@/lib/session-sync";
 import { SessionExpiredDialog } from "@/components/session-expired-dialog";
 import { SessionWarningDialog } from "@/components/session-warning-dialog";
@@ -26,6 +33,8 @@ const AuthContext = createContext<{
   error: string | null;
   logout: () => void;
   setTokens: (access: string, refresh: string) => void;
+  /** Call after login/session dialog already validated GET /me — avoids a second /me that can fail and wipe tokens. */
+  hydrateUser: (user: CurrentUserResponse) => void;
   refreshUser: () => Promise<void>;
 } | null>(null);
 
@@ -43,13 +52,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
   const [sessionExpiredOpen, setSessionExpiredOpen] = useState(false);
   const [sessionWarningOpen, setSessionWarningOpen] = useState(false);
-  const [sessionWarningMinutesLeft, setSessionWarningMinutesLeft] = useState(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pendingResolveRef = useRef<((ok: boolean) => void) | null>(null);
+  /** Many API calls can 401 at once (e.g. pipeline poll + save). Each must be resumed after re-login — a single ref would drop earlier waiters. */
+  const sessionExpiredWaitersRef = useRef<Array<(ok: boolean) => void>>([]);
+
+  const flushSessionExpiredWaiters = useCallback((ok: boolean) => {
+    const waiters = sessionExpiredWaitersRef.current;
+    sessionExpiredWaitersRef.current = [];
+    for (const resolve of waiters) {
+      resolve(ok);
+    }
+  }, []);
 
   const setTokens = useCallback((access: string, refresh: string) => {
     authStorage.setTokens(access, refresh);
+  }, []);
+
+  const hydrateUser = useCallback((user: CurrentUserResponse) => {
+    setState((s) => ({ ...s, user, loading: false, error: null }));
   }, []);
 
   const router = useRouter();
@@ -61,11 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState({ user: null, loading: false, error: null });
     setSessionExpiredOpen(false);
     setSessionWarningOpen(false);
-    if (pendingResolveRef.current) {
-      pendingResolveRef.current(false);
-      pendingResolveRef.current = null;
-    }
-  }, []);
+    flushSessionExpiredWaiters(false);
+  }, [flushSessionExpiredWaiters]);
 
   const fetchUser = useCallback(() => {
     if (authStorage.consumeLogoutFlag()) {
@@ -90,9 +108,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setState((s) => ({ ...s, error: null }));
             fetchUser();
           }, RATE_LIMIT_RETRY_MS);
-        } else {
+        } else if (e instanceof ApiError && e.status === 401) {
           authStorage.clearTokens();
           setState({ user: null, loading: false, error: null });
+        } else if (e instanceof ApiError && e.status === 403) {
+          setState((s) => ({
+            ...s,
+            loading: false,
+            error: "Access denied for this account.",
+          }));
+        } else {
+          setState((s) => ({
+            ...s,
+            loading: false,
+            error: e instanceof Error ? e.message : "Unable to verify session",
+          }));
         }
       });
   }, []);
@@ -109,9 +139,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       if (isRateLimitError(e)) {
         setState((s) => ({ ...s, loading: false, error: "Rate limit exceeded. Please wait and try again." }));
-      } else {
+      } else if (e instanceof ApiError && e.status === 401) {
         authStorage.clearTokens();
         setState({ user: null, loading: false, error: null });
+      } else if (e instanceof ApiError && e.status === 403) {
+        setState((s) => ({
+          ...s,
+          loading: false,
+          error: "Access denied for this account.",
+        }));
+      } else {
+        setState((s) => ({
+          ...s,
+          loading: false,
+          error: e instanceof Error ? e.message : "Unable to refresh session",
+        }));
       }
     }
   }, []);
@@ -127,34 +169,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handler = (): Promise<boolean> => {
       return new Promise<boolean>((resolve) => {
-        pendingResolveRef.current = resolve;
+        sessionExpiredWaitersRef.current.push(resolve);
         setSessionExpiredOpen(true);
       });
     };
     registerSessionExpiredHandler(handler);
     return () => {
       unregisterSessionExpiredHandler();
-      if (pendingResolveRef.current) {
-        pendingResolveRef.current(false);
-        pendingResolveRef.current = null;
+      const waiters = sessionExpiredWaitersRef.current;
+      sessionExpiredWaitersRef.current = [];
+      for (const resolve of waiters) {
+        resolve(false);
       }
     };
   }, []);
 
-  const handleSessionExpiredSuccess = useCallback(() => {
-    if (pendingResolveRef.current) {
-      pendingResolveRef.current(true);
-      pendingResolveRef.current = null;
-    }
-    refreshUser();
-  }, [refreshUser]);
+  const handleSessionExpiredSuccess = useCallback(
+    (user: CurrentUserResponse) => {
+      flushSessionExpiredWaiters(true);
+      hydrateUser(user);
+    },
+    [flushSessionExpiredWaiters, hydrateUser]
+  );
 
   const handleSessionExpiredCancel = useCallback(() => {
-    if (pendingResolveRef.current) {
-      pendingResolveRef.current(false);
-      pendingResolveRef.current = null;
-    }
-  }, []);
+    flushSessionExpiredWaiters(false);
+  }, [flushSessionExpiredWaiters]);
 
   // Activity tracking for sliding-window session
   useEffect(() => {
@@ -179,23 +219,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, [refreshUser, router]);
 
-  // Proactive refresh (only when user active) + session warning when expiring soon
+  // Proactive refresh (only when user active) + "stay signed in" after prolonged inactivity
   useEffect(() => {
     const run = () => {
       if (typeof document === "undefined") return;
       const token = authStorage.getToken();
-      if (!token) return;
-
-      const exp = getJwtExpiry(token);
-      const expiresAtMs = exp != null ? exp * 1000 : 0;
-      const msLeft = expiresAtMs - Date.now();
-
-      // Show warning when token expires in < 5 min and tab visible; hide if already expired
-      if (msLeft <= 0) {
+      if (!token) {
         setSessionWarningOpen(false);
-      } else if (document.visibilityState === "visible" && msLeft < SESSION_WARNING_THRESHOLD_MS) {
-        const minutesLeft = Math.max(1, Math.ceil(msLeft / 60000));
-        setSessionWarningMinutesLeft(minutesLeft);
+        return;
+      }
+
+      const idleMs = getMsSinceLastUserInteraction();
+
+      if (
+        sessionWarningOpen &&
+        idleMs < INACTIVITY_SESSION_WARNING_MS
+      ) {
+        setSessionWarningOpen(false);
+      } else if (
+        !sessionWarningOpen &&
+        document.visibilityState === "visible" &&
+        idleMs >= INACTIVITY_SESSION_WARNING_MS
+      ) {
         setSessionWarningOpen(true);
       }
 
@@ -205,7 +250,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isUserActive() &&
         shouldProactivelyRefresh(token)
       ) {
-        setSessionWarningOpen(false); // Dismiss warning if we're refreshing
+        setSessionWarningOpen(false); // Dismiss idle warning if user returned and we refresh
         refreshTokensIfNeeded().then((ok) => {
           if (ok) refreshUser();
         });
@@ -219,7 +264,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refreshIntervalRef.current = null;
       }
     };
-  }, [refreshUser]);
+  }, [refreshUser, sessionWarningOpen]);
 
   const handleStaySignedIn = useCallback(async () => {
     setSessionWarningOpen(false);
@@ -235,6 +280,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error: state.error,
         logout,
         setTokens,
+        hydrateUser,
         refreshUser,
       }}
     >
@@ -247,7 +293,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       />
       <SessionWarningDialog
         open={sessionWarningOpen}
-        minutesLeft={sessionWarningMinutesLeft}
         onStaySignedIn={handleStaySignedIn}
         onLogout={logout}
       />

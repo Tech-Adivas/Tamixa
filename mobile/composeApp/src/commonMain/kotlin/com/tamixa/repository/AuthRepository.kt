@@ -88,6 +88,10 @@ class AuthRepository(
         api.updateProfile(nickname, displayName)
     }
 
+    suspend fun updateStoryArtPersonalizationOptIn(optIn: Boolean): Result<Unit> = runCatching {
+        api.updateStoryArtPersonalizationOptIn(optIn)
+    }
+
     fun logout() {
         tokenStorage.clear()
     }

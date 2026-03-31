@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   WandSparkles,
   Lightbulb,
+  FolderCog,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { canAccessNav } from "@/lib/admin-roles";
@@ -50,6 +51,7 @@ const navSecondary = [
   { href: "/dashboard/voice-test", label: "Voice & Avatar Studio", icon: FlaskConical, key: "voiceTest" as const },
   { href: "/dashboard/health", label: "Health", icon: Heart, key: "health" as const },
   { href: "/dashboard/ai-metrics", label: "AI metrics", icon: Cpu, key: "aiMetrics" as const },
+  { href: "/dashboard/ai-control-plane", label: "AI control plane", icon: FolderCog, key: "aiControlPlane" as const },
   { href: "/dashboard/kafka", label: "Kafka", icon: MessageSquare, key: "kafka" as const },
   { href: "/dashboard/audit", label: "Audit", icon: ClipboardList, key: "audit" as const },
   { href: "/dashboard/users", label: "User management", icon: UserCog, key: "users" as const },

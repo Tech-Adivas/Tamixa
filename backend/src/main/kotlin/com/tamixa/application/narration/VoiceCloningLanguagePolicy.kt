@@ -3,7 +3,8 @@ package com.tamixa.application.narration
 /**
  * Canonical policy for voice-cloning language support.
  *
- * - **Tamil (ta)**: XTTS does not support it; cloned-voice Tamil must use ElevenLabs only.
+ * - **Tamil (ta)**: XTTS does not support it; cloned-voice Tamil must use a managed provider
+ *   such as Google Chirp 3 or ElevenLabs.
  *   Never send Tamil to XTTS (would 500 or wrong language).
  * - **Other Indic (hi, te, etc.)**: XTTS supports hi; others may be mapped for synthesis.
  *
@@ -11,7 +12,7 @@ package com.tamixa.application.narration
  */
 object VoiceCloningLanguagePolicy {
 
-    /** Language codes that XTTS does not support; require ElevenLabs for cloned voice. */
+    /** Language codes that XTTS does not support; require a managed cloud cloning provider. */
     private val XTTS_UNSUPPORTED_CLONED = setOf("ta")
 
     private fun normalizedLang(language: String): String =
@@ -23,7 +24,7 @@ object VoiceCloningLanguagePolicy {
         return n == "ta" || n == "tamil"
     }
 
-    /** True if this language must not be sent to XTTS for cloned voice (use ElevenLabs only). */
+    /** True if this language must not be sent to XTTS for cloned voice (use managed cloud provider). */
     fun requiresElevenLabsForCloned(language: String): Boolean =
         isTamil(language)
 }

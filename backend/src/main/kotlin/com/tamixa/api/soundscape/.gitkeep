@@ -1,0 +1,2 @@
+# Reserved for future soundscape API endpoints (ambient audio mixing).
+# Currently soundscape logic is in SoundscapeController under /api/v1/soundscapes.

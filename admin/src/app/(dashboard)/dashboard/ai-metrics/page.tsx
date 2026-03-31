@@ -11,6 +11,20 @@ import { Cpu, Lightbulb, BarChart3 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatUsdToInr, formatInr } from "@/lib/currency";
 
+const AUTO_REFRESH_MS = 15_000;
+
+function formatUpdatedAgo(lastUpdatedAt: Date | null, nowMs: number): string {
+  if (!lastUpdatedAt) return "Never";
+  const diffMs = Math.max(0, nowMs - lastUpdatedAt.getTime());
+  const totalSeconds = Math.floor(diffMs / 1000);
+  if (totalSeconds < 5) return "just now";
+  if (totalSeconds < 60) return `${totalSeconds}s ago`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) return `${totalMinutes}m ago`;
+  const totalHours = Math.floor(totalMinutes / 60);
+  return `${totalHours}h ago`;
+}
+
 function formatTokens(value: number | null | undefined): string {
   if (value == null) return "—";
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
@@ -27,13 +41,18 @@ export default function AiMetricsPage() {
   const [data, setData] = useState<AiMetricsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
     api.admin
       .getAiMetrics()
-      .then(setData)
+      .then((result) => {
+        setData(result);
+        setLastUpdatedAt(new Date());
+      })
       .catch((e) => {
         const msg = e?.message ?? String(e);
         setError(msg.includes("403") || msg.includes("Forbidden") ? "You don’t have permission to view AI metrics." : msg);
@@ -45,11 +64,28 @@ export default function AiMetricsPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!document.hidden) {
+        load();
+      }
+    }, AUTO_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const cacheTotal = data ? data.cacheHits + data.cacheMisses : 0;
   const cacheHitRate = cacheTotal > 0 ? ((data!.cacheHits / cacheTotal) * 100).toFixed(1) : null;
 
   const apiBreakdown = data?.apiBreakdown ?? [];
   const storyBreakdown = data?.storyBreakdown ?? [];
+  const lastUpdatedLabel = formatUpdatedAgo(lastUpdatedAt, nowMs);
 
   return (
     <div className="space-y-6">
@@ -78,9 +114,12 @@ export default function AiMetricsPage() {
             <Cpu className="h-5 w-5 text-muted-foreground" />
             Metrics
           </CardTitle>
-          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-            {loading ? "Refreshing…" : "Refresh"}
-          </Button>
+          <div className="flex flex-col items-end gap-1">
+            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+              {loading ? "Refreshing…" : "Refresh"}
+            </Button>
+            <span className="text-xs text-muted-foreground">Updated {lastUpdatedLabel}</span>
+          </div>
         </CardHeader>
         <CardContent>
           {error && (

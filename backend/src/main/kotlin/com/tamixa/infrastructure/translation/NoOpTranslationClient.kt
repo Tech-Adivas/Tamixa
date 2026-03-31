@@ -18,5 +18,12 @@ class NoOpTranslationClient : TranslationClientPort {
         content: String,
         moral: String?,
         timeoutMs: Long
-    ): TranslatedContent = TranslatedContent(title = title, content = content, moral = moral)
+    ): TranslatedContent = TranslatedContent(
+        title = title,
+        content = content,
+        moral = moral,
+        titleBeforeParaphrase = null,
+        contentBeforeParaphrase = null,
+        moralBeforeParaphrase = null
+    )
 }

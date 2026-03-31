@@ -1,17 +1,33 @@
 package com.tamixa.ui
 
+import com.tamixa.network.ContentModerationFailureException
+import com.tamixa.network.StoryValidationServiceUnavailableException
 import com.tamixa.ui.strings.Strings
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.ResponseException
 
 /**
- * Returns a generic error message for UI (inline, dialogs). Does not expose technical
- * causes to users. Only 401 uses a distinct message (session expired) for navigation flow.
+ * Returns a user-facing error message. Does not expose technical causes.
+ * - 401: session expired (triggers navigation flow)
+ * - Timeout: distinct message so users know to retry
+ * - Network/connection: offline message
+ * - Everything else: generic "something went wrong"
  */
 fun errorMessageForUser(throwable: Throwable): String {
     val cause = throwable.cause ?: throwable
     return when {
+        cause is ContentModerationFailureException ->
+            cause.message?.takeIf { it.isNotBlank() } ?: Strings.storyContentNotAllowed()
+        cause is StoryValidationServiceUnavailableException ->
+            cause.message?.takeIf { it.isNotBlank() } ?: Strings.storyValidationTemporarilyUnavailable()
+        cause is HttpRequestTimeoutException || isTimeoutError(cause) ->
+            Strings.requestTimedOut()
         cause is ResponseException && cause.response.status.value == 401 ->
             Strings.sessionExpired()
+        cause is ResponseException && cause.response.status.value >= 500 ->
+            Strings.serverError()
+        isNetworkError(cause) || isConnectionError(cause) ->
+            Strings.noInternetConnection()
         else ->
             Strings.somethingWentWrong()
     }
@@ -21,6 +37,11 @@ fun errorMessageForUser(throwable: Throwable): String {
 fun isApiOrNetworkError(throwable: Throwable): Boolean {
     val cause = throwable.cause ?: throwable
     return cause is ResponseException || isNetworkError(cause) || isConnectionError(cause)
+}
+
+private fun isTimeoutError(t: Throwable): Boolean {
+    val name = t::class.simpleName ?: ""
+    return "Timeout" in name || "timeout" in (t.message ?: "")
 }
 
 private fun isNetworkError(t: Throwable): Boolean {

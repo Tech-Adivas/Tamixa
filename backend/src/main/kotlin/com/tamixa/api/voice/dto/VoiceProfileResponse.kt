@@ -6,5 +6,6 @@ data class VoiceProfileResponse(
     val id: Long,
     val parentId: Long,
     val createdAt: Instant,
+    val profileName: String? = null,
     val heygenVoiceId: String? = null
 )

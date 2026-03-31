@@ -26,4 +26,11 @@ class AdminAuth {
         val roleName = authority.removePrefix("ROLE_")
         return runCatching { Role.valueOf(roleName) }.getOrNull()
     }
+
+    /** SUPER_ADMIN and legacy ADMIN bypass content-manager-only gates (e.g. Regenerate with prompt after translation). */
+    fun isElevatedStoryAdmin(): Boolean {
+        val auth = SecurityContextHolder.getContext().authentication ?: return false
+        val role = resolveRole(auth) ?: return false
+        return role == Role.SUPER_ADMIN || role == Role.ADMIN
+    }
 }

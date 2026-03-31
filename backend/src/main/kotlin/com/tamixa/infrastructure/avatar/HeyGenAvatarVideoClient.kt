@@ -30,7 +30,13 @@ class HeyGenAvatarVideoClient(
     companion object {
         private const val API_BASE = "https://api.heygen.com"
         private const val UPLOAD_BASE = "https://upload.heygen.com"
+        private const val HEYGEN_NSFW_CODE = 400168
     }
+
+    private data class ParsedHeyGenError(
+        val code: Int?,
+        val message: String?
+    )
 
     /** Parse error from HeyGen createVideo-style response. Returns null if no error. */
     private fun parseCreateVideoError(node: com.fasterxml.jackson.databind.JsonNode): String? {
@@ -45,6 +51,29 @@ class HeyGenAvatarVideoClient(
             ).firstOrNull() ?: errorNode.toString().take(200)
             else -> null
         }
+    }
+
+    private fun parseErrorBody(body: String?): ParsedHeyGenError {
+        if (body.isNullOrBlank()) return ParsedHeyGenError(code = null, message = null)
+        return try {
+            val node = objectMapper.readTree(body)
+            ParsedHeyGenError(
+                code = node.get("code")?.asInt(),
+                message = node.get("message")?.asText()?.takeIf { it.isNotBlank() }
+            )
+        } catch (e: Exception) {
+            log.debug("HeyGen error body parse failed: {}", e.message)
+            ParsedHeyGenError(code = null, message = null)
+        }
+    }
+
+    private fun toUserFacingErrorMessage(statusCode: String, parsed: ParsedHeyGenError, fallbackBody: String): String {
+        val rawMessage = parsed.message ?: fallbackBody.ifBlank { "HeyGen request failed: $statusCode" }
+        val isNsfwBlocked = parsed.code == HEYGEN_NSFW_CODE || rawMessage.contains("nsfw", ignoreCase = true)
+        if (isNsfwBlocked) {
+            return "Preview blocked: HeyGen moderation rejected the avatar image (NSFW content detected). Upload a family-safe portrait photo and retry."
+        }
+        return rawMessage
     }
 
     /**
@@ -82,13 +111,9 @@ class HeyGenAvatarVideoClient(
         } catch (e: HttpStatusCodeException) {
             val body = e.responseBodyAsString
             log.error("HeyGen uploadTalkingPhoto failed: {} {}", e.statusCode, body)
-            val message = try {
-                objectMapper.readTree(body).get("message")?.asText()
-            } catch (e: Exception) {
-                log.debug("HeyGen error body parse failed: {}", e.message)
-                null
-            }
-            throw HeyGenCreateVideoException(message ?: body.ifBlank { "HeyGen upload failed: ${e.statusCode}" }, e)
+            val parsed = parseErrorBody(body)
+            val message = toUserFacingErrorMessage(e.statusCode.toString(), parsed, body)
+            throw HeyGenCreateVideoException(message, e)
         } catch (e: Exception) {
             log.error("HeyGen uploadTalkingPhoto failed: {}", e.message, e)
             throw HeyGenCreateVideoException("HeyGen talking photo upload failed: ${e.message ?: "unknown error"}", e)
@@ -149,14 +174,19 @@ class HeyGenAvatarVideoClient(
         } catch (e: HttpStatusCodeException) {
             val body = e.responseBodyAsString
             log.error("HeyGen createVideo HTTP {}: {}", e.statusCode, body.take(500))
-            val message = try {
+            val parsed = parseErrorBody(body)
+            val messageFromCreateVideo = try {
                 val node = objectMapper.readTree(body)
-                parseCreateVideoError(node) ?: node.get("message")?.asText()?.takeIf { it.isNotBlank() }
-            } catch (e: Exception) {
-                log.debug("HeyGen createVideo error body parse failed: {}", e.message)
+                parseCreateVideoError(node)
+            } catch (ex: Exception) {
                 null
             }
-            throw HeyGenCreateVideoException(message ?: body.ifBlank { "HeyGen create video failed: ${e.statusCode}" }, e)
+            val message = toUserFacingErrorMessage(
+                e.statusCode.toString(),
+                parsed.copy(message = messageFromCreateVideo ?: parsed.message),
+                body
+            )
+            throw HeyGenCreateVideoException(message, e)
         } catch (e: Exception) {
             log.error("HeyGen createVideo failed: {}", e.message, e)
             throw HeyGenCreateVideoException("HeyGen create video failed: ${e.message ?: "unknown error"}", e)

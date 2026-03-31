@@ -24,7 +24,7 @@ interface OpenAIPort {
 
     /**
      * Generate story text from a prompt. Kept for backward compatibility.
-     * @param maxTokens Use 2048+ for long stories (600–1500 words); default 1024 may truncate.
+     * @param maxTokens Use 2048+ for medium/long stories (600–900 words); default 1024 may truncate.
      */
     fun generateStory(prompt: String, maxTokens: Int = 1024): String
 

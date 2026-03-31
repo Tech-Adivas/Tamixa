@@ -29,8 +29,23 @@ data class LibraryStoryResponse(
     val reviewNotes: String? = null,
     /** Per-language narration approval: language code -> approved. */
     val translationApproval: Map<String, Boolean> = emptyMap(),
-    /** Rewritten narration script (conversational) when pipeline has run. Use for further edits in library story form. */
+    /** Rewritten narration script (conversational) when pipeline has run. */
     val narratedContent: String? = null,
+    /**
+     * Primary story text for this language (translation row or master), excluding the narration script.
+     * Admin editors show this in “Story text” and [narratedContent] in “Narration script”.
+     */
+    val sourceContent: String = "",
+    /**
+     * Hint that a conversational narration script exists (post–rewrite pipeline).
+     */
+    val preferNarratedContentForEditor: Boolean = false,
     /** When set, admin has marked this story for reject from the language view. */
-    val rejectMarkedAt: Instant? = null
+    val rejectMarkedAt: Instant? = null,
+    /** When true, Regenerate with prompt is gated for content managers until approved by elevated admin. */
+    val regeneratePromptLocked: Boolean = false,
+    val regeneratePromptLockApproved: Boolean = false,
+    val regeneratePromptUnlockRequestedAt: Instant? = null,
+    /** When set, story is in trash (soft-deleted) until retention expires or restored. */
+    val deletedAt: Instant? = null
 )

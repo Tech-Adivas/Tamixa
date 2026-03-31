@@ -6,6 +6,8 @@ import io.ktor.client.*
 import io.ktor.client.call.body
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.Serializable
 
@@ -107,6 +109,21 @@ class AuthApi(private val client: HttpClient) {
         }
     }
 
+    suspend fun updateStoryArtPersonalizationOptIn(optIn: Boolean) {
+        val response = client.patch("${ApiConfig.API_VERSION}/auth/me/story-art-personalization") {
+            contentType(ContentType.Application.Json)
+            setBody(StoryArtPersonalizationRequest(optIn = optIn))
+        }
+        if (!response.status.isSuccess()) {
+            val msg = try {
+                response.body<ApiErrorResponse>().message
+            } catch (_: Exception) {
+                "Update failed (${response.status})"
+            }
+            throw AuthApiException(response.status.value, msg)
+        }
+    }
+
     /** Step 1: Request passwordless code sent to email. Returns sent status. */
     suspend fun requestPasswordlessCode(email: String): Boolean =
         client.post("${ApiConfig.API_VERSION}/auth/passwordless") {
@@ -163,3 +180,6 @@ internal data class UpdateProfileRequest(
     val nickname: String? = null,
     val displayName: String? = null
 )
+
+@Serializable
+private data class StoryArtPersonalizationRequest(val optIn: Boolean)

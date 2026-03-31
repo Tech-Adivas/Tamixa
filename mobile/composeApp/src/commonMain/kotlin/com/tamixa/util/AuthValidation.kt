@@ -5,12 +5,13 @@ package com.tamixa.util
  * Keeps validation rules in one place and avoids unnecessary API calls.
  */
 object AuthValidation {
-    /** Simple email format: non-empty, contains @, has domain part. */
+    // RFC 5322-inspired: local@domain.tld — rejects "a@b", requires dot in domain
+    private val EMAIL_REGEX = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]{2,}$")
+
+    /** Validates email format: must match local@domain.tld pattern. */
     fun isEmailValid(email: String): Boolean {
         val trimmed = email.trim()
-        if (trimmed.isEmpty()) return false
-        val at = trimmed.indexOf('@')
-        return at in 1..(trimmed.length - 2)
+        return trimmed.isNotEmpty() && EMAIL_REGEX.matches(trimmed)
     }
 
     /** OTP/code: digits only, length in [4, 8] (typical for email OTP). */

@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useAuth } from "../contexts/AuthContext";
 import { SubscriptionSkeleton } from "../components/Skeleton";
 import {
   getSubscription,
@@ -13,7 +12,6 @@ import {
 } from "../lib/api";
 
 export default function Subscription() {
-  const {} = useAuth();
   const [sub, setSub] = useState<Subscription | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -23,6 +21,7 @@ export default function Subscription() {
   const [appliedReferral, setAppliedReferral] = useState<ReferralCodeValidateResponse | null>(null);
   const [referralError, setReferralError] = useState<string | null>(null);
   const [upgrading, setUpgrading] = useState(false);
+  const [cancelConfirm, setCancelConfirm] = useState(false);
 
   useEffect(() => {
     Promise.all([getSubscription(), getUsage()])
@@ -82,7 +81,11 @@ export default function Subscription() {
   };
 
   const handleCancel = async () => {
-    if (!confirm("Cancel at end of period? You'll keep access until then.")) return;
+    if (!cancelConfirm) {
+      setCancelConfirm(true);
+      return;
+    }
+    setCancelConfirm(false);
     setCanceling(true);
     setError("");
     try {
@@ -160,9 +163,23 @@ export default function Subscription() {
                     </>
                   ) : null}
                   {!sub.cancelAtPeriodEnd && sub.plan !== "FREE" && (
-                    <button type="button" className="btn btn-outline" onClick={handleCancel} disabled={canceling} style={{ marginTop: "1rem" }}>
-                      {canceling ? "Canceling…" : "Cancel at period end"}
-                    </button>
+                    <div style={{ marginTop: "1rem" }}>
+                      {cancelConfirm ? (
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "0.9rem" }}>Cancel at end of period? You'll keep access until then.</span>
+                          <button type="button" className="btn btn-outline" onClick={handleCancel} disabled={canceling}>
+                            {canceling ? "Canceling…" : "Yes, cancel"}
+                          </button>
+                          <button type="button" className="btn btn-outline" onClick={() => setCancelConfirm(false)} disabled={canceling}>
+                            No, keep plan
+                          </button>
+                        </div>
+                      ) : (
+                        <button type="button" className="btn btn-outline" onClick={handleCancel} disabled={canceling}>
+                          Cancel at period end
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

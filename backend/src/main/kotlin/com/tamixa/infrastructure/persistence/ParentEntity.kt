@@ -42,5 +42,8 @@ class ParentEntity(
     var displayName: String? = null,
 
     @Column(name = "suspended_at")
-    var suspendedAt: Instant? = null
+    var suspendedAt: Instant? = null,
+
+    @Column(name = "story_art_personalization_opt_in", nullable = false)
+    var storyArtPersonalizationOptIn: Boolean = false
 )

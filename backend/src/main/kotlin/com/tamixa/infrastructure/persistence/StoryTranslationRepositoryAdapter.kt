@@ -2,6 +2,7 @@ package com.tamixa.infrastructure.persistence
 
 import com.tamixa.application.port.StoryTranslationRepositoryPort
 import com.tamixa.domain.StoryTranslation
+import com.tamixa.domain.TranslationPipelineStatus
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Component
@@ -12,7 +13,7 @@ class StoryTranslationRepositoryAdapter(
 ) : StoryTranslationRepositoryPort {
 
     override fun findById(id: Long): StoryTranslation? =
-        jpaRepository.findById(id).orElse(null)?.toDomain()
+        jpaRepository.findActiveById(id)?.toDomain()
 
     override fun save(translation: StoryTranslation): StoryTranslation {
         val entity = StoryTranslationEntity(
@@ -47,11 +48,17 @@ class StoryTranslationRepositoryAdapter(
     override fun findByLanguageAndMasterNarrationApproved(language: String, pageable: Pageable): Page<StoryTranslation> =
         jpaRepository.findByLanguageAndMasterNarrationApproved(language, pageable).map { it.toDomain() }
 
+    override fun findByLanguageAndMasterNarrationApprovedWithMasterAudio(language: String, pageable: Pageable): Page<StoryTranslation> =
+        jpaRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudio(language, pageable).map { it.toDomain() }
+
     override fun findListingByLanguage(language: String, pageable: Pageable): Page<com.tamixa.domain.StoryTranslationListing> =
         jpaRepository.findListingByLanguage(language, pageable).map(::toListing)
 
     override fun findListingByLanguageAndMasterNarrationApproved(language: String, pageable: Pageable): Page<com.tamixa.domain.StoryTranslationListing> =
         jpaRepository.findListingByLanguageAndMasterNarrationApproved(language, pageable).map(::toListing)
+
+    override fun findListingByLanguageAndMasterNarrationApprovedWithMasterAudio(language: String, pageable: Pageable): Page<com.tamixa.domain.StoryTranslationListing> =
+        jpaRepository.findListingByLanguageAndMasterNarrationApprovedWithMasterAudio(language, pageable).map(::toListing)
 
     override fun findListingByLanguageAndMasterNarrationApprovedAndTheme(language: String, theme: String, pageable: Pageable): Page<com.tamixa.domain.StoryTranslationListing> =
         jpaRepository.findListingByLanguageAndMasterNarrationApprovedAndTheme(language, theme, pageable).map(::toListing)
@@ -59,11 +66,25 @@ class StoryTranslationRepositoryAdapter(
     override fun findByLanguageAndMasterNarrationApprovedAndTheme(language: String, theme: String, pageable: Pageable): Page<StoryTranslation> =
         jpaRepository.findByLanguageAndMasterNarrationApprovedAndTheme(language, theme, pageable).map { it.toDomain() }
 
+    override fun findByLanguageAndMasterNarrationApprovedWithMasterAudioAndTheme(
+        language: String,
+        theme: String,
+        pageable: Pageable
+    ): Page<StoryTranslation> =
+        jpaRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudioAndTheme(language, theme, pageable).map { it.toDomain() }
+
     override fun findByMasterStoryId(masterStoryId: Long): List<StoryTranslation> =
         jpaRepository.findByMasterStoryId(masterStoryId).map { it.toDomain() }
 
     override fun findByStatusIn(statuses: List<com.tamixa.domain.TranslationPipelineStatus>): List<StoryTranslation> =
         jpaRepository.findByStatusIn(statuses).map { it.toDomain() }
+
+    override fun findRetryableByStatusIn(
+        statuses: List<TranslationPipelineStatus>,
+        maxRetriesExclusive: Int,
+        pageable: Pageable
+    ): Page<StoryTranslation> =
+        jpaRepository.findRetryableByStatusIn(statuses, maxRetriesExclusive, pageable).map { it.toDomain() }
 
     override fun atomicStatusUpdate(id: Long, newStatus: com.tamixa.domain.TranslationPipelineStatus, lastError: String?): Boolean =
         jpaRepository.atomicStatusUpdate(id, newStatus, lastError) > 0
@@ -76,6 +97,9 @@ class StoryTranslationRepositoryAdapter(
 
     override fun resetRetryCountByMasterStoryIdAndLanguage(masterStoryId: Long, language: String): Int =
         jpaRepository.resetRetryCountByMasterStoryIdAndLanguage(masterStoryId, language)
+
+    override fun resetPipelineStateForMasterStory(masterStoryId: Long): Int =
+        jpaRepository.resetPipelineStateForMasterStory(masterStoryId, TranslationPipelineStatus.PENDING)
 
     override fun deleteByMasterStoryId(masterStoryId: Long) {
         jpaRepository.deleteByMasterStoryId(masterStoryId)

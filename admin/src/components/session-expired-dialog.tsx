@@ -16,11 +16,13 @@ import { Label } from "@/components/ui/label";
 import { api, authStorage } from "@/lib/api";
 import { isAdminRole } from "@/lib/admin-roles";
 import { getApiErrorMessage } from "@/lib/utils";
+import type { CurrentUserResponse } from "@/types/api";
 
 interface SessionExpiredDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
+  /** Called with /me payload after tokens are stored — parent must not call /me again (avoids race that cleared tokens). */
+  onSuccess: (user: CurrentUserResponse) => void;
   onCancel?: () => void;
 }
 
@@ -49,7 +51,7 @@ export function SessionExpiredDialog({
           setError("An admin role is required to sign in.");
           return;
         }
-        onSuccess();
+        onSuccess(me);
         onOpenChange(false);
         setEmail("");
         setPassword("");

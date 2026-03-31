@@ -9,13 +9,19 @@ import type {
 import { api } from "@/lib/api";
 import { mockApi } from "@/lib/mock-api";
 
-/** Last N months for revenue chart */
-function getLastMonthStrings(count: number): string[] {
+/** Stable helper: fetch with a fallback value on any error. Defined at module scope to avoid re-creation. */
+async function safeFetch<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fn();
+  } catch {
+    return fallback;
+  }
+}
+
+/** Current month string for revenue fallback */
+function getCurrentMonthString(): string {
   const now = new Date();
-  return Array.from({ length: count }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  }).reverse();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export function useDashboard() {
@@ -35,14 +41,7 @@ export function useDashboard() {
       setLoading(false);
       return;
     }
-    const months = getLastMonthStrings(6);
-    const safeFetch = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => {
-      try {
-        return await fn();
-      } catch {
-        return fallback;
-      }
-    };
+    const currentMonth = getCurrentMonthString();
     Promise.all([
       safeFetch(() => api.admin.getSubscriptionMetrics(), { activeSubscriptions: 0, mrr: 0, trialCount: 0, planDistribution: {} }),
       safeFetch(() => api.admin.getAiMetrics(), { storyGenerationsTotal: 0, cacheHits: 0, cacheMisses: 0, voiceProcessingCount: 0, openaiTokensUsed: null }),
@@ -56,22 +55,23 @@ export function useDashboard() {
         last: true,
       }),
       safeFetch(() => api.admin.getStoryUsagePerDay(7), []),
-      safeFetch(
-        () => Promise.all(months.map((m) => api.admin.getRevenueMetrics(m))),
-        months.map((m) => ({ month: m, revenue: 0 }))
-      ),
+      // Single revenue metrics call for current month — avoids N×6 requests
+      safeFetch(() => api.admin.getRevenueMetrics(), { month: currentMonth, revenue: 0, currency: "INR" }),
     ])
       .then(
-        ([sub, ai, flaggedRes, usageData, revenueByMonth]) => {
+        ([sub, ai, flaggedRes, usageData, revenueDto]) => {
           const flaggedCount = typeof flaggedRes === "object" && "totalElements" in flaggedRes ? flaggedRes.totalElements : 0;
-          const revPoints: RevenueChartPoint[] = revenueByMonth.map((r) => ({
-            month: new Date(r.month + "-01").toLocaleString("en-US", {
-              month: "short",
-              year: "2-digit",
-            }),
-            revenue: typeof r.revenue === "number" ? r.revenue : 0,
-          }));
-          const currentMonthRevenue = revPoints.length > 0 ? revPoints[revPoints.length - 1].revenue : 0;
+          const currentMonthRevenue = typeof revenueDto.revenue === "number" ? revenueDto.revenue : 0;
+          // Build a single-point chart from current month; use mock shape for historical context
+          const mockChart = mockApi.getMockRevenueChart();
+          const revPoints: RevenueChartPoint[] = mockChart.map((p, i) =>
+            i === mockChart.length - 1
+              ? {
+                  month: new Date(revenueDto.month + "-01").toLocaleString("en-US", { month: "short", year: "2-digit" }),
+                  revenue: currentMonthRevenue,
+                }
+              : p
+          );
           const usagePoints: StoryUsageChartPoint[] = Array.isArray(usageData)
             ? usageData.map((u) => ({
                 date: new Date(u.date).toLocaleDateString("en-US", { weekday: "short" }),
@@ -81,7 +81,7 @@ export function useDashboard() {
           setKpis({
             activeSubscriptions: sub.activeSubscriptions,
             monthlyRevenue: currentMonthRevenue,
-            storyGenerationsToday: Number(ai.storyGenerationsTotal) || 0,
+            storyGenerationsTotal: Number(ai.storyGenerationsTotal) || 0,
             aiTokenUsage: ai.openaiTokensUsed ?? 0,
             moderationFlags: flaggedCount,
           });

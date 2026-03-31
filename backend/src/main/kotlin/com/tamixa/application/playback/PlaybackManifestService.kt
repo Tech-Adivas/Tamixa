@@ -118,7 +118,7 @@ class PlaybackManifestService(
                 coverVideoUrl = coverVideoUrl
             )
         } else {
-            val script = narrationScriptService.getNarrationScript(storyId, language) ?: story.content
+            val script = narrationScriptService.getNarrationScript(storyId, language, parentId) ?: story.content
             val durationSeconds = (story.readingTimeMinutes * 60).toInt().coerceAtLeast(1)
             val backgroundHint = story.theme?.takeIf { it.isNotBlank() }?.let { theme ->
                 when {
@@ -168,7 +168,8 @@ class PlaybackManifestService(
                         audioUrl = s.audioUrl ?: audioUrl,
                         durationMs = s.durationMs
                     )
-                }
+                },
+                illustrationImageUrl = resolveSceneIllustrationUrl(scene.illustrationImagePath)
             )
         }
         val totalMs = playbackScenes.flatMap { it.segments }.sumOf { it.durationMs }
@@ -206,6 +207,13 @@ class PlaybackManifestService(
         return coverImageUrl to coverVideoUrl
     }
 
+    private fun resolveSceneIllustrationUrl(storedPath: String?): String? {
+        if (storedPath.isNullOrBlank()) return null
+        val baseUrl = appProperties.audio.publicBaseUrl.trimEnd('/')
+        return coverImageUrlResolver.resolveCoverPath(storedPath)
+            ?.let { if (it.startsWith("http")) it else "$baseUrl$it" }
+    }
+
     private fun buildManifestFromScenes(
         storyId: Long,
         title: String,
@@ -229,7 +237,8 @@ class PlaybackManifestService(
                         audioUrl = s.audioUrl ?: audioUrl,
                         durationMs = s.durationMs
                     )
-                }
+                },
+                illustrationImageUrl = resolveSceneIllustrationUrl(scene.illustrationImagePath)
             )
         }
         val totalMs = playbackScenes.flatMap { it.segments }.sumOf { it.durationMs }
@@ -313,7 +322,9 @@ data class PlaybackManifest(
 data class PlaybackScene(
     val sceneId: String,
     val backgroundHint: String?,
-    val segments: List<PlaybackSegment>
+    val segments: List<PlaybackSegment>,
+    /** Resolved HTTP URL for optional per-scene storybook art. */
+    val illustrationImageUrl: String? = null
 )
 
 data class PlaybackSegment(

@@ -57,5 +57,12 @@ data class CreateLibraryStoryRequest(
     val translationContents: Map<String, String>? = null,
 
     /** Per-language content with optional title and moral. When set, used instead of translationContents. */
-    val translationContentEntries: Map<String, TranslationContentEntryDto>? = null
+    val translationContentEntries: Map<String, TranslationContentEntryDto>? = null,
+
+    /**
+     * When present in the JSON body, updates `story_narration_scripts.script_text` for this story’s language
+     * (after save). Omit the property to leave the script unchanged. Empty string removes the script row.
+     */
+    @field:Size(max = 50_000)
+    val narratedContent: String? = null
 )

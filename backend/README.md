@@ -21,6 +21,10 @@ Or from this directory:
 - `src/main/resources/application.yml` — base config
 - Profiles: `dev`, `staging`, `prod`
 - API base path: `/api/v1`
+- Datasource precedence:
+  - `dev`: `DATABASE_URL` / `DATABASE_USERNAME` / `DATABASE_PASSWORD` (preferred), fallback to `POSTGRES_*`
+  - `staging`/`prod`: `DATABASE_*` expected
+  - If both `DATABASE_*` and `POSTGRES_*` are set, keep them aligned to avoid connecting different runs to different DBs.
 
 ### Flyway lock strategy (important for scale)
 

@@ -57,10 +57,11 @@ class JwtService(
         return try {
             val claims = parseToken(token)
             if (claims[CLAIM_TYPE] != TYPE_ACCESS) return null
-            TokenClaims(
-                email = claims.subject,
-                role = claims[CLAIM_ROLE] as String
-            )
+            val role = (claims[CLAIM_ROLE] as? String)?.trim()?.takeIf { it.isNotEmpty() } ?: run {
+                log.debug("Access token missing or invalid role claim")
+                return null
+            }
+            TokenClaims(email = claims.subject, role = role)
         } catch (e: ExpiredJwtException) {
             log.debug("Access token expired")
             null
@@ -69,6 +70,9 @@ class JwtService(
             null
         } catch (e: SignatureException) {
             log.debug("Invalid access token signature")
+            null
+        } catch (e: ClassCastException) {
+            log.debug("Access token role claim has wrong type: {}", e.message)
             null
         }
     }

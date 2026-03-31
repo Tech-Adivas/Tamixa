@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { api, authStorage } from "@/lib/api";
-import type { ParentSummary, PagedResponse, VoiceProfile, LibraryStorySummary, LibraryStoryStreamUrlResponse } from "@/types/api";
+import Image from "next/image";
+import { api, authStorage, isPreviewBlockedErrorMessage } from "@/lib/api";
+import type { ParentSummary, PagedResponse, VoiceProfile, LibraryStorySummary, LibraryStoryStreamUrlResponse, VoiceCloningJob } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,10 +40,13 @@ export default function VoiceTestPage() {
   const [previewSampleLoading, setPreviewSampleLoading] = useState(false);
   const sampleAudioRef = useRef<{ element: HTMLAudioElement; objectUrl: string } | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [newProfileName, setNewProfileName] = useState("");
   /** Per-profile consent file for Google voice cloning (key = profile id). */
   const [consentFileForProfileId, setConsentFileForProfileId] = useState<Record<number, File | null>>({});
   const [consentUploadingForId, setConsentUploadingForId] = useState<number | null>(null);
   const [runJobForId, setRunJobForId] = useState<number | null>(null);
+  const [checkProviderForId, setCheckProviderForId] = useState<number | null>(null);
+  const [latestJobByProfileId, setLatestJobByProfileId] = useState<Record<number, VoiceCloningJob | null>>({});
   const [stories, setStories] = useState<LibraryStorySummary[]>([]);
   const [storiesLoading, setStoriesLoading] = useState(false);
   const [selectedStoryId, setSelectedStoryId] = useState<number | null>(null);
@@ -77,6 +81,39 @@ export default function VoiceTestPage() {
   const [avatarDeleting, setAvatarDeleting] = useState(false);
   const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
   const [avatarRegenerating, setAvatarRegenerating] = useState(false);
+  const [avatarStatusChecking, setAvatarStatusChecking] = useState(false);
+  const avatarVideoBlocked = isPreviewBlockedErrorMessage(avatarVideoError);
+  const avatarVideoTimedOut = /timeout waiting for/i.test(avatarVideoError ?? "");
+  const applyAvatarStreamResult = useCallback(
+    (
+      data: LibraryStoryStreamUrlResponse,
+      options?: { showReadyToast?: boolean; showFailedToast?: boolean }
+    ) => {
+      const status = data.avatarVideoStatus;
+      const errorMsg = data.avatarVideoError;
+      const provider = data.avatarVideoProvider ?? null;
+      setAvatarVideoProvider(provider);
+      if (data?.avatarVideoUrl) {
+        setAvatarVideoUrl(data.avatarVideoUrl);
+        setAvatarNarrationUrl(typeof data?.streamUrl === "string" ? data.streamUrl : null);
+        setAvatarVideoPending(false);
+        setAvatarVideoError(null);
+        setAvatarVideoSuccess(true);
+        if (options?.showReadyToast !== false) {
+          showSuccess("Avatar video ready", "Press play on the video below to watch the full lipsync.");
+        }
+      } else if (status === "FAILED" && errorMsg) {
+        setAvatarVideoPending(false);
+        setAvatarVideoError(errorMsg);
+        if (options?.showFailedToast !== false) {
+          showError(isPreviewBlockedErrorMessage(errorMsg) ? "Preview blocked" : "Avatar video failed", errorMsg);
+        }
+      } else {
+        setAvatarVideoPending(true);
+      }
+    },
+    [showSuccess, showError]
+  );
 
   const loadParents = useCallback(() => {
     setParentsLoading(true);
@@ -115,6 +152,24 @@ export default function VoiceTestPage() {
       .finally(() => setProfilesLoading(false));
   }, [selectedParentId, showError]);
 
+  const loadLatestVoiceCloningJobs = useCallback(async (parentId: number, profileIds: number[]) => {
+    if (profileIds.length === 0) {
+      setLatestJobByProfileId({});
+      return;
+    }
+    const pairs = await Promise.all(
+      profileIds.map(async (profileId) => {
+        try {
+          const job = await api.admin.getLatestVoiceCloningJobForProfile(parentId, profileId);
+          return [profileId, job] as const;
+        } catch {
+          return [profileId, null] as const;
+        }
+      })
+    );
+    setLatestJobByProfileId(Object.fromEntries(pairs));
+  }, []);
+
   useEffect(() => {
     loadParents();
   }, [loadParents]);
@@ -122,6 +177,14 @@ export default function VoiceTestPage() {
   useEffect(() => {
     loadProfiles();
   }, [loadProfiles]);
+
+  useEffect(() => {
+    if (selectedParentId == null || profiles.length === 0) {
+      setLatestJobByProfileId({});
+      return;
+    }
+    void loadLatestVoiceCloningJobs(selectedParentId, profiles.map((p) => p.id));
+  }, [selectedParentId, profiles, loadLatestVoiceCloningJobs]);
 
   const loadAvatarUrl = useCallback(() => {
     if (selectedParentId == null) {
@@ -143,6 +206,12 @@ export default function VoiceTestPage() {
   useEffect(() => {
     if (profiles.length === 1 && selectedProfileId === null) setSelectedProfileId(profiles[0]!.id);
   }, [profiles, selectedProfileId]);
+
+  const getProfileLabel = useCallback(
+    (profileId: number) =>
+      profiles.find((p) => p.id === profileId)?.profileName?.trim() || `Voice ${profileId}`,
+    [profiles]
+  );
 
   useEffect(() => {
     setStoriesLoading(true);
@@ -196,7 +265,8 @@ export default function VoiceTestPage() {
       setPreviewSampleProfileId(profileId);
       showSuccess("Playing uploaded sample", "This is the reference audio for this cloned voice.");
     } catch (e) {
-      showError("Preview failed", e instanceof Error ? e.message : "Preview failed");
+      const msg = e instanceof Error ? e.message : "Preview failed";
+      showError(isPreviewBlockedErrorMessage(msg) ? "Preview blocked" : "Preview failed", msg);
     } finally {
       setPreviewSampleLoading(false);
     }
@@ -204,13 +274,14 @@ export default function VoiceTestPage() {
 
   const handleDeleteProfile = async (profileId: number) => {
     if (selectedParentId == null) return;
-    if (!confirm(`Delete voice profile cloned:${profileId}? You can upload a new sample after.`)) return;
+    const profileLabel = getProfileLabel(profileId);
+    if (!confirm(`Delete voice profile "${profileLabel}" (cloned:${profileId})? You can upload a new sample after.`)) return;
     setDeletingId(profileId);
     if (previewSampleProfileId === profileId) stopSamplePreview();
     try {
       await api.admin.deleteVoiceProfileForParent(selectedParentId, profileId);
       if (selectedProfileId === profileId) setSelectedProfileId(null);
-      showSuccess("Voice deleted", "Upload a new audio file to create a replacement profile.");
+      showSuccess("Voice deleted", `"${profileLabel}" removed. Upload a new audio file to create a replacement profile.`);
       loadProfiles();
     } catch (e) {
       showError("Delete failed", e instanceof Error ? e.message : "Delete failed");
@@ -224,11 +295,17 @@ export default function VoiceTestPage() {
       showError("Validation", "Select a parent and a file.");
       return;
     }
+    const cleanedProfileName = newProfileName.trim();
+    if (!cleanedProfileName) {
+      showError("Validation", "Enter a voice profile name.");
+      return;
+    }
     setUploading(true);
     try {
-      await api.admin.uploadVoiceForParent(selectedParentId, selectedFile);
-      showSuccess("Voice profile created", "Use cloned:{id} in the app for this parent.");
+      await api.admin.uploadVoiceForParent(selectedParentId, selectedFile, cleanedProfileName);
+      showSuccess("Voice profile created", `Profile "${cleanedProfileName}" is ready. Use cloned:{id} in the app identifier.`);
       setSelectedFile(null);
+      setNewProfileName("");
       loadProfiles();
     } catch (e) {
       showError("Upload failed", e instanceof Error ? e.message : "Upload failed");
@@ -239,6 +316,7 @@ export default function VoiceTestPage() {
 
   const handleUploadConsent = async (profileId: number) => {
     if (selectedParentId == null) return;
+    const profileLabel = getProfileLabel(profileId);
     const file = consentFileForProfileId[profileId] ?? (document.getElementById(`consent-file-${profileId}`) as HTMLInputElement)?.files?.[0];
     if (!file) {
       showError("Validation", "Choose a consent audio file first (under “Consent (Google)” for this row).");
@@ -247,7 +325,7 @@ export default function VoiceTestPage() {
     setConsentUploadingForId(profileId);
     try {
       const result = await api.admin.uploadConsentAndRunVoiceCloning(selectedParentId, profileId, file);
-      showSuccess("Voice cloning job started (Google)", result.message);
+      showSuccess(`Voice cloning job started (Google) — ${profileLabel}`, result.message);
       const input = document.getElementById(`consent-file-${profileId}`) as HTMLInputElement | null;
       if (input) input.value = "";
       setConsentFileForProfileId((prev) => ({ ...prev, [profileId]: null }));
@@ -260,14 +338,46 @@ export default function VoiceTestPage() {
 
   const handleRunVoiceCloningJob = async (profileId: number) => {
     if (selectedParentId == null) return;
+    const profileLabel = getProfileLabel(profileId);
     setRunJobForId(profileId);
     try {
       const result = await api.admin.runVoiceCloningJobForProfile(selectedParentId, profileId);
-      showSuccess("Voice cloning job started (ElevenLabs)", result.message);
+      showSuccess(`Voice cloning job started (${result.provider}) — ${profileLabel}`, result.message);
+      await loadLatestVoiceCloningJobs(selectedParentId, [profileId]);
     } catch (e) {
-      showError("Run job failed", e instanceof Error ? e.message : "Failed");
+      showError(`Run job failed — ${profileLabel}`, e instanceof Error ? e.message : "Failed");
     } finally {
       setRunJobForId(null);
+    }
+  };
+
+  const handleCheckProvider = async (profileId: number) => {
+    if (selectedParentId == null) return;
+    const profileLabel = getProfileLabel(profileId);
+    setCheckProviderForId(profileId);
+    try {
+      const result = await api.admin.checkVoiceProviderForProfile(selectedParentId, profileId, "ta");
+      const statusBits = [
+        result.userApiStatus != null ? `userApi=${result.userApiStatus}` : null,
+        result.voiceApiStatus != null ? `voiceApi=${result.voiceApiStatus}` : null,
+      ].filter(Boolean).join(" ");
+      const details = [
+        result.sampleBytes ? `${result.message} (${result.sampleBytes} bytes)` : result.message,
+        statusBits || null,
+      ].filter(Boolean).join(" | ");
+      if (result.ok) {
+        showSuccess(`Provider check passed — ${profileLabel}`, details);
+      } else if (result.providerQuotaFailed) {
+        showError(`Provider quota exceeded — ${profileLabel}`, result.providerStatusMessage || details);
+      } else if (result.providerAuthFailed) {
+        showError(`Provider auth failed — ${profileLabel}`, details);
+      } else {
+        showError(`Provider check failed — ${profileLabel}`, details);
+      }
+    } catch (e) {
+      showError(`Provider check failed — ${profileLabel}`, e instanceof Error ? e.message : "Provider check failed");
+    } finally {
+      setCheckProviderForId(null);
     }
   };
 
@@ -327,7 +437,15 @@ export default function VoiceTestPage() {
       setNarrationReadyForAvatar(true);
       showSuccess("Playing story with cloned voice", "First time may take a moment to generate.");
     } catch (e) {
-      showError("Preview failed", e instanceof Error ? e.message : "Preview failed");
+      const msg = e instanceof Error ? e.message : "Preview failed";
+      if (/cloned voice audio not ready|audio not ready for this language/i.test(msg)) {
+        showSuccess(
+          "Generating cloned narration",
+          "Narration is being generated for this story/language. Wait 10-20 seconds, then press Play again."
+        );
+      } else {
+        showError(isPreviewBlockedErrorMessage(msg) ? "Preview blocked" : "Preview failed", msg);
+      }
     } finally {
       setPreviewLoading(false);
     }
@@ -440,27 +558,11 @@ export default function VoiceTestPage() {
         `cloned:${selectedProfileId}`,
         selectedParentId
       );
-      const status = data.avatarVideoStatus;
-      const errorMsg = data.avatarVideoError;
-      const provider = data.avatarVideoProvider ?? null;
-      setAvatarVideoProvider(provider);
-      if (data?.avatarVideoUrl) {
-        setAvatarVideoUrl(data.avatarVideoUrl);
-        setAvatarNarrationUrl(typeof data?.streamUrl === "string" ? data.streamUrl : null);
-        setAvatarVideoPending(false);
-        setAvatarVideoError(null);
-        setAvatarVideoSuccess(true);
-        showSuccess("Avatar video ready", "Press play on the video below to watch the full lipsync.");
-      } else if (status === "FAILED" && errorMsg) {
-        setAvatarVideoPending(false);
-        setAvatarVideoError(errorMsg);
-        showError("Avatar video failed", errorMsg);
-      } else {
-        setAvatarVideoPending(true);
-      }
+      applyAvatarStreamResult(data);
     } catch (e) {
       setAvatarVideoPending(false);
-      showError("Avatar video failed", e instanceof Error ? e.message : "Failed to load avatar video");
+      const msg = e instanceof Error ? e.message : "Failed to load avatar video";
+      showError(isPreviewBlockedErrorMessage(msg) ? "Preview blocked" : "Avatar video failed", msg);
     } finally {
       setAvatarVideoLoading(false);
     }
@@ -491,14 +593,37 @@ export default function VoiceTestPage() {
         `cloned:${selectedProfileId}`,
         selectedParentId
       );
-      const provider = data.avatarVideoProvider ?? null;
-      setAvatarVideoProvider(provider);
-      setAvatarVideoPending(true);
+      applyAvatarStreamResult(data);
     } catch (e) {
       showError("Regenerate failed", e instanceof Error ? e.message : "Failed to regenerate avatar video");
     } finally {
       setAvatarRegenerating(false);
       setAvatarVideoLoading(false);
+    }
+  };
+
+  const handleCheckAvatarStatusNow = async () => {
+    if (selectedParentId == null || selectedStoryId == null || selectedProfileId == null) {
+      showError("Validation", "Select a parent, a story, and a cloned voice profile.");
+      return;
+    }
+    setAvatarStatusChecking(true);
+    try {
+      const data: LibraryStoryStreamUrlResponse = await api.admin.getLibraryStoryStreamUrl(
+        selectedStoryId,
+        previewLang,
+        `cloned:${selectedProfileId}`,
+        selectedParentId
+      );
+      applyAvatarStreamResult(data);
+      if (!data.avatarVideoUrl && data.avatarVideoStatus !== "FAILED") {
+        showSuccess("Still processing", "Provider is still generating the avatar video. Check again shortly.");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Status check failed";
+      showError("Status check failed", msg);
+    } finally {
+      setAvatarStatusChecking(false);
     }
   };
 
@@ -611,29 +736,15 @@ export default function VoiceTestPage() {
           `cloned:${selectedProfileId}`,
           selectedParentId
         );
-        const status = data.avatarVideoStatus;
-        const errorMsg = data.avatarVideoError;
-        const provider = data.avatarVideoProvider ?? null;
-        setAvatarVideoProvider(provider);
-        if (data?.avatarVideoUrl) {
-          setAvatarVideoUrl(data.avatarVideoUrl);
-          setAvatarNarrationUrl(typeof data?.streamUrl === "string" ? data.streamUrl : null);
-          setAvatarVideoPending(false);
-          setAvatarVideoError(null);
-          setAvatarVideoSuccess(true);
-          showSuccess("Avatar video ready", "Press play on the video below to watch the full lipsync.");
-        } else if (status === "FAILED" && errorMsg) {
-          setAvatarVideoPending(false);
-          setAvatarVideoError(errorMsg);
-          showError("Avatar video failed", errorMsg);
-        }
+        applyAvatarStreamResult(data);
       } catch {
         // ignore; next poll will retry
       }
     };
+    void poll();
     const id = setInterval(poll, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [avatarVideoPending, selectedParentId, selectedStoryId, selectedProfileId, previewLang, showSuccess]);
+  }, [avatarVideoPending, selectedParentId, selectedStoryId, selectedProfileId, previewLang, applyAvatarStreamResult]);
 
   useEffect(() => {
     return () => {
@@ -702,10 +813,21 @@ export default function VoiceTestPage() {
                 Voice
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Upload a voice sample for cloning. This parent can use <code className="rounded bg-muted px-1">cloned:&lt;id&gt;</code> in the app for story narration.
+                Upload a voice sample for cloning with a profile name (instead of generic clone IDs). The app key remains <code className="rounded bg-muted px-1">cloned:&lt;id&gt;</code>.
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Voice profile name</label>
+                <input
+                  type="text"
+                  value={newProfileName}
+                  maxLength={64}
+                  placeholder="e.g., Hariyakshaya Tamil"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                  onChange={(e) => setNewProfileName(e.target.value)}
+                />
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Audio file (MP3/WAV, max 10MB)</label>
                 <input
@@ -718,7 +840,7 @@ export default function VoiceTestPage() {
               <div className="flex flex-wrap gap-2">
                 <Button
                   onClick={handleUpload}
-                  disabled={uploading || selectedFile == null}
+                  disabled={uploading || selectedFile == null || newProfileName.trim().length === 0}
                 >
                   <Upload className="mr-2 h-4 w-4" />
                   {uploading ? "Uploading…" : "Upload voice"}
@@ -739,7 +861,7 @@ export default function VoiceTestPage() {
               ) : (
                 <>
                   <p className="text-xs text-muted-foreground">
-                    Default: ElevenLabs — upload reference above, then &quot;Run job (ElevenLabs)&quot; (no consent). For Google: upload consent and &quot;Run job (Google)&quot;. Backend: <code className="rounded bg-muted px-1">VOICE_CLONING_PROVIDER=elevenlabs</code> + <code className="rounded bg-muted px-1">ELEVENLABS_API_KEY</code> (or <code className="rounded bg-muted px-1">google</code> + <code className="rounded bg-muted px-1">GOOGLE_CLOUD_TTS_API_KEY</code>).
+                    No-consent path: &quot;Run job (ElevenLabs path)&quot; (uses ElevenLabs directly, or ElevenLabs fallback when Google is primary). Google consent path: upload consent and &quot;Run job (Google)&quot;. Recommended backend config: <code className="rounded bg-muted px-1">VOICE_CLONING_PROVIDER=google</code> + <code className="rounded bg-muted px-1">GOOGLE_CLOUD_TTS_API_KEY</code> + optional <code className="rounded bg-muted px-1">VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK=true</code> + <code className="rounded bg-muted px-1">ELEVENLABS_API_KEY</code>.
                   </p>
                   <details className="rounded-md border border-muted bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                     <summary className="cursor-pointer font-medium text-foreground">How to get the consent audio file (Google only)</summary>
@@ -763,6 +885,7 @@ export default function VoiceTestPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>ID</TableHead>
+                          <TableHead>Profile name</TableHead>
                           <TableHead>App key</TableHead>
                           <TableHead className="w-[140px]">Actions</TableHead>
                           <TableHead>Voice cloning job</TableHead>
@@ -772,6 +895,7 @@ export default function VoiceTestPage() {
                         {profiles.map((p) => (
                           <TableRow key={p.id}>
                             <TableCell>{p.id}</TableCell>
+                            <TableCell>{p.profileName?.trim() || `Voice ${p.id}`}</TableCell>
                             <TableCell><code className="text-xs">cloned:{p.id}</code></TableCell>
                             <TableCell>
                               <div className="flex gap-1">
@@ -802,13 +926,26 @@ export default function VoiceTestPage() {
                                   type="button"
                                   variant="secondary"
                                   size="sm"
-                                  disabled={runJobForId === p.id}
+                                  disabled={runJobForId === p.id || checkProviderForId === p.id}
                                   onClick={() => handleRunVoiceCloningJob(p.id)}
                                 >
                                   {runJobForId === p.id ? (
                                     <Loader2 className="h-4 w-4 animate-spin" />
                                   ) : (
-                                    "Run job (ElevenLabs)"
+                                    "Run job (ElevenLabs path)"
+                                  )}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={checkProviderForId === p.id || runJobForId === p.id}
+                                  onClick={() => handleCheckProvider(p.id)}
+                                >
+                                  {checkProviderForId === p.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    "Check provider"
                                   )}
                                 </Button>
                                 <label className="text-xs text-muted-foreground shrink-0">Consent (Google):</label>
@@ -836,6 +973,19 @@ export default function VoiceTestPage() {
                                     "Run job (Google)"
                                   )}
                                 </Button>
+                                {latestJobByProfileId[p.id] && (
+                                  <div className="w-full text-xs text-muted-foreground">
+                                    Job #{latestJobByProfileId[p.id]?.id}:{" "}
+                                    <span className="font-medium">{latestJobByProfileId[p.id]?.status}</span>
+                                    {latestJobByProfileId[p.id]?.errorMessage ? ` — ${latestJobByProfileId[p.id]?.errorMessage}` : ""}
+                                    {(latestJobByProfileId[p.id]?.providerAuthFailed || latestJobByProfileId[p.id]?.providerQuotaFailed) ? (
+                                      <div className="mt-1 text-destructive">
+                                        {latestJobByProfileId[p.id]?.providerStatusMessage ??
+                                          "Provider auth/permissions failure detected for this voice profile."}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -860,11 +1010,11 @@ export default function VoiceTestPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-4 items-start">
-                <div className="rounded-lg border bg-muted/30 flex items-center justify-center w-40 h-40 shrink-0 overflow-hidden">
+                <div className="relative rounded-lg border bg-muted/30 flex items-center justify-center w-40 h-40 shrink-0 overflow-hidden">
                   {avatarLoading ? (
                     <span className="text-sm text-muted-foreground">Loading…</span>
                   ) : avatarUrl ? (
-                    <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    <Image src={avatarUrl} alt="Avatar" fill unoptimized className="object-cover" />
                   ) : (
                     <span className="text-sm text-muted-foreground text-center px-2">No avatar</span>
                   )}
@@ -960,7 +1110,7 @@ export default function VoiceTestPage() {
                     <SelectContent>
                       {profiles.map((p) => (
                         <SelectItem key={p.id} value={p.id.toString()}>
-                          cloned:{p.id}
+                          {p.profileName?.trim() || `Voice ${p.id}`} (cloned:{p.id})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1042,6 +1192,9 @@ export default function VoiceTestPage() {
                   Delete narration
                 </Button>
               </div>
+              <p className="pl-9 text-xs text-muted-foreground">
+                Tip: first Play may trigger on-demand generation. If you see &quot;audio not ready&quot;, wait briefly and press Play again.
+              </p>
             </div>
 
             {/* Step 2: Watch — avatar video (same story + voice + avatar) */}
@@ -1106,20 +1259,53 @@ export default function VoiceTestPage() {
                   </div>
                 )}
                 {avatarVideoError && (
-                  <div className="flex flex-col gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+                  <div className={`flex flex-col gap-3 rounded-lg border p-4 ${avatarVideoBlocked ? "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40" : avatarVideoTimedOut ? "border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40" : "border-destructive/50 bg-destructive/10"}`}>
                     <div>
-                      <p className="text-sm font-medium text-destructive">Avatar video failed</p>
+                      <p className={`text-sm font-medium ${avatarVideoBlocked ? "text-amber-800 dark:text-amber-200" : avatarVideoTimedOut ? "text-blue-800 dark:text-blue-200" : "text-destructive"}`}>
+                        {avatarVideoBlocked ? "Preview blocked" : avatarVideoTimedOut ? "Still processing upstream" : "Avatar video failed"}
+                      </p>
                       <p className="text-sm text-muted-foreground whitespace-pre-wrap mt-1">{avatarVideoError}</p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      You can try again; the previous attempt will be cleared and a new generation will start.
-                    </p>
+                    {avatarVideoBlocked ? (
+                      <p className="text-xs text-muted-foreground">
+                        Provider moderation blocked this avatar image. Upload a family-safe portrait image, then retry generation.
+                      </p>
+                    ) : avatarVideoTimedOut ? (
+                      <p className="text-xs text-muted-foreground">
+                        The provider may still complete this job even though local polling timed out. Check status now before retrying generation.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        You can try again; the previous attempt will be cleared and a new generation will start.
+                      </p>
+                    )}
+                    {avatarVideoTimedOut && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleCheckAvatarStatusNow}
+                        disabled={avatarStatusChecking || avatarVideoLoading || avatarVideoPending}
+                      >
+                        {avatarStatusChecking ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Checking…
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Check status now
+                          </>
+                        )}
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       onClick={handleRegenerateAvatar}
-                      disabled={avatarRegenerating || avatarVideoLoading || avatarVideoPending}
+                      disabled={avatarRegenerating || avatarStatusChecking || avatarVideoLoading || avatarVideoPending}
                     >
                       {avatarRegenerating || avatarVideoLoading ? (
                         <>
@@ -1129,7 +1315,7 @@ export default function VoiceTestPage() {
                       ) : (
                         <>
                           <RefreshCw className="mr-2 h-4 w-4" />
-                          Try again
+                          {avatarVideoBlocked ? "Retry after avatar update" : "Try again"}
                         </>
                       )}
                     </Button>

@@ -23,7 +23,10 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * In-memory rate limiter per client key (IP or X-Forwarded-For).
- * Admin paths use a higher limit (no full bypass) to prevent abuse if admin JWT is compromised.
+ * - Auth paths (login, register, passwordless): strict limit (default 5/min) to prevent brute force.
+ * - Session paths (`/auth/me`, `/auth/refresh`): dedicated high limit so admin UI polling does not starve refresh.
+ * - Admin paths: higher limit (no full bypass) to prevent abuse if admin JWT is compromised.
+ * - All other paths: general limit.
  * When app.rate-limit.use-redis=true, RedisRateLimitingFilter is used instead.
  */
 @Component
@@ -35,6 +38,8 @@ class RateLimitingFilter(
 
     private val buckets = ConcurrentHashMap<String, Bucket>()
     private val adminBuckets = ConcurrentHashMap<String, Bucket>()
+    private val authBuckets = ConcurrentHashMap<String, Bucket>()
+    private val sessionBuckets = ConcurrentHashMap<String, Bucket>()
 
     override fun getOrder(): Int = Ordered.HIGHEST_PRECEDENCE + 1
 
@@ -49,9 +54,15 @@ class RateLimitingFilter(
             return
         }
         val path = request.requestURI.orEmpty()
-        val isAdminPath = path.contains("/api/v1/admin")
-        val limit = if (isAdminPath) config.adminRequestsPerMinute else config.requestsPerMinute
-        val bucketMap = if (isAdminPath) adminBuckets else buckets
+        val isStrictAuthPath = STRICT_AUTH_PATHS.any { path.contains(it) }
+        val isSessionPath = SESSION_PATHS.any { path.contains(it) }
+        val isAdminPath = !isStrictAuthPath && path.contains("/api/v1/admin")
+        val (limit, bucketMap) = when {
+            isStrictAuthPath -> config.authRequestsPerMinute to authBuckets
+            isSessionPath -> config.sessionRequestsPerMinute to sessionBuckets
+            isAdminPath -> config.adminRequestsPerMinute to adminBuckets
+            else -> config.requestsPerMinute to buckets
+        }
         val key = clientKey(request)
         val bucket = bucketMap.computeIfAbsent(key) { createBucket(limit) }
         if (bucket.tryConsume(1)) {
@@ -82,5 +93,14 @@ class RateLimitingFilter(
     private fun createBucket(requestsPerMinute: Long): Bucket {
         val limit = Bandwidth.classic(requestsPerMinute, Refill.greedy(requestsPerMinute, Duration.ofMinutes(1)))
         return Bucket.builder().addLimit(limit).build()
+    }
+
+    companion object {
+        private val STRICT_AUTH_PATHS = listOf(
+            "/auth/register", "/auth/login", "/auth/passwordless",
+            "/auth/otp/send", "/auth/otp/verify"
+        )
+        /** Current user + token refresh: not brute-force vectors like login; need headroom vs general 100/min. */
+        private val SESSION_PATHS = listOf("/api/v1/auth/me", "/api/v1/auth/refresh")
     }
 }

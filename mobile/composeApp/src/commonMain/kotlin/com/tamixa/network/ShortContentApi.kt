@@ -38,7 +38,10 @@ class ShortContentApi(private val client: HttpClient) {
                 parameter("language", language)
                 date?.let { parameter("date", it) }
             }.body()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
+            com.tamixa.util.TamixaLog.w("ShortContentApi", "getDaily failed type=$type lang=$language", e)
             null
         }
     }

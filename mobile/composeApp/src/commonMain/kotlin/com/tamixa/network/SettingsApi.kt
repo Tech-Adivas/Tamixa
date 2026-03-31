@@ -1,8 +1,10 @@
 package com.tamixa.network
 
+import com.tamixa.util.TamixaLog
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
+import kotlinx.coroutines.CancellationException
 
 @kotlinx.serialization.Serializable
 data class ConsentRecordDto(
@@ -31,19 +33,28 @@ class SettingsApi(private val client: HttpClient) {
 
     suspend fun getConsentRecords(): List<ConsentRecordDto> = try {
         client.get("${ApiConfig.API_VERSION}/consent").body()
-    } catch (_: Exception) {
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        TamixaLog.w("SettingsApi", "getConsentRecords failed", e)
         emptyList()
     }
 
     suspend fun getDataExportJobs(): List<ExportJobDto> = try {
         client.get("${ApiConfig.API_VERSION}/data-export").body()
-    } catch (_: Exception) {
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        TamixaLog.w("SettingsApi", "getDataExportJobs failed", e)
         emptyList()
     }
 
     suspend fun requestDataExport(): ExportJobDto? = try {
         client.post("${ApiConfig.API_VERSION}/data-export/request").body<ExportJobDto>()
-    } catch (_: Exception) {
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        TamixaLog.w("SettingsApi", "requestDataExport failed", e)
         null
     }
 
@@ -51,14 +62,20 @@ class SettingsApi(private val client: HttpClient) {
         client.get("${ApiConfig.API_VERSION}/listening-progress") {
             parameter("days", days)
         }.body<ListeningProgressDto>()
-    } catch (_: Exception) {
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        TamixaLog.w("SettingsApi", "getListeningProgress failed", e)
         null
     }
 
     /** Consecutive days with at least one story play. For Dashboard streak. */
     suspend fun getListeningStreak(): Int? = try {
         client.get("${ApiConfig.API_VERSION}/listening-progress/streak").body<ListeningStreakDto>()?.streakDays
-    } catch (_: Exception) {
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        TamixaLog.w("SettingsApi", "getListeningStreak failed", e)
         null
     }
 }

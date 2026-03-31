@@ -61,7 +61,7 @@ interface StoryAnalyticsJpaRepository : JpaRepository<StoryAnalyticsEntity, Long
             GROUP BY s.theme
             UNION ALL
             SELECT c.theme, CAST(COUNT(*) AS bigint) as cnt FROM story_analytics a
-            JOIN library_stories c ON c.id = a.story_id AND a.story_source = 'library'
+            JOIN library_stories c ON c.id = a.story_id AND a.story_source = 'library' AND c.deleted_at IS NULL
             WHERE a.event_type = 'story_started' AND a.timestamp >= :since
             GROUP BY c.theme
         ) u GROUP BY theme ORDER BY total DESC
@@ -85,7 +85,7 @@ interface StoryAnalyticsJpaRepository : JpaRepository<StoryAnalyticsEntity, Long
     @Query(
         value = """
         SELECT a.story_id FROM story_analytics a
-        JOIN library_stories c ON c.id = a.story_id AND a.story_source = 'library'
+        JOIN library_stories c ON c.id = a.story_id AND a.story_source = 'library' AND c.deleted_at IS NULL
         WHERE a.event_type = 'story_started' AND a.timestamp >= :since
           AND c.language = :language AND c.narration_approved_at IS NOT NULL
         GROUP BY a.story_id
@@ -107,7 +107,7 @@ interface StoryAnalyticsJpaRepository : JpaRepository<StoryAnalyticsEntity, Long
     @Query(
         value = """
         SELECT a.story_id FROM story_analytics a
-        JOIN library_stories c ON c.id = a.story_id AND a.story_source = 'library'
+        JOIN library_stories c ON c.id = a.story_id AND a.story_source = 'library' AND c.deleted_at IS NULL
         JOIN story_translations t ON t.master_story_id = c.id AND t.language = :language
         WHERE a.event_type = 'story_started' AND a.timestamp >= :since
           AND c.narration_approved_at IS NOT NULL

@@ -22,6 +22,7 @@ object RolePermissions {
                 AdminPermission.MODERATE_STORIES,
                 AdminPermission.VIEW_VOICE_LOGS,
                 AdminPermission.VIEW_STORIES,
+                AdminPermission.VIEW_AI_CONTROL_PLANE,
             )
             Role.SUPPORT -> setOf(
                 AdminPermission.VIEW_PARENTS,

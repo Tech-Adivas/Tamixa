@@ -8,6 +8,7 @@ data class ParentAvatar(
     val storagePath: String,
     val contentType: String,
     val fileSizeBytes: Long,
+    val heygenTalkingPhotoId: String?,
     val createdAt: Instant,
     val updatedAt: Instant
 )

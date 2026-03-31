@@ -9,6 +9,7 @@ data class GeneratedStoryScene(
     val language: String,
     val sceneIndex: Int,
     val backgroundHint: String? = null,
+    val illustrationImagePath: String? = null,
     val createdAt: Instant,
     val segments: List<GeneratedStorySegment> = emptyList()
 )

@@ -4,10 +4,10 @@ import com.tamixa.platform.currentTimeMillis
 import platform.Foundation.NSUserDefaults
 
 /**
- * iOS token storage. Currently uses NSUserDefaults (plaintext).
+ * iOS token storage. Uses NSUserDefaults (not ideal at rest).
  *
- * SECURITY: Migrate to Keychain so tokens are encrypted at rest. See docs/mobile/IOS_KEYCHAIN_MIGRATION.md
- * for options (multiplatform-settings KeychainSettings, Swift helper, or KMP secure-storage library).
+ * SECURITY: Prefer Keychain for production; Kotlin/Native Keychain interop is error-prone across
+ * Xcode/Kotlin versions. Track migration in docs (e.g. multiplatform-settings KeychainSettings).
  */
 class IosTokenStorage : TokenStorage {
     private val defaults = NSUserDefaults.standardUserDefaults

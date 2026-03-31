@@ -26,5 +26,14 @@ interface TranslationClientPort {
 data class TranslatedContent(
     val title: String?,
     val content: String,
-    val moral: String?
+    val moral: String?,
+    /**
+     * Optional snapshot captured BEFORE the mandatory "paraphrase pass" that
+     * happens after translation. Used for UI diff/highlighting.
+     *
+     * When null, the caller cannot show a before/after paraphrase diff.
+     */
+    val titleBeforeParaphrase: String? = null,
+    val contentBeforeParaphrase: String? = null,
+    val moralBeforeParaphrase: String? = null
 )

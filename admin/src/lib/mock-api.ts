@@ -20,7 +20,7 @@ export function getMockDashboardKpis(): DashboardKpis {
   return {
     activeSubscriptions: 1247,
     monthlyRevenue: 18650,
-    storyGenerationsToday: 342,
+    storyGenerationsTotal: 342,
     aiTokenUsage: 1284000,
     moderationFlags: 12,
   };
@@ -191,7 +191,7 @@ export function getMockParents(
   };
 }
 
-// Mock stories for moderation (READY / FLAGGED / FAILED)
+// Mock stories for moderation (PENDING_REVIEW / READY / FLAGGED / FAILED)
 export function getMockStories(
   page: number,
   size: number,
@@ -211,6 +211,19 @@ export function getMockStories(
       status: "READY",
       safetyScore: 92,
       createdAt: "2025-02-25T10:00:00Z",
+    },
+    {
+      id: 4,
+      parentId: 1,
+      childId: 10,
+      theme: "Forest friends",
+      language: "ta",
+      age: 6,
+      childName: "Emma",
+      wordCount: 410,
+      status: "PENDING_REVIEW",
+      safetyScore: 88,
+      createdAt: "2025-02-26T08:00:00Z",
     },
     {
       id: 2,
@@ -267,6 +280,9 @@ export function getMockStoryBody(storyId: number): string {
   }
   if (storyId === 2) {
     return `Leo dreamed of swimming with fish. One day he found a magic snorkel. Under the sea he met a kind octopus and a singing dolphin. They showed him a treasure chest full of shiny shells. Leo shared the shells with his friends. The end.`;
+  }
+  if (storyId === 4) {
+    return `Deep in the forest, a shy rabbit met a wise owl. The owl taught the rabbit to listen to the wind in the trees. They shared berries and watched fireflies. When morning came, the rabbit hopped home braver than before. The end.`;
   }
   return `Story content for #${storyId} would appear here.`;
 }

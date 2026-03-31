@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { logger } from "../lib/logger";
 import {
   getRecommendedStories,
   getRecentPlayback,
@@ -14,10 +15,20 @@ export default function Dashboard() {
   const [recent, setRecent] = useState<PlaybackPosition[]>([]);
 
   useEffect(() => {
-    getRecommendedStories(undefined, "ta", 6).then(setRecommended).catch(() => setRecommended([]));
+    getRecommendedStories(undefined, "ta", 6)
+      .then(setRecommended)
+      .catch((err) => {
+        logger.warn("dashboard", "Failed to load recommendations", { message: err instanceof Error ? err.message : String(err) });
+        setRecommended([]);
+      });
   }, []);
   useEffect(() => {
-    getRecentPlayback(5).then(setRecent).catch(() => setRecent([]));
+    getRecentPlayback(5)
+      .then(setRecent)
+      .catch((err) => {
+        logger.warn("dashboard", "Failed to load recent playback", { message: err instanceof Error ? err.message : String(err) });
+        setRecent([]);
+      });
   }, []);
 
   return (

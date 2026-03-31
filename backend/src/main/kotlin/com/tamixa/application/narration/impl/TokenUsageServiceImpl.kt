@@ -2,6 +2,7 @@ package com.tamixa.application.narration.impl
 
 import com.tamixa.application.narration.TokenUsageService
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicInteger
@@ -11,6 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * For production scale, consider Redis with TTL.
  */
 @Service
+@ConditionalOnProperty(name = ["app.rate-limit.use-redis"], havingValue = "false", matchIfMissing = true)
 class TokenUsageServiceImpl(
     @Value("\${app.narration.daily-token-limit:100000}") private val dailyLimit: Int
 ) : TokenUsageService {

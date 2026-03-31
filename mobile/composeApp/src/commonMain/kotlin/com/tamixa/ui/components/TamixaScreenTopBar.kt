@@ -15,11 +15,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import com.tamixa.ui.strings.Strings
-import com.tamixa.ui.theme.TamixaColors
+import com.tamixa.ui.theme.TamixaChrome
 
 /**
  * Common app bar for all screens.
- * - [useTransparentBackground] = true: cream title/icons on solid dark bar (#0F0E17)
+ * - [useTransparentBackground] = true: cream title/icons on [TamixaChrome] bar (theme surface tier)
  * - [useTransparentBackground] = false: uses surface container with theme colors
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,12 +33,11 @@ fun TamixaScreenTopBar(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val containerColor = if (useTransparentBackground) Color.Transparent else colorScheme.surface
-    val titleColor = if (useTransparentBackground) TamixaColors.cream else colorScheme.onSurface
+    val titleColor = colorScheme.onSurface
     val navigationIconColor = titleColor
 
     if (useTransparentBackground) {
-        // Solid dark background so cream text is always visible (avoids light blue showing through)
-        val darkBarBg = Color(0xFF1A1812)  // Storybook Dusk warm charcoal
+        val darkBarBg = TamixaChrome.barContainerColor()
         TopAppBar(
                 title = {
                     Text(

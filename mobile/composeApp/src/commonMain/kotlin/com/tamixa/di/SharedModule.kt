@@ -10,6 +10,7 @@ import com.tamixa.network.ApiConfig
 import com.tamixa.network.AvatarApi
 import com.tamixa.network.AuthApi
 import com.tamixa.network.createKtorClient
+import com.tamixa.network.EducationApi
 import com.tamixa.network.SettingsApi
 import com.tamixa.network.ShortContentApi
 import com.tamixa.network.StoryApi
@@ -18,6 +19,7 @@ import com.tamixa.network.VoiceApi
 import com.tamixa.security.SessionExpiredNotifier
 import com.tamixa.repository.AvatarRepository
 import com.tamixa.repository.AuthRepository
+import com.tamixa.repository.EducationRepository
 import com.tamixa.repository.StoryRepository
 import com.tamixa.repository.SubscriptionRepository
 import com.tamixa.repository.VoiceRepository
@@ -35,10 +37,8 @@ fun sharedModule(baseUrl: String = ApiConfig.DEFAULT_BASE_URL) = module {
     single { StoryApi(get()) }
     single { AnalyticsApi(get()) }
     single {
-        AppAnalytics(
-            get(),
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
-        )
+        // Reuse the shared appScope instead of creating a second orphaned CoroutineScope
+        AppAnalytics(get(), get(named("appScope")))
     }
     single { AchievementApi(get()) }
     single { VoiceApi(get()) }
@@ -46,6 +46,8 @@ fun sharedModule(baseUrl: String = ApiConfig.DEFAULT_BASE_URL) = module {
     single { SubscriptionApi(get()) }
     single { SettingsApi(get()) }
     single { ShortContentApi(get()) }
+    single { EducationApi(get()) }
+    single { EducationRepository(get()) }
     single { com.tamixa.repository.SettingsRepository(get()) }
     // StoryCache provided by platform module (DataStore/NSUserDefaults)
     single { AuthRepository(get(), get()) }

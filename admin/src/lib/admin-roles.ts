@@ -31,6 +31,7 @@ export const ROLE_NAV_PERMISSIONS: Record<
     voiceTest: boolean;
     health: boolean;
     aiMetrics: boolean;
+    aiControlPlane: boolean;
     kafka: boolean;
     audit: boolean;
     users: boolean;
@@ -52,6 +53,7 @@ export const ROLE_NAV_PERMISSIONS: Record<
     voiceTest: true,
     health: true,
     aiMetrics: true,
+    aiControlPlane: true,
     kafka: true,
     audit: true,
     users: true,
@@ -72,6 +74,7 @@ export const ROLE_NAV_PERMISSIONS: Record<
     voiceTest: true,
     health: true,
     aiMetrics: true,
+    aiControlPlane: true,
     kafka: true,
     audit: true,
     users: true,
@@ -92,6 +95,7 @@ export const ROLE_NAV_PERMISSIONS: Record<
     voiceTest: false,
     health: false,
     aiMetrics: true,
+    aiControlPlane: false,
     kafka: false,
     audit: false,
     users: false,
@@ -112,6 +116,7 @@ export const ROLE_NAV_PERMISSIONS: Record<
     voiceTest: true,
     health: false,
     aiMetrics: false,
+    aiControlPlane: true,
     kafka: false,
     audit: false,
     users: false,
@@ -132,11 +137,26 @@ export const ROLE_NAV_PERMISSIONS: Record<
     voiceTest: false,
     health: true,
     aiMetrics: false,
+    aiControlPlane: false,
     kafka: false,
     audit: false,
     users: false,
   },
 };
+
+/** View AI control plane pages (projects, workflows, runs, prompt resolve). */
+export function canViewAiControlPlane(user: { role?: string; permissions?: string[] } | null): boolean {
+  if (!user) return false;
+  if (user.permissions?.includes("VIEW_AI_CONTROL_PLANE")) return true;
+  return canAccessNav(user.role ?? "", "aiControlPlane");
+}
+
+/** Execute workflows, cancel runs, publish/approve prompts. */
+export function canManageAiControlPlane(user: { role?: string; permissions?: string[] } | null): boolean {
+  if (!user) return false;
+  if (user.permissions?.includes("MANAGE_AI_CONTROL_PLANE")) return true;
+  return user.role === "SUPER_ADMIN" || user.role === "ADMIN";
+}
 
 export function isAdminRole(role: string): role is AdminRole {
   return ADMIN_ROLES.includes(role as AdminRole);
@@ -150,6 +170,11 @@ export function canAccessNav(role: string, key: keyof (typeof ROLE_NAV_PERMISSIO
 /** True only for SUPER_ADMIN. Use to gate destructive actions (e.g. delete stories). */
 export function isSuperAdmin(role: string): boolean {
   return role === "SUPER_ADMIN";
+}
+
+/** SUPER_ADMIN or legacy ADMIN — bypasses content-manager-only gates (e.g. Regenerate with prompt after translation). */
+export function isElevatedStoryAdmin(role: string | undefined | null): boolean {
+  return role === "SUPER_ADMIN" || role === "ADMIN";
 }
 
 /** True if user can manage story library (create, edit, trigger pipeline, regenerate). Uses permissions from /me when available. */

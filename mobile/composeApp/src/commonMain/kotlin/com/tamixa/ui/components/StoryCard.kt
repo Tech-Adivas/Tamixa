@@ -113,10 +113,10 @@ fun StoryCard(
             .fillMaxWidth()
             .then(borderModifier)
             .shadow(
-                elevation = 4.dp,
+                elevation = TamixaDesignTokens.listCardShadowElevation,
                 shape = cardShape,
-                ambientColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.08f),
-                spotColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.06f)
+                ambientColor = TamixaDesignTokens.listCardShadowAmbient,
+                spotColor = TamixaDesignTokens.listCardShadowSpot
             )
             .scale(entranceScale)
             .alpha(entranceAlpha),
@@ -199,7 +199,7 @@ fun StoryCard(
                     .fillMaxWidth()
                     .padding(horizontal = TamixaDesignTokens.smallSpacing, vertical = 8.dp)
                     .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
+                    .clip(RoundedCornerShape(percent = 50)),
                 color = TamixaColors.goldAccent
             )
         }
@@ -230,17 +230,18 @@ fun StatusChip(status: StoryStatus) {
         StoryStatus.READY -> "READY" to MaterialTheme.colorScheme.primary
         StoryStatus.GENERATING -> "GENERATING" to MaterialTheme.colorScheme.tertiary
         StoryStatus.FAILED -> "FAILED" to MaterialTheme.colorScheme.error
+        StoryStatus.PENDING_REVIEW -> "REVIEW" to MaterialTheme.colorScheme.secondary
         StoryStatus.PENDING -> "PENDING" to MaterialTheme.colorScheme.outline
     }
     Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = color.copy(alpha = 0.2f)
+        shape = RoundedCornerShape(percent = 50),
+        color = color.copy(alpha = 0.18f)
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = color,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
         )
     }
 }

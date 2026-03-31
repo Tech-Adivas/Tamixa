@@ -182,7 +182,7 @@ fun AvatarUploadScreen(
                     )
                 }
                 is UiState.Success -> {
-                    val successData = (uploadState as UiState.Success<String>).data
+                    val successData = (uploadState as? UiState.Success<*>)?.data as? String ?: ""
                     if (successData.isNotEmpty()) {
                         Spacer(Modifier.height(16.dp))
                         Card(

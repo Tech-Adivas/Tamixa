@@ -219,7 +219,7 @@ fun VoiceUploadScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(20.dp),
+                                .padding(TamixaDesignTokens.cardSpacing),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
@@ -246,8 +246,8 @@ fun VoiceUploadScreen(
                         )
                     }
                     is UiState.Success -> item(key = "upload-success") {
-                        val profile = (uploadState as UiState.Success<VoiceProfile>).data
-                        if (profile.id >= 0) {
+                        val profile = (uploadState as? UiState.Success<*>)?.data as? VoiceProfile
+                        if (profile != null && profile.id >= 0) {
                         Spacer(Modifier.height(16.dp))
                         Card(
                             colors = TamixaCardColors.primaryContainer(),
@@ -268,7 +268,7 @@ fun VoiceUploadScreen(
                                 shape = RoundedCornerShape(TamixaDesignTokens.inputRadius)
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(TamixaDesignTokens.cardSpacing),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(Icons.Filled.Person, contentDescription = Strings.addAvatarAfterVoice(), tint = TamixaColors.goldAccent, modifier = Modifier.size(28.dp))

@@ -4,6 +4,7 @@ import com.tamixa.analytics.StoryPlaybackTracker
 import com.tamixa.util.TamixaConstants
 import com.tamixa.domain.GenerateStoryRequest
 import com.tamixa.domain.Story
+import com.tamixa.repository.RecentPlaybackHydrated
 import com.tamixa.repository.StoryRepository
 import com.tamixa.util.TamixaLog
 import com.tamixa.ui.errorMessageForUser
@@ -41,9 +42,9 @@ class StoryViewModel(
     private val _recentPlayback = MutableStateFlow<List<com.tamixa.network.PlaybackPositionDto>>(emptyList())
     val recentPlayback: StateFlow<List<com.tamixa.network.PlaybackPositionDto>> = _recentPlayback.asStateFlow()
 
-    /** Recent playback with resolved Story for display. Loaded by loadRecentPlayback. */
-    private val _recentPlaybackWithStories = MutableStateFlow<List<Pair<com.tamixa.network.PlaybackPositionDto, Story>>>(emptyList())
-    val recentPlaybackWithStories: StateFlow<List<Pair<com.tamixa.network.PlaybackPositionDto, Story>>> = _recentPlaybackWithStories.asStateFlow()
+    /** Recent playback with hydrated story row + server progress. Loaded by loadRecentPlayback / refreshDashboard. */
+    private val _recentPlaybackWithStories = MutableStateFlow<List<RecentPlaybackHydrated>>(emptyList())
+    val recentPlaybackWithStories: StateFlow<List<RecentPlaybackHydrated>> = _recentPlaybackWithStories.asStateFlow()
 
     private val _searchResults = MutableStateFlow<List<com.tamixa.network.SearchStoryItemDto>>(emptyList())
     val searchResults: StateFlow<List<com.tamixa.network.SearchStoryItemDto>> = _searchResults.asStateFlow()
@@ -129,13 +130,16 @@ class StoryViewModel(
                         )
                     }
                     val recent = async {
-                        storyRepository.getRecentPlayback(TamixaConstants.RECENT_PLAYBACK_LIMIT).fold(
-                            onSuccess = { list ->
-                                _recentPlayback.value = list
-                                val pairs = list.mapNotNull { dto -> storyRepository.getStoryById(dto.storyId, dto.storySource, language)?.let { Pair(dto, it) } }
-                                _recentPlaybackWithStories.value = pairs
+                        storyRepository.getRecentPlaybackHydrated(language, TamixaConstants.RECENT_PLAYBACK_LIMIT).fold(
+                            onSuccess = { rows ->
+                                _recentPlayback.value = rows.map { it.dto }
+                                _recentPlaybackWithStories.value = rows
                             },
-                            onFailure = { _recentPlayback.value = emptyList(); _recentPlaybackWithStories.value = emptyList(); appMessageNotifier?.showError() }
+                            onFailure = {
+                                _recentPlayback.value = emptyList()
+                                _recentPlaybackWithStories.value = emptyList()
+                                appMessageNotifier?.showError()
+                            }
                         )
                     }
                     val fav = async {
@@ -229,14 +233,10 @@ class StoryViewModel(
             _recentPlaybackLoading.value = true
             _recentPlaybackError.value = null
             try {
-                storyRepository.getRecentPlayback(limit).fold(
-                    onSuccess = { list ->
-                        _recentPlayback.value = list
-                        val pairs = list.mapNotNull { dto ->
-                            storyRepository.getStoryById(dto.storyId, dto.storySource, language)
-                                ?.let { Pair(dto, it) }
-                        }
-                        _recentPlaybackWithStories.value = pairs
+                storyRepository.getRecentPlaybackHydrated(language, limit).fold(
+                    onSuccess = { rows ->
+                        _recentPlayback.value = rows.map { it.dto }
+                        _recentPlaybackWithStories.value = rows
                     },
                     onFailure = {
                         _recentPlayback.value = emptyList()
@@ -293,7 +293,10 @@ class StoryViewModel(
     fun addFavorite(storyId: Long, storySource: String = TamixaConstants.STORY_SOURCE_GENERATED, onSuccess: () -> Unit = {}) {
         scope.launch {
             storyRepository.addFavorite(storyId, storySource)
-                .onSuccess { loadFavorites() }
+                .onSuccess {
+                    loadFavorites()
+                    onSuccess()
+                }
                 .onFailure { appMessageNotifier?.showError() }
         }
     }
@@ -301,7 +304,10 @@ class StoryViewModel(
     fun removeFavorite(storyId: Long, onSuccess: () -> Unit = {}) {
         scope.launch {
             storyRepository.removeFavorite(storyId)
-                .onSuccess { loadFavorites() }
+                .onSuccess {
+                    loadFavorites()
+                    onSuccess()
+                }
                 .onFailure { appMessageNotifier?.showError() }
         }
     }

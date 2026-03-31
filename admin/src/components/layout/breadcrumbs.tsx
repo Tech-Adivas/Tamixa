@@ -34,6 +34,8 @@ const SEGMENT_LABELS: Record<string, string> = {
   "voice-test": "Voice & Avatar Studio",
   health: "Health",
   "ai-metrics": "AI metrics",
+  "ai-control-plane": "AI control plane",
+  "workflow-runs": "Workflow runs",
   kafka: "Kafka",
   audit: "Audit",
   users: "User management",

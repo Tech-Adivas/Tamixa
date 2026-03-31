@@ -1,6 +1,7 @@
 import type {
   AdminInvoice,
   AdminUser,
+  AuditEntry,
   AuthResponse,
   CompletionMetricsDto,
   CurrentUserResponse,
@@ -34,33 +35,124 @@ import type {
   HealthDto,
   RuntimeConfigDto,
   AiMetricsDto,
+  DoraMetricsDto,
   RevenueMetricsDto,
   SubscriptionMetricsDto,
+  StoryLengthProfileDto,
   RevenueRow,
   VoiceCloningJob,
   VoiceTier,
   Soundscape,
   SoundscapeUsage,
+  AiProjectSummary,
+  AiWorkflowSummary,
+  AiWorkflowRunSummary,
+  ExecuteWorkflowRequest,
+  WorkflowRunStarted,
+  WorkflowRunDetail,
+  PromptVersion,
+  PublishPromptRequest,
 } from "@/types/api";
 import { touchActivity } from "./activity-tracker";
 import { broadcastTokenUpdate } from "./session-sync";
+
+let apiEnvMismatchWarned = false;
+
+function warnIfApiEnvMismatch(): void {
+  if (apiEnvMismatchWarned || typeof process === "undefined") return;
+  const apiUrl = process.env.API_URL?.trim();
+  const nextPublicApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (!apiUrl || !nextPublicApiUrl || apiUrl === nextPublicApiUrl) return;
+  apiEnvMismatchWarned = true;
+  console.warn(
+    `[admin api] API_URL (${apiUrl}) differs from NEXT_PUBLIC_API_URL (${nextPublicApiUrl}). ` +
+      "This can cause split reads across different backends. Set both to the same value."
+  );
+}
 
 /** API base URL for client requests. Use for cover images, streams, etc. */
 export const getApiBaseUrl = (): string => {
   // Browser: use same-origin so request hits our proxy (app/api/[...path]/route.ts)
   // which forwards Authorization header. Direct backend URL via rewrites does NOT.
   if (typeof window !== "undefined") return "";
-  // Server-side (SSR): use env or same-origin for proxy
-  const explicit = typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL;
-  if (explicit && process.env.NEXT_PUBLIC_API_URL!.trim() !== "") return process.env.NEXT_PUBLIC_API_URL!.trim();
+  warnIfApiEnvMismatch();
+  // Server-side (SSR): match proxy precedence to avoid split reads across different backends.
+  const explicit =
+    (typeof process !== "undefined" && process.env?.API_URL) ||
+    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL);
+  if (explicit && explicit.trim() !== "") return explicit.trim();
   return "";
 };
 
 const getBaseUrl = getApiBaseUrl;
 
+/** Cookie set at login for edge middleware; used when localStorage was cleared but session cookie remains. */
+function readAdminAccessTokenFromCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const parts = document.cookie.split(";").map((c) => c.trim());
+  for (const p of parts) {
+    if (p.startsWith("admin_access_token=")) {
+      const raw = p.slice("admin_access_token=".length);
+      if (!raw) return null;
+      try {
+        return decodeURIComponent(raw);
+      } catch {
+        return raw;
+      }
+    }
+  }
+  return null;
+}
+
+/** Best-effort JWT exp (seconds since epoch); no signature verify — only to pick the fresher of two access tokens. */
+function readJwtExp(accessToken: string): number | null {
+  try {
+    const parts = accessToken.split(".");
+    if (parts.length < 2) return null;
+    const payload = parts[1];
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "===".slice((b64.length + 3) % 4);
+    const json = JSON.parse(atob(padded)) as { exp?: number };
+    return typeof json.exp === "number" ? json.exp : null;
+  } catch {
+    return null;
+  }
+}
+
 function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("admin_access_token");
+  const fromLs = localStorage.getItem("admin_access_token")?.trim();
+  const fromCookie = readAdminAccessTokenFromCookie()?.trim();
+  if (fromCookie && fromLs && fromCookie !== fromLs) {
+    const expLs = readJwtExp(fromLs);
+    const expCk = readJwtExp(fromCookie);
+    let chosen: string;
+    if (expLs != null && expCk != null) {
+      chosen = expCk >= expLs ? fromCookie : fromLs;
+    } else if (expCk != null) {
+      chosen = fromCookie;
+    } else if (expLs != null) {
+      chosen = fromLs;
+    } else {
+      chosen = fromCookie;
+    }
+    try {
+      localStorage.setItem("admin_access_token", chosen);
+    } catch {
+      /* private mode / quota */
+    }
+    return chosen;
+  }
+  if (fromLs) return fromLs;
+  if (fromCookie) {
+    try {
+      localStorage.setItem("admin_access_token", fromCookie);
+    } catch {
+      /* private mode / quota — still return cookie token for this request */
+    }
+    return fromCookie;
+  }
+  return null;
 }
 
 function getStoredRefreshToken(): string | null {
@@ -68,11 +160,34 @@ function getStoredRefreshToken(): string | null {
   return localStorage.getItem("admin_refresh_token");
 }
 
+/** Matches refresh cadence; middleware only checks presence, not JWT exp. */
+const ADMIN_ACCESS_COOKIE_MAX_AGE_SEC = 60 * 60 * 24 * 7;
+
 function setStoredTokens(access: string, refresh: string) {
   if (typeof window === "undefined") return;
   localStorage.setItem("admin_access_token", access);
   localStorage.setItem("admin_refresh_token", refresh);
+  // Also write a cookie so Next.js edge middleware can check auth without JS
+  document.cookie = `admin_access_token=${encodeURIComponent(access)}; path=/; SameSite=Strict; Max-Age=${ADMIN_ACCESS_COOKIE_MAX_AGE_SEC}`;
   broadcastTokenUpdate();
+}
+
+/**
+ * Edge middleware only sees the cookie; API calls may succeed via Bearer from localStorage alone.
+ * Re-sync before each request so client navigations (e.g. after Submit for review) are not redirected to /login.
+ */
+function syncAdminAccessCookieFromCanonicalToken(): void {
+  if (typeof document === "undefined") return;
+  const token = getStoredToken()?.trim();
+  if (!token) return;
+  const cookieTok = readAdminAccessTokenFromCookie()?.trim();
+  if (cookieTok === token) return;
+  document.cookie = `admin_access_token=${encodeURIComponent(token)}; path=/; SameSite=Strict; Max-Age=${ADMIN_ACCESS_COOKIE_MAX_AGE_SEC}`;
+}
+
+/** Before `router.push` to dashboard routes: middleware only checks cookie; keeps cookie aligned with stored access token. */
+export function reconcileAdminAuthCookie(): void {
+  syncAdminAccessCookieFromCanonicalToken();
 }
 
 const LOGOUT_FLAG = "admin_logout";
@@ -83,6 +198,8 @@ function clearStoredTokens() {
   localStorage.removeItem("admin_refresh_token");
   sessionStorage.removeItem("admin_access_token");
   sessionStorage.removeItem("admin_refresh_token");
+  // Clear the middleware cookie too
+  document.cookie = "admin_access_token=; path=/; SameSite=Strict; max-age=0";
 }
 
 function setLogoutFlag() {
@@ -131,11 +248,19 @@ export async function refreshTokensIfNeeded(): Promise<boolean> {
       if (!refresh) return false;
       const base = getBaseUrl();
       const url = `${base}/api/v1/auth/refresh`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: refresh }),
-      });
+      const attempt = async (): Promise<Response> =>
+        fetch(url, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: refresh }),
+        });
+      let res = await attempt();
+      // One short backoff if refresh hit rate limit (backend general bucket could starve /auth/refresh in edge cases).
+      if (res.status === 429) {
+        await new Promise((r) => setTimeout(r, 1200));
+        res = await attempt();
+      }
       if (!res.ok) return false;
       const data = (await res.json()) as AuthResponse;
       setStoredTokens(data.accessToken, data.refreshToken);
@@ -149,53 +274,110 @@ export async function refreshTokensIfNeeded(): Promise<boolean> {
   return refreshPromise;
 }
 
+/**
+ * Merge caller headers with JSON Content-Type (when body present) and Bearer token.
+ * Using a plain record avoids bugs where `...(options.headers as Record)` drops `Headers` instances
+ * and ensures retries reuse the same body + header shape after refresh.
+ */
+function buildAuthRequestHeaders(options: RequestInit, bearerToken: string | null): Record<string, string> {
+  const out: Record<string, string> = {};
+  const ih = options.headers;
+  if (ih instanceof Headers) {
+    ih.forEach((value, key) => {
+      out[key] = value;
+    });
+  } else if (Array.isArray(ih)) {
+    for (const pair of ih) {
+      if (pair.length >= 2 && typeof pair[0] === "string") {
+        out[pair[0]] = String(pair[1]);
+      }
+    }
+  } else if (ih != null && typeof ih === "object") {
+    for (const [k, v] of Object.entries(ih as Record<string, unknown>)) {
+      if (v !== undefined && v !== null) out[k] = String(v);
+    }
+  }
+  const hasContentType = Object.keys(out).some((k) => k.toLowerCase() === "content-type");
+  if (options.body != null && !hasContentType) {
+    out["Content-Type"] = "application/json";
+  }
+  if (bearerToken) {
+    out["Authorization"] = `Bearer ${bearerToken}`;
+  }
+  return out;
+}
+
+type FetchInitWithAuthFlags = RequestInit & { suppressSessionExpiredDialog?: boolean };
+
+function stripAuthFetchFlags(options: RequestInit): { init: RequestInit; suppressSessionExpiredDialog: boolean } {
+  const { suppressSessionExpiredDialog, ...rest } = options as FetchInitWithAuthFlags;
+  return { init: rest, suppressSessionExpiredDialog: suppressSessionExpiredDialog === true };
+}
+
 async function fetchWithAuth(
   path: string,
   options: RequestInit = {},
   retry = true
 ): Promise<Response> {
   touchActivity();
+  const { init, suppressSessionExpiredDialog } = stripAuthFetchFlags(options);
+  syncAdminAccessCookieFromCanonicalToken();
   const base = getBaseUrl();
-  const token = getStoredToken();
   const url = path.startsWith("http") ? path : `${base}${path}`;
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
-  };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const doFetch = (token: string | null) =>
+    fetch(url, {
+      ...init,
+      cache: init.cache ?? "no-store",
+      credentials: "include",
+      headers: buildAuthRequestHeaders(init, token),
+    });
 
   let res: Response;
+  let tokenUsed: string | null = getStoredToken();
   try {
-    res = await fetch(url, { ...options, headers });
+    res = await doFetch(tokenUsed);
   } catch (e) {
-    throw e;
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(normalizeNetworkError(msg));
   }
 
   const isAuthSessionProbe = path.includes("/api/v1/auth/me");
+  // localStorage can hold a stale/wrong access token while the session cookie (used by middleware) is still valid.
+  if (res.status === 401 && retry) {
+    const cookieTok = readAdminAccessTokenFromCookie()?.trim() ?? null;
+    if (cookieTok && cookieTok !== tokenUsed) {
+      try {
+        localStorage.setItem("admin_access_token", cookieTok);
+      } catch {
+        /* private mode / quota */
+      }
+      tokenUsed = cookieTok;
+      res = await doFetch(cookieTok);
+    }
+  }
   if (res.status === 401 && retry) {
     const ok = await refreshTokensIfNeeded();
     if (ok) {
       const newToken = getStoredToken();
       if (newToken) {
-        (headers as Record<string, string>)["Authorization"] = `Bearer ${newToken}`;
-        res = await fetch(url, { ...options, headers });
+        res = await doFetch(newToken);
       }
     }
     // Still 401 after refresh (or no refresh token): show re-login dialog if handler registered.
-    if (res.status === 401 && typeof window !== "undefined") {
+    // Background polls (e.g. pipeline banner) must not block the UI — return 401 to the caller instead.
+    if (res.status === 401 && typeof window !== "undefined" && !suppressSessionExpiredDialog) {
       if (sessionExpiredHandler) {
-        const ok = await sessionExpiredHandler();
-        if (ok) {
+        const dialogOk = await sessionExpiredHandler();
+        if (dialogOk) {
           const newToken = getStoredToken();
           if (newToken) {
-            (headers as Record<string, string>)["Authorization"] = `Bearer ${newToken}`;
-            res = await fetch(url, { ...options, headers });
+            res = await doFetch(newToken);
           }
         }
       } else if (isAuthSessionProbe) {
         clearStoredTokens();
-        const path = window.location.pathname;
-        if (path !== "/login") {
+        const pathname = window.location.pathname;
+        if (pathname !== "/login") {
           window.location.href = "/login?expired=1";
         }
       }
@@ -214,6 +396,14 @@ function normalizeNetworkError(msg: string): string {
     return "Cannot reach server. Ensure the backend is running and the API URL is correct.";
   }
   return msg;
+}
+
+/**
+ * Classify provider-side blocked preview responses (moderation/auth/permissions style failures)
+ * so UIs can show a specific "Preview blocked" state instead of generic failure text.
+ */
+export function isPreviewBlockedErrorMessage(message?: string | null): boolean {
+  return /preview blocked|blocked:|auth\/permissions|moderation rejected|nsfw|content detected/i.test(message ?? "");
 }
 
 /** Throws on non-OK responses; parses error body when available. */
@@ -240,12 +430,13 @@ export async function login(
 ): Promise<AuthResponse> {
   const base = getBaseUrl();
   const url = `${base}/api/v1/auth/login`;
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
     const data = (await res.json().catch(() => ({}))) as AuthResponse & { message?: string };
     if (!res.ok) {
       const msg = (data as { message?: string }).message ?? "Login failed";
@@ -287,6 +478,9 @@ export async function getMe(): Promise<CurrentUserResponse> {
   }
   return res.json();
 }
+
+/** Prevent duplicate concurrent PUT /stories/{id} from double-clicks/retries in the same tab. */
+const updateLibraryStoryInFlight = new Map<number, Promise<LibraryStorySummary>>();
 
 // Admin API (uses fetchJson to throw on non-OK responses)
 const admin = {
@@ -385,9 +579,11 @@ const admin = {
   getVoiceProfilesForParent: (parentId: number) =>
     fetchJson<VoiceProfile[]>(`/api/v1/admin/parents/${parentId}/voice`),
 
-  uploadVoiceForParent: async (parentId: number, file: File): Promise<VoiceProfile> => {
+  uploadVoiceForParent: async (parentId: number, file: File, profileName?: string): Promise<VoiceProfile> => {
     const formData = new FormData();
     formData.append("file", file);
+    const cleanedName = profileName?.trim();
+    if (cleanedName) formData.append("profileName", cleanedName);
     const base = getBaseUrl();
     const token = getStoredToken();
     const url = `${base}/api/v1/admin/parents/${parentId}/voice/upload`;
@@ -414,14 +610,106 @@ const admin = {
   runVoiceCloningJobForProfile: async (
     parentId: number,
     voiceProfileId: number
-  ): Promise<{ jobId: number; status: string; message: string }> => {
+  ): Promise<{ jobId: number; status: string; message: string; provider: string }> => {
     const res = await fetchWithAuth(
       `/api/v1/admin/parents/${parentId}/voice/${voiceProfileId}/run-job`,
       { method: "POST" }
     );
-    const data = (await res.json().catch(() => ({}))) as { message?: string; jobId?: number; status?: string };
+    const data = (await res.json().catch(() => ({}))) as { message?: string; jobId?: number; status?: string; provider?: string };
     if (!res.ok) throw new Error(data?.message ?? res.statusText ?? "Run job failed");
-    return { jobId: data.jobId ?? 0, status: data.status ?? "PENDING", message: data.message ?? "Job started." };
+    return {
+      jobId: data.jobId ?? 0,
+      status: data.status ?? "PENDING",
+      message: data.message ?? "Job started.",
+      provider: data.provider ?? "ElevenLabs",
+    };
+  },
+
+  checkVoiceProviderForProfile: async (
+    parentId: number,
+    voiceProfileId: number,
+    language = "ta"
+  ): Promise<{
+    ok: boolean;
+    provider?: string;
+    allowElevenLabsFallback?: boolean;
+    hasGoogleVoiceCloningKey?: boolean;
+    hasElevenLabsVoiceId?: boolean;
+    hasReferenceAudio?: boolean;
+    providerAuthFailed?: boolean;
+    providerQuotaFailed?: boolean;
+    providerStatusMessage?: string;
+    elevenLabsApiKeyConfigured?: boolean;
+    userApiStatus?: number;
+    voiceApiStatus?: number;
+    sampleBytes?: number;
+    message: string;
+  }> => {
+    const res = await fetchWithAuth(
+      `/api/v1/admin/parents/${parentId}/voice/${voiceProfileId}/provider-check?language=${encodeURIComponent(language)}`
+    );
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      provider?: string;
+      allowElevenLabsFallback?: boolean;
+      hasGoogleVoiceCloningKey?: boolean;
+      hasElevenLabsVoiceId?: boolean;
+      hasReferenceAudio?: boolean;
+      providerAuthFailed?: boolean;
+      providerQuotaFailed?: boolean;
+      providerStatusMessage?: string;
+      elevenLabsApiKeyConfigured?: boolean;
+      userApiStatus?: number;
+      voiceApiStatus?: number;
+      sampleBytes?: number;
+      message?: string;
+    };
+    if (!res.ok) throw new Error(data?.message ?? res.statusText ?? "Provider check failed");
+    return {
+      ok: Boolean(data.ok),
+      provider: data.provider,
+      allowElevenLabsFallback: data.allowElevenLabsFallback,
+      hasGoogleVoiceCloningKey: data.hasGoogleVoiceCloningKey,
+      hasElevenLabsVoiceId: data.hasElevenLabsVoiceId,
+      hasReferenceAudio: data.hasReferenceAudio,
+      providerAuthFailed: data.providerAuthFailed,
+      providerQuotaFailed: data.providerQuotaFailed,
+      providerStatusMessage: data.providerStatusMessage,
+      elevenLabsApiKeyConfigured: data.elevenLabsApiKeyConfigured,
+      userApiStatus: data.userApiStatus,
+      voiceApiStatus: data.voiceApiStatus,
+      sampleBytes: data.sampleBytes,
+      message: data.message ?? "Provider check completed.",
+    };
+  },
+
+  getLatestVoiceCloningJobForProfile: async (
+    parentId: number,
+    voiceProfileId: number
+  ): Promise<VoiceCloningJob | null> => {
+    const res = await fetchWithAuth(`/api/v1/admin/parents/${parentId}/voice/${voiceProfileId}/job/latest`);
+    if (!res.ok) {
+      if (res.status === 404) return null;
+      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      throw new Error(data?.message ?? res.statusText ?? "Failed to load voice cloning job");
+    }
+    const data = (await res.json().catch(() => ({}))) as Partial<VoiceCloningJob>;
+    if (!data || typeof data.id !== "number") return null;
+    return {
+      id: data.id,
+      parentId: data.parentId ?? parentId,
+      audioStoragePath: data.audioStoragePath ?? "",
+      audioFileSizeBytes: data.audioFileSizeBytes ?? 0,
+      voiceName: data.voiceName ?? "",
+      elevenLabsVoiceId: data.elevenLabsVoiceId ?? null,
+      status: data.status ?? "PENDING",
+      errorMessage: data.errorMessage ?? null,
+      providerAuthFailed: Boolean(data.providerAuthFailed),
+      providerQuotaFailed: Boolean(data.providerQuotaFailed),
+      providerStatusMessage: data.providerStatusMessage ?? null,
+      createdAt: data.createdAt ?? new Date().toISOString(),
+      completedAt: data.completedAt ?? null,
+    };
   },
 
   /** Upload consent audio and run Google voice cloning job for a profile that has reference audio. For Tamil cloned voice flow. */
@@ -490,7 +778,8 @@ const admin = {
       `/api/v1/admin/subscriptions?page=${page}&size=${size}`
     ),
 
-  getReferralCodes: () => fetchJson<ReferralCode[]>("/api/v1/admin/referral-codes"),
+  getReferralCodes: (page = 0, size = 50) =>
+    fetchJson<PagedResponse<ReferralCode>>(`/api/v1/admin/referral-codes?page=${page}&size=${size}`),
   getReferralCode: (id: number) => fetchJson<ReferralCode>(`/api/v1/admin/referral-codes/${id}`),
   createReferralCode: async (data: {
     shortcode: string;
@@ -603,6 +892,15 @@ const admin = {
   getSubscriptionMetrics: () =>
     fetchJson<SubscriptionMetricsDto>("/api/v1/admin/metrics/subscription"),
 
+  getDoraMetrics: (
+    days = 30,
+    serviceName?: string,
+    environment?: string
+  ) =>
+    fetchJson<DoraMetricsDto>(
+      `/api/v1/admin/metrics/dora?days=${days}${serviceName ? `&serviceName=${encodeURIComponent(serviceName)}` : ""}${environment ? `&environment=${encodeURIComponent(environment)}` : ""}`
+    ),
+
   getRevenueTable: (page = 0, size = 20, search?: string, planFilter?: string) =>
     fetchJson<PagedResponse<RevenueRow>>(
       `/api/v1/admin/metrics/revenue/table?page=${page}&size=${size}${search ? `&search=${encodeURIComponent(search)}` : ""}${planFilter ? `&plan=${encodeURIComponent(planFilter)}` : ""}`
@@ -614,7 +912,7 @@ const admin = {
     ),
 
   getAuditTrail: (page = 0, size = 20) =>
-    fetchJson<PagedResponse<Record<string, unknown>>>(
+    fetchJson<PagedResponse<AuditEntry>>(
       `/api/v1/admin/audit-trail?page=${page}&size=${size}`
     ),
 
@@ -678,6 +976,11 @@ const admin = {
       `/api/v1/admin/metrics/story-usage?days=${days}`
     ),
 
+  getStoryLengthProfile: (days = 7) =>
+    fetchJson<StoryLengthProfileDto>(
+      `/api/v1/admin/metrics/story-length-profile?days=${days}`
+    ),
+
   getInvoices: (page = 0, size = 20) =>
     fetchJson<PagedResponse<AdminInvoice>>(
       `/api/v1/admin/invoices?page=${page}&size=${size}`
@@ -693,9 +996,25 @@ const admin = {
     }
   },
 
-  getLibraryStories: (page = 0, size = 20, status?: string) =>
+  getLibraryStories: (
+    page = 0,
+    size = 20,
+    status?: string,
+    narrationApproved?: boolean
+  ) => {
+    const q = new URLSearchParams({ page: String(page), size: String(size) });
+    if (status) q.set("status", status);
+    if (narrationApproved === true) q.set("narrationApproved", "true");
+    if (narrationApproved === false) q.set("narrationApproved", "false");
+    return fetchJson<PagedResponse<LibraryStorySummary>>(
+      `/api/v1/admin/stories?${q.toString()}`
+    );
+  },
+
+  /** PUBLISHED / PROCESSING / READY with narration not yet approved — dedicated queue (same DB filter as admin intent). */
+  getStoriesPendingReview: (page = 0, size = 20) =>
     fetchJson<PagedResponse<LibraryStorySummary>>(
-      `/api/v1/admin/stories?page=${page}&size=${size}${status ? `&status=${encodeURIComponent(status)}` : ""}`
+      `/api/v1/admin/stories/pending-review?page=${page}&size=${size}`
     ),
 
   /** Approved stories for Narration tab: trigger TTS after content approval. Uses /narration/approved-stories to avoid path conflicts. */
@@ -739,6 +1058,61 @@ const admin = {
       throw new Error(err?.message ?? "Generate cover failed");
     }
     return r.json() as Promise<LibraryStorySummary & { content?: string }>;
+  },
+
+  /**
+   * Rebuild from saved master: when backend `audio-after-approval` is true (default), translate → rewrite only (no TTS on this call). After Approve, use Narration → Generate audio unless `AUTO_TTS_ON_APPROVE=true`. When audio-after-approval is false, behavior follows legacy full pipeline. 202 Accepted. Save the story first.
+   */
+  rebuildNarrationPipeline: async (id: number): Promise<{ message: string }> => {
+    const r = await fetchWithAuth(`/api/v1/admin/stories/${id}/rebuild-narration-pipeline`, {
+      method: "POST",
+    });
+    if (r.status === 202 || r.ok) {
+      return r.json() as Promise<{ message: string }>;
+    }
+    const err = (await r.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err?.message ?? `Rebuild pipeline failed: ${r.status}`);
+  },
+
+  getRegenerateWithPromptStatus: async (
+    id: number
+  ): Promise<{ storyId: number; running: boolean }> => {
+    const r = await fetchWithAuth(`/api/v1/admin/stories/${id}/regenerate-with-prompt/status`);
+    if (!r.ok) {
+      const err = (await r.json().catch(() => ({}))) as { message?: string };
+      // Backward compatibility: older backend versions don't have this endpoint yet.
+      if (r.status === 404 || /No static resource/i.test(err?.message ?? "")) {
+        return { storyId: id, running: false };
+      }
+      throw new Error(err?.message ?? `Failed to load regenerate status: ${r.status}`);
+    }
+    const data = (await r.json().catch(() => ({}))) as { storyId?: number; running?: boolean };
+    return {
+      storyId: data.storyId ?? id,
+      running: !!data.running,
+    };
+  },
+
+  requestRegeneratePromptUnlock: async (id: number): Promise<{ message: string }> => {
+    const r = await fetchWithAuth(`/api/v1/admin/stories/${id}/request-regenerate-prompt-unlock`, {
+      method: "POST",
+    });
+    if (!r.ok) {
+      const err = (await r.json().catch(() => ({}))) as { message?: string };
+      throw new Error(err?.message ?? `Request failed: ${r.status}`);
+    }
+    return r.json() as Promise<{ message: string }>;
+  },
+
+  approveRegeneratePromptUnlock: async (id: number): Promise<{ message: string }> => {
+    const r = await fetchWithAuth(`/api/v1/admin/stories/${id}/approve-regenerate-prompt-unlock`, {
+      method: "POST",
+    });
+    if (!r.ok) {
+      const err = (await r.json().catch(() => ({}))) as { message?: string };
+      throw new Error(err?.message ?? `Approve failed: ${r.status}`);
+    }
+    return r.json() as Promise<{ message: string }>;
   },
 
   suggestRephrase: async (
@@ -813,7 +1187,8 @@ const admin = {
   /** Pipeline active status + which stories/langs are processing (for banner). */
   getPipelineActiveNow: () =>
     fetchJson<{ active: boolean; activeStories?: { storyId: number; language: string; ageMinutes?: number }[] }>(
-      "/api/v1/admin/pipeline/active-now"
+      "/api/v1/admin/pipeline/active-now",
+      { suppressSessionExpiredDialog: true } as RequestInit
     ),
 
   /** Clear stuck pipeline entry (enables Run pipeline) when banner shows no progress for 15+ min. */
@@ -1028,10 +1403,30 @@ const admin = {
   },
 
   updateLibraryStory: async (id: number, data: CreateLibraryStoryRequest) => {
-    const r = await fetchWithAuth(`/api/v1/admin/stories/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    });
+    const existing = updateLibraryStoryInFlight.get(id);
+    if (existing) return existing;
+    const run = (async (): Promise<LibraryStorySummary> => {
+    /** Save/submit can touch many translation rows; S3 cleanup is async server-side. Cap wait so UI does not hang forever. */
+    const timeoutMs = 600_000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let r: Response;
+    try {
+      r = await fetchWithAuth(`/api/v1/admin/stories/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      if (controller.signal.aborted) {
+        throw new Error(
+          `Request timed out after ${timeoutMs / 1000}s. Check that Spring Boot is running and the database is responsive. If a narration pipeline is still running for this story, wait for it to finish (or clear a stuck pipeline banner), then try again. If this persists, check backend logs for the PUT /api/v1/admin/stories/{id} request.`
+        );
+      }
+      throw e instanceof Error ? e : new Error(String(e));
+    } finally {
+      clearTimeout(timer);
+    }
     if (!r.ok) {
       const err = (await r.json().catch(() => ({}))) as {
         message?: string;
@@ -1042,19 +1437,32 @@ const admin = {
       const fallback =
         r.status === 401
           ? "Session expired. Please log in again."
-          : r.status === 404
-            ? "Story not found"
-            : "Failed to update story";
+          : r.status === 403
+            ? "Access denied: your role cannot update library stories. You need MANAGE_STORIES (e.g. Content Manager, Admin, or Super Admin)."
+            : r.status === 404
+              ? "Story not found"
+              : r.status === 409
+                ? "Another operation is in progress for this story (often the translation pipeline). Wait for it to finish or use Clear stuck in the pipeline banner, then try again."
+                : "Failed to update story";
       throw new Error(msg && msg !== "Invalid request" ? msg : fallback);
     }
     return r.json() as Promise<LibraryStorySummary>;
+    })();
+    updateLibraryStoryInFlight.set(id, run);
+    try {
+      return await run;
+    } finally {
+      updateLibraryStoryInFlight.delete(id);
+    }
   },
 
   /** Regenerate story content with Tamixa conversion prompt; optionally generate for all languages. Returns content/title/moral/category/theme and per-language translations (does not save). */
   regenerateStoryWithPrompt: async (
     id: number,
     content?: string | null,
-    generateForAllLanguages = true
+    generateForAllLanguages = true,
+    /** ISO language code for the main rewrite (ta, en, hi, …). Should match the admin edit form; defaults on server if omitted. */
+    language?: string | null
   ): Promise<{
     content: string;
     title: string;
@@ -1062,31 +1470,100 @@ const admin = {
     category?: string;
     theme?: string;
     translations?: Record<string, { content: string; title: string; moral: string }>;
+    /** Optional snapshot of converted content before the source-language paraphrase step (for UI diff). */
+    paraphraseBefore?: { content: string; title: string; moral: string };
+    /** Optional snapshots of converted content before the mandatory paraphrase pass, per target language. */
+    translationsParaphraseBefore?: Record<string, { content: string; title: string; moral: string }>;
   }> => {
-    const body: { content?: string; generateForAllLanguages?: boolean } = {};
+    const body: { content?: string; generateForAllLanguages?: boolean; language?: string } = {};
     if (content != null && content.trim() !== "") body.content = content.trim();
     if (generateForAllLanguages) body.generateForAllLanguages = true;
-    const r = await fetchWithAuth(`/api/v1/admin/stories/${id}/regenerate-with-prompt`, {
+    const raw = language?.trim().toLowerCase();
+    if (raw) {
+      const aliases: Record<string, string> = {
+        tamil: "ta",
+        english: "en",
+        hindi: "hi",
+        telugu: "te",
+        kannada: "kn",
+        malayalam: "ml",
+        bengali: "bn",
+      };
+      body.language = aliases[raw] ?? raw;
+    }
+    const start = await fetchWithAuth(`/api/v1/admin/stories/${id}/regenerate-with-prompt/async`, {
       method: "POST",
       body: JSON.stringify(body),
     });
-    if (!r.ok) {
-      const err = (await r.json().catch(() => ({}))) as { message?: string };
+    if (start.status === 403) {
+      const err = (await start.json().catch(() => ({}))) as { message?: string };
+      throw new Error(
+        err?.message ?? "Regenerate & sync is not allowed for your role until a Super Admin approves unlock."
+      );
+    }
+    if (!start.ok) {
+      const err = (await start.json().catch(() => ({}))) as { message?: string };
       throw new Error(err?.message ?? "Regeneration failed");
     }
-    const data = (await r.json()) as {
+    const startData = (await start.json().catch(() => ({}))) as { jobId?: string; message?: string };
+    const jobId = startData.jobId?.trim();
+    if (!jobId) throw new Error(startData.message ?? "Regeneration job did not start.");
+
+    const maxWaitMs = 20 * 60 * 1000;
+    const pollEveryMs = 2000;
+    const deadline = Date.now() + maxWaitMs;
+    let finalResult: unknown = null;
+
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, pollEveryMs));
+      const poll = await fetchWithAuth(`/api/v1/admin/stories/${id}/regenerate-with-prompt/jobs/${encodeURIComponent(jobId)}`);
+      if (!poll.ok) {
+        const err = (await poll.json().catch(() => ({}))) as { message?: string };
+        throw new Error(err?.message ?? `Failed to poll regenerate job: ${poll.status}`);
+      }
+      const pollData = (await poll.json().catch(() => ({}))) as {
+        status?: string;
+        result?: unknown;
+        error?: string;
+      };
+      const status = (pollData.status ?? "").toUpperCase();
+      if (status === "COMPLETED") {
+        finalResult = pollData.result ?? null;
+        break;
+      }
+      if (status === "FAILED") {
+        throw new Error(pollData.error ?? "Regeneration failed.");
+      }
+    }
+    if (!finalResult || typeof finalResult !== "object") {
+      throw new Error("Regeneration is taking longer than expected. Please keep the page open and retry in a moment.");
+    }
+    const data = finalResult as {
       content?: string;
       title?: string;
       moral?: string;
       category?: string;
       theme?: string;
       translations?: Record<string, { content?: string; title?: string; moral?: string }>;
+      paraphraseBefore?: { content?: string; title?: string; moral?: string };
+      translationsParaphraseBefore?: Record<string, { content?: string; title?: string; moral?: string }>;
     };
     const translations: Record<string, { content: string; title: string; moral: string }> = {};
+    const translationsParaphraseBefore: Record<string, { content: string; title: string; moral: string }> = {};
     if (data.translations && typeof data.translations === "object") {
       for (const [lang, entry] of Object.entries(data.translations)) {
         if (entry && typeof entry === "object")
           translations[lang] = {
+            content: (entry as { content?: string }).content ?? "",
+            title: (entry as { title?: string }).title ?? "",
+            moral: (entry as { moral?: string }).moral ?? "",
+          };
+      }
+    }
+    if (data.translationsParaphraseBefore && typeof data.translationsParaphraseBefore === "object") {
+      for (const [lang, entry] of Object.entries(data.translationsParaphraseBefore)) {
+        if (entry && typeof entry === "object")
+          translationsParaphraseBefore[lang] = {
             content: (entry as { content?: string }).content ?? "",
             title: (entry as { title?: string }).title ?? "",
             moral: (entry as { moral?: string }).moral ?? "",
@@ -1100,6 +1577,18 @@ const admin = {
       ...(data.category != null ? { category: data.category } : {}),
       ...(data.theme != null ? { theme: data.theme } : {}),
       ...(Object.keys(translations).length > 0 ? { translations } : {}),
+      ...(data.paraphraseBefore
+        ? {
+            paraphraseBefore: {
+              content: data.paraphraseBefore.content ?? "",
+              title: data.paraphraseBefore.title ?? "",
+              moral: data.paraphraseBefore.moral ?? "",
+            },
+          }
+        : {}),
+      ...(Object.keys(translationsParaphraseBefore).length > 0
+        ? { translationsParaphraseBefore }
+        : {}),
     };
   },
 
@@ -1130,6 +1619,17 @@ const admin = {
       "/api/v1/admin/stories/bulk",
       { method: "DELETE", body: JSON.stringify({ ids }) }
     ),
+
+  /** Super Admin: stories in soft-delete retention (restore via restoreLibraryStory). */
+  getSoftDeletedLibraryStories: (page = 0, size = 20) =>
+    fetchJson<PagedResponse<LibraryStorySummary>>(
+      `/api/v1/admin/stories/soft-deleted?page=${page}&size=${size}`
+    ),
+
+  restoreLibraryStory: async (id: number) =>
+    fetchJson<{ message: string; id: number }>(`/api/v1/admin/stories/${id}/restore`, {
+      method: "POST",
+    }),
 
   createLibraryStory: async (data: CreateLibraryStoryRequest) => {
     const r = await fetchWithAuth("/api/v1/admin/stories", {
@@ -1229,6 +1729,75 @@ const admin = {
 
   getSoundscapeUsage: () =>
     fetchJson<SoundscapeUsage[]>("/api/v1/admin/soundscapes/usage"),
+
+  // AI control plane (governance registry + workflow runs)
+  getAiControlPlaneProjects: () =>
+    fetchJson<AiProjectSummary[]>("/api/v1/admin/ai-control-plane/projects"),
+
+  getAiControlPlaneWorkflows: (projectCode: string) =>
+    fetchJson<AiWorkflowSummary[]>(
+      `/api/v1/admin/ai-control-plane/projects/${encodeURIComponent(projectCode)}/workflows`
+    ),
+
+  getAiControlPlaneWorkflowRuns: (projectCode: string, page = 0, size = 20) =>
+    fetchJson<PagedResponse<AiWorkflowRunSummary>>(
+      `/api/v1/admin/ai-control-plane/workflow-runs?projectCode=${encodeURIComponent(projectCode)}&page=${page}&size=${size}`
+    ),
+
+  executeAiControlPlaneWorkflow: (body: ExecuteWorkflowRequest) =>
+    fetchJson<WorkflowRunStarted>("/api/v1/admin/ai-control-plane/workflow-runs/execute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
+  getAiControlPlaneWorkflowRun: (runId: string) =>
+    fetchJson<WorkflowRunDetail>(`/api/v1/admin/ai-control-plane/workflow-runs/${encodeURIComponent(runId)}`),
+
+  cancelAiControlPlaneWorkflowRun: async (runId: string) => {
+    const res = await fetchWithAuth(
+      `/api/v1/admin/ai-control-plane/workflow-runs/${encodeURIComponent(runId)}/cancel`,
+      { method: "POST" }
+    );
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { message?: string };
+      throw new Error(err?.message ?? "Failed to cancel run");
+    }
+  },
+
+  retryAiControlPlaneWorkflowRun: (runId: string) =>
+    fetchJson<WorkflowRunStarted>(
+      `/api/v1/admin/ai-control-plane/workflow-runs/${encodeURIComponent(runId)}/retry`,
+      { method: "POST" }
+    ),
+
+  resolveAiControlPlanePrompt: (projectCode: string, assetKey: string, version?: number) => {
+    const v =
+      version != null && !Number.isNaN(version)
+        ? `&version=${encodeURIComponent(String(version))}`
+        : "";
+    return fetchJson<PromptVersion>(
+      `/api/v1/admin/ai-control-plane/prompts/resolve?projectCode=${encodeURIComponent(projectCode)}&assetKey=${encodeURIComponent(assetKey)}${v}`
+    );
+  },
+
+  publishAiControlPlanePrompt: (body: PublishPromptRequest) =>
+    fetchJson<PromptVersion>("/api/v1/admin/ai-control-plane/prompts/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
+  approveAiControlPlanePromptVersion: async (assetId: string, version: number) => {
+    const res = await fetchWithAuth(
+      `/api/v1/admin/ai-control-plane/prompts/assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(String(version))}/approve`,
+      { method: "POST" }
+    );
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { message?: string };
+      throw new Error(err?.message ?? "Failed to approve version");
+    }
+  },
 
   // Voice cloning
   getVoiceCloningJobs: () =>

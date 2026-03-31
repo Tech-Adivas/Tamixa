@@ -11,5 +11,6 @@ data class Parent(
     val phone: String? = null,
     val nickname: String? = null,
     val displayName: String? = null,
-    val suspendedAt: Instant? = null
+    val suspendedAt: Instant? = null,
+    val storyArtPersonalizationOptIn: Boolean = false
 )

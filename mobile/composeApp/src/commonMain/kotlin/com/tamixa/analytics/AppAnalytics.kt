@@ -55,4 +55,17 @@ class AppAnalytics(
             }
         }
     }
+
+    /** Fired once per player session when optional host story clip is shown (no PII). */
+    fun trackHostStoryClipImpression(storyId: Long, storySource: String) {
+        scope.launch {
+            runCatching {
+                analyticsApi.trackAppEvent(
+                    eventType = "host_story_clip_impression",
+                    storyId = storyId,
+                    storySource = storySource
+                )
+            }
+        }
+    }
 }

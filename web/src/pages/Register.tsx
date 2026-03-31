@@ -34,7 +34,7 @@ export default function Register() {
     setLoading(true);
     try {
       const tokens = await register(email, password, acceptedTerms, acceptedPrivacy, acceptedParentalAttestation);
-      authStorage.setTokens(tokens.accessToken, tokens.refreshToken);
+      authStorage.setTokens(tokens.accessToken, tokens.refreshToken, tokens.expiresInSeconds);
       const user = await getMe();
       setUser(user);
       navigate("/dashboard");

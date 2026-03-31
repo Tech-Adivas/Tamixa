@@ -38,4 +38,11 @@ class ProfileService(
         parentRepository.save(updated)
         return true
     }
+
+    @Transactional
+    fun updateStoryArtPersonalizationOptIn(email: String, optIn: Boolean): Boolean {
+        val parent = parentRepository.findByEmail(email) ?: return false
+        parentRepository.save(parent.copy(storyArtPersonalizationOptIn = optIn))
+        return true
+    }
 }

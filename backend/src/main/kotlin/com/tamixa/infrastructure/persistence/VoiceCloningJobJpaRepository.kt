@@ -28,7 +28,7 @@ interface VoiceCloningJobJpaRepository : JpaRepository<VoiceCloningJobEntity, Lo
     )
     fun updateStatus(
         @Param("id") id: Long,
-        @Param("status") status: VoiceCloningStatus,
+        @Param("status") status: String,
         @Param("elevenLabsVoiceId") elevenLabsVoiceId: String?,
         @Param("googleVoiceCloningKey") googleVoiceCloningKey: String?,
         @Param("errorMessage") errorMessage: String?,

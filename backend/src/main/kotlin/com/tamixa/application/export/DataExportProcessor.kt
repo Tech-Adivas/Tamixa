@@ -1,5 +1,6 @@
 package com.tamixa.application.export
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -15,6 +16,7 @@ class DataExportProcessor(
     private val log = LoggerFactory.getLogger(javaClass)
 
     @Scheduled(cron = "\${app.export.process-cron:0 */2 * * * *}")
+    @SchedulerLock(name = "DataExportProcessor.processPendingExports", lockAtMostFor = "PT15M", lockAtLeastFor = "PT10S")
     fun processPendingExports() {
         var processed = 0
         while (dataExportService.processNextPendingJob()) {

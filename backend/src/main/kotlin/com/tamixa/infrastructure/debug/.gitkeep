@@ -1,0 +1,2 @@
+# Reserved for future debug/diagnostic infrastructure.
+# Debug logging was removed from AdminController (see commit history).

@@ -1,4 +1,11 @@
 # Staging profile: mirrors prod with relaxed logging and dev-like DB defaults where safe.
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: db,redis,diskSpace
+
 spring:
   flyway:
     # Match production strategy: app nodes do not migrate by default.

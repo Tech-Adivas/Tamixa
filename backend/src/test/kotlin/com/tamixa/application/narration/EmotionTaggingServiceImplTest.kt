@@ -33,6 +33,14 @@ class EmotionTaggingServiceImplTest {
     }
 
     @Test
+    fun `tagEmotions detects DIALOGUE for curly quoted text`() {
+        val script = "The fox said “Hello little rabbit” and smiled."
+        val result = service.tagEmotions(script)
+        val dialogueSegments = result.segments.filter { it.emotion == EmotionTag.DIALOGUE }
+        assertTrue(dialogueSegments.any { it.text.contains("Hello little rabbit") })
+    }
+
+    @Test
     fun `tagEmotions detects EXCITED for exclamation-heavy text`() {
         val script = "Wow! Amazing! What a day!"
         val result = service.tagEmotions(script)
@@ -77,6 +85,13 @@ class EmotionTaggingServiceImplTest {
         val script = "अरे, मीरा ने एक सुंदर तितली देखी। देखो कितनी प्यारी!"
         val result = service.tagEmotions(script, "hi")
         assertTrue(result.segments.any { it.emotion == EmotionTag.CONVERSATIONAL })
+    }
+
+    @Test
+    fun `tagEmotions detects EXCITED for non english exclamations`() {
+        val script = "வாவ்! இன்று என்ன ஒரு அழகான நாள்!"
+        val result = service.tagEmotions(script, "ta")
+        assertTrue(result.segments.any { it.emotion == EmotionTag.EXCITED })
     }
 
     @Test

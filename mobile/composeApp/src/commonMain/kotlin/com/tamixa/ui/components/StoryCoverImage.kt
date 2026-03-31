@@ -26,12 +26,13 @@ import com.tamixa.domain.Story
 import com.tamixa.network.ApiConfig
 import com.tamixa.platform.CoverVideoSurface
 import androidx.compose.material3.Text
+import com.tamixa.ui.strings.Strings
 import org.jetbrains.compose.resources.painterResource
 
 /**
- * HD cover for story cards - image with optional animated overlay (coverVideoUrl).
- * When coverVideoUrl is a GIF, shows animated GIF on top (Sora image-to-video converted to GIF).
- * When coverVideoUrl is MP4, shows looping muted video. Uses coverImageUrl as poster/fallback.
+ * HD cover for story cards — **prefers** animated [Story.coverVideoUrl] when present (GIF or MP4),
+ * with [Story.coverImageUrl] as poster/fallback. GIF is shown as the primary layer (not stacked on
+ * a duplicate full-size static decode). MP4 uses [CoverVideoSurface] over the static poster.
  * Resolves relative paths (e.g. /api/v1/covers/...) via apiBaseUrl when provided.
  */
 object DefaultCoverImages {
@@ -55,6 +56,7 @@ fun StoryCoverImage(
     apiBaseUrl: String? = null,
     coverRefreshKey: Long? = null
 ) {
+    val reduceMotion = platformIsReduceMotionEnabled()
     val rawUrl = story.coverImageUrl?.takeIf { it.isNotBlank() }
     val baseImageUrl = when {
         rawUrl != null && (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) -> rawUrl
@@ -78,6 +80,8 @@ fun StoryCoverImage(
     }
 
     val (bgStart, bgEnd) = themeGradient(story.theme)
+    val gifCoverUrl = videoUrl?.takeIf { it.lowercase().contains(".gif") }
+    val coverContentDescription = Strings.storyCoverContentDescription(story.title, story.theme)
     Box(
         modifier = modifier
             .background(
@@ -86,35 +90,103 @@ fun StoryCoverImage(
                 )
             )
     ) {
-        if (imageUrl != null) {
-            coil3.compose.SubcomposeAsyncImage(
-                model = imageUrl,
-                contentDescription = story.theme,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = contentScale,
-                loading = { DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize()) },
-                error = { DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize()) }
-            )
-        } else {
-            DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize())
-        }
-        if (videoUrl != null) {
-            if (videoUrl.lowercase().contains(".gif")) {
+        when {
+            !reduceMotion && gifCoverUrl != null -> {
                 coil3.compose.SubcomposeAsyncImage(
-                    model = videoUrl,
-                    contentDescription = story.theme,
+                    model = gifCoverUrl,
+                    contentDescription = coverContentDescription,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = contentScale,
-                    loading = { DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize()) },
-                    error = { }
-                )
-            } else {
-                CoverVideoSurface(
-                    videoUrl = videoUrl,
-                    modifier = Modifier.fillMaxSize()
+                    loading = {
+                        if (imageUrl != null) {
+                            coil3.compose.SubcomposeAsyncImage(
+                                model = imageUrl,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = contentScale,
+                                loading = { StoryCoverLoadingSlot(story.theme, Modifier.fillMaxSize()) },
+                                error = { DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize()) }
+                            )
+                        } else {
+                            StoryCoverLoadingSlot(story.theme, Modifier.fillMaxSize())
+                        }
+                    },
+                    error = {
+                        if (imageUrl != null) {
+                            coil3.compose.SubcomposeAsyncImage(
+                                model = imageUrl,
+                                contentDescription = coverContentDescription,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = contentScale,
+                                loading = { StoryCoverLoadingSlot(story.theme, Modifier.fillMaxSize()) },
+                                error = { DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize()) }
+                            )
+                        } else {
+                            DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize())
+                        }
+                    }
                 )
             }
+            else -> {
+                if (imageUrl != null) {
+                    coil3.compose.SubcomposeAsyncImage(
+                        model = imageUrl,
+                        contentDescription = coverContentDescription,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = contentScale,
+                        loading = { StoryCoverLoadingSlot(story.theme, Modifier.fillMaxSize()) },
+                        error = { DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize()) }
+                    )
+                } else {
+                    DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize())
+                }
+                if (videoUrl != null && !reduceMotion) {
+                    CoverVideoSurface(
+                        videoUrl = videoUrl,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
         }
+    }
+}
+
+/** Warm cache for [story] cover before opening the player. */
+fun prefetchStoryCoverForStory(story: Story, apiBaseUrl: String?) {
+    prefetchStoryCover(resolvedCoverImageUrl(story, apiBaseUrl))
+}
+
+private fun resolvedCoverImageUrl(story: Story, apiBaseUrl: String?): String? {
+    val rawUrl = story.coverImageUrl?.takeIf { it.isNotBlank() } ?: return null
+    val baseImageUrl = when {
+        rawUrl.startsWith("http://") || rawUrl.startsWith("https://") -> rawUrl
+        rawUrl.startsWith("/") && apiBaseUrl != null -> ApiConfig.resolveCoverUrl(apiBaseUrl, rawUrl)
+        apiBaseUrl != null -> ApiConfig.resolveCoverUrl(apiBaseUrl, rawUrl)
+        else -> null
+    }
+    return baseImageUrl
+}
+
+@Composable
+private fun StoryCoverLoadingSlot(theme: String, modifier: Modifier = Modifier) {
+    if (platformIsReduceMotionEnabled()) {
+        val (startColor, endColor) = themeGradient(theme)
+        Box(
+            modifier = modifier.background(
+                Brush.verticalGradient(colors = listOf(startColor, endColor))
+            ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = themeEmoji(theme),
+                fontSize = 40.sp,
+                color = Color.White.copy(alpha = 0.9f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    } else {
+        StoryCoverPlaceholder(theme, modifier)
     }
 }
 

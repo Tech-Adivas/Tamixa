@@ -10,6 +10,7 @@ import com.tamixa.application.port.ParentRepositoryPort
 import com.tamixa.domain.Parent
 import com.tamixa.domain.Role
 import com.tamixa.infrastructure.config.AppProperties
+import org.slf4j.LoggerFactory
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -34,6 +35,11 @@ class AuthService(
     private val emailSender: EmailSenderPort,
     private val appProperties: AppProperties
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
+    companion object {
+        private const val MAGIC_LINK_EXPIRY_SECONDS = 15L * 60L // 15 minutes
+    }
 
     /**
      * Register only if email does not exist. If exists, throws (use login instead).
@@ -108,7 +114,7 @@ class AuthService(
     fun requestPasswordless(email: String): Boolean {
         val token = UUID.randomUUID().toString().replace("-", "")
         val shortCode = (100000..999999).random().toString()
-        val expiresAt = Instant.now().plusSeconds(15 * 60) // 15 minutes
+        val expiresAt = Instant.now().plusSeconds(MAGIC_LINK_EXPIRY_SECONDS) // 15 minutes
         magicLinkTokenRepository.save(email, token, expiresAt, shortCode)
         val webBase = appProperties.auth.webBaseUrl.trim().removeSuffix("/")
         val magicLink = "$webBase/login?token=$token"
@@ -126,7 +132,14 @@ class AuthService(
         acceptedParentalAttestation: Boolean = false
     ): AuthTokens {
         val devCode = appProperties.auth.devPasswordlessCode
-        if (devCode.isNullOrBlank() || code != devCode) {
+        val isDevBypass = !devCode.isNullOrBlank() && code == devCode
+        if (isDevBypass) {
+            // Dev bypass: only permitted when explicitly configured; must never be set in production
+            check(appProperties.auth.devPasswordlessCode?.isNotBlank() == true) {
+                "Dev passwordless code must not be used in production"
+            }
+            log.warn("Passwordless dev bypass used for email verification - ensure PASSWORDLESS_DEV_CODE is unset in production")
+        } else {
             val magicToken = magicLinkTokenRepository.findValidByEmailAndCode(email, code)
                 ?: throw InvalidCredentialsException()
             magicLinkTokenRepository.markUsed(magicToken.id)

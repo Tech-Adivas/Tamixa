@@ -5,6 +5,8 @@ import com.tamixa.util.TamixaConstants
 import com.tamixa.domain.GenerateStoryRequest
 import com.tamixa.domain.Story
 import com.tamixa.domain.toStory
+import com.tamixa.network.PlaybackPositionDto
+import com.tamixa.network.toContinueListeningStory
 
 interface StoryCache {
     fun getCachedStories(): List<Story>
@@ -17,6 +19,13 @@ data class StoriesPage(
     val totalPages: Int,
     val first: Boolean,
     val last: Boolean
+)
+
+/** Recent plays with hydrated story row + optional progress fraction from the server (0..1). */
+data class RecentPlaybackHydrated(
+    val dto: PlaybackPositionDto,
+    val story: Story,
+    val progressFraction: Float?
 )
 
 class StoryRepository(
@@ -72,6 +81,24 @@ class StoryRepository(
 
     suspend fun getRecentPlayback(limit: Int = TamixaConstants.RECENT_PLAYBACK_LIMIT): Result<List<com.tamixa.network.PlaybackPositionDto>> = runCatching {
         api.getRecentPlayback(limit)
+    }
+
+    suspend fun getRecentPlaybackHydrated(
+        language: String = TamixaConstants.DEFAULT_LANGUAGE,
+        limit: Int = TamixaConstants.RECENT_PLAYBACK_LIMIT
+    ): Result<List<RecentPlaybackHydrated>> = runCatching {
+        api.getRecentPlaybackEnriched(limit).map { e ->
+            RecentPlaybackHydrated(
+                dto = PlaybackPositionDto(
+                    storyId = e.storyId,
+                    storySource = e.storySource,
+                    positionSeconds = e.positionSeconds,
+                    updatedAt = e.updatedAt
+                ),
+                story = e.toContinueListeningStory(language),
+                progressFraction = e.progress?.toFloat()?.coerceIn(0f, 1f)
+            )
+        }
     }
 
     suspend fun searchStories(q: String, language: String = TamixaConstants.DEFAULT_LANGUAGE, page: Int = 0, size: Int = TamixaConstants.SEARCH_PAGE_SIZE): Result<com.tamixa.network.SearchStoriesResponse> = runCatching {

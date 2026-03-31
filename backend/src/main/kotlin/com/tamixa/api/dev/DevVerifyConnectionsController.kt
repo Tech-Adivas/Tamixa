@@ -25,13 +25,17 @@ import org.springframework.web.client.RestClientException
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.slf4j.LoggerFactory
 import org.springframework.web.client.RestTemplate
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
+import java.security.MessageDigest
 
 /**
  * Dev-only endpoints to verify external service connections and the audio translation pipeline.
@@ -42,7 +46,10 @@ import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
  * - GET /api/v1/dev/voice-cloning-status – ElevenLabs/XTTS config and bean presence for cloned voice flow
  * - POST /api/v1/dev/trigger-pipeline/{masterStoryId} – Manually trigger full pipeline (processSync, blocking in background)
  * - POST /api/v1/dev/trigger-retry/{masterStoryId} – Retry failed/stuck languages only (retryFailed)
+ * - POST /api/v1/dev/recover-story/{masterStoryId} – Reset narration+retry state and rerun full pipeline
  * - GET /api/v1/dev/story-status/{id} – Story details and pipeline status (no auth)
+ * - GET /api/v1/dev/story-audio-path/{id}?language=ta – resolved narration storage key for preview
+ * - GET /api/v1/dev/story-audio-fetch/{id}?language=ta – stream test + diagnostics for preview audio
  */
 @RestController
 @RequestMapping("${ApiVersion.V1}/dev")
@@ -240,6 +247,109 @@ class DevVerifyConnectionsController(
         ))
     }
 
+    @GetMapping("/story-audio-path/{id}")
+    fun storyAudioPath(
+        @PathVariable id: Long,
+        @RequestParam(defaultValue = "ta") language: String
+    ): ResponseEntity<Map<String, Any?>> {
+        val story = storyLibraryService.findById(id)
+            ?: return ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("error" to "Story $id not found"))
+        val normalized = com.tamixa.application.stream.StreamLanguageUtils.normalize(language)
+        val path = storyLibraryService.getNarrationStoragePath(id, normalized)
+        val s3Exists = if (path != null && path.startsWith("stories/")) {
+            val client = s3ClientProvider.getIfAvailable()
+            if (client == null) null else {
+                try {
+                    client.headObject(
+                        HeadObjectRequest.builder()
+                            .bucket(appProperties.storage.effectiveS3Bucket)
+                            .key(path)
+                            .build()
+                    )
+                    true
+                } catch (_: Exception) {
+                    false
+                }
+            }
+        } else null
+        return ResponseEntity.ok(
+            mapOf(
+                "storyId" to id,
+                "requestedLanguage" to language,
+                "normalizedLanguage" to normalized,
+                "storyLanguage" to story.language,
+                "storyAudioFileUrl" to story.audioFileUrl,
+                "resolvedNarrationPath" to path,
+                "ready" to (path != null),
+                "s3ObjectExists" to s3Exists
+            )
+        )
+    }
+
+    @GetMapping("/story-audio-fetch/{id}")
+    fun storyAudioFetch(
+        @PathVariable id: Long,
+        @RequestParam(defaultValue = "ta") language: String
+    ): ResponseEntity<Map<String, Any?>> {
+        val normalized = com.tamixa.application.stream.StreamLanguageUtils.normalize(language)
+        val key = storyLibraryService.getNarrationStoragePath(id, normalized)
+        val client = s3ClientProvider.getIfAvailable()
+            ?: return ResponseEntity.ok(
+                mapOf(
+                    "storyId" to id,
+                    "requestedLanguage" to language,
+                    "normalizedLanguage" to normalized,
+                    "resolvedNarrationPath" to key,
+                    "ok" to false,
+                    "errorType" to "S3ClientUnavailable",
+                    "error" to "S3 client is not available"
+                )
+            )
+        if (key == null || !key.startsWith("stories/")) {
+            return ResponseEntity.ok(
+                mapOf(
+                    "storyId" to id,
+                    "requestedLanguage" to language,
+                    "normalizedLanguage" to normalized,
+                    "resolvedNarrationPath" to key,
+                    "ok" to false,
+                    "errorType" to "NoAudioPath",
+                    "error" to "No narration storage path resolved"
+                )
+            )
+        }
+        return try {
+            val bytes = client.getObjectAsBytes(
+                GetObjectRequest.builder()
+                    .bucket(appProperties.storage.effectiveS3Bucket)
+                    .key(key)
+                    .build()
+            )
+            ResponseEntity.ok(
+                mapOf(
+                    "storyId" to id,
+                    "requestedLanguage" to language,
+                    "normalizedLanguage" to normalized,
+                    "resolvedNarrationPath" to key,
+                    "bytes" to bytes.asByteArray().size,
+                    "ok" to true
+                )
+            )
+        } catch (e: Exception) {
+            ResponseEntity.ok(
+                mapOf(
+                    "storyId" to id,
+                    "requestedLanguage" to language,
+                    "normalizedLanguage" to normalized,
+                    "resolvedNarrationPath" to key,
+                    "ok" to false,
+                    "errorType" to e::class.simpleName,
+                    "error" to (e.message ?: "unknown")
+                )
+            )
+        }
+    }
+
     @PostMapping("/trigger-pipeline/{masterStoryId}")
     fun triggerPipeline(@PathVariable masterStoryId: Long): ResponseEntity<Map<String, Any>> {
         log.info("PIPELINE trigger-pipeline masterStoryId={} (processSync running in background)", masterStoryId)
@@ -261,6 +371,26 @@ class DevVerifyConnectionsController(
     }
 
     /**
+     * Full story recovery for stale statuses:
+     * - clears narration rows for this story
+     * - sets translations to PENDING
+     * - resets retryCount to 0 and clears lastError
+     * - clears master audio URL
+     * Then reruns full pipeline in background.
+     */
+    @PostMapping("/recover-story/{masterStoryId}")
+    fun recoverStory(@PathVariable masterStoryId: Long): ResponseEntity<Map<String, Any>> {
+        log.info("PIPELINE recover-story masterStoryId={}", masterStoryId)
+        val resetCount = storyLibraryService.resetNarrationAndRetryStateForStory(masterStoryId)
+        triggerPipelineExecutor.execute { storyProcessingService.republishLanguages(masterStoryId, emptyList()) }
+        return ResponseEntity.accepted().body(mapOf(
+            "message" to "Recovered story $masterStoryId and triggered full republish pipeline",
+            "masterStoryId" to masterStoryId,
+            "translationsReset" to resetCount
+        ))
+    }
+
+    /**
      * Reset stuck translations (REWRITING, TRANSLATING, TTS_PROCESSING) to PENDING, then trigger retry.
      * Use when pipeline hangs and translations stay in intermediate states.
      */
@@ -274,6 +404,22 @@ class DevVerifyConnectionsController(
             "masterStoryId" to masterStoryId,
             "resetCount" to reset
         ))
+    }
+
+    /**
+     * Normalizes master story status consistency across all curated stories.
+     * Rule: narrationApprovedAt != null => status must be PUBLISHED.
+     */
+    @GetMapping("/normalize-story-statuses")
+    fun normalizeStoryStatuses(): ResponseEntity<Map<String, Any>> {
+        val report = storyLibraryService.normalizeMasterStatusesForApprovedStories()
+        return ResponseEntity.ok(
+            mapOf(
+                "message" to "Story status normalization completed",
+                "rule" to "narrationApprovedAt != null => status=PUBLISHED",
+                "result" to report
+            )
+        )
     }
 
     @GetMapping("/tts-status")
@@ -318,6 +464,83 @@ class DevVerifyConnectionsController(
                 "Optional: set XTTS_BASE_URL for fallback when ElevenLabs fails or is disabled"
             )
         ))
+    }
+
+    /**
+     * Deep ElevenLabs diagnostic for cloned voice flow.
+     * Returns only masked/fingerprint key metadata (never raw secrets), plus in-process synth probe.
+     */
+    @GetMapping("/verify-elevenlabs")
+    fun verifyElevenLabs(
+        @RequestParam voiceId: String,
+        @RequestParam(defaultValue = "ta") language: String
+    ): ResponseEntity<Map<String, Any?>> {
+        val vc = appProperties.voiceCloning
+        val configuredKey = vc.elevenLabsApiKey
+        val envKey = System.getenv("ELEVENLABS_API_KEY") ?: ""
+        val provider = vc.provider.trim().lowercase()
+        val bean = elevenLabsProvider.getIfAvailable()
+
+        val userStatus = if (configuredKey.isBlank()) {
+            null
+        } else {
+            try {
+                val headers = HttpHeaders().apply { set("xi-api-key", configuredKey.trim()) }
+                val entity = org.springframework.http.HttpEntity<Any>(headers)
+                restTemplate.exchange(
+                    "${vc.elevenLabsBaseUrl.trimEnd('/')}/v1/user",
+                    org.springframework.http.HttpMethod.GET,
+                    entity,
+                    Map::class.java
+                )
+                200
+            } catch (e: HttpStatusCodeException) {
+                e.statusCode.value()
+            } catch (_: Exception) {
+                -1
+            }
+        }
+
+        val synth = if (bean == null) null else try {
+            val bytes = bean.synthesize("Vanakkam, this is a runtime check.", voiceId.trim(), language.trim())
+            if (bytes != null && bytes.isNotEmpty()) mapOf("ok" to true, "bytes" to bytes.size)
+            else mapOf("ok" to false, "bytes" to 0)
+        } catch (e: Exception) {
+            mapOf("ok" to false, "error" to (e.message ?: "unknown"))
+        }
+
+        return ResponseEntity.ok(
+            mapOf(
+                "provider" to provider,
+                "voiceCloningEnabled" to vc.enabled,
+                "elevenLabsBeanPresent" to (bean != null),
+                "configuredKey" to mapOf(
+                    "present" to configuredKey.isNotBlank(),
+                    "length" to configuredKey.length,
+                    "last4" to configuredKey.takeLast(4),
+                    "fingerprint" to secretFingerprint(configuredKey)
+                ),
+                "envKey" to mapOf(
+                    "present" to envKey.isNotBlank(),
+                    "length" to envKey.length,
+                    "last4" to envKey.takeLast(4),
+                    "fingerprint" to secretFingerprint(envKey)
+                ),
+                "keysMatchByFingerprint" to (
+                    configuredKey.isNotBlank() &&
+                        envKey.isNotBlank() &&
+                        secretFingerprint(configuredKey) == secretFingerprint(envKey)
+                    ),
+                "userApiStatus" to userStatus,
+                "synthesizeProbe" to synth
+            )
+        )
+    }
+
+    private fun secretFingerprint(secret: String): String {
+        if (secret.isBlank()) return ""
+        val bytes = MessageDigest.getInstance("SHA-256").digest(secret.trim().toByteArray())
+        return bytes.joinToString("") { "%02x".format(it) }.take(12)
     }
 
     /**

@@ -44,7 +44,8 @@ async function fetchWithFallback<T>(
 ): Promise<T> {
   try {
     return await fetcher();
-  } catch {
+  } catch (e) {
+    console.warn("[revenue-api] fetchWithFallback: falling back to mock data.", e instanceof Error ? e.message : e);
     return mockValue;
   }
 }
@@ -233,8 +234,7 @@ export async function fetchRevenueCharts(): Promise<RevenueChartsData> {
     };
   }
 
-  const [, subRes] = await Promise.allSettled([
-    api.admin.getRevenueMetrics(),
+  const [subRes] = await Promise.allSettled([
     api.admin.getSubscriptionMetrics(),
   ]);
 

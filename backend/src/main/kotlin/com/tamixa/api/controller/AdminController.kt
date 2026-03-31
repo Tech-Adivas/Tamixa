@@ -1,6 +1,7 @@
 package com.tamixa.api.controller
 
 import com.tamixa.api.ApiVersion
+import com.tamixa.api.config.AdminAuth
 import com.tamixa.api.admin.LibraryStoryMapper.toResponse
 import com.tamixa.api.admin.dto.BulkDeleteRequest
 import com.tamixa.api.admin.dto.BulkGenerateStoriesRequest
@@ -25,13 +26,17 @@ import com.tamixa.api.admin.dto.SuggestRephraseRequest
 import com.tamixa.api.admin.dto.UpdateParentRequest
 import com.tamixa.api.admin.dto.UpdateTranslationRequest
 import com.tamixa.api.admin.dto.AdminInvoiceDto
+import com.tamixa.api.admin.dto.DoraMetricsDto
 import com.tamixa.api.admin.dto.FlagStoryRequest
 import com.tamixa.api.admin.dto.StoryDetailDto
 import com.tamixa.api.admin.dto.ParentDetailDto
 import com.tamixa.api.admin.dto.PagedResponse
+import com.tamixa.api.admin.dto.RecordDoraDeploymentRequest
+import com.tamixa.api.admin.dto.RecordDoraIncidentRequest
 import com.tamixa.api.admin.dto.RevenueRowDto
 import com.tamixa.api.admin.dto.SubscriptionMetricsDto
 import com.tamixa.application.analytics.CompletionMetricsDto
+import com.tamixa.application.analytics.DoraMetricsService
 import com.tamixa.application.analytics.RetentionMetricsDto
 import com.tamixa.application.analytics.VoiceCloneAnalyticsService
 import com.tamixa.application.admin.AdminParentNotFoundException
@@ -47,7 +52,7 @@ import com.tamixa.application.library.LibraryStoryIllustrationService
 import com.tamixa.application.library.LibraryStoryRephraseService
 import com.tamixa.application.story.StoryPromptBuilder
 import com.tamixa.application.storylibrary.BulkJobStatus
-import com.tamixa.application.storylibrary.BulkJobStore
+import com.tamixa.application.port.BulkJobStorePort
 import com.tamixa.application.storylibrary.StoryCategories
 import com.tamixa.application.storylibrary.StoryLibraryService
 import com.tamixa.application.storylibrary.StoryStatus as LibraryStoryStatus
@@ -57,6 +62,7 @@ import com.tamixa.application.port.ProcessingJobRecord
 import com.tamixa.application.port.StoryRepositoryPort
 import com.tamixa.application.port.TtsMetadataCachePort
 import com.tamixa.application.port.VoiceRepositoryPort
+import com.tamixa.application.port.voice.ElevenLabsVoiceCloningPort
 import com.tamixa.application.voice.VoiceCloningService
 import com.tamixa.application.avatar.AvatarFileTooLargeException
 import com.tamixa.application.avatar.AvatarNotFoundException
@@ -69,17 +75,23 @@ import com.tamixa.application.subscription.ReferralCodeService
 import com.tamixa.application.stream.AudioStreamService
 import com.tamixa.api.voice.toResponse
 import com.tamixa.application.stream.CoverImageUrlResolver
+import com.tamixa.application.stream.StreamLanguageUtils
 import com.tamixa.application.translation.TranslationService
 import com.tamixa.domain.StoryStatus
 import com.tamixa.infrastructure.config.AppProperties
+import com.tamixa.infrastructure.config.resolvedHostStoryClipUrl
+import com.tamixa.infrastructure.observability.StoryPipelineMetrics
 import jakarta.validation.Valid
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.data.domain.PageRequest
 import org.springframework.core.task.TaskExecutor
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
+import org.springframework.http.HttpEntity
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
@@ -95,20 +107,26 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.multipart.MultipartFile
+import org.springframework.web.client.HttpStatusCodeException
+import org.springframework.web.client.RestTemplate
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 import java.lang.management.ManagementFactory
 import java.net.InetAddress
+import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.UUID
 
 @RestController
 @RequestMapping("${ApiVersion.V1}/admin")
 @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','REVENUE_ANALYST','CONTENT_MANAGER','SUPPORT')")
 class AdminController(
     private val adminService: AdminService,
+    private val adminAuth: AdminAuth,
     private val storyLibraryService: StoryLibraryService,
     private val storyProcessingService: StoryProcessingService,
     @Qualifier("triggerPipelineExecutor") private val triggerPipelineExecutor: TaskExecutor,
@@ -129,61 +147,47 @@ class AdminController(
     @Autowired(required = false) private val ttsMetadataCache: TtsMetadataCachePort?,
     private val processingJobService: ProcessingJobService,
     @Autowired(required = false) private val voiceCloneAnalytics: VoiceCloneAnalyticsService?,
+    @Autowired(required = false) private val elevenLabsVoiceCloningPort: ElevenLabsVoiceCloningPort?,
+    private val restTemplate: RestTemplate,
     @Value("\${spring.flyway.enabled:true}") private val flywayEnabled: Boolean,
     @Value("\${spring.flyway.lock-retry-count:300}") private val flywayLockRetryCount: Int,
-    private val bulkJobStore: BulkJobStore,
+    private val bulkJobStore: BulkJobStorePort,
     private val translationService: TranslationService,
     private val shortContentService: ShortContentService,
-    private val shortContentGenerationService: ShortContentGenerationService
+    private val shortContentGenerationService: ShortContentGenerationService,
+    private val storyPipelineMetrics: StoryPipelineMetrics,
+    private val doraMetricsService: DoraMetricsService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val debugLogPath: Path? = System.getenv("DEBUG_LOG_PATH")?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
+    /** Prevent concurrent regenerate-with-prompt runs for the same story id. */
+    private val regenerateInFlightStoryIds = ConcurrentHashMap.newKeySet<Long>()
+    private val regenerateAsyncJobs = ConcurrentHashMap<String, RegenerateAsyncJobState>()
+    private val regenerateAsyncStoryToJobId = ConcurrentHashMap<Long, String>()
 
-    // #region agent log
-    private fun debugLog(
-        runId: String,
-        hypothesisId: String,
-        location: String,
-        message: String,
-        data: Map<String, Any?> = emptyMap()
-    ) {
-        val path = debugLogPath ?: return
-        try {
-            path.parent?.let { Files.createDirectories(it) }
-            val json = buildString {
-                append("{")
-                append("\"sessionId\":\"ab5527\",")
-                append("\"runId\":\"").append(escapeJson(runId)).append("\",")
-                append("\"hypothesisId\":\"").append(escapeJson(hypothesisId)).append("\",")
-                append("\"location\":\"").append(escapeJson(location)).append("\",")
-                append("\"message\":\"").append(escapeJson(message)).append("\",")
-                append("\"data\":{")
-                append(data.entries.joinToString(",") { (k, v) -> "\"${escapeJson(k)}\":${toJsonValue(v)}" })
-                append("},")
-                append("\"timestamp\":").append(System.currentTimeMillis())
-                append("}\n")
-            }
-            Files.writeString(
-                path,
-                json,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.APPEND,
-                StandardOpenOption.WRITE
-            )
-        } catch (_: Exception) {
-            // Ignore debug logging failures.
-        }
+    private data class RegenerateAsyncJobState(
+        val jobId: String,
+        val storyId: Long,
+        val status: String,
+        val createdAt: String,
+        val startedAt: String? = null,
+        val completedAt: String? = null,
+        val result: Map<String, Any>? = null,
+        val error: String? = null
+    )
+
+    private fun resolveDatasourceTargetForOps(): String {
+        val env = System.getenv()
+        val url =
+            env["DATABASE_URL"]?.takeIf { it.isNotBlank() }
+                ?: run {
+                    val host = env["POSTGRES_HOST"]?.takeIf { it.isNotBlank() } ?: "localhost"
+                    val port = env["POSTGRES_PORT"]?.takeIf { it.isNotBlank() } ?: "5432"
+                    val db = env["POSTGRES_DB"]?.takeIf { it.isNotBlank() } ?: "araro_kids"
+                    "jdbc:postgresql://$host:$port/$db"
+                }
+        // Never expose credential segments in admin runtime metadata.
+        return url.replace(Regex("://[^/@]+@"), "://***@")
     }
-
-    private fun escapeJson(value: String): String =
-        value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-
-    private fun toJsonValue(value: Any?): String = when (value) {
-        null -> "null"
-        is Number, is Boolean -> value.toString()
-        else -> "\"${escapeJson(value.toString())}\""
-    }
-    // #endregion
 
     @GetMapping("/analytics/retention")
     @PreAuthorize("@adminAuth.hasPermission('VIEW_REVENUE')")
@@ -227,7 +231,7 @@ class AdminController(
     }
 
     @PostMapping("/parents")
-    @PreAuthorize("@adminAuth.hasPermission('VIEW_PARENTS')")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_PARENTS')")
     fun createParent(
         @Valid @RequestBody request: CreateParentRequest
     ): ResponseEntity<*> {
@@ -244,7 +248,7 @@ class AdminController(
     }
 
     @PutMapping("/parents/{id}")
-    @PreAuthorize("@adminAuth.hasPermission('VIEW_PARENTS')")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_PARENTS')")
     fun updateParent(
         @PathVariable id: Long,
         @Valid @RequestBody request: UpdateParentRequest
@@ -264,7 +268,7 @@ class AdminController(
     }
 
     @DeleteMapping("/parents/{id}")
-    @PreAuthorize("@adminAuth.hasPermission('VIEW_PARENTS')")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_PARENTS')")
     fun deleteParent(@PathVariable id: Long): ResponseEntity<*> {
         val adminEmail = SecurityContextHolder.getContext().authentication?.name
             ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build<Unit>()
@@ -371,13 +375,20 @@ class AdminController(
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','CONTENT_MANAGER','REVENUE_ANALYST','SUPPORT')")
     fun uploadVoiceForParent(
         @PathVariable parentId: Long,
-        @RequestParam("file") file: MultipartFile
+        @RequestParam("file") file: MultipartFile,
+        @RequestParam(name = "profileName", required = false) profileName: String?
     ): ResponseEntity<com.tamixa.api.voice.dto.VoiceProfileResponse> {
         if (file.isEmpty) return ResponseEntity.badRequest().build()
         val fileName = file.originalFilename ?: "voice.mp3"
         return try {
-            val profile = voiceCloningService.createReferenceVoiceProfileByParentId(parentId, file.bytes, fileName)
-            log.info("Admin voice upload: parentId={} profileId={} fileName={}", parentId, profile.id, fileName)
+            val profile = voiceCloningService.createReferenceVoiceProfileByParentId(parentId, file.bytes, fileName, profileName)
+            log.info(
+                "Admin voice upload: parentId={} profileId={} fileName={} profileName={}",
+                parentId,
+                profile.id,
+                fileName,
+                profileName?.take(64)
+            )
             ResponseEntity.ok(profile.toResponse())
         } catch (e: IllegalArgumentException) {
             if (e.message?.contains("Parent not found") == true) ResponseEntity.notFound().build()
@@ -404,8 +415,8 @@ class AdminController(
     }
 
     /**
-     * Run ElevenLabs voice cloning job for a profile that already has reference audio (no consent required).
-     * Use when VOICE_CLONING_PROVIDER=elevenlabs. Upload reference first via POST /parents/{parentId}/voice/upload, then call this.
+     * Run no-consent voice cloning job for a profile that already has reference audio.
+     * Uses ElevenLabs directly when provider=elevenlabs, or ElevenLabs fallback when provider=google and fallback is enabled.
      */
     @PostMapping("/parents/{parentId}/voice/{voiceProfileId}/run-job")
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','CONTENT_MANAGER','REVENUE_ANALYST','SUPPORT')")
@@ -413,14 +424,33 @@ class AdminController(
         @PathVariable parentId: Long,
         @PathVariable voiceProfileId: Long
     ): ResponseEntity<Map<String, Any>> {
+        val provider = appProperties.voiceCloning.provider.trim().lowercase()
+        val providerLabel = if (provider == "google" && appProperties.voiceCloning.allowElevenLabsFallback) {
+            "ElevenLabs fallback (Google primary)"
+        } else {
+            "ElevenLabs"
+        }
         return try {
             val job = voiceCloningService.createElevenLabsVoiceCloningJobFromProfile(parentId, voiceProfileId)
+            val latestJob = voiceCloningService.getVoiceCloningJob(job.id) ?: job
+            if (latestJob.status == com.tamixa.domain.VoiceCloningStatus.FAILED) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    mapOf<String, Any>(
+                        "jobId" to latestJob.id,
+                        "status" to latestJob.status.name,
+                        "provider" to providerLabel,
+                        "message" to (latestJob.errorMessage
+                            ?: "Voice cloning job failed. Check provider limits/config and retry.")
+                    )
+                )
+            }
             ResponseEntity.ok(
-                mapOf(
-                    "jobId" to job.id,
-                    "status" to job.status.name,
-                    "message" to "Voice cloning job started. Wait for processing to complete, then try preview again (cloned:$voiceProfileId with this parentId)."
-                ) as Map<String, Any>
+                mapOf<String, Any>(
+                    "jobId" to latestJob.id,
+                    "status" to latestJob.status.name,
+                    "provider" to providerLabel,
+                    "message" to "Voice cloning job started via $providerLabel. Wait for processing to complete, then try preview again (cloned:$voiceProfileId with this parentId)."
+                )
             )
         } catch (e: IllegalArgumentException) {
             when {
@@ -432,6 +462,177 @@ class AdminController(
                     ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("message" to (e.message)) as Map<String, Any>)
                 else -> ResponseEntity.badRequest().body(mapOf("message" to (e.message ?: "Bad request")) as Map<String, Any>)
             }
+        }
+    }
+
+    /**
+     * Returns the latest cloning job for a specific voice profile (matched by reference audio path).
+     * Helpful for admin UI to show live job status/error without checking logs.
+     */
+    @GetMapping("/parents/{parentId}/voice/{voiceProfileId}/job/latest")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','CONTENT_MANAGER','REVENUE_ANALYST','SUPPORT')")
+    fun getLatestVoiceCloningJobForProfile(
+        @PathVariable parentId: Long,
+        @PathVariable voiceProfileId: Long
+    ): ResponseEntity<Map<String, Any?>> {
+        val profile = voiceRepository.findByIdAndParentId(voiceProfileId, parentId)
+            ?: return ResponseEntity.notFound().build()
+        val referencePath = profile.referenceAudioPath
+            ?: return ResponseEntity.ok(emptyMap())
+        val latest = voiceCloningService.getVoiceCloningJobs(parentId)
+            .asSequence()
+            .filter { it.audioStoragePath == referencePath }
+            .maxByOrNull { it.createdAt }
+            ?: return ResponseEntity.ok(emptyMap())
+        val providerAuthFailed = profile.elevenlabsVoiceId?.let { voiceId ->
+            elevenLabsVoiceCloningPort?.hadRecentAuthFailure(voiceId) == true
+        } ?: false
+        val providerQuotaFailed = profile.elevenlabsVoiceId?.let { voiceId ->
+            elevenLabsVoiceCloningPort?.hadRecentQuotaFailure(voiceId) == true
+        } ?: false
+        val providerFailureMessage = profile.elevenlabsVoiceId?.let { voiceId ->
+            elevenLabsVoiceCloningPort?.recentFailureMessage(voiceId)
+        }
+        val elevenLabsKeyHealthy = isElevenLabsKeyHealthy()
+        return ResponseEntity.ok(
+            mapOf(
+                "id" to latest.id,
+                "parentId" to latest.parentId,
+                "audioStoragePath" to latest.audioStoragePath,
+                "audioFileSizeBytes" to latest.audioFileSizeBytes,
+                "voiceName" to latest.voiceName,
+                "elevenLabsVoiceId" to latest.elevenLabsVoiceId,
+                "status" to latest.status.name,
+                "errorMessage" to latest.errorMessage,
+                "providerAuthFailed" to providerAuthFailed,
+                "providerQuotaFailed" to providerQuotaFailed,
+                "providerStatusMessage" to when {
+                    !providerFailureMessage.isNullOrBlank() -> providerFailureMessage
+                    providerQuotaFailed -> "ElevenLabs quota exceeded recently for this voice profile."
+                    providerAuthFailed && elevenLabsKeyHealthy ->
+                        "ElevenLabs key is valid, but recent story synthesis failed for this voice profile (likely quota or request-size limit)."
+                    providerAuthFailed -> "ElevenLabs auth/permissions failure detected recently (401). Check ELEVENLABS_API_KEY/account permissions, then retry."
+                    else -> null
+                },
+                "createdAt" to latest.createdAt.toString(),
+                "completedAt" to latest.completedAt?.toString()
+            )
+        )
+    }
+
+    /**
+     * Provider check for a specific voice profile.
+     * Runs a lightweight ElevenLabs synthesize probe for immediate operator feedback.
+     */
+    @GetMapping("/parents/{parentId}/voice/{voiceProfileId}/provider-check")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','CONTENT_MANAGER','REVENUE_ANALYST','SUPPORT')")
+    fun checkVoiceProviderForProfile(
+        @PathVariable parentId: Long,
+        @PathVariable voiceProfileId: Long,
+        @RequestParam(defaultValue = "ta") language: String
+    ): ResponseEntity<Map<String, Any?>> {
+        val profile = voiceRepository.findByIdAndParentId(voiceProfileId, parentId)
+            ?: return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                mapOf("ok" to false, "message" to "Voice profile not found")
+            )
+        val provider = appProperties.voiceCloning.provider.trim().lowercase()
+        val fallbackEnabled = appProperties.voiceCloning.allowElevenLabsFallback
+        val hasGoogleKey = !profile.googleVoiceCloningKey.isNullOrBlank()
+        val hasElevenLabsVoiceId = !profile.elevenlabsVoiceId.isNullOrBlank()
+        val providerAuthFailed = profile.elevenlabsVoiceId?.let { voiceId ->
+            elevenLabsVoiceCloningPort?.hadRecentAuthFailure(voiceId) == true
+        } ?: false
+        val providerQuotaFailed = profile.elevenlabsVoiceId?.let { voiceId ->
+            elevenLabsVoiceCloningPort?.hadRecentQuotaFailure(voiceId) == true
+        } ?: false
+        val providerFailureMessage = profile.elevenlabsVoiceId?.let { voiceId ->
+            elevenLabsVoiceCloningPort?.recentFailureMessage(voiceId)
+        }
+        val hasReferenceAudio = !profile.referenceAudioPath.isNullOrBlank()
+        val apiKeyConfigured = appProperties.voiceCloning.elevenLabsApiKey.isNotBlank()
+        val base = mutableMapOf<String, Any?>(
+            "provider" to provider,
+            "allowElevenLabsFallback" to fallbackEnabled,
+            "hasGoogleVoiceCloningKey" to hasGoogleKey,
+            "hasElevenLabsVoiceId" to hasElevenLabsVoiceId,
+            "hasReferenceAudio" to hasReferenceAudio,
+            "providerAuthFailed" to providerAuthFailed,
+            "providerQuotaFailed" to providerQuotaFailed,
+            "providerStatusMessage" to providerFailureMessage,
+            "elevenLabsApiKeyConfigured" to apiKeyConfigured
+        )
+        if (!hasElevenLabsVoiceId) {
+            return ResponseEntity.ok(
+                base + mapOf(
+                    "ok" to false,
+                    "message" to "No ElevenLabs voice ID on this profile. Run job (ElevenLabs path) first."
+                )
+            )
+        }
+        val adapter = elevenLabsVoiceCloningPort
+        if (adapter == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                base + mapOf(
+                    "ok" to false,
+                    "message" to "ElevenLabs adapter is not active in backend runtime. Verify ELEVENLABS_API_KEY and restart backend."
+                )
+            )
+        }
+        // Deep provider diagnostics with the same key used by runtime.
+        // This helps distinguish invalid key vs inaccessible voice vs TTS permissions.
+        if (apiKeyConfigured) {
+            val apiKey = appProperties.voiceCloning.elevenLabsApiKey.trim()
+            val userStatus = try {
+                val headers = HttpHeaders().apply { set("xi-api-key", apiKey) }
+                restTemplate.exchange(
+                    "${appProperties.voiceCloning.elevenLabsBaseUrl.trimEnd('/')}/v1/user",
+                    HttpMethod.GET,
+                    HttpEntity<Any>(headers),
+                    Map::class.java
+                )
+                200
+            } catch (e: HttpStatusCodeException) {
+                e.statusCode.value()
+            } catch (_: Exception) {
+                -1
+            }
+            val voiceStatus = try {
+                val headers = HttpHeaders().apply { set("xi-api-key", apiKey) }
+                restTemplate.exchange(
+                    "${appProperties.voiceCloning.elevenLabsBaseUrl.trimEnd('/')}/v1/voices/${profile.elevenlabsVoiceId}",
+                    HttpMethod.GET,
+                    HttpEntity<Any>(headers),
+                    Map::class.java
+                )
+                200
+            } catch (e: HttpStatusCodeException) {
+                e.statusCode.value()
+            } catch (_: Exception) {
+                -1
+            }
+            base["userApiStatus"] = userStatus
+            base["voiceApiStatus"] = voiceStatus
+        }
+        val bytes = adapter.synthesize(
+            text = "Vanakkam, this is a provider check.",
+            voiceId = profile.elevenlabsVoiceId!!,
+            language = language
+        )
+        return if (bytes != null && bytes.isNotEmpty()) {
+            ResponseEntity.ok(
+                base + mapOf(
+                    "ok" to true,
+                    "sampleBytes" to bytes.size,
+                    "message" to "ElevenLabs synthesize check succeeded."
+                )
+            )
+        } else {
+            ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                base + mapOf(
+                    "ok" to false,
+                    "message" to "ElevenLabs synthesize returned empty for this profile. Most common causes: invalid/expired API key, missing permissions, quota limits, or deleted voice ID."
+                )
+            )
         }
     }
 
@@ -450,12 +651,23 @@ class AdminController(
         val fileName = file.originalFilename ?: "consent.mp3"
         return try {
             val job = voiceCloningService.createGoogleVoiceCloningJobFromProfile(parentId, voiceProfileId, file.bytes, fileName)
+            val latestJob = voiceCloningService.getVoiceCloningJob(job.id) ?: job
+            if (latestJob.status == com.tamixa.domain.VoiceCloningStatus.FAILED) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    mapOf<String, Any>(
+                        "jobId" to latestJob.id,
+                        "status" to latestJob.status.name,
+                        "message" to (latestJob.errorMessage
+                            ?: "Voice cloning job failed. Check provider limits/config and retry.")
+                    )
+                )
+            }
             ResponseEntity.ok(
-                mapOf(
-                    "jobId" to job.id,
-                    "status" to job.status.name,
+                mapOf<String, Any>(
+                    "jobId" to latestJob.id,
+                    "status" to latestJob.status.name,
                     "message" to "Voice cloning job started. Wait for processing to complete, then try preview again (cloned:$voiceProfileId with this parentId)."
-                ) as Map<String, Any>
+                )
             )
         } catch (e: IllegalArgumentException) {
             when {
@@ -516,9 +728,24 @@ class AdminController(
 
     @GetMapping("/referral-codes")
     @PreAuthorize("@adminAuth.hasPermission('VIEW_REVENUE')")
-    fun getReferralCodes(): ResponseEntity<List<ReferralCodeDto>> {
-        val list = referralCodeService.findAll().map { toReferralCodeDto(it) }
-        return ResponseEntity.ok(list)
+    fun getReferralCodes(
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "50") size: Int
+    ): ResponseEntity<PagedResponse<ReferralCodeDto>> {
+        val pageSize = size.coerceIn(1, 200)
+        val pageIndex = page.coerceAtLeast(0)
+        val result = referralCodeService.findAll(PageRequest.of(pageIndex, pageSize))
+        return ResponseEntity.ok(
+            PagedResponse(
+                content = result.content.map { toReferralCodeDto(it) },
+                page = result.number,
+                size = result.size,
+                totalElements = result.totalElements,
+                totalPages = result.totalPages,
+                first = result.isFirst,
+                last = result.isLast
+            )
+        )
     }
 
     @GetMapping("/referral-codes/{id}")
@@ -666,12 +893,19 @@ class AdminController(
     fun getRuntimeConfig(): ResponseEntity<Map<String, Any>> {
         val host = runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("unknown-host")
         val pid = runCatching { ManagementFactory.getRuntimeMXBean().name.substringBefore("@") }.getOrDefault("unknown-pid")
+        val datasourceTarget = resolveDatasourceTargetForOps()
         return ResponseEntity.ok(
             mapOf(
                 "instanceId" to "$host:$pid",
                 "flywayEnabled" to flywayEnabled,
                 "flywayLockRetryCount" to flywayLockRetryCount,
+                "datasourceTarget" to datasourceTarget,
                 "migrationMode" to if (flywayEnabled) "MIGRATION_ENABLED" else "APP_ONLY",
+                "keepNarrationApprovalOnMetadataOnlyPublishedUpdate" to
+                    appProperties.translationPipeline.keepNarrationApprovalOnMetadataOnlyPublishedUpdate,
+                "storyApprovalRetentionMode" to if (
+                    appProperties.translationPipeline.keepNarrationApprovalOnMetadataOnlyPublishedUpdate
+                ) "RELAXED_METADATA_ONLY" else "STRICT_REVIEW_CYCLE",
                 "operatorHint" to if (flywayEnabled) {
                     "This instance can run DB migrations. Keep exactly one migration-enabled instance during rollout."
                 } else {
@@ -698,6 +932,61 @@ class AdminController(
     @PreAuthorize("@adminAuth.hasPermission('VIEW_REVENUE')")
     fun getSubscriptionMetrics() =
         ResponseEntity.ok(adminService.getSubscriptionMetrics())
+
+    @GetMapping("/metrics/dora")
+    @PreAuthorize("@adminAuth.hasPermission('VIEW_MONITORING') or @adminAuth.hasPermission('VIEW_HEALTH')")
+    fun getDoraMetrics(
+        @RequestParam(defaultValue = "30") days: Int,
+        @RequestParam(required = false) serviceName: String?,
+        @RequestParam(required = false) environment: String?
+    ): ResponseEntity<DoraMetricsDto> =
+        ResponseEntity.ok(
+            doraMetricsService.getMetrics(
+                days = days,
+                serviceName = serviceName,
+                environment = environment
+            )
+        )
+
+    /**
+     * Records deployment outcome for DORA metrics.
+     * Intended for release scripts/CI after a deploy completes.
+     */
+    @PostMapping("/metrics/dora/deployments")
+    @PreAuthorize("@adminAuth.isElevatedStoryAdmin()")
+    fun recordDoraDeployment(
+        @Valid @RequestBody request: RecordDoraDeploymentRequest
+    ): ResponseEntity<*> {
+        val adminEmail = SecurityContextHolder.getContext().authentication?.name
+            ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build<Unit>()
+        return try {
+            val saved = doraMetricsService.recordDeployment(adminEmail, request)
+            ResponseEntity.status(HttpStatus.CREATED).body(saved)
+        } catch (e: IllegalArgumentException) {
+            log.warn("DORA deployment metric rejected: {}", e.message)
+            ResponseEntity.badRequest().body(mapOf("message" to (e.message ?: "Invalid DORA deployment payload")))
+        }
+    }
+
+    /**
+     * Records incident open/resolution events for DORA metrics.
+     * Post OPEN when incident starts, RESOLVED when service is restored.
+     */
+    @PostMapping("/metrics/dora/incidents")
+    @PreAuthorize("@adminAuth.isElevatedStoryAdmin()")
+    fun recordDoraIncident(
+        @Valid @RequestBody request: RecordDoraIncidentRequest
+    ): ResponseEntity<*> {
+        val adminEmail = SecurityContextHolder.getContext().authentication?.name
+            ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build<Unit>()
+        return try {
+            val saved = doraMetricsService.recordIncident(adminEmail, request)
+            ResponseEntity.status(HttpStatus.CREATED).body(saved)
+        } catch (e: IllegalArgumentException) {
+            log.warn("DORA incident metric rejected: {}", e.message)
+            ResponseEntity.badRequest().body(mapOf("message" to (e.message ?: "Invalid DORA incident payload")))
+        }
+    }
 
     @GetMapping("/metrics/revenue/table")
     @PreAuthorize("@adminAuth.hasPermission('VIEW_REVENUE')")
@@ -821,9 +1110,11 @@ class AdminController(
     fun getLibraryStories(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int,
-        @RequestParam(required = false) status: String?
+        @RequestParam(required = false) status: String?,
+        /** When true, only stories with narration approved; when false, only not yet approved; omit for all. */
+        @RequestParam(required = false) narrationApproved: Boolean?
     ): ResponseEntity<PagedResponse<com.tamixa.api.admin.dto.LibraryStoryResponse>> {
-        val pageResult = storyLibraryService.findAllByStatus(status, page, size)
+        val pageResult = storyLibraryService.findAllByStatus(status, page, size, narrationApproved)
         return ResponseEntity.ok(
             PagedResponse(
                 content = pageResult.content.map { story ->
@@ -834,6 +1125,32 @@ class AdminController(
                         coverImageUrlResolver.resolveCoverPath(story.coverImageUrl),
                         coverImageUrlResolver.resolveCoverVideoPath(story.coverVideoUrl)
                     ).copy(audioFileUrl = resolvedAudio, translationApproval = translationApproval)
+                },
+                page = pageResult.number,
+                size = pageResult.size,
+                totalElements = pageResult.totalElements,
+                totalPages = pageResult.totalPages,
+                first = pageResult.isFirst,
+                last = pageResult.isLast
+            )
+        )
+    }
+
+    /** Super Admin: library stories in soft-delete retention (restore before permanent purge). */
+    @GetMapping("/stories/soft-deleted")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun getSoftDeletedLibraryStories(
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "20") size: Int
+    ): ResponseEntity<PagedResponse<com.tamixa.api.admin.dto.LibraryStoryResponse>> {
+        val pageResult = storyLibraryService.findSoftDeleted(page, size)
+        return ResponseEntity.ok(
+            PagedResponse(
+                content = pageResult.content.map { story ->
+                    story.toResponse(
+                        coverImageUrlResolver.resolveCoverPath(story.coverImageUrl),
+                        coverImageUrlResolver.resolveCoverVideoPath(story.coverVideoUrl)
+                    )
                 },
                 page = pageResult.number,
                 size = pageResult.size,
@@ -896,7 +1213,11 @@ class AdminController(
             content = request.content,
             moral = request.moral
         )
-        return if (updated) ResponseEntity.ok(mapOf("message" to "Translation updated"))
+        return if (updated) ResponseEntity.ok(
+            mapOf(
+                "message" to "Translation updated. If text changed, review/audio state was reset and approval is required again."
+            )
+        )
         else ResponseEntity.notFound().build<Map<String, String>>()
     }
 
@@ -910,13 +1231,13 @@ class AdminController(
         if (ok) {
             triggerPipelineExecutor.execute {
                 try {
-                    storyProcessingService.processSync(id)
-                    log.info("Pipeline completed after per-language approval for story id={}", id)
+                    storyProcessingService.regenerateNarration(id, listOf(language))
+                    log.info("Per-language narration regeneration completed for story id={} language={}", id, language)
                 } catch (e: Exception) {
-                    log.error("Pipeline failed after approval for story id={}: {}", id, e.message, e)
+                    log.error("Per-language narration regeneration failed for story id={} language={}: {}", id, language, e.message, e)
                 }
             }
-            return ResponseEntity.ok(mapOf("message" to "Narration approved for language; pipeline running in background"))
+            return ResponseEntity.ok(mapOf("message" to "Narration approved for language; regeneration running in background"))
         }
         return ResponseEntity.notFound().build<Map<String, String>>()
     }
@@ -969,8 +1290,9 @@ class AdminController(
     /**
      * Regenerate story content with the default Tamixa conversion prompt (LLM rewrite).
      * Returns transformed content, title, and moral so the admin can preview in the edit form before saving or submitting for review.
-     * When generateForAllLanguages is true (default), also translates the transformed content to all target languages (en, hi, te, kn, ml)
-     * and returns them in "translations"; if a language had no story content, it will be created. Does not persist; use Save or Submit for review after.
+     * When generateForAllLanguages is true (default), also translates the transformed content from the chosen output language
+     * to other pipeline target languages and returns them in "translations". Optional body field "language" (ta, en, hi, te, kn, ml)
+     * overrides the stored story language so the admin form dropdown is respected before Save. Does not persist; use Save or Submit for review after.
      */
     @PostMapping("/stories/{id}/regenerate-with-prompt")
     @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
@@ -979,6 +1301,13 @@ class AdminController(
         @RequestBody(required = false) body: Map<String, Any?>?
     ): ResponseEntity<*> {
         val story = storyLibraryService.findById(id) ?: return ResponseEntity.notFound().build<Unit>()
+        if (story.regeneratePromptLocked && !story.regeneratePromptLockApproved && !adminAuth.isElevatedStoryAdmin()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                mapOf(
+                    "message" to "Tamixa regenerate & language sync is disabled after machine translation until a Super Admin approves unlock. Use “Request regenerate unlock” on the edit page."
+                )
+            )
+        }
         val contentStr = body?.get("content")?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: story.content
         if (contentStr.isBlank()) {
             return ResponseEntity.badRequest().body(mapOf("message" to "Content is required"))
@@ -988,53 +1317,430 @@ class AdminController(
             is String -> v.equals("true", ignoreCase = true)
             else -> true
         }
+        if (!regenerateInFlightStoryIds.add(id)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                mapOf(
+                    "message" to "Regenerate is already running for this story. Please wait for it to finish and try again."
+                )
+            )
+        }
+        val refusalRegex = Regex(
+            """(?is)\b(i\s*(?:am|'m)\s*sorry|cannot|can't|won't|unable to)\b.*\b(assist|help|comply|provide|request)\b"""
+        )
+        fun sanitizeModelOutput(value: String?, fallback: String = ""): String {
+            val cleaned = value?.trim().orEmpty()
+            if (cleaned.isBlank()) return fallback
+            return if (refusalRegex.containsMatchIn(cleaned)) fallback else cleaned
+        }
         return try {
-            val outputLang = story.language.trim().lowercase().takeIf { it.isNotBlank() }
+            // Output language for the LLM: prefer request body (matches admin edit form) so "Regenerate with prompt"
+            // respects the language dropdown before Save. Bulk-created stories may still have language=hi in DB while
+            // the editor shows Tamil (recommended).
+            val allowedOutputLangs = setOf("ta", "en", "hi", "te", "kn", "ml")
+            // Accept aliases (e.g. "Tamil", "tamil") so the allowlist is not bypassed and we don't fall back to DB language=hi.
+            val rawBodyLang = body?.get("language")?.toString()?.trim()?.ifBlank { null }
+            val normalizedBodyLang = rawBodyLang?.let { StreamLanguageUtils.normalize(it) }
+            val bodyLang = normalizedBodyLang?.takeIf { it in allowedOutputLangs }
+            val storyLang = StreamLanguageUtils.normalize(story.language).takeIf { it in allowedOutputLangs }
+            val outputLang = bodyLang ?: storyLang ?: "ta"
+            log.debug(
+                "regenerate-with-prompt id={} outputLang={} rawBodyLang={} story.language={}",
+                id, outputLang, rawBodyLang, story.language
+            )
             val prompt = storyPromptBuilder.buildDefaultConversionPrompt(StoryCategories.canonical, outputLang)
-            val transformed = adminTtsPreviewService.transformContent(contentStr, prompt)
-            val response = mutableMapOf<String, Any>(
-                "content" to transformed.content,
+            val transformed = try {
+                adminTtsPreviewService.transformContent(contentStr, prompt, outputLang)
+            } catch (e: IllegalArgumentException) {
+                log.warn(
+                    "Regenerate conversion blocked by model for story id={} lang={}; falling back to source content",
+                    id,
+                    outputLang
+                )
+                com.tamixa.application.narration.AdminTtsPreviewService.TransformResult(
+                    content = contentStr,
+                    title = story.title,
+                    moral = story.moral,
+                    category = story.category,
+                    theme = story.theme
+                )
+            }
+            val paraphraseBefore = mapOf(
+                "content" to sanitizeModelOutput(transformed.content, contentStr),
                 "title" to (transformed.title ?: ""),
                 "moral" to (transformed.moral ?: "")
             )
+            val response = mutableMapOf<String, Any>(
+                "content" to sanitizeModelOutput(transformed.content, contentStr),
+                "title" to (transformed.title ?: ""),
+                "moral" to (transformed.moral ?: "")
+            )
+            // For UI diff/highlighting: what the conversion produced *before* paraphrase.
+            response["paraphraseBefore"] = paraphraseBefore
             transformed.category?.let { response["category"] = it }
             transformed.theme?.let { response["theme"] = it }
             if (generateForAllLanguages) {
-                val sourceLang = appProperties.translationPipeline.sourceLanguage.trim().lowercase()
+                // Translate from the language we just asked the model to write in, not the global pipeline default
+                // (avoids treating Hindi rewrite output as Tamil source or vice versa).
+                val sourceLang = outputLang
                 val targetLangs = appProperties.translationPipeline.targetLanguages
                     .split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() && it != sourceLang }
                 val translationsMap = mutableMapOf<String, Map<String, String>>()
-                for (targetLang in targetLangs) {
-                    try {
-                        val result = translationService.translateIfNeeded(
-                            sourceLang = sourceLang,
-                            targetLang = targetLang,
-                            title = transformed.title,
-                            content = transformed.content,
-                            moral = transformed.moral
-                        )
-                        translationsMap[targetLang] = mapOf(
-                            "content" to (result.content.take(50_000)),
-                            "title" to (result.title?.take(500) ?: ""),
-                            "moral" to (result.moral?.take(1000) ?: "")
-                        )
-                    } catch (e: Exception) {
-                        log.warn("Regenerate translate failed for story id={} targetLang={}: {}", id, targetLang, e.message)
-                        translationsMap[targetLang] = mapOf(
-                            "content" to "",
-                            "title" to "",
-                            "moral" to ""
+                val translationsParaphraseBeforeMap = mutableMapOf<String, Map<String, String>>()
+                data class TranslationAggregate(
+                    val targetLang: String,
+                    val payload: Map<String, String>,
+                    val paraphraseBeforePayload: Map<String, String>?
+                )
+                val maxParallel = appProperties.translationPipeline.parallelism.coerceIn(1, 8)
+                val poolSize = minOf(targetLangs.size.coerceAtLeast(1), maxParallel)
+                val perLanguageTimeoutMinutes = appProperties.translationPipeline.languageTimeoutMinutes.coerceIn(1, 30).toLong()
+                val translationExecutor = Executors.newFixedThreadPool(poolSize)
+                try {
+                    val futures = targetLangs.map { targetLang ->
+                        CompletableFuture.supplyAsync(
+                            {
+                                try {
+                                    val result = translationService.translateIfNeeded(
+                                        sourceLang = sourceLang,
+                                        targetLang = targetLang,
+                                        title = transformed.title,
+                                        content = transformed.content,
+                                        moral = transformed.moral,
+                                        bypassCache = true
+                                    )
+                                    val safeTranslatedContent = sanitizeModelOutput(result.content, "")
+                                    val payload = mapOf(
+                                        "content" to safeTranslatedContent.take(50_000),
+                                        "title" to (result.title?.take(500) ?: ""),
+                                        "moral" to (result.moral?.take(1000) ?: "")
+                                    )
+                                    val beforeContent = result.contentBeforeParaphrase
+                                    val safeBeforeContent = sanitizeModelOutput(beforeContent, "")
+                                    val beforePayload =
+                                        if (safeBeforeContent.isNotBlank()) {
+                                            mapOf(
+                                                "content" to safeBeforeContent.take(50_000),
+                                                "title" to (result.titleBeforeParaphrase?.take(500) ?: ""),
+                                                "moral" to (result.moralBeforeParaphrase?.take(1000) ?: "")
+                                            )
+                                        } else null
+                                    TranslationAggregate(
+                                        targetLang = targetLang,
+                                        payload = payload,
+                                        paraphraseBeforePayload = beforePayload
+                                    )
+                                } catch (e: Exception) {
+                                    log.warn("Regenerate translate failed for story id={} targetLang={}: {}", id, targetLang, e.message)
+                                    TranslationAggregate(
+                                        targetLang = targetLang,
+                                        payload = mapOf("content" to "", "title" to "", "moral" to ""),
+                                        paraphraseBeforePayload = null
+                                    )
+                                }
+                            },
+                            translationExecutor
                         )
                     }
+                    futures.forEachIndexed { index, future ->
+                        val targetLang = targetLangs[index]
+                        val aggregate = try {
+                            future.get(perLanguageTimeoutMinutes, TimeUnit.MINUTES)
+                        } catch (e: Exception) {
+                            future.cancel(true)
+                            log.warn(
+                                "Regenerate translate timed out/failed for story id={} targetLang={} timeoutMinutes={} err={}",
+                                id,
+                                targetLang,
+                                perLanguageTimeoutMinutes,
+                                e.message
+                            )
+                            TranslationAggregate(
+                                targetLang = targetLang,
+                                payload = mapOf("content" to "", "title" to "", "moral" to ""),
+                                paraphraseBeforePayload = null
+                            )
+                        }
+                        translationsMap[aggregate.targetLang] = aggregate.payload
+                        aggregate.paraphraseBeforePayload?.let {
+                            translationsParaphraseBeforeMap[aggregate.targetLang] = it
+                        }
+                    }
+                } finally {
+                    translationExecutor.shutdown()
                 }
                 response["translations"] = translationsMap
+                if (translationsParaphraseBeforeMap.isNotEmpty()) {
+                    response["translationsParaphraseBefore"] = translationsParaphraseBeforeMap
+                }
             }
+            // Keep source-language conversion as canonical in the form response.
+            // Same-language paraphrase can over-compress long stories in some runs.
+            if (generateForAllLanguages) {
+                response["content"] = sanitizeModelOutput(
+                    adminTtsPreviewService
+                    .ensureNativeStorytelling(
+                        transformed.content,
+                        outputLang,
+                        contentStr,
+                        force = true
+                    )
+                        .take(50_000),
+                    contentStr
+                )
+                response["title"] = (transformed.title ?: "").take(500)
+                response["moral"] = (transformed.moral ?: "").take(1000)
+            }
+            val minimumWords = adminTtsPreviewService.regenerateMinWordsTarget()
+            val contentBeforeLengthGuard = (response["content"] as? String).orEmpty()
+            val wordsBeforeGuard = adminTtsPreviewService.wordCount(contentBeforeLengthGuard)
+            if (wordsBeforeGuard in 1 until minimumWords) {
+                val expansionResult = adminTtsPreviewService.expandToMinimumWords(
+                    content = contentBeforeLengthGuard,
+                    languageHint = outputLang,
+                    sourceContent = contentStr,
+                    minimumWords = minimumWords,
+                    maxAttempts = 3
+                )
+                val safeExpanded = sanitizeModelOutput(expansionResult.content, contentBeforeLengthGuard)
+                val expandedWords = adminTtsPreviewService.wordCount(safeExpanded)
+                if (safeExpanded.isNotBlank()) {
+                    response["content"] = safeExpanded.take(50_000)
+                }
+                if (expansionResult.metMinimum && safeExpanded.isNotBlank()) {
+                    log.info(
+                        "Regenerate length guard met target story id={} lang={} words={} -> {} attempts={}",
+                        id,
+                        outputLang,
+                        wordsBeforeGuard,
+                        expandedWords,
+                        expansionResult.attempts
+                    )
+                } else {
+                    response["regenerateWarning"] =
+                        "Generated content is below target length ($expandedWords/$minimumWords words) after ${expansionResult.attempts} attempts. Last generated content was populated; you can continue editing or re-run regenerate."
+                    log.warn(
+                        "Regenerate length guard accepted last attempt story id={} lang={} wordsBefore={} wordsAfter={} minRequired={} attempts={}",
+                        id,
+                        outputLang,
+                        wordsBeforeGuard,
+                        expandedWords,
+                        minimumWords,
+                        expansionResult.attempts
+                    )
+                }
+            }
+            val finalContent = (response["content"] as? String).orEmpty()
+            val finalWords = adminTtsPreviewService.wordCount(finalContent)
+            val expectedMinutesByWords = finalWords.toDouble() / 120.0
+            log.info(
+                "regenerate_profile storyId={} lang={} words={} targetMinWords={} expectedMinutesByWords={} wpmAssumption={}",
+                id,
+                outputLang,
+                finalWords,
+                minimumWords,
+                String.format("%.2f", expectedMinutesByWords),
+                120
+            )
             ResponseEntity.ok(response)
         } catch (e: Exception) {
             log.warn("Regenerate with prompt failed for story id={}: {}", id, e.message)
-            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(mapOf("message" to ("Regeneration failed: " + (e.message ?: "Unknown error"))))
+            val rawMessage = e.message.orEmpty()
+            val providerRefusal = Regex(
+                """(?is)\b(i\s*(?:am|'m)\s*sorry|cannot|can't|won't|unable to)\b.*\b(assist|help|comply|provide|request)\b"""
+            ).containsMatchIn(rawMessage)
+            val status = when {
+                e is IllegalArgumentException -> HttpStatus.BAD_REQUEST
+                providerRefusal -> HttpStatus.UNPROCESSABLE_ENTITY
+                else -> HttpStatus.INTERNAL_SERVER_ERROR
+            }
+            val message = when {
+                e is IllegalArgumentException ->
+                    e.message ?: "Regeneration failed validation. Please edit and retry."
+                providerRefusal ->
+                    "Regeneration was blocked by the language model for this input. Please revise the story text and retry."
+                else ->
+                    "Regeneration failed. Please try again."
+            }
+            ResponseEntity.status(status).body(mapOf("message" to message))
+        } finally {
+            regenerateInFlightStoryIds.remove(id)
         }
+    }
+
+    /**
+     * Starts regenerate-with-prompt as a background job and returns a job id.
+     * Use GET /stories/{id}/regenerate-with-prompt/jobs/{jobId} to poll completion.
+     */
+    @PostMapping("/stories/{id}/regenerate-with-prompt/async")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
+    fun startRegenerateStoryWithPromptAsync(
+        @PathVariable id: Long,
+        @RequestBody(required = false) body: Map<String, Any?>?
+    ): ResponseEntity<Map<String, Any>> {
+        val story = storyLibraryService.findById(id) ?: return ResponseEntity.notFound().build<Map<String, Any>>()
+        if (story.regeneratePromptLocked && !story.regeneratePromptLockApproved && !adminAuth.isElevatedStoryAdmin()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                mapOf(
+                    "message" to "Tamixa regenerate & language sync is disabled after machine translation until a Super Admin approves unlock. Use “Request regenerate unlock” on the edit page."
+                )
+            )
+        }
+        val existingJobId = regenerateAsyncStoryToJobId[id]
+        if (existingJobId != null) {
+            val existing = regenerateAsyncJobs[existingJobId]
+            if (existing != null && (existing.status == "PENDING" || existing.status == "RUNNING")) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                    mapOf(
+                        "message" to "Regenerate is already running for this story. Please wait for it to finish and try again.",
+                        "jobId" to existingJobId
+                    )
+                )
+            }
+        }
+        val now = Instant.now().toString()
+        val jobId = UUID.randomUUID().toString()
+        regenerateAsyncStoryToJobId[id] = jobId
+        regenerateAsyncJobs[jobId] = RegenerateAsyncJobState(
+            jobId = jobId,
+            storyId = id,
+            status = "PENDING",
+            createdAt = now
+        )
+        triggerPipelineExecutor.execute {
+            regenerateAsyncJobs.computeIfPresent(jobId) { _, current ->
+                current.copy(status = "RUNNING", startedAt = Instant.now().toString())
+            }
+            try {
+                val response = regenerateStoryWithPrompt(id, body)
+                val responseBody = response.body
+                if (response.statusCode.is2xxSuccessful && responseBody is Map<*, *>) {
+                    @Suppress("UNCHECKED_CAST")
+                    val safeResult = responseBody as Map<String, Any>
+                    regenerateAsyncJobs.computeIfPresent(jobId) { _, current ->
+                        current.copy(
+                            status = "COMPLETED",
+                            completedAt = Instant.now().toString(),
+                            result = safeResult,
+                            error = null
+                        )
+                    }
+                } else {
+                    val msg =
+                        if (responseBody is Map<*, *>) {
+                            responseBody["message"]?.toString()
+                        } else null
+                    regenerateAsyncJobs.computeIfPresent(jobId) { _, current ->
+                        current.copy(
+                            status = "FAILED",
+                            completedAt = Instant.now().toString(),
+                            error = msg ?: "Regeneration failed"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                log.error("Async regenerate failed story id={} jobId={}: {}", id, jobId, e.message, e)
+                regenerateAsyncJobs.computeIfPresent(jobId) { _, current ->
+                    current.copy(
+                        status = "FAILED",
+                        completedAt = Instant.now().toString(),
+                        error = e.message ?: "Regeneration failed"
+                    )
+                }
+            } finally {
+                regenerateAsyncStoryToJobId.compute(id) { _, mappedJobId ->
+                    if (mappedJobId == jobId) null else mappedJobId
+                }
+            }
+        }
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(
+            mapOf(
+                "storyId" to id,
+                "jobId" to jobId,
+                "status" to "PENDING"
+            )
+        )
+    }
+
+    @GetMapping("/stories/{id}/regenerate-with-prompt/jobs/{jobId}")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
+    fun getRegenerateStoryWithPromptJob(
+        @PathVariable id: Long,
+        @PathVariable jobId: String
+    ): ResponseEntity<Map<String, Any>> {
+        val job = regenerateAsyncJobs[jobId]
+            ?: return ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("message" to "Regenerate job not found"))
+        if (job.storyId != id) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                mapOf("message" to "Regenerate job does not belong to this story")
+            )
+        }
+        val response = mutableMapOf<String, Any>(
+            "storyId" to id,
+            "jobId" to jobId,
+            "status" to job.status,
+            "createdAt" to job.createdAt
+        )
+        job.startedAt?.let { response["startedAt"] = it }
+        job.completedAt?.let { response["completedAt"] = it }
+        job.error?.let { response["error"] = it }
+        job.result?.let { response["result"] = it }
+        return ResponseEntity.ok(response)
+    }
+
+    /** Returns whether regenerate-with-prompt is currently running for this story id. */
+    @GetMapping("/stories/{id}/regenerate-with-prompt/status")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
+    fun getRegenerateWithPromptStatus(@PathVariable id: Long): ResponseEntity<Map<String, Any>> {
+        return ResponseEntity.ok(
+            mapOf(
+                "storyId" to id,
+                "running" to regenerateInFlightStoryIds.contains(id)
+            )
+        )
+    }
+
+    /**
+     * Clears all `story_translation` rows and narration audio for this story, then reprocesses from the **saved**
+     * master `library_stories` content. When `audio-after-approval` is true (default): **translate → rewrite only**
+     * (no TTS); per-language scripts use status AWAITING_AUDIO until approve, then TTS runs from approve flow.
+     * When `audio-after-approval` is false: full pipeline including TTS (legacy).
+     * Use from the edit screen after **Save draft** so DB matches the form. Returns 202 immediately.
+     */
+    @PostMapping("/stories/{id}/rebuild-narration-pipeline")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
+    fun rebuildNarrationPipeline(@PathVariable id: Long): ResponseEntity<Map<String, String>> {
+        storyLibraryService.findById(id) ?: return ResponseEntity.notFound().build<Map<String, String>>()
+        log.info("Rebuild translation pipeline requested story id={} (background invalidate + translation-only sync)", id)
+        triggerPipelineExecutor.execute {
+            try {
+                storyProcessingService.invalidateAndReprocess(id)
+                log.info("Rebuild translation pipeline completed story id={}", id)
+            } catch (e: Exception) {
+                log.error("Rebuild translation pipeline failed story id={}: {}", id, e.message, e)
+            }
+        }
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+            .body(
+                mapOf(
+                    "message" to "Rebuilding translations and narration scripts for all languages (no audio yet). Submit for review when ready; after approval, use Narration → Generate audio unless auto-tts-on-approve is enabled. Refresh or check pipeline status."
+                )
+            )
+    }
+
+    @PostMapping("/stories/{id}/request-regenerate-prompt-unlock")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
+    fun requestRegeneratePromptUnlock(@PathVariable id: Long): ResponseEntity<*> {
+        val ok = storyLibraryService.requestRegeneratePromptUnlock(id)
+        return if (ok) ResponseEntity.ok(mapOf("message" to "Unlock request recorded. A Super Admin can approve from the same story edit page."))
+        else ResponseEntity.notFound().build<Unit>()
+    }
+
+    @PostMapping("/stories/{id}/approve-regenerate-prompt-unlock")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    fun approveRegeneratePromptUnlock(@PathVariable id: Long): ResponseEntity<*> {
+        val ok = storyLibraryService.approveRegeneratePromptUnlock(id)
+        return if (ok) ResponseEntity.ok(mapOf("message" to "Content managers can use Regenerate with prompt again for this story."))
+        else ResponseEntity.notFound().build<Unit>()
     }
 
     @GetMapping("/stories/with-issues")
@@ -1203,6 +1909,13 @@ class AdminController(
         @RequestParam(required = false) voiceProfile: String?,
         @RequestParam(required = false) parentId: Long?
     ): ResponseEntity<Map<String, String>> {
+        if (!voiceProfile.isNullOrBlank() && parentId != null) {
+            val precheckMessage = clonedVoiceProviderPrecheckFailureMessage(voiceProfile, parentId, language)
+            if (precheckMessage != null) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(mapOf("message" to precheckMessage))
+            }
+        }
         val url = when {
             voiceProfile != null && voiceProfile.isNotBlank() && parentId != null ->
                 audioStreamService.getLibraryNarrationStreamUrl(id, language, voiceProfile.trim(), parentId)
@@ -1221,6 +1934,7 @@ class AdminController(
             }
             avatarVideoService?.getAvatarVideoProviderInfo()?.let { body["avatarVideoProvider"] = it }
         }
+        appProperties.resolvedHostStoryClipUrl()?.let { body["hostStoryClipUrl"] = it }
         return ResponseEntity.ok(body)
     }
 
@@ -1259,6 +1973,14 @@ class AdminController(
     ): ResponseEntity<Any> {
         val useCloned = voiceProfile != null && voiceProfile.isNotBlank() && parentId != null
         if (useCloned) {
+            val precheckMessage = clonedVoiceProviderPrecheckFailureMessage(voiceProfile, parentId, language)
+            if (precheckMessage != null) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(mapOf("message" to precheckMessage))
+            }
+        }
+        if (useCloned) {
             log.info("Admin preview-audio: storyId={} lang={} voiceProfile={} parentId={} (cloned)", id, language, voiceProfile, parentId)
         }
         val key = try {
@@ -1279,7 +2001,7 @@ class AdminController(
                 log.warn("Admin stream: cloned voice audio not ready for story {} lang={} voiceProfile={} parentId={}", id, language, voiceProfile, parentId)
                 val effectiveLang = com.tamixa.application.stream.StreamLanguageUtils.normalize(language)
                 val msg = if (effectiveLang == "ta") {
-                    "Tamil cloned voice failed: this profile has no cloned voice key. In Admin → Voice & Avatar Studio: (1) Upload reference audio for this parent, (2) Run job (ElevenLabs) or upload consent + Run job (Google). Backend .env: VOICE_CLONING_ENABLED=true, VOICE_CLONING_PROVIDER=elevenlabs + ELEVENLABS_API_KEY, or provider=google + GOOGLE_CLOUD_TTS_API_KEY. Restart backend after changing .env."
+                    resolveTamilClonedPreviewFailureMessage(voiceProfile, parentId!!)
                 } else {
                     "Cloned voice audio not ready for this language. Republish the story and try again."
                 }
@@ -1334,6 +2056,123 @@ class AdminController(
             ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(mapOf("message" to (e.message ?: "Stream failed. Please try again.")))
+        }
+    }
+
+    private fun latestVoiceCloningFailureForProfile(
+        voiceProfile: String?,
+        parentId: Long
+    ): com.tamixa.domain.VoiceCloningJob? {
+        val profileId = voiceProfile
+            ?.trim()
+            ?.removePrefix("cloned:")
+            ?.toLongOrNull()
+            ?: return null
+        val profile = voiceRepository.findByIdAndParentId(profileId, parentId) ?: return null
+        val referencePath = profile.referenceAudioPath ?: return null
+        val jobsForProfile = voiceCloningService.getVoiceCloningJobs(parentId)
+            .asSequence()
+            .filter { it.audioStoragePath == referencePath }
+            .toList()
+        val latest = jobsForProfile.maxByOrNull { it.createdAt } ?: return null
+        return if (latest.status == com.tamixa.domain.VoiceCloningStatus.FAILED) latest else null
+    }
+
+    private fun clonedVoiceProviderPrecheckFailureMessage(
+        voiceProfile: String?,
+        parentId: Long,
+        language: String
+    ): String? {
+        val profileId = voiceProfile
+            ?.takeIf { it.startsWith("cloned:", ignoreCase = true) }
+            ?.substringAfter(":", "")
+            ?.trim()
+            ?.toLongOrNull()
+            ?: return null
+        val profile = voiceRepository.findByIdAndParentId(profileId, parentId) ?: return null
+        val providerAuthFailed = profile.elevenlabsVoiceId?.let { voiceId ->
+            elevenLabsVoiceCloningPort?.hadRecentAuthFailure(voiceId) == true
+        } ?: false
+        val providerQuotaFailed = profile.elevenlabsVoiceId?.let { voiceId ->
+            elevenLabsVoiceCloningPort?.hadRecentQuotaFailure(voiceId) == true
+        } ?: false
+        if (!providerAuthFailed && !providerQuotaFailed) return null
+        val providerMessage = profile.elevenlabsVoiceId?.let { voiceId ->
+            elevenLabsVoiceCloningPort?.recentFailureMessage(voiceId)
+        }
+        val elevenLabsKeyHealthy = isElevenLabsKeyHealthy()
+        val effectiveLang = StreamLanguageUtils.normalize(language)
+        if (!providerMessage.isNullOrBlank()) return "Preview blocked: $providerMessage"
+        if (providerQuotaFailed) {
+            return "Preview blocked: ElevenLabs quota exceeded recently for this voice profile. Upgrade plan or wait for credits reset, then retry."
+        }
+        if (providerAuthFailed && elevenLabsKeyHealthy) {
+            return "Preview blocked: ElevenLabs key is valid, but recent story synthesis failed for this voice profile (likely quota or request-size limit). Check provider and credits, then retry."
+        }
+        return if (effectiveLang == "ta") {
+            "Preview blocked: ElevenLabs auth/permissions failure detected recently for this voice profile. " +
+                "Check ELEVENLABS_API_KEY/account permissions, run 'Check provider' for this row, then retry."
+        } else {
+            "Preview blocked: ElevenLabs auth/permissions failure detected recently for this voice profile. " +
+                "Run 'Check provider', fix provider auth, then retry."
+        }
+    }
+
+    private fun isElevenLabsKeyHealthy(): Boolean {
+        val apiKey = appProperties.voiceCloning.elevenLabsApiKey.trim()
+        if (apiKey.isBlank()) return false
+        return try {
+            val headers = HttpHeaders().apply { set("xi-api-key", apiKey) }
+            restTemplate.exchange(
+                "${appProperties.voiceCloning.elevenLabsBaseUrl.trimEnd('/')}/v1/user",
+                HttpMethod.GET,
+                HttpEntity<Any>(headers),
+                Map::class.java
+            )
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun resolveTamilClonedPreviewFailureMessage(
+        voiceProfile: String?,
+        parentId: Long
+    ): String {
+        val latestFailure = latestVoiceCloningFailureForProfile(voiceProfile, parentId)
+        if (latestFailure != null) {
+            return "Tamil cloned voice failed: ${latestFailure.errorMessage ?: "cloning job failed"}. Fix the issue, run cloning job again for this profile, then retry preview."
+        }
+
+        val profileId = voiceProfile
+            ?.trim()
+            ?.removePrefix("cloned:")
+            ?.toLongOrNull()
+            ?: return "Tamil cloned voice failed: this profile has no cloned voice key. In Admin -> Voice & Avatar Studio: (1) Upload reference audio for this parent, (2) Run job (no-consent ElevenLabs path, also used as fallback when Google is primary) or upload consent + Run job (Google). Backend .env: VOICE_CLONING_ENABLED=true, VOICE_CLONING_PROVIDER=google + GOOGLE_CLOUD_TTS_API_KEY (optional fallback: VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK=true + ELEVENLABS_API_KEY). Restart backend after changing .env."
+
+        val profile = voiceRepository.findByIdAndParentId(profileId, parentId)
+            ?: return "Tamil cloned voice failed: this profile has no cloned voice key. In Admin -> Voice & Avatar Studio: (1) Upload reference audio for this parent, (2) Run job (no-consent ElevenLabs path, also used as fallback when Google is primary) or upload consent + Run job (Google). Backend .env: VOICE_CLONING_ENABLED=true, VOICE_CLONING_PROVIDER=google + GOOGLE_CLOUD_TTS_API_KEY (optional fallback: VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK=true + ELEVENLABS_API_KEY). Restart backend after changing .env."
+
+        val hasClonedVoiceData = !profile.googleVoiceCloningKey.isNullOrBlank() ||
+            !profile.elevenlabsVoiceId.isNullOrBlank() ||
+            !profile.referenceAudioPath.isNullOrBlank()
+
+        return if (hasClonedVoiceData) {
+            val hasGoogleKey = !profile.googleVoiceCloningKey.isNullOrBlank()
+            val hasElevenLabsVoice = !profile.elevenlabsVoiceId.isNullOrBlank()
+            val provider = appProperties.voiceCloning.provider.trim().lowercase()
+            val elevenLabsFallbackEnabled = appProperties.voiceCloning.allowElevenLabsFallback
+            if (!hasGoogleKey && hasElevenLabsVoice && provider == "elevenlabs") {
+                "Tamil cloned voice preview failed: ElevenLabs could not synthesize this voice (auth/permissions/quota). Check ELEVENLABS_API_KEY and ElevenLabs account limits, then retry preview."
+            } else if (!hasGoogleKey && hasElevenLabsVoice && provider == "google" && elevenLabsFallbackEnabled) {
+                "Tamil cloned voice preview failed: ElevenLabs fallback could not synthesize this voice (provider auth/permissions/quota). Fix ELEVENLABS_API_KEY/account limits or upload consent + Run job (Google) to generate a Google cloned key, then retry preview."
+            } else if (!hasGoogleKey && !hasElevenLabsVoice && !profile.referenceAudioPath.isNullOrBlank()) {
+                "Tamil cloned voice preview failed: this profile has reference audio but no active cloned key. Run job (ElevenLabs path) or upload consent + Run job (Google), then retry preview."
+            } else {
+                "Tamil cloned voice preview failed: this profile is cloned, but narration generation failed for this story/language. Check backend logs for the narration error, fix it in Story to Speech, then retry preview."
+            }
+        } else {
+            "Tamil cloned voice failed: this profile has no cloned voice key. In Admin -> Voice & Avatar Studio: (1) Upload reference audio for this parent, (2) Run job (no-consent ElevenLabs path, also used as fallback when Google is primary) or upload consent + Run job (Google). Backend .env: VOICE_CLONING_ENABLED=true, VOICE_CLONING_PROVIDER=google + GOOGLE_CLOUD_TTS_API_KEY (optional fallback: VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK=true + ELEVENLABS_API_KEY). Restart backend after changing .env."
         }
     }
 
@@ -1462,13 +2301,33 @@ class AdminController(
         @PathVariable id: Long,
         @Valid @RequestBody request: com.tamixa.api.admin.dto.CreateLibraryStoryRequest
     ): ResponseEntity<*> {
+        val startedNs = System.nanoTime()
+        val slowWarnMs = 10_000L
+        val slowErrorMs = 20_000L
         log.info("Admin update curated story id={} status={} regenerateNarration={} pipelineOnSubmitOnly={}", id, request.status, request.regenerateNarration, appProperties.translationPipeline.pipelineOnSubmitOnly)
-        val pipelineOnSubmitOnly = appProperties.translationPipeline.pipelineOnSubmitOnly
-        val runPipelineOnUpdate = !pipelineOnSubmitOnly && (request.regenerateNarration != false)
-        // When pipelineOnSubmitOnly=true and status=PUBLISHED: Submit for review path triggers pipeline below (else if)
-        val existingStory = storyLibraryService.findById(id)
-        val previousStatus = existingStory?.status
-        val story = storyLibraryService.update(
+        try {
+            val pipelineOnSubmitOnly = appProperties.translationPipeline.pipelineOnSubmitOnly
+            val runPipelineOnUpdate = !pipelineOnSubmitOnly && (request.regenerateNarration != false)
+            // When pipelineOnSubmitOnly=true and status=PUBLISHED: Submit for review path triggers pipeline below (else if)
+            val activeLang = storyLibraryService.getActivePipelineLanguageIfRunning(id)
+            if (activeLang != null) {
+                val elapsedMs = (System.nanoTime() - startedNs) / 1_000_000
+                storyPipelineMetrics.recordAdminStoryUpdateLatency(elapsedMs, scope = "controller", outcome = "conflict", status = request.status)
+                log.warn(
+                    "Admin update curated story id={} blocked: pipeline already running language={} status={}",
+                    id,
+                    activeLang,
+                    request.status
+                )
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                    mapOf(
+                        "message" to "Another operation is in progress for this story (pipeline running for language=$activeLang). Wait for it to finish or clear stuck pipeline, then retry."
+                    )
+                )
+            }
+            val existingStory = storyLibraryService.findById(id)
+            val previousStatus = existingStory?.status
+            val story = storyLibraryService.update(
                 id = id,
                 title = request.title,
                 content = request.content,
@@ -1485,9 +2344,10 @@ class AdminController(
                 updateNarratedOnly = request.status == LibraryStoryStatus.PUBLISHED && !runPipelineOnUpdate,
                 translationContents = request.translationContents?.takeIf { it.isNotEmpty() },
                 translationContentEntries = request.translationContentEntries?.takeIf { it.isNotEmpty() },
-                convertPromptUsed = null
+                convertPromptUsed = null,
+                narratedContentPatch = request.narratedContent
             )
-        if (story != null) {
+            if (story != null) {
             if (story.status == LibraryStoryStatus.PUBLISHED && runPipelineOnUpdate) {
                 log.info("Admin curated story id={} is PUBLISHED (pipelineOnSubmitOnly=false), triggering invalidate & reprocess in background", id)
                 triggerPipelineExecutor.execute {
@@ -1502,7 +2362,9 @@ class AdminController(
                 // Submit for review: when audioAfterApproval=false, trigger pipeline (translate + TTS). When audioAfterApproval=true, do not trigger—use "Story to Speech" after approval.
                 val audioAfterApproval = appProperties.translationPipeline.audioAfterApproval
                 if (!audioAfterApproval) {
-                    val isResubmit = previousStatus == LibraryStoryStatus.CHANGES_REQUESTED
+                    val isResubmit =
+                        previousStatus == LibraryStoryStatus.CHANGES_REQUESTED ||
+                            previousStatus == LibraryStoryStatus.REJECTED
                     log.info("PIPELINE >>> Submit for review{}: triggering pipeline for storyId={} (content will be generated for all languages)", if (isResubmit) " (resubmit)" else "", id)
                     triggerPipelineExecutor.execute {
                         try {
@@ -1516,15 +2378,28 @@ class AdminController(
                     log.info("PIPELINE >>> Submit for review: storyId={} saved (audio-after-approval=true; use Story to Speech after approval to generate audio)", id)
                 }
             }
-            return ResponseEntity.ok(
-                story.toResponse(
-                    coverImageUrlResolver.resolveCoverPath(story.coverImageUrl),
-                    coverImageUrlResolver.resolveCoverVideoPath(story.coverVideoUrl)
+                val totalMs = (System.nanoTime() - startedNs) / 1_000_000
+                storyPipelineMetrics.recordAdminStoryUpdateLatency(totalMs, scope = "controller", outcome = "success", status = request.status)
+                when {
+                    totalMs >= slowErrorMs -> log.error("Admin update curated story id={} VERY_SLOW total={}ms status={}", id, totalMs, request.status)
+                    totalMs >= slowWarnMs -> log.warn("Admin update curated story id={} SLOW total={}ms status={}", id, totalMs, request.status)
+                    else -> log.info("Admin update curated story id={} completed total={}ms status={}", id, totalMs, request.status)
+                }
+                return ResponseEntity.ok(
+                    story.toResponse(
+                        coverImageUrlResolver.resolveCoverPath(story.coverImageUrl),
+                        coverImageUrlResolver.resolveCoverVideoPath(story.coverVideoUrl)
+                    )
                 )
-            )
+            }
+            log.warn("Admin update curated story id={} not found", id)
+            return ResponseEntity.notFound().build<com.tamixa.api.admin.dto.LibraryStoryResponse>()
+        } catch (e: Exception) {
+            val elapsedMs = (System.nanoTime() - startedNs) / 1_000_000
+            storyPipelineMetrics.recordAdminStoryUpdateLatency(elapsedMs, scope = "controller", outcome = "error", status = request.status)
+            log.error("Admin update curated story id={} FAILED after {}ms status={} error={}", id, elapsedMs, request.status, e.message, e)
+            throw e
         }
-        log.warn("Admin update curated story id={} not found", id)
-        return ResponseEntity.notFound().build<com.tamixa.api.admin.dto.LibraryStoryResponse>()
     }
 
     @PostMapping("/stories/{id}/retry")
@@ -1549,17 +2424,32 @@ class AdminController(
     @PostMapping("/stories/{id}/trigger-pipeline")
     @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
     fun triggerLibraryStoryPipeline(@PathVariable id: Long): ResponseEntity<Map<String, String>> {
-        log.info("Trigger pipeline for story id={} (background)", id)
+        val story = storyLibraryService.findById(id)
+        if (story == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(mapOf("message" to "Story not found"))
+        }
+        val translationOnly =
+            appProperties.translationPipeline.audioAfterApproval && (story.narrationApprovedAt == null)
+        log.info(
+            "Trigger pipeline for story id={} (background, translationOnly={})",
+            id,
+            translationOnly
+        )
         triggerPipelineExecutor.execute {
             try {
-                storyProcessingService.processSync(id)
+                storyProcessingService.processSync(id, translationOnly = translationOnly)
                 log.info("Trigger pipeline completed for story id={}", id)
             } catch (e: Exception) {
                 log.error("Trigger pipeline failed for story id={}: {}", id, e.message, e)
             }
         }
+        val hint =
+            if (translationOnly) {
+                " (translate + rewrite scripts only until content is approved; then use Narration for audio)"
+            } else ""
         return ResponseEntity.accepted()
-            .body(mapOf("message" to "Pipeline triggered for story $id (running in background, ~5 min)"))
+            .body(mapOf("message" to "Pipeline triggered for story $id (running in background, ~5 min)$hint"))
     }
 
     /**
@@ -1570,7 +2460,15 @@ class AdminController(
     @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
     fun requestChanges(@PathVariable id: Long, @Valid @RequestBody body: ReviewNotesRequest?): ResponseEntity<*> {
         val notes = body?.notes?.trim()?.takeIf { it.isNotBlank() }
+        val adminEmail = SecurityContextHolder.getContext().authentication?.name ?: "unknown"
         return if (storyLibraryService.requestChanges(id, notes)) {
+            adminService.recordAdminAuditAction(
+                adminEmail,
+                "library_request_changes",
+                "story",
+                id.toString(),
+                notes?.take(2000) ?: "CHANGES_REQUESTED (no notes)"
+            )
             ResponseEntity.ok(mapOf("message" to "Story sent back for changes", "status" to "CHANGES_REQUESTED"))
         } else {
             ResponseEntity.badRequest().body(mapOf("message" to "Story not found or not in review queue"))
@@ -1578,32 +2476,53 @@ class AdminController(
     }
 
     /**
-     * Reject curated story (final rejection in Story for review flow).
+     * Reject in Story for review: sets status to REJECTED (story is not deleted).
      * Valid when story is in review queue (PUBLISHED, PROCESSING, or READY; narrationApprovedAt=null).
      */
     @PostMapping("/stories/{id}/review-reject")
     @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
     fun rejectLibraryStory(@PathVariable id: Long, @Valid @RequestBody body: ReviewNotesRequest?): ResponseEntity<*> {
         val notes = body?.notes?.trim()?.takeIf { it.isNotBlank() }
+        val adminEmail = SecurityContextHolder.getContext().authentication?.name ?: "unknown"
         return if (storyLibraryService.reject(id, notes)) {
-            ResponseEntity.ok(mapOf("message" to "Story rejected", "status" to "REJECTED"))
+            adminService.recordAdminAuditAction(
+                adminEmail,
+                "library_review_reject",
+                "story",
+                id.toString(),
+                notes?.take(2000) ?: "REJECTED (no notes); row not deleted"
+            )
+            ResponseEntity.ok(
+                mapOf(
+                    "message" to "Story rejected (still in database). Edit in Story library and Submit for review to re-queue.",
+                    "status" to "REJECTED"
+                )
+            )
         } else {
             ResponseEntity.badRequest().body(mapOf("message" to "Story not found or not in review queue"))
         }
     }
 
     /**
-     * Approve narrated story for final delivery (human verification).
-     * Call after reviewing content in Story for review. Does NOT trigger pipeline—content/audio
-     * already exists from Submit for review. Only sets narration_approved_at so the story appears on the app.
+     * Approve story content for final delivery (human verification).
+     * Sets narration_approved_at. When `auto-tts-on-approve` is true and `audio-after-approval` is true, may start
+     * background TTS for languages that still need audio. Default is auto-tts-on-approve=false: use Narration → Generate audio.
      */
     @PostMapping("/stories/{id}/approve-narration")
     @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
     fun approveLibraryStoryNarration(@PathVariable id: Long): ResponseEntity<*> {
         val approved = storyLibraryService.approveNarration(id)
         return if (approved) {
-            log.info("Narration approved for story id={}; story is now published and visible on the app (no pipeline trigger)", id)
-            ResponseEntity.ok(mapOf("message" to "Narration approved for delivery. Story is now visible on the app."))
+            val adminEmail = SecurityContextHolder.getContext().authentication?.name ?: "unknown"
+            adminService.recordAdminAuditAction(adminEmail, "library_approve_narration", "story", id.toString(), "Narration approved for delivery")
+            log.info("Narration approved for story id={}; post-approval TTS runs only when auto-tts-on-approve=true", id)
+            val message =
+                if (appProperties.translationPipeline.autoTtsOnApprove && appProperties.translationPipeline.audioAfterApproval) {
+                    "Story approved. If audio was not ready yet, narration may be generating in the background. Story is visible on the app when audio is ready."
+                } else {
+                    "Story approved for delivery. Open Narration (Story to Speech) and use Generate audio when you are ready to produce narration MP3s."
+                }
+            ResponseEntity.ok(mapOf("message" to message))
         } else {
             ResponseEntity.badRequest().body(mapOf("message" to "Story not found or not in review queue"))
         }
@@ -1656,6 +2575,13 @@ class AdminController(
         @PathVariable id: Long,
         @Valid @RequestBody(required = false) request: RegenerateNarrationRequest?
     ): ResponseEntity<Map<String, String>> {
+        val story = storyLibraryService.findById(id)
+            ?: return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(mapOf("message" to "Story not found"))
+        if (story.narrationApprovedAt == null) {
+            return ResponseEntity.badRequest()
+                .body(mapOf("message" to "Story is not approved yet. Approve in Story for review before running Narration actions."))
+        }
         val languages = request?.languages?.filter { it.isNotBlank() }?.ifEmpty { null }
         triggerPipelineExecutor.execute {
             try {
@@ -1678,6 +2604,13 @@ class AdminController(
         @PathVariable id: Long,
         @Valid @RequestBody(required = false) request: RepublishRequest?
     ): ResponseEntity<Map<String, String>> {
+        val story = storyLibraryService.findById(id)
+            ?: return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(mapOf("message" to "Story not found"))
+        if (story.narrationApprovedAt == null) {
+            return ResponseEntity.badRequest()
+                .body(mapOf("message" to "Story is not approved yet. Approve in Story for review before running Narration actions."))
+        }
         val languages = request?.languages?.filter { it.isNotBlank() } ?: emptyList()
         log.info("Republish requested storyId={} languages={}", id, languages)
         triggerPipelineExecutor.execute {
@@ -1716,12 +2649,36 @@ class AdminController(
         return ResponseEntity.ok(mapOf("updated" to count, "theme" to request.theme))
     }
 
+    @PostMapping("/stories/{id}/restore")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    fun restoreSoftDeletedLibraryStory(@PathVariable id: Long): ResponseEntity<Map<String, Any>> {
+        val adminEmail = SecurityContextHolder.getContext().authentication?.name ?: "unknown"
+        return if (storyLibraryService.restoreSoftDeletedLibraryStory(id)) {
+            adminService.recordAdminAuditAction(
+                adminEmail,
+                "library_story_restored",
+                "story",
+                id.toString(),
+                "Restored from soft-delete trash"
+            )
+            ResponseEntity.ok(mapOf("message" to "Story restored", "id" to id))
+        } else {
+            ResponseEntity.badRequest().body(mapOf("message" to "Story not found or not in trash"))
+        }
+    }
+
     @DeleteMapping("/stories/{id}")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     fun deleteCuratedStory(@PathVariable id: Long): ResponseEntity<*> {
         val adminEmail = SecurityContextHolder.getContext().authentication?.name ?: "unknown"
         return if (storyLibraryService.deleteById(id)) {
-            adminService.recordAdminAuditAction(adminEmail, "delete_story", "story", id.toString(), "Story deleted")
+            adminService.recordAdminAuditAction(
+                adminEmail,
+                "delete_story",
+                "story",
+                id.toString(),
+                "Soft-deleted (recoverable from GET /stories/soft-deleted); permanent purge after configured retention"
+            )
             ResponseEntity.noContent().build<Unit>()
         } else {
             ResponseEntity.notFound().build<Unit>()
@@ -1734,7 +2691,13 @@ class AdminController(
         val adminEmail = SecurityContextHolder.getContext().authentication?.name ?: "unknown"
         val deleted = storyLibraryService.deleteByIds(request.ids)
         if (deleted > 0) {
-            adminService.recordAdminAuditAction(adminEmail, "bulk_delete_stories", "story", null, "Deleted ${request.ids.size} stories: ${request.ids}")
+            adminService.recordAdminAuditAction(
+                adminEmail,
+                "bulk_delete_stories",
+                "story",
+                null,
+                "Soft-deleted $deleted of ${request.ids.size} stories (ids=${request.ids}); recoverable until retention purge"
+            )
         }
         return ResponseEntity.ok(mapOf("deleted" to deleted, "ids" to request.ids))
     }
@@ -1760,27 +2723,9 @@ class AdminController(
             convertPromptUsed = null
         )
         if (story.status == LibraryStoryStatus.PUBLISHED && appProperties.translationPipeline.pipelineOnSubmitOnly) {
-            // #region agent log
-            debugLog(
-                runId = "create-first-submit",
-                hypothesisId = "H12",
-                location = "AdminController.kt:createLibraryStory:pipeline-trigger",
-                message = "create publish triggering pipeline",
-                data = mapOf("storyId" to story.id, "status" to story.status)
-            )
-            // #endregion
             log.info("PIPELINE >>> Create publish: triggering pipeline for storyId={} (content will be generated for all languages)", story.id)
             triggerPipelineExecutor.execute {
                 try {
-                    // #region agent log
-                    debugLog(
-                        runId = "create-first-submit",
-                        hypothesisId = "H14",
-                        location = "AdminController.kt:createLibraryStory:pipeline-task-start",
-                        message = "create publish pipeline task started",
-                        data = mapOf("storyId" to story.id)
-                    )
-                    // #endregion
                     storyProcessingService.processSync(story.id)
                     log.info("PIPELINE >>> Create-publish pipeline completed for story id={}", story.id)
                 } catch (e: Exception) {
@@ -1798,9 +2743,11 @@ class AdminController(
 
     /**
      * Bulk-generate library stories using the Tamixa storyteller prompt template.
+     * Each story is a Tamil (`ta`) master; `story_translations` rows are seeded for all pipeline target languages (e.g. en, hi, te, kn, ml) via TranslationService so every language has text before narration.
+     * Request `languages` is ignored (kept for API compatibility).
      * Request:
      * {
-     *   "languages": ["ta","en"],
+     *   "languages": ["ta"],
      *   "categories": ["Friendship","Village Life"],
      *   "totalStories": 25,
      *   "publish": false
@@ -1811,7 +2758,6 @@ class AdminController(
     fun bulkGenerateLibraryStories(@Valid @RequestBody request: BulkGenerateStoriesRequest): ResponseEntity<*> {
         val adminEmail = SecurityContextHolder.getContext().authentication?.name ?: "system"
         val rawLangs = request.languages?.mapNotNull { it.trim().takeIf { it.isNotBlank() } }?.distinct() ?: emptyList()
-        // Fallback to Tamil only (never Hindi or other). When languages provided, use all of them so stories are generated in each.
         val languages = if (rawLangs.isEmpty()) listOf("ta") else rawLangs
         val categories = request.categories?.mapNotNull { it.trim().takeIf { it.isNotBlank() } }?.distinct() ?: emptyList()
         val totalStories = (request.totalStories?.coerceIn(1, 25)) ?: 25
@@ -1871,7 +2817,6 @@ class AdminController(
     fun bulkGenerateLibraryStoriesAsync(@Valid @RequestBody request: BulkGenerateStoriesRequest): ResponseEntity<*> {
         val adminEmail = SecurityContextHolder.getContext().authentication?.name ?: "system"
         val rawLangs = request.languages?.mapNotNull { it.trim().takeIf { it.isNotBlank() } }?.distinct() ?: emptyList()
-        // Fallback to Tamil only (never Hindi or other). When languages provided, use all of them so stories are generated in each.
         val languages = if (rawLangs.isEmpty()) listOf("ta") else rawLangs
         val categories = request.categories?.mapNotNull { it.trim().takeIf { it.isNotBlank() } }?.distinct() ?: emptyList()
         val totalStories = (request.totalStories?.coerceIn(1, 25)) ?: 25
@@ -2006,7 +2951,7 @@ class AdminController(
     }
 
     @PostMapping("/parents/{id}/suspend")
-    @PreAuthorize("@adminAuth.hasPermission('VIEW_PARENTS')")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_PARENTS')")
     fun suspendParent(@PathVariable id: Long): ResponseEntity<Unit> {
         val adminEmail = SecurityContextHolder.getContext().authentication?.name
             ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
@@ -2019,7 +2964,7 @@ class AdminController(
     }
 
     @PostMapping("/parents/{id}/unsuspend")
-    @PreAuthorize("@adminAuth.hasPermission('VIEW_PARENTS')")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_PARENTS')")
     fun unsuspendParent(@PathVariable id: Long): ResponseEntity<Unit> {
         val adminEmail = SecurityContextHolder.getContext().authentication?.name
             ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
@@ -2035,6 +2980,11 @@ class AdminController(
     @PreAuthorize("@adminAuth.hasPermission('VIEW_AI_METRICS')")
     fun getStoryUsagePerDay(@RequestParam(defaultValue = "7") days: Int) =
         ResponseEntity.ok(adminService.getStoryUsagePerDay(days.coerceIn(1, 90)))
+
+    @GetMapping("/metrics/story-length-profile")
+    @PreAuthorize("@adminAuth.hasPermission('VIEW_AI_METRICS')")
+    fun getStoryLengthProfile(@RequestParam(defaultValue = "7") days: Int) =
+        ResponseEntity.ok(adminService.getStoryLengthProfile(days))
 
     @GetMapping("/invoices")
     @PreAuthorize("@adminAuth.hasPermission('MANAGE_INVOICES')")

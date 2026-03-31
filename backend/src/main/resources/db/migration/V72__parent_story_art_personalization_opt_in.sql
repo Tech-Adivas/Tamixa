@@ -1,0 +1,1 @@
+ALTER TABLE parents ADD COLUMN IF NOT EXISTS story_art_personalization_opt_in BOOLEAN NOT NULL DEFAULT FALSE;

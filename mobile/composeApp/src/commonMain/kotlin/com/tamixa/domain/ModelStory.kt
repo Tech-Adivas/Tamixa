@@ -3,7 +3,7 @@ package com.tamixa.domain
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class StoryStatus { PENDING, GENERATING, READY, FAILED }
+enum class StoryStatus { PENDING, PENDING_REVIEW, GENERATING, READY, FAILED }
 
 @Serializable
 data class Story(

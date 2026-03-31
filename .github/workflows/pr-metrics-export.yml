@@ -1,0 +1,70 @@
+# On merge to main/develop: build enriched JSON and optionally POST to a webhook (Sheets/BigQuery/etc.).
+name: PR metrics export
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-metrics-export-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  export-merged:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write PR body to file
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            fs.writeFileSync('pr-body.txt', context.payload.pull_request.body || '');
+
+      - name: Parse PR body
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GOVERNANCE_JSON: pr-governance.json
+        run: python3 .github/scripts/parse_pr_governance.py < pr-body.txt
+
+      - name: Enrich for export
+        env:
+          GOVERNANCE_JSON: pr-governance.json
+          METRICS_EXPORT_JSON: pr-metrics-export.json
+          MERGED_AT: ${{ github.event.pull_request.merged_at }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          MERGED_BY: ${{ github.event.pull_request.merged_by && github.event.pull_request.merged_by.login || '' }}
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 .github/scripts/enrich_pr_metrics_export.py
+
+      - name: Upload export JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-metrics-export-${{ github.event.pull_request.number }}
+          path: pr-metrics-export.json
+          if-no-files-found: error
+
+      - name: POST to metrics webhook (optional)
+        if: ${{ secrets.PR_METRICS_WEBHOOK_URL }}
+        env:
+          URL: ${{ secrets.PR_METRICS_WEBHOOK_URL }}
+          SECRET: ${{ secrets.PR_METRICS_WEBHOOK_SECRET }}
+        continue-on-error: true
+        run: |
+          set -e
+          hdr=(-H 'Content-Type: application/json')
+          if [ -n "${SECRET:-}" ]; then hdr+=(-H "X-Metrics-Secret: ${SECRET}"); fi
+          curl -sS -X POST "${hdr[@]}" --data-binary @pr-metrics-export.json \
+            -w '\nHTTP %{http_code}\n' "$URL"

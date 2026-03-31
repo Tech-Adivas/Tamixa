@@ -1,14 +1,18 @@
+package com.tamixa.api.exception
+
 import com.tamixa.api.config.RequestTracingFilter
-import com.tamixa.api.exception.ErrorResponse
 import com.tamixa.application.account.AccountDeletionException
 import com.tamixa.application.auth.AccountSuspendedException
 import com.tamixa.application.auth.InvalidCredentialsException
+import com.tamixa.application.guardrail.ExternalGuardrailUnavailableException
 import com.tamixa.application.story.ContentModerationException
 import com.tamixa.application.story.FreeStoryLimitReachedException
 import com.tamixa.application.subscription.ReferralCodeDuplicateException
 import com.tamixa.application.subscription.ReferralCodeNotFoundException
 import com.tamixa.application.subscription.SubscriptionNotFoundException
 import com.tamixa.application.storylibrary.ContentUnchangedException
+import com.tamixa.application.controlplane.AiControlPlaneConflictException
+import com.tamixa.application.controlplane.AiControlPlaneEntityNotFoundException
 import com.tamixa.application.storylibrary.PipelineRunningException
 import com.tamixa.application.familyvoice.FamilyVoiceAccessDeniedException
 import com.tamixa.application.familyvoice.FamilyVoiceFileTooLargeException
@@ -24,13 +28,17 @@ import com.tamixa.domain.subscription.UpgradeRequiredException
 import com.tamixa.infrastructure.openai.OpenAIException
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
+import org.springframework.core.Ordered
+import org.springframework.core.annotation.Order
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException
 import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice
 class GlobalExceptionHandler {
 
@@ -67,6 +75,14 @@ class GlobalExceptionHandler {
             .body(errorBody(e.message ?: "Content failed moderation and cannot be saved", HttpStatus.UNPROCESSABLE_ENTITY))
     }
 
+    /** Separate reusable guardrails HTTP service unavailable (fail-open disabled). */
+    @ExceptionHandler(ExternalGuardrailUnavailableException::class)
+    fun handleExternalGuardrailUnavailable(e: ExternalGuardrailUnavailableException): ResponseEntity<Map<String, Any>> {
+        log.warn("External guardrails service unavailable: {}", e.message)
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(errorBody(e.message ?: "Validation service temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE))
+    }
+
     /** Free plan story limit reached; return 402 so client can show upgrade CTA. */
     @ExceptionHandler(FreeStoryLimitReachedException::class)
     fun handleFreeStoryLimitReached(e: FreeStoryLimitReachedException): ResponseEntity<LimitReachedResponse> {
@@ -78,6 +94,14 @@ class GlobalExceptionHandler {
                 recommendedPlan = e.recommendedPlan
             )
         )
+    }
+
+    /** Premium voice / gated feature (402 for client upgrade CTA). */
+    @ExceptionHandler(UpgradeRequiredException::class)
+    fun handleUpgradeRequired(e: UpgradeRequiredException): ResponseEntity<Map<String, Any>> {
+        log.debug("Upgrade required: {}", e.message)
+        return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
+            .body(errorBody(e.message ?: "Premium subscription required", HttpStatus.PAYMENT_REQUIRED))
     }
 
     @ExceptionHandler(ReferralCodeNotFoundException::class)
@@ -109,6 +133,25 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBody("Validation failed", HttpStatus.BAD_REQUEST, errors))
     }
 
+    @ExceptionHandler(AiControlPlaneEntityNotFoundException::class)
+    fun handleAiControlPlaneNotFound(e: AiControlPlaneEntityNotFoundException): ResponseEntity<Map<String, Any>> {
+        log.debug("AI control plane: {}", e.message)
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorBody(e.message ?: "Not found", HttpStatus.NOT_FOUND))
+    }
+
+    @ExceptionHandler(UnsupportedOperationException::class)
+    fun handleUnsupportedOperation(e: UnsupportedOperationException): ResponseEntity<Map<String, Any>> {
+        log.debug("Not implemented: {}", e.message)
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+            .body(errorBody(e.message ?: "Not implemented", HttpStatus.NOT_IMPLEMENTED))
+    }
+
+    @ExceptionHandler(AiControlPlaneConflictException::class)
+    fun handleAiControlPlaneConflict(e: AiControlPlaneConflictException): ResponseEntity<Map<String, Any>> {
+        log.debug("AI control plane conflict: {}", e.message)
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorBody(e.message ?: "Conflict", HttpStatus.CONFLICT))
+    }
+
     /** Business rule violations (duplicate title, etc.). */
     @ExceptionHandler(IllegalArgumentException::class)
     fun handleIllegalArgument(e: IllegalArgumentException): ResponseEntity<Map<String, Any>> {
@@ -128,6 +171,17 @@ class GlobalExceptionHandler {
         log.warn("OpenAI API error: {}", e.message)
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
             .body(errorBody(e.message ?: "AI service temporarily unavailable", HttpStatus.BAD_GATEWAY))
+    }
+
+    /**
+     * Client disconnected while response was streaming/writing (e.g. browser navigation or timeout).
+     * Not a server business failure; avoid noisy "unhandled exception" error logs.
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException::class)
+    fun handleClientAbort(e: AsyncRequestNotUsableException): ResponseEntity<Void> {
+        val traceId = MDC.get(RequestTracingFilter.TRACE_ID_MDC_KEY).orEmpty()
+        log.warn("Client connection closed before response completed traceId={} message={}", traceId, e.message)
+        return ResponseEntity.noContent().build()
     }
 
     /** Catch-all for unhandled exceptions; logs with traceId for correlation. */

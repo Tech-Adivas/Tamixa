@@ -4,6 +4,7 @@ import com.tamixa.application.port.EmailSenderPort
 import com.tamixa.infrastructure.logging.PiiMask
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
@@ -19,12 +20,12 @@ import java.net.URI
 @org.springframework.context.annotation.Primary
 @org.springframework.boot.autoconfigure.condition.ConditionalOnExpression("!'${'$'}{app.email.sendgrid-api-key:}'.isEmpty()")
 class SendGridEmailSender(
+    @Qualifier("notificationRestTemplate") private val rest: RestTemplate,
     @Value("\${app.email.sendgrid-api-key}") private val apiKey: String,
     @Value("\${app.email.from-email:noreply@tamixa.in}") private val fromEmail: String,
     @Value("\${app.email.from-name:Tamixa}") private val fromName: String
 ) : EmailSenderPort {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val rest = RestTemplate()
     private val mapper = ObjectMapper()
 
     override fun sendMagicLinkOrCode(toEmail: String, magicLink: String, shortCode: String): Boolean {

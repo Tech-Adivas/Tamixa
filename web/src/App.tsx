@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -8,14 +8,15 @@ import { TamixaSplash } from "./components/TamixaSplash";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
-import Dashboard from "./pages/Dashboard";
-import Stories from "./pages/Stories";
-import Subscription from "./pages/Subscription";
-import Voice from "./pages/Voice";
-import Settings from "./pages/Settings";
 import MagicLinkVerify from "./pages/MagicLinkVerify";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
+
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Stories = lazy(() => import("./pages/Stories"));
+const Subscription = lazy(() => import("./pages/Subscription"));
+const Voice = lazy(() => import("./pages/Voice"));
+const Settings = lazy(() => import("./pages/Settings"));
 import "./index.css";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -23,7 +24,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   if (loading) return <AppLoading />;
   if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
-  return <AppLayout>{children}</AppLayout>;
+  return <AppLayout><Suspense fallback={<AppLoading />}>{children}</Suspense></AppLayout>;
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {

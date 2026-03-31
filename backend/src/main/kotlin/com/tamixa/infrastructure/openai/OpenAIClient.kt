@@ -31,7 +31,8 @@ class OpenAIClient(
     @Value("\${app.openai.api-key:}") private val apiKey: String,
     @Value("\${app.openai.base-url:https://api.openai.com}") private val baseUrl: String,
     @Value("\${app.openai.model:gpt-4o-mini}") private val model: String,
-    @Value("\${app.openai.max-tokens:1024}") private val defaultMaxTokens: Int
+    @Value("\${app.openai.max-tokens:1024}") private val defaultMaxTokens: Int,
+    @Value("\${app.openai.moderation-required:false}") private val moderationRequired: Boolean
 ) : OpenAIPort {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -187,7 +188,13 @@ class OpenAIClient(
     override fun isContentSafe(text: String): Boolean = getModerationResult(text).safe
 
     override fun getModerationResult(text: String): ModerationResult {
-        if (apiKey.isBlank()) return ModerationResult(safe = true)
+        if (apiKey.isBlank()) {
+            if (moderationRequired) {
+                log.warn("OpenAI moderation required but API key is blank; failing closed for child safety")
+                return ModerationResult(safe = false)
+            }
+            return ModerationResult(safe = true)
+        }
         val request = ModerationApiRequest(input = text)
         val headers = HttpHeaders().apply {
             setBearerAuth(apiKey)

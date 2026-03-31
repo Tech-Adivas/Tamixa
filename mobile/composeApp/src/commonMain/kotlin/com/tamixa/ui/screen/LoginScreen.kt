@@ -56,7 +56,7 @@ import com.tamixa.ui.theme.TamixaDialogDefaults
 fun LoginScreen(
     loginState: UiState<*>,
     otpSentToPhone: String?,
-    otpDevCode: String?,
+    otpDevCode: String? = null,
     passwordlessCodeSentToEmail: String?,
     onRequestPasswordlessCode: (email: String) -> Unit,
     onVerifyPasswordlessCode: (email: String, code: String, acceptedTerms: Boolean, acceptedPrivacy: Boolean, acceptedParentalAttestation: Boolean) -> Unit,
@@ -64,6 +64,7 @@ fun LoginScreen(
     onSendOtp: (phone: String) -> Unit,
     onVerifyOtp: (phone: String, code: String) -> Unit,
     onClearOtpState: () -> Unit,
+    onNavigateToRegister: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showPasswordlessDialog by remember { mutableStateOf(false) }
@@ -108,6 +109,7 @@ fun LoginScreen(
                     onPhoneChange = { phone = it },
                     onGetOtp = { onSendOtp(phone.trim()) },
                     onPasswordless = { showPasswordlessDialog = true },
+                    onNavigateToRegister = onNavigateToRegister,
                     loginState = loginState
                 )
             }
@@ -136,12 +138,9 @@ fun LoginScreen(
             onPrivacyChange = { acceptedPrivacy = it },
             onParentalAttestationChange = { acceptedParentalAttestation = it },
             onVerify = {
+                // Do not dismiss or clear fields here: verify is async. On success, email state clears and this dialog
+                // is no longer composed; on failure, the user keeps the form and sees the error.
                 onVerifyPasswordlessCode(passwordlessCodeSentToEmail, passwordlessCode, acceptedTerms, acceptedPrivacy, acceptedParentalAttestation)
-                showPasswordlessCodeDialog = false
-                passwordlessCode = ""
-                acceptedTerms = false
-                acceptedPrivacy = false
-                acceptedParentalAttestation = false
             },
             onDismiss = { showPasswordlessCodeDialog = false; onClearPasswordlessState() },
             error = (loginState as? UiState.Error)?.message
@@ -155,6 +154,7 @@ private fun WelcomeContent(
     onPhoneChange: (String) -> Unit,
     onGetOtp: () -> Unit,
     onPasswordless: () -> Unit,
+    onNavigateToRegister: (() -> Unit)?,
     loginState: UiState<*>
 ) {
     Column(
@@ -205,6 +205,16 @@ private fun WelcomeContent(
                 style = MaterialTheme.typography.bodyMedium,
                 color = TamixaColors.cream.copy(alpha = 0.9f)
             )
+        }
+        onNavigateToRegister?.let { goRegister ->
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = goRegister, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    Strings.registerWithEmail(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TamixaColors.cream.copy(alpha = 0.9f)
+                )
+            }
         }
         Spacer(Modifier.height(36.dp))
         Text(

@@ -23,4 +23,20 @@ interface ElevenLabsVoiceCloningPort {
      * @return MP3 bytes or null on failure
      */
     fun synthesize(text: String, voiceId: String, language: String): ByteArray?
+
+    /**
+     * True when this voice recently received provider-auth failures (for example HTTP 401).
+     * Helps admin surfaces show actionable status without digging through logs.
+     */
+    fun hadRecentAuthFailure(voiceId: String): Boolean
+
+    /**
+     * True when this voice recently failed due to ElevenLabs quota/credits exhaustion.
+     */
+    fun hadRecentQuotaFailure(voiceId: String): Boolean
+
+    /**
+     * Human-readable recent provider failure detail, if available.
+     */
+    fun recentFailureMessage(voiceId: String): String?
 }

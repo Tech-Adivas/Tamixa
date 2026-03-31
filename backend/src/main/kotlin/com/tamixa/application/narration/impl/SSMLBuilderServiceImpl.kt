@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import kotlin.math.roundToInt
 
 /**
  * Builds SSML from plain narration text.
@@ -26,10 +27,22 @@ import java.nio.file.StandardOpenOption
 @Service
 class SSMLBuilderServiceImpl(
     @Value("\${app.narration.ssml-use-natural-pace:true}") private val ssmlUseNaturalPace: Boolean = true,
-    @Value("\${app.narration.ssml-subtle-prosody-in-natural:true}") private val ssmlSubtleProsodyInNatural: Boolean = true
+    @Value("\${app.narration.ssml-subtle-prosody-in-natural:true}") private val ssmlSubtleProsodyInNatural: Boolean = true,
+    @Value("\${app.narration.style-profile:default}") private val styleProfile: String = "default",
+    @Value("\${app.narration.modulation-intensity:balanced}") private val modulationIntensity: String = "balanced",
+    @Value("\${app.narration.preset:}") private val narrationPreset: String = ""
 ) : SSMLBuilderService {
 
     private val INDIC_LANGS = setOf("ta", "hi", "te", "kn", "ml", "bn")
+    private val STYLE_DEFAULT = "default"
+    private val STYLE_KID_ENERGY = "kid-energy"
+    private val STYLE_BEDTIME_CALM = "bedtime-calm"
+    private val PRESET_BEDTIME = "bedtime"
+    private val PRESET_BALANCED = "balanced"
+    private val PRESET_ENERGETIC = "energetic"
+    private val INTENSITY_SOFT = "soft"
+    private val INTENSITY_BALANCED = "balanced"
+    private val INTENSITY_HIGH = "high"
     private val debugLogPath: Path? = System.getenv("DEBUG_LOG_PATH")?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
 
     private fun debugLog(
@@ -111,15 +124,17 @@ class SSMLBuilderServiceImpl(
         }
         // Tone markers: strip. Support ASCII and fullwidth brackets, optional inner whitespace.
         val toneMarkerRegex = Regex(
-            """[\[\［]\s*(?:Happy\s*tone|Warm\s*tone|Soft\s*voice|Calm|Whisper|Excited)\s*[\]\］]""",
+            """[\[\［]\s*(?:Warm\s*tone|Gentle\s*tone|Calm(?:\s*tone)?|Happy\s*tone|Excited\s*tone|Playful\s*tone|Curious\s*tone|Wonder\s*tone|Reassuring\s*tone|Thoughtful\s*tone|Soft\s*voice|Whisper(?:ed)?\s*tone|Emotional\s*tone|Soft\s*emotional\s*tone|Celebration\s*tone|Storyteller\s*tone|Slow\s*pacing|Medium\s*pacing|Brisk\s*pacing|Scene\s*opens\s*softly|Scene\s*shifts|A\s*gentle\s*moment|A\s*magical\s*moment|A\s*quiet\s*pause|A\s*joyful\s*moment|A\s*surprise\s*moment|Closing\s*tone|Audio\s*imagination|Joyful\s*moment|Clear\s*tone)\s*[\]\］]""",
             RegexOption.IGNORE_CASE
         )
         result = toneMarkerRegex.replace(result, "")
         // Fallback: any bracketed phrase containing marker keywords (catches translated/malformed)
         result = Regex(
-            """[\[\［][^\]\］]*(?:tone|voice|calm|whisper|excited|pause|happy|warm|soft)[^\]\］]*[\]\］]""",
+            """[\[\［][^\]\］]*(?:tone|voice|pacing|scene|calm|whisper|excited|pause|happy|warm|soft|storyteller|gentle|curious|wonder|reassuring|thoughtful|celebration|audio|closing)[^\]\］]*[\]\］]""",
             RegexOption.IGNORE_CASE
         ).replace(result, "")
+        // Repair frequent escaped-newline artifact from LLM outputs: "nn" used instead of paragraph breaks.
+        result = result.replace(Regex("""\bnn\b""", RegexOption.IGNORE_CASE), "\n\n")
         // Collapse only spaces (not newlines) to avoid merging paragraphs
         return result.replace(Regex("""[^\S\n]{2,}"""), " ").trim()
     }
@@ -137,6 +152,7 @@ class SSMLBuilderServiceImpl(
         age: Int,
         toneMode: ToneMode
     ): String {
+        val style = resolveEffectiveStyleProfile()
         // #region agent log
         debugLog(
             runId = "run6",
@@ -153,8 +169,9 @@ class SSMLBuilderServiceImpl(
         )
         // #endregion
         val langAttr = mapLanguageToBCP47(language)
-        val rate = if (ssmlUseNaturalPace) "100%" else resolveRate(language, age, toneMode)
-        val breakMs = resolveBreakTimeMs(language, age)
+        val baseRate = if (ssmlUseNaturalPace) "100%" else resolveRate(language, age, toneMode)
+        val rate = applyStyleToRate(baseRate, style)
+        val breakMs = applyStyleToBreakMs(resolveBreakTimeMs(language, age), style)
         val breakTag = """<break time="${breakMs}ms"/>"""
         val cleanedScript = convertInlineMarkersToSsml(scriptText)
         val paragraphs = cleanedScript.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotBlank() }
@@ -197,6 +214,7 @@ class SSMLBuilderServiceImpl(
         age: Int,
         toneMode: ToneMode
     ): String {
+        val style = resolveEffectiveStyleProfile()
         val fullScript = emotionTagged.originalScript
         // #region agent log
         debugLog(
@@ -215,7 +233,7 @@ class SSMLBuilderServiceImpl(
         )
         // #endregion
         val langAttr = mapLanguageToBCP47(language)
-        val (langRate, breakMs) = if (ssmlUseNaturalPace) {
+        val (baseLangRate, baseBreakMs) = if (ssmlUseNaturalPace) {
             "100%" to resolveBreakTimeMs(language, age)
         } else {
             resolveLanguageTuning(language)?.let { (r, b) -> r to b }
@@ -234,14 +252,16 @@ class SSMLBuilderServiceImpl(
                     r to b
                 }
         }
+        val langRate = applyStyleToRate(baseLangRate, style)
+        val breakMs = applyStyleToBreakMs(baseBreakMs, style)
         val outerPitch = if (ssmlUseNaturalPace) "" else if (language.lowercase() == "ta") " pitch=\"-5%\"" else ""
 
         val innerParts = emotionTagged.segments.mapIndexed { i, seg ->
             val cleanedText = convertInlineMarkersToSsml(seg.text)
             val prosodyAttrs = when {
                 ssmlUseNaturalPace && !ssmlSubtleProsodyInNatural -> ""
-                ssmlUseNaturalPace && ssmlSubtleProsodyInNatural -> subtleProsodyForEmotion(seg.emotion)
-                else -> emotionToProsody(seg.emotion)
+                ssmlUseNaturalPace && ssmlSubtleProsodyInNatural -> subtleProsodyForEmotion(seg.emotion, language)
+                else -> emotionToProsody(seg.emotion, language)
             }
             val escaped = escapeXml(cleanedText)
             val restored = restoreSsmlBreaks(escaped)
@@ -283,10 +303,15 @@ class SSMLBuilderServiceImpl(
     }
 
     /** Very light prosody when natural pace + subtle prosody enabled. Adds warmth without over-acting. */
-    private fun subtleProsodyForEmotion(emotion: EmotionTag): String = when (emotion) {
-        EmotionTag.DIALOGUE -> "pitch=\"+2%\""
-        EmotionTag.CONVERSATIONAL -> "pitch=\"+1%\""
-        else -> ""
+    private fun subtleProsodyForEmotion(emotion: EmotionTag, language: String): String {
+        val lang = language.trim().lowercase()
+        val dialoguePitchDelta = if (lang in setOf("ta", "hi", "te", "kn", "ml")) 1 else 2
+        val conversationalPitchDelta = 1
+        return when (emotion) {
+            EmotionTag.DIALOGUE -> "pitch=\"${formatSignedPercent(scaleDelta(dialoguePitchDelta))}\""
+            EmotionTag.CONVERSATIONAL -> "pitch=\"${formatSignedPercent(scaleDelta(conversationalPitchDelta))}\""
+            else -> ""
+        }
     }
 
     /**
@@ -294,13 +319,35 @@ class SSMLBuilderServiceImpl(
      * Stronger values = more audible difference (Google TTS needs pronounced cues).
      * CONVERSATIONAL/DIALOGUE: warmer pitch for "real conversation" feel.
      */
-    private fun emotionToProsody(emotion: EmotionTag): String = when (emotion) {
-        EmotionTag.CALM -> ""
-        EmotionTag.SOFT_SUSPENSE -> "pitch=\"-5%\" rate=\"90%\""
-        EmotionTag.EXCITED -> "pitch=\"+8%\" rate=\"105%\""
-        EmotionTag.WHISPER -> "volume=\"soft\" rate=\"85%\""
-        EmotionTag.DIALOGUE -> "pitch=\"+6%\""  // Pronounced lift for quoted speech—sounds more like conversation
-        EmotionTag.CONVERSATIONAL -> "pitch=\"+4%\" rate=\"102%\""  // Warm, inviting; slight pace increase for questions
+    private fun emotionToProsody(emotion: EmotionTag, language: String): String {
+        val lang = language.trim().lowercase()
+        val isIndic = lang in setOf("ta", "hi", "te", "kn", "ml", "bn")
+        return when (emotion) {
+            EmotionTag.CALM -> ""
+            EmotionTag.SOFT_SUSPENSE -> {
+                val pitch = if (isIndic) -4 else -5
+                val rate = if (isIndic) 91 else 90
+                "pitch=\"${formatSignedPercent(scaleDelta(pitch))}\" rate=\"${scaleRate(rate)}%\""
+            }
+            EmotionTag.EXCITED -> {
+                val pitch = if (isIndic) 6 else 8
+                val rate = if (isIndic) 103 else 105
+                "pitch=\"${formatSignedPercent(scaleDelta(pitch))}\" rate=\"${scaleRate(rate)}%\""
+            }
+            EmotionTag.WHISPER -> {
+                val rate = if (isIndic) 87 else 85
+                "volume=\"soft\" rate=\"${scaleRate(rate)}%\""
+            }
+            EmotionTag.DIALOGUE -> {
+                val pitch = if (isIndic) 4 else 6
+                "pitch=\"${formatSignedPercent(scaleDelta(pitch))}\""
+            }
+            EmotionTag.CONVERSATIONAL -> {
+                val pitch = if (isIndic) 3 else 4
+                val rate = if (isIndic) 101 else 102
+                "pitch=\"${formatSignedPercent(scaleDelta(pitch))}\" rate=\"${scaleRate(rate)}%\""
+            }
+        }
     }
 
     /**
@@ -372,4 +419,84 @@ class SSMLBuilderServiceImpl(
         .replace(">", "&gt;")
         .replace("\"", "&quot;")
         .replace("'", "&apos;")
+
+    private fun normalizeStyleProfile(value: String): String {
+        return when (value.trim().lowercase()) {
+            STYLE_KID_ENERGY -> STYLE_KID_ENERGY
+            STYLE_BEDTIME_CALM -> STYLE_BEDTIME_CALM
+            else -> STYLE_DEFAULT
+        }
+    }
+
+    /** Apply style only to percent rates; leave "slow"/"medium" tokens unchanged. */
+    private fun applyStyleToRate(rate: String, style: String): String {
+        val m = Regex("""^(\d+)%$""").matchEntire(rate.trim()) ?: return rate
+        val base = m.groupValues[1].toIntOrNull() ?: return rate
+        val adjusted = when (style) {
+            STYLE_KID_ENERGY -> (base + 4).coerceAtMost(115)
+            STYLE_BEDTIME_CALM -> (base - 6).coerceAtLeast(82)
+            else -> base
+        }
+        return "$adjusted%"
+    }
+
+    private fun applyStyleToBreakMs(baseBreakMs: Int, style: String): Int {
+        return when (style) {
+            STYLE_KID_ENERGY -> (baseBreakMs - 50).coerceAtLeast(120)
+            STYLE_BEDTIME_CALM -> (baseBreakMs + 80).coerceAtMost(450)
+            else -> baseBreakMs
+        }
+    }
+
+    private fun modulationFactor(): Double {
+        return when (resolveEffectiveModulationIntensity()) {
+            INTENSITY_SOFT -> 0.75
+            INTENSITY_HIGH -> 1.25
+            else -> 1.0
+        }
+    }
+
+    private fun resolveEffectiveStyleProfile(): String {
+        return when (narrationPreset.trim().lowercase()) {
+            PRESET_BEDTIME -> STYLE_BEDTIME_CALM
+            PRESET_ENERGETIC -> STYLE_KID_ENERGY
+            PRESET_BALANCED -> STYLE_DEFAULT
+            else -> normalizeStyleProfile(styleProfile)
+        }
+    }
+
+    private fun resolveEffectiveModulationIntensity(): String {
+        val presetValue = when (narrationPreset.trim().lowercase()) {
+            PRESET_BEDTIME -> INTENSITY_SOFT
+            PRESET_ENERGETIC -> INTENSITY_HIGH
+            PRESET_BALANCED -> INTENSITY_BALANCED
+            else -> null
+        }
+        val manual = when (modulationIntensity.trim().lowercase()) {
+            INTENSITY_SOFT -> INTENSITY_SOFT
+            INTENSITY_HIGH -> INTENSITY_HIGH
+            else -> INTENSITY_BALANCED
+        }
+        return presetValue ?: manual
+    }
+
+    private fun scaleDelta(delta: Int): Int {
+        if (delta == 0) return 0
+        val scaled = (delta * modulationFactor()).roundToInt()
+        return when {
+            delta > 0 -> scaled.coerceAtLeast(1)
+            else -> scaled.coerceAtMost(-1)
+        }
+    }
+
+    private fun scaleRate(baseRatePercent: Int): Int {
+        val deviation = baseRatePercent - 100
+        val scaledDeviation = scaleDelta(deviation)
+        return (100 + scaledDeviation).coerceIn(80, 120)
+    }
+
+    private fun formatSignedPercent(delta: Int): String {
+        val sign = if (delta >= 0) "+" else ""
+        return "$sign${delta}%"
+    }
 }

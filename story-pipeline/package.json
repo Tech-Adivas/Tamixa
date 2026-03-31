@@ -1,0 +1,25 @@
+{
+  "name": "@tamixa/story-pipeline",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multilingual Tamixa story generation: prompt chain, validation, repair",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "example": "node --experimental-strip-types examples/run-example.ts 2>/dev/null || npx tsx examples/run-example.ts"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

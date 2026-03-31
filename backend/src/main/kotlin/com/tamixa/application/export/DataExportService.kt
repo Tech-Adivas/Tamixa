@@ -13,12 +13,15 @@ import com.tamixa.infrastructure.persistence.ParentEntity
 import com.tamixa.infrastructure.persistence.ParentJpaRepository
 import com.tamixa.infrastructure.persistence.StoryEntity
 import com.tamixa.infrastructure.persistence.StoryJpaRepository
+import com.fasterxml.jackson.core.JsonEncoding
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -99,26 +102,81 @@ class DataExportService(
 
     private fun processJob(job: DataExportJobEntity) {
         val parent = job.parent
-        val payload = DataExportPayload(
-            exportedAt = Instant.now().atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_INSTANT),
-            parent = toParentExport(parent),
-            children = emptyList(),
-            stories = storyJpaRepository.findByParent_Id(parent.id, PageRequest.of(0, 10_000))
-                .content.map { toStoryExport(it) },
-            favorites = favoriteStoryJpaRepository.findByParent_Id(parent.id)
-                .map { FavoriteExport(it.storyId, it.storySource) },
-            consents = consentJpaRepository.findByParent_IdOrderByGrantedAtDesc(parent.id, PageRequest.of(0, 500))
-                .content.map { ConsentExport(it.consentType, it.version, it.grantedAt.atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_INSTANT)) }
-        )
-        val jsonBytes = objectMapper.writeValueAsBytes(payload)
-        val storageKey = storage!!.uploadExport(parent.id, job.id, jsonBytes)
-        val expiresAt = Instant.now().plusSeconds(24L * 60 * 60 * appProperties.export.expiryDays)
-        job.status = "completed"
-        job.completedAt = Instant.now()
-        job.storageKey = storageKey
-        job.expiresAt = expiresAt
-        jobJpaRepository.save(job)
-        log.info("Data export completed: parentId={} jobId={} bytes={}", parent.id, job.id, jsonBytes.size)
+        val exportCfg = appProperties.export
+        val storyPageSize = exportCfg.storyPageSize.coerceIn(50, 500)
+        val consentPageSize = exportCfg.consentPageSize.coerceIn(20, 500)
+        val path = Files.createTempFile("tamixa-export-${job.id}-", ".json")
+        try {
+            Files.newOutputStream(path, StandardOpenOption.TRUNCATE_EXISTING).use { out ->
+                val gen = objectMapper.factory.createGenerator(out, JsonEncoding.UTF8)
+                gen.use { g ->
+                    g.writeStartObject()
+                    g.writeStringField(
+                        "exportedAt",
+                        Instant.now().atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_INSTANT)
+                    )
+                    g.writeFieldName("parent")
+                    objectMapper.writeValue(g, toParentExport(parent))
+                    g.writeArrayFieldStart("children")
+                    g.writeEndArray()
+                    g.writeArrayFieldStart("stories")
+                    var sp = 0
+                    while (true) {
+                        val page = storyJpaRepository.findByParent_Id(parent.id, PageRequest.of(sp, storyPageSize))
+                        for (s in page.content) {
+                            objectMapper.writeValue(g, toStoryExport(s))
+                        }
+                        if (!page.hasNext()) break
+                        sp++
+                    }
+                    g.writeEndArray()
+                    g.writeArrayFieldStart("favorites")
+                    for (f in favoriteStoryJpaRepository.findByParent_Id(parent.id)) {
+                        objectMapper.writeValue(g, FavoriteExport(f.storyId, f.storySource))
+                    }
+                    g.writeEndArray()
+                    g.writeArrayFieldStart("consents")
+                    var cp = 0
+                    while (true) {
+                        val cpage = consentJpaRepository.findByParent_IdOrderByGrantedAtDesc(
+                            parent.id,
+                            PageRequest.of(cp, consentPageSize)
+                        )
+                        for (c in cpage.content) {
+                            objectMapper.writeValue(
+                                g,
+                                ConsentExport(
+                                    c.consentType,
+                                    c.version,
+                                    c.grantedAt.atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_INSTANT)
+                                )
+                            )
+                        }
+                        if (!cpage.hasNext()) break
+                        cp++
+                    }
+                    g.writeEndArray()
+                    g.writeEndObject()
+                }
+            }
+            val len = Files.size(path)
+            val storageKey = Files.newInputStream(path).use { stream ->
+                storage!!.uploadExportStream(parent.id, job.id, stream, len)
+            }
+            val expiresAt = Instant.now().plusSeconds(24L * 60 * 60 * appProperties.export.expiryDays)
+            job.status = "completed"
+            job.completedAt = Instant.now()
+            job.storageKey = storageKey
+            job.expiresAt = expiresAt
+            jobJpaRepository.save(job)
+            log.info("Data export completed: parentId={} jobId={} bytes={}", parent.id, job.id, len)
+        } finally {
+            try {
+                Files.deleteIfExists(path)
+            } catch (e: Exception) {
+                log.warn("Failed to delete temp export file jobId={}: {}", job.id, e.message)
+            }
+        }
     }
 
     private fun toParentExport(p: ParentEntity) = ParentExport(

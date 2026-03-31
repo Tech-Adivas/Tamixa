@@ -34,4 +34,16 @@ sealed class Screen(val route: String) {
     data object OnboardingVoiceInvitation : Screen("onboarding/voice-invitation")
     data object OnboardingAvatarInvitation : Screen("onboarding/avatar-invitation")
     data object ShortContent : Screen("short-content")
+    data object Streak : Screen("streak/{childId}") {
+        fun withId(childId: Long) = "streak/$childId"
+    }
+    data object Vocabulary : Screen("vocabulary/{childId}") {
+        fun withId(childId: Long) = "vocabulary/$childId"
+    }
+    data object Classroom : Screen("classroom/{childId}") {
+        fun withId(childId: Long) = "classroom/$childId"
+    }
+    data object Quiz : Screen("quiz/{storyId}/{childId}") {
+        fun withIds(storyId: Long, childId: Long) = "quiz/$storyId/$childId"
+    }
 }

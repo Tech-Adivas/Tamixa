@@ -26,15 +26,15 @@ class NarrationScriptService(
 
     /**
      * Returns conversational script for the story in the given language.
-     * Curated: from story_narration_scripts if present, else run rewrite.
-     * Generated: run rewrite on story.content.
+     * Curated: from story_narration_scripts if present, else run rewrite ([requestingParentId] ignored).
+     * Generated: run rewrite on story.content — requires [requestingParentId] to match [Story.parentId].
      */
-    fun getNarrationScript(storyId: Long, language: String): String? {
+    fun getNarrationScript(storyId: Long, language: String, requestingParentId: Long? = null): String? {
         val effectiveLang = StreamLanguageUtils.normalize(language)
 
-        return storyLibraryRepository.findById(storyId)?.let { curated ->
+        storyLibraryRepository.findById(storyId)?.let { curated ->
             val translation = translationRepository.findByMasterStoryIdAndLanguage(storyId, effectiveLang)
-            if (translation != null) {
+            return if (translation != null) {
                 narrationScriptRepository.findByTranslationId(translation.id)?.scriptText
                     ?: run {
                         log.info("Narration script not cached for curated storyId={} lang={}, running rewrite", storyId, effectiveLang)
@@ -54,9 +54,19 @@ class NarrationScriptService(
                 log.debug("No translation for curated storyId={} lang={}, using raw content", storyId, effectiveLang)
                 curated.content
             }
-        } ?: storyRepository.findById(storyId)?.let { story ->
+        } ?: run {
+            val story = storyRepository.findById(storyId) ?: return null
+            if (requestingParentId == null || story.parentId != requestingParentId) {
+                log.warn(
+                    "Narration script denied: generated storyId={} requester={} owner={}",
+                    storyId,
+                    requestingParentId,
+                    story.parentId
+                )
+                return null
+            }
             log.info("Generating narration script for generated storyId={} lang={}", storyId, effectiveLang)
-            try {
+            return try {
                 rewriteService.rewrite(
                     story.content,
                     story.age,

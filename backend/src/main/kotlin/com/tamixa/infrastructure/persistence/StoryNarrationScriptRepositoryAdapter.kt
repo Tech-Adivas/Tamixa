@@ -25,6 +25,10 @@ class StoryNarrationScriptRepositoryAdapter(
 
     override fun findByTranslationId(translationId: Long): StoryNarrationScript? =
         jpaRepository.findByTranslationId(translationId)?.toDomain()
+
+    override fun deleteByTranslationId(translationId: Long) {
+        jpaRepository.deleteByTranslationId(translationId)
+    }
 }
 
 private fun StoryNarrationScriptEntity.toDomain() = StoryNarrationScript(

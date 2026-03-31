@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import {
   getMe,
   authStorage,
   clearStoredTokens,
+  getStoredTokenExpiresAt,
   type CurrentUser,
 } from "../lib/api";
+import { logger } from "../lib/logger";
 
 interface AuthState {
   user: CurrentUser | null;
@@ -19,11 +21,41 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+const REFRESH_BEFORE_EXPIRY_MS = 60_000; // refresh 60s before token expires
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleProactiveRefresh = useCallback(() => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    const expiresAt = getStoredTokenExpiresAt();
+    if (!expiresAt) return;
+    const delay = expiresAt - Date.now() - REFRESH_BEFORE_EXPIRY_MS;
+    if (delay <= 0) return; // already expired or too close — let 401 handler deal with it
+    refreshTimerRef.current = setTimeout(async () => {
+      const refresh = authStorage.getRefreshToken();
+      if (!refresh) return;
+      try {
+        const res = await fetch("/api/v1/auth/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: refresh }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          authStorage.setTokens(data.accessToken, data.refreshToken, data.expiresInSeconds);
+          scheduleProactiveRefresh();
+        }
+      } catch {
+        // Silently ignore — the 401 retry in fetchWithAuth will handle it
+      }
+    }, delay);
+  }, []);
 
   const logout = useCallback(() => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     clearStoredTokens();
     setUser(null);
   }, []);
@@ -35,13 +67,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     getMe()
-      .then(setUser)
-      .catch(() => {
+      .then((u) => {
+        setUser(u);
+        scheduleProactiveRefresh();
+      })
+      .catch((err) => {
+        logger.warn("auth", "Failed to restore session", { message: err instanceof Error ? err.message : String(err) });
         clearStoredTokens();
         setUser(null);
       })
       .finally(() => setLoading(false));
-  }, []);
+
+    return () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
+  }, [scheduleProactiveRefresh]);
 
   const value: AuthContextValue = {
     user,

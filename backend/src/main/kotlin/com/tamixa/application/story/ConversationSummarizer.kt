@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
+import java.util.UUID
 
 /**
  * Extracts structured prompt hints (emotion, preferences) from parent conversation
@@ -19,7 +20,8 @@ data class ConversationSummary(
 @Component
 class ConversationSummarizer(
     private val openAI: OpenAIPort,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val storyModeration: StoryModerationService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -47,16 +49,46 @@ Rules: Output only the JSON object. No markdown, no explanation.
             return null
         }
         if (response.isBlank()) return null
+
+        val sessionId = UUID.randomUUID().toString()
+        val rawMod = openAI.getModerationResult(response)
+        if (!rawMod.safe) {
+            log.warn("Conversation summary raw LLM output failed moderation sessionId={}", sessionId)
+            return null
+        }
+
         return try {
-            parseResponse(response)
+            val parsed = parseResponse(response) ?: return null
+            sanitizeParsedSummary(parsed, sessionId)
         } catch (e: Exception) {
             log.warn("Conversation summary parse failed: {}", e.message)
-            // Fallback: concatenate messages as customPrompt, no emotion
-            ConversationSummary(
-                emotionMode = null,
-                customPrompt = messages.joinToString(" ").take(200)
-            )
+            val fallbackText = messages.joinToString(" ").take(200).trim()
+            if (fallbackText.isBlank()) return null
+            try {
+                storyModeration.moderateBeforeSave(
+                    fallbackText,
+                    ModerationContext("conversation-summary-fallback-$sessionId", "en", 8)
+                )
+            } catch (ex: ContentModerationException) {
+                log.warn("Conversation summary fallback rejected by guardrails sessionId={}", sessionId)
+                return null
+            }
+            ConversationSummary(emotionMode = null, customPrompt = fallbackText)
         }
+    }
+
+    private fun sanitizeParsedSummary(summary: ConversationSummary, sessionId: String): ConversationSummary {
+        val cp = summary.customPrompt ?: return summary
+        try {
+            storyModeration.moderateBeforeSave(
+                cp,
+                ModerationContext("conversation-summary-parsed-$sessionId", "en", 8)
+            )
+        } catch (e: ContentModerationException) {
+            log.warn("Conversation summary customPrompt rejected by guardrails sessionId={}", sessionId)
+            return ConversationSummary(summary.emotionMode, null)
+        }
+        return summary
     }
 
     private fun parseResponse(response: String): ConversationSummary? {

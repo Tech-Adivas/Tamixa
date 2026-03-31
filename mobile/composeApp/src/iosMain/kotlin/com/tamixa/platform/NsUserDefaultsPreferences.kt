@@ -93,4 +93,12 @@ class NsUserDefaultsPreferences : PreferencesPort {
         defaults.setInteger(minute.coerceIn(0, 59).toLong(), forKey = "${prefix}bedtime_reminder_minute")
         defaults.synchronize()
     }
+
+    override suspend fun getStoryArtPersonalizationOptIn(): Boolean =
+        defaults.boolForKey("${prefix}story_art_personalization_opt_in")
+
+    override suspend fun setStoryArtPersonalizationOptIn(optIn: Boolean) {
+        defaults.setBool(optIn, forKey = "${prefix}story_art_personalization_opt_in")
+        defaults.synchronize()
+    }
 }

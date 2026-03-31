@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.dao.DataIntegrityViolationException
 import java.net.URL
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 
 @Service
 class AvatarVideoService(
@@ -40,12 +41,25 @@ class AvatarVideoService(
     @Autowired(required = false) private val s3SignedUrlGenerator: S3SignedUrlGenerator?,
     @Autowired(required = false) private val aiApiMetrics: AiApiMetrics?,
 ) {
+    private data class AvatarImagePayload(
+        val parentId: Long,
+        val storagePath: String,
+        val bytes: ByteArray,
+        val contentType: String,
+        val heygenTalkingPhotoId: String?
+    )
+
     private val log = LoggerFactory.getLogger(javaClass)
     private val heyGenClient: HeyGenAvatarVideoClient? = heyGenClientProvider.getIfAvailable()
     private val replicateClient: ReplicateSadTalkerClient? = replicateClientProvider.getIfAvailable()
     private val gooeyClient: GooeyLipSyncClient? = gooeyClientProvider.getIfAvailable()
     private val didClient: DidAvatarVideoClient? = didClientProvider.getIfAvailable()
     private val videoStorage: StoryAvatarVideoStoragePort? = storyAvatarVideoStorageProvider.getIfAvailable()
+    /**
+     * Avoid creating duplicate HeyGen talking photos for the same uploaded avatar.
+     * Keyed by stable avatar storage path; refreshed when avatar path changes.
+     */
+    private val heyGenTalkingPhotoByAvatarPath = ConcurrentHashMap<String, String>()
 
     /**
      * Get signed URL for avatar video if READY. Triggers async generation if not exists.
@@ -69,7 +83,14 @@ class AvatarVideoService(
             AvatarVideoStatus.READY -> {
                 existing.storagePath?.let { path -> return buildSignedUrl(path) }
             }
-            AvatarVideoStatus.PENDING, AvatarVideoStatus.PROCESSING -> return null
+            AvatarVideoStatus.PENDING -> return null
+            AvatarVideoStatus.PROCESSING -> {
+                val refreshed = reconcileProcessingRecord(existing)
+                if (refreshed?.status == AvatarVideoStatus.READY) {
+                    refreshed.storagePath?.let { path -> return buildSignedUrl(path) }
+                }
+                return null
+            }
             AvatarVideoStatus.FAILED -> {
                 storyAvatarVideoRepository.delete(existing)
                 log.info("Avatar video: cleared FAILED record for retry storyId={} parentId={}", storyId, parentId)
@@ -163,7 +184,14 @@ class AvatarVideoService(
         val existing = storyAvatarVideoRepository.findByStoryAndParent(
             storyId, storySource, parentId, language, voiceProfile
         ) ?: return null
-        return Pair(existing.status, existing.errorMessage)
+        val refreshed = if (existing.status == AvatarVideoStatus.PROCESSING) {
+            reconcileProcessingRecord(existing)
+                ?: storyAvatarVideoRepository.findByStoryAndParent(storyId, storySource, parentId, language, voiceProfile)
+                ?: existing
+        } else {
+            existing
+        }
+        return Pair(refreshed.status, refreshed.errorMessage)
     }
 
     /**
@@ -218,7 +246,7 @@ class AvatarVideoService(
                     runDidFlow(storyId, storySource, parentId, language, voiceProfile, audioUrl)
                 }
                 gooeyClient != null -> {
-                    val textPrompt = narrationScriptService.getNarrationScript(storyId, language)?.takeIf { it.isNotBlank() }
+                    val textPrompt = narrationScriptService.getNarrationScript(storyId, language, parentId)?.takeIf { it.isNotBlank() }
                     if (textPrompt == null || textPrompt.isBlank()) {
                         log.warn("Avatar video: no narration script for Gooey storyId={} lang={}", storyId, language)
                         markFailed(storyId, storySource, parentId, language, voiceProfile, "No story script for avatar video (ensure story has narration)")
@@ -251,26 +279,36 @@ class AvatarVideoService(
         voiceProfile: String,
         audioUrl: String
     ) {
-        val (imageBytes, contentType) = getAvatarImageBytes(parentId) ?: run {
+        val heygen = heyGenClient ?: run {
+            markFailed(storyId, storySource, parentId, language, voiceProfile, "HeyGen client not configured")
+            return
+        }
+        val avatar = getAvatarImagePayload(parentId) ?: run {
             markFailed(storyId, storySource, parentId, language, voiceProfile, "No avatar image")
             return
         }
-        val talkingPhotoId: String
         try {
-            talkingPhotoId = heyGenClient!!.uploadTalkingPhoto(imageBytes, contentType)
-                ?: run {
-                    markFailed(storyId, storySource, parentId, language, voiceProfile, "HeyGen talking photo upload failed")
-                    return
-                }
-        } catch (e: HeyGenCreateVideoException) {
-            markFailed(storyId, storySource, parentId, language, voiceProfile, e.message ?: "HeyGen talking photo upload failed")
-            return
-        }
-        try {
-            val videoId = heyGenClient.createVideo(talkingPhotoId, audioUrl)
+            var talkingPhotoId = getOrCreateHeyGenTalkingPhotoId(avatar)
+            val videoId = heygen.createVideo(talkingPhotoId, audioUrl)
             updatePredictionId(storyId, storySource, parentId, language, voiceProfile, videoId)
             pollAndCompleteHeyGen(storyId, storySource, parentId, language, voiceProfile, videoId)
         } catch (e: HeyGenCreateVideoException) {
+            // If cached talking photo became invalid server-side, clear cache and retry once with fresh upload.
+            val msg = e.message.orEmpty().lowercase()
+            if (msg.contains("talking photo")) {
+                heyGenTalkingPhotoByAvatarPath.remove(avatar.storagePath)
+                persistHeyGenTalkingPhotoId(avatar.parentId, avatar.storagePath, null)
+                try {
+                    val talkingPhotoId = getOrCreateHeyGenTalkingPhotoId(avatar)
+                    val videoId = heygen.createVideo(talkingPhotoId, audioUrl)
+                    updatePredictionId(storyId, storySource, parentId, language, voiceProfile, videoId)
+                    pollAndCompleteHeyGen(storyId, storySource, parentId, language, voiceProfile, videoId)
+                    return
+                } catch (retryError: HeyGenCreateVideoException) {
+                    markFailed(storyId, storySource, parentId, language, voiceProfile, retryError.message ?: "HeyGen create video failed")
+                    return
+                }
+            }
             markFailed(storyId, storySource, parentId, language, voiceProfile, e.message ?: "HeyGen create video failed")
         }
     }
@@ -345,17 +383,52 @@ class AvatarVideoService(
         pollAndCompleteGooey(storyId, storySource, parentId, language, voiceProfile, jobId)
     }
 
-    private fun getAvatarImageBytes(parentId: Long): Pair<ByteArray, String>? {
+    private fun getAvatarImagePayload(parentId: Long): AvatarImagePayload? {
         val avatar = parentAvatarRepository.findByParentId(parentId) ?: return null
         val url = buildSignedUrl(avatar.storagePath) ?: return null
         return try {
             val bytes = URL(url).openStream().readBytes()
             val contentType = if (avatar.contentType.contains("png")) "image/png" else "image/jpeg"
-            Pair(bytes, contentType)
+            AvatarImagePayload(
+                parentId = avatar.parentId,
+                storagePath = avatar.storagePath,
+                bytes = bytes,
+                contentType = contentType,
+                heygenTalkingPhotoId = avatar.heygenTalkingPhotoId
+            )
         } catch (e: Exception) {
             log.warn("Failed to fetch avatar bytes: {}", e.message)
             null
         }
+    }
+
+    private fun getOrCreateHeyGenTalkingPhotoId(avatar: AvatarImagePayload): String {
+        avatar.heygenTalkingPhotoId?.takeIf { it.isNotBlank() }?.let { persisted ->
+            heyGenTalkingPhotoByAvatarPath[avatar.storagePath] = persisted
+            log.info("Avatar video: reusing persisted HeyGen talking photo parentId={} path={}", avatar.parentId, avatar.storagePath)
+            return persisted
+        }
+        heyGenTalkingPhotoByAvatarPath[avatar.storagePath]?.let {
+            log.info("Avatar video: reusing cached HeyGen talking photo parentId={} path={}", avatar.parentId, avatar.storagePath)
+            return it
+        }
+        val created = heyGenClient!!.uploadTalkingPhoto(avatar.bytes, avatar.contentType)
+            ?: throw HeyGenCreateVideoException("HeyGen talking photo upload failed")
+        heyGenTalkingPhotoByAvatarPath[avatar.storagePath] = created
+        persistHeyGenTalkingPhotoId(avatar.parentId, avatar.storagePath, created)
+        log.info("Avatar video: created new HeyGen talking photo parentId={} path={}", avatar.parentId, avatar.storagePath)
+        return created
+    }
+
+    private fun persistHeyGenTalkingPhotoId(parentId: Long, storagePath: String, talkingPhotoId: String?) {
+        val current = parentAvatarRepository.findByParentId(parentId) ?: return
+        if (current.storagePath != storagePath) return
+        parentAvatarRepository.save(
+            current.copy(
+                heygenTalkingPhotoId = talkingPhotoId,
+                updatedAt = Instant.now()
+            )
+        )
     }
 
     private fun pollAndCompleteHeyGen(
@@ -384,7 +457,58 @@ class AvatarVideoService(
                 else -> { /* Pending, continue */ }
             }
         }
-        markFailed(storyId, storySource, parentId, language, voiceProfile, "Timeout waiting for HeyGen")
+        markProcessing(
+            storyId,
+            storySource,
+            parentId,
+            language,
+            voiceProfile,
+            "Timeout waiting for HeyGen; still processing upstream. Checking status will continue on subsequent requests."
+        )
+    }
+
+    private fun reconcileProcessingRecord(existing: StoryAvatarVideo): StoryAvatarVideo? {
+        if (existing.status != AvatarVideoStatus.PROCESSING) return existing
+        val predictionId = existing.replicatePredictionId ?: return existing
+        // For now, reconciliation is only needed for HeyGen, where upstream may complete after local timeout.
+        if (heyGenClient == null || appProperties.avatarVideo.provider.lowercase() != "heygen") return existing
+        return when (val result = heyGenClient.getVideoStatus(predictionId)) {
+            is HeyGenAvatarVideoClient.AvatarVideoResult.Succeeded -> {
+                downloadAndStore(
+                    existing.storyId,
+                    existing.storySource,
+                    existing.parentId,
+                    existing.language,
+                    existing.voiceProfile,
+                    result.videoUrl
+                )
+                storyAvatarVideoRepository.findByStoryAndParent(
+                    existing.storyId,
+                    existing.storySource,
+                    existing.parentId,
+                    existing.language,
+                    existing.voiceProfile
+                )
+            }
+            is HeyGenAvatarVideoClient.AvatarVideoResult.Error -> {
+                markFailed(
+                    existing.storyId,
+                    existing.storySource,
+                    existing.parentId,
+                    existing.language,
+                    existing.voiceProfile,
+                    result.message
+                )
+                storyAvatarVideoRepository.findByStoryAndParent(
+                    existing.storyId,
+                    existing.storySource,
+                    existing.parentId,
+                    existing.language,
+                    existing.voiceProfile
+                )
+            }
+            else -> existing
+        }
     }
 
     private fun pollAndCompleteDid(
@@ -605,6 +729,28 @@ class AvatarVideoService(
             updatedAt = Instant.now()
         ))
         log.warn("Avatar video FAILED storyId={} parentId={}: {}", storyId, parentId, error)
+    }
+
+    @Transactional
+    private fun markProcessing(
+        storyId: Long,
+        storySource: String,
+        parentId: Long,
+        language: String,
+        voiceProfile: String,
+        info: String
+    ) {
+        val v = storyAvatarVideoRepository.findByStoryAndParent(
+            storyId, storySource, parentId, language, voiceProfile
+        ) ?: return
+        storyAvatarVideoRepository.save(
+            v.copy(
+                status = AvatarVideoStatus.PROCESSING,
+                errorMessage = info.take(500),
+                updatedAt = Instant.now()
+            )
+        )
+        log.info("Avatar video still PROCESSING storyId={} parentId={}: {}", storyId, parentId, info)
     }
 
     private fun buildSignedUrl(storagePath: String): String? {

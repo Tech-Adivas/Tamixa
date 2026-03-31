@@ -44,6 +44,12 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+  tomcat:
+    threads:
+      max: ${TOMCAT_THREADS_MAX:200}
+      min-spare: ${TOMCAT_THREADS_MIN_SPARE:10}
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:8192}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:100}
 
 # Actuator: health groups, metrics
 management:
@@ -62,7 +68,8 @@ management:
         liveness:
           include: ping
         readiness:
-          include: db,redis,diskSpace
+          # Redis optional in dev; prod profile adds redis when Redis is required for scaling.
+          include: db,diskSpace
   health:
     redis:
       enabled: true
@@ -72,6 +79,13 @@ management:
         enabled: true
     tags:
       application: ${spring.application.name}
+    distribution:
+      # Enable histogram buckets for admin story update timer so Prometheus can compute p95/p99.
+      percentiles-histogram:
+        admin_story_update_latency: true
+      # SLO buckets (seconds): 0.25s, 0.5s, 1s, 2s, 5s, 10s, 20s, 60s, 120s.
+      slo:
+        admin_story_update_latency: 250ms,500ms,1s,2s,5s,10s,20s,60s,120s
 
 logging:
   file:
@@ -127,9 +141,13 @@ app:
     enabled: ${RATE_LIMIT_ENABLED:true}
     # Set true for multi-instance: uses Redis. Requires Redis. Default false.
     use-redis: ${RATE_LIMIT_USE_REDIS:false}
+    # When false, Redis errors during limit checks return 503 (prod recommended with use-redis=true).
+    redis-fail-open: ${RATE_LIMIT_REDIS_FAIL_OPEN:true}
     requests-per-minute: ${RATE_LIMIT_REQUESTS_PER_MINUTE:100}
     # Admin dashboard: higher limit per IP (no full bypass) to prevent abuse if admin JWT is compromised.
     admin-requests-per-minute: ${RATE_LIMIT_ADMIN_REQUESTS_PER_MINUTE:200}
+    # /auth/me + /auth/refresh: separate from general so token refresh is not starved (avoids false "session expired").
+    session-requests-per-minute: ${RATE_LIMIT_SESSION_REQUESTS_PER_MINUTE:300}
     story-generation-free-per-hour: ${STORY_RATE_LIMIT_FREE:10}
     story-generation-paid-per-hour: ${STORY_RATE_LIMIT_PAID:60}
     story-generation-suspicious-per-hour: ${STORY_RATE_LIMIT_SUSPICIOUS:2}
@@ -144,8 +162,10 @@ app:
     model: ${OPENAI_MODEL:gpt-4o-mini}
     max-tokens: ${OPENAI_MAX_TOKENS:1024}
     connect-timeout-ms: ${OPENAI_CONNECT_TIMEOUT_MS:15000}
-    # Regenerate with prompt generates 900-1500 word stories; 3 min allows full response (60s can timeout)
+    # Regenerate with prompt generates ~900-word stories; 3 min allows full response (60s can timeout)
     read-timeout-ms: ${OPENAI_READ_TIMEOUT_MS:180000}
+    # When true, missing OPENAI_API_KEY causes moderation to fail closed (reject). Default false for local dev.
+    moderation-required: ${OPENAI_MODERATION_REQUIRED:false}
     retry:
       max-attempts: ${OPENAI_RETRY_MAX_ATTEMPTS:3}
       initial-interval-ms: ${OPENAI_RETRY_INITIAL_MS:1000}
@@ -160,13 +180,34 @@ app:
     max-wait-sec: ${SORA_MAX_WAIT_SEC:300}
   story:
     cache-ttl-hours: ${STORY_CACHE_TTL_HOURS:24}
-    max-words: ${STORY_MAX_WORDS:1500}
+    # Max words for generated stories and for curated pipeline translation + rewrite (prompts + hard clamp).
+    max-words: ${STORY_MAX_WORDS:900}
     # Safety: theme allowlist (empty = allow any; comma-separated for restrict mode)
     theme-allowlist: ${STORY_THEME_ALLOWLIST:}
     # Story safety score threshold (0-100). Reject if score < threshold.
     safety-score-threshold: ${STORY_SAFETY_SCORE_THRESHOLD:60}
     # Custom keyword blocklist for moderation layer 2 (comma-separated)
     keyword-blocklist: ${STORY_KEYWORD_BLOCKLIST:}
+    # When true, generated stories require admin approval (PENDING_REVIEW) before TTS/cover async pipeline starts.
+    human-review-before-narration: ${STORY_HUMAN_REVIEW_BEFORE_NARRATION:false}
+  # Library soft-delete: Super Admin delete hides rows for retention-days, then scheduled purge removes them permanently.
+  library-story-soft-delete:
+    retention-days: ${LIBRARY_STORY_SOFT_DELETE_RETENTION_DAYS:30}
+    purge-enabled: ${LIBRARY_STORY_SOFT_DELETE_PURGE_ENABLED:true}
+    purge-cron: ${LIBRARY_STORY_SOFT_DELETE_PURGE_CRON:0 0 4 * * *}
+  # Optional: reusable structured-output guardrails HTTP service (Python, separate repo). See guardrails-service/README.md
+  guardrails-service:
+    enabled: ${GUARDRAILS_SERVICE_ENABLED:false}
+    base-url: ${GUARDRAILS_SERVICE_URL:}
+    api-key: ${GUARDRAILS_SERVICE_API_KEY:}
+    connect-timeout-ms: ${GUARDRAILS_SERVICE_CONNECT_TIMEOUT_MS:2000}
+    read-timeout-ms: ${GUARDRAILS_SERVICE_READ_TIMEOUT_MS:15000}
+    fail-open-on-error: ${GUARDRAILS_SERVICE_FAIL_OPEN:false}
+  control-plane:
+    # Agentic SDLC spine: parent story generation registers workflow runs (Flyway V75+V76). Set false for tests or if seed not applied.
+    story-workflow-integration-enabled: ${TAMIXA_CONTROL_PLANE_STORY_WORKFLOW:true}
+    story-project-code: ${TAMIXA_CONTROL_PLANE_STORY_PROJECT_CODE:tamixa}
+    story-workflow-key: ${TAMIXA_CONTROL_PLANE_STORY_WORKFLOW_KEY:story.create_with_narration}
   # AI cost protection: token limits
   ai-token-limits:
     per-parent-daily: ${AI_TOKEN_LIMIT_PER_PARENT_DAILY:50000}
@@ -175,6 +216,9 @@ app:
   translation:
     # openai = real translation via OpenAI; simulated = dev-only prefix [lang]
     provider: ${TRANSLATION_PROVIDER:simulated}
+  # Curated library ops flow (recommended): raw draft → AI rephrase/edit (TA) → Run pipeline (translate+rewrite
+  # scripts only, no TTS) with audio-after-approval=true → Submit for review → Approve narration → Generate audio.
+  # See docs/ARCHITECTURE_AND_FLOWS.md §9.
   translation-pipeline:
     source-language: ${TRANSLATION_SOURCE_LANGUAGE:ta}  # Skip translation when target == source
     target-languages: ${TRANSLATION_TARGET_LANGUAGES:en,hi,te,kn,ml}  # comma-separated, parsed as list
@@ -189,21 +233,29 @@ app:
     language-timeout-minutes: ${TRANSLATION_LANGUAGE_TIMEOUT_MINUTES:5}
     # Total pipeline timeout (minutes) when processing all languages in parallel. Increase if languages frequently hit "Cancelled after total timeout" (e.g. 60–90 for 6 langs under load).
     total-timeout-minutes: ${TRANSLATION_PIPELINE_TOTAL_TIMEOUT_MINUTES:60}
-    # When true (default): pipeline runs only when "Submit for review" is used. When false, publish/update also triggers pipeline (legacy).
+    # When true (default): publish/update does not auto-trigger the library pipeline (legacy off). Submit for review queues the story; translate/TTS are started explicitly (Generate translations / Generate audio) when audio-after-approval is true.
     pipeline-on-submit-only: ${PIPELINE_ON_SUBMIT_ONLY:true}
-    # When true (default): Submit for review does NOT trigger pipeline; use "Story to Speech" after approval to generate audio. When false: pipeline (translate + rewrite + TTS) runs on submit.
+    # When true (default): Submit for review does not run translate/TTS; use Generate translations on story edit first, then Submit for review. When false: legacy full pipeline can run on submit.
     audio-after-approval: ${AUDIO_AFTER_APPROVAL:true}
+    # When false (default): Approve does not start TTS — use Narration (Story to Speech) → Generate audio. When true: Approve kicks off background TTS when audio is still missing.
+    auto-tts-on-approve: ${AUTO_TTS_ON_APPROVE:false}
     # TTS thread pool size (was 1). Increase to 4 for ~4x faster multi-story throughput. Must stay <= app.narration.max-concurrent-tts.
     tts-pool-size: ${TRANSLATION_PIPELINE_TTS_POOL_SIZE:4}
     # Rewrite step timeout (minutes). Prevents indefinite hang when OpenAI is slow. Fails to REWRITE_FAILED, retries.
     rewrite-timeout-minutes: ${TRANSLATION_PIPELINE_REWRITE_TIMEOUT_MINUTES:1}
     # Max minutes a pipeline claim blocks retries. After this, Run pipeline can take over (no Clear stuck needed).
     claim-max-age-minutes: ${TRANSLATION_PIPELINE_CLAIM_MAX_AGE_MINUTES:5}
+    # When true: metadata-only edits on published stories keep narration approval. Source/translation text edits still clear approval.
+    keep-narration-approval-on-metadata-only-published-update: ${KEEP_NARRATION_APPROVAL_ON_METADATA_ONLY_PUBLISHED_UPDATE:false}
+    # When true: TTS only for library_stories.language; playback + parent library + categories + admin pipeline status treat other locales as using master audio.
+    master-only-narration: ${TRANSLATION_MASTER_ONLY_NARRATION:false}
   audio:
     base-url: ${AUDIO_BASE_URL:/audio}
     simulated-tts-delay-ms: ${AUDIO_SIMULATED_TTS_DELAY_MS:500}
     # When CDN disabled, used to build full URLs for stream-url fallback (e.g. http://localhost:8080 for dev, https://api.tamixa.com for prod)
     public-base-url: ${AUDIO_PUBLIC_BASE_URL:http://localhost:8080}
+    # Phase 4: optional MP4 URL (https or path under public-base-url); stream-url returns as hostStoryClipUrl (muted in app)
+    host-story-clip-url: ${AUDIO_HOST_STORY_CLIP_URL:}
   storage:
     type: ${STORAGE_TYPE:s3}
     # S3_BUCKET: bucket name (e.g. tamixa-audio) OR Access Point ARN (e.g. arn:aws:s3:us-east-1:ACCOUNT:accesspoint/name)
@@ -215,6 +267,28 @@ app:
     signed-url-expiry-minutes: ${CDN_SIGNED_URL_EXPIRY_MINUTES:10}
     cache-ttl-seconds: ${CDN_CACHE_TTL_SECONDS:86400}
   narration:
+    # Optional one-switch preset for narration behavior.
+    # Values: bedtime | balanced | energetic
+    # When set, this preset maps style-profile + modulation-intensity automatically.
+    # When empty, manual style-profile/modulation-intensity values are used.
+    preset: ${NARRATION_PRESET:}
+    # Narration style presets:
+    # - default: neutral baseline
+    # - kid-energy: slightly faster pace + shorter pauses
+    # - bedtime-calm: slightly slower pace + longer pauses
+    style-profile: ${NARRATION_STYLE_PROFILE:default}
+    # Modulation intensity for SSML emotion prosody and Google speaking-rate shaping:
+    # - soft: subtle pitch/rate variation
+    # - balanced: default
+    # - high: stronger expressive variation
+    # Suggested combinations:
+    # - bedtime-calm + soft   -> soothing sleep stories
+    # - default + balanced    -> general daily listening
+    # - kid-energy + high     -> lively daytime stories
+    modulation-intensity: ${NARRATION_MODULATION_INTENSITY:balanced}
+    # Regenerate-with-prompt quality floor: if rewritten content is shorter than this,
+    # admin regenerate flow runs expansion passes to restore medium-form narration.
+    regenerate-min-words: ${NARRATION_REGENERATE_MIN_WORDS:900}
     # TTS provider: tamixa | google | openai | sample | simulated. tamixa/sample = SAME pre-recorded audio for ALL stories (no story narration). For story-specific narration use google (or openai). Set NARRATION_TTS_PROVIDER=google and GOOGLE_CLOUD_TTS_API_KEY.
     tts-provider: ${NARRATION_TTS_PROVIDER:tamixa}
     # Tamixa TTS (provider=sample): dir with ta.mp3, hi.mp3, en.mp3 etc. classpath:tts-samples or file:/path/to/samples
@@ -231,6 +305,9 @@ app:
     google-tts-read-timeout-seconds: ${GOOGLE_TTS_READ_TIMEOUT_SECONDS:120}
     # Chirp 3 HD voice name. Options: Achernar, Leda, Kore, Pulcherrima, Gacrux (female); Charon, Orus, Achird, Schedar, Rasalgethi (male). See https://cloud.google.com/text-to-speech/docs/chirp3-hd
     google-tts-voice-name: ${NARRATION_GOOGLE_TTS_VOICE_NAME:Achernar}
+    # Optional per-language voice override map (lang=voiceName, comma-separated).
+    # Example: ta-IN=ta-IN-Wavenet-A,te-IN=te-IN-Standard-A,en-IN=en-IN-Chirp3-HD-Leda
+    google-tts-voice-overrides: ${NARRATION_GOOGLE_TTS_VOICE_OVERRIDES:}
     # Use WaveNet for Indic (ta, hi, te, kn, ml, bn). WaveNet trained on native speakers; often sounds more natural than Chirp3 for Indian languages. Set false to use Chirp3-HD.
     google-tts-use-wavenet-for-indic: ${NARRATION_GOOGLE_TTS_USE_WAVENET_FOR_INDIC:true}
     # Speed 1.0 = default. Use 0.92-0.95 for Indic languages—slightly slower helps natural rhythm and native-like emphasis.
@@ -245,8 +322,8 @@ app:
     max-narration-tokens: ${NARRATION_MAX_TOKENS:16384}
     # Rewrite model: gpt-4o follows conversational prompt better than gpt-4o-mini. Use mini for cheaper/faster.
     rewrite-model: ${NARRATION_REWRITE_MODEL:gpt-4o}
-    # Rewrite temperature: 0.6 for natural, consistent flow (sounds more human); 0.5 = more uniform, 0.7 = more varied
-    rewrite-temperature: ${NARRATION_REWRITE_TEMPERATURE:0.6}
+    # Rewrite temperature: higher = more varied/creative phrasing (still bounded by app.story.max-words in prompts + clamp).
+    rewrite-temperature: ${NARRATION_REWRITE_TEMPERATURE:0.68}
     # Tamil TTS is faster; other languages (en,hi,te,kn,ml) need more time for full-story synthesis (many chunks).
     # Must be >= pipeline language-timeout-minutes when Google TTS used; increase if seeing TTS timeout failures.
     tts-timeout-seconds: ${NARRATION_TTS_TIMEOUT:300}
@@ -272,12 +349,14 @@ app:
   voice:
     encryption-key: ${VOICE_ENCRYPTION_KEY:}
     max-file-size-bytes: 10485760
-  # Cloned-voice story narration: ElevenLabs Instant Voice Cloning (IVC). Adapter created when ELEVENLABS_API_KEY is set.
-  # API key: https://elevenlabs.io/app/settings/api-keys — plan must include Instant Voice Cloning. Docs: https://elevenlabs.io/docs/eleven-api/guides/cookbooks/voices/instant-voice-cloning
-  # Tamil (ta) requires ElevenLabs only (XTTS does not support Tamil). S3 required for reference storage (create-from-reference on first use).
+  # Cloned-voice story narration: Google Chirp 3 primary, optional ElevenLabs fallback.
+  # ElevenLabs fallback requires ELEVENLABS_API_KEY: https://elevenlabs.io/app/settings/api-keys
+  # Tamil (ta) requires a managed cloned-voice provider (Google or ElevenLabs); XTTS does not support Tamil.
   voice-cloning:
     enabled: ${VOICE_CLONING_ENABLED:false}
-    provider: ${VOICE_CLONING_PROVIDER:elevenlabs}
+    provider: ${VOICE_CLONING_PROVIDER:google}
+    # Production recommendation: Google Chirp 3 primary + ElevenLabs fallback.
+    allow-eleven-labs-fallback: ${VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK:true}
     google-cloud-api-key: ${GOOGLE_CLOUD_TTS_API_KEY:}
     eleven-labs-api-key: ${ELEVENLABS_API_KEY:}
     eleven-labs-base-url: ${ELEVENLABS_BASE_URL:https://api.elevenlabs.io}
@@ -330,3 +409,23 @@ app:
     clips-per-month-premium-plus: ${SHARE_CLIP_CLIPS_PER_MONTH:10}
     share-base-url: ${SHARE_BASE_URL:https://tamixa.com}
     ffmpeg-enabled: ${SHARE_CLIP_FFMPEG_ENABLED:false}
+  export:
+    expiry-days: ${EXPORT_EXPIRY_DAYS:7}
+    signed-url-expiry-minutes: ${EXPORT_SIGNED_URL_EXPIRY_MINUTES:60}
+    process-cron: ${EXPORT_PROCESS_CRON:0 */2 * * * *}
+    story-page-size: ${EXPORT_STORY_PAGE_SIZE:200}
+    consent-page-size: ${EXPORT_CONSENT_PAGE_SIZE:100}
+  bulk-job:
+    # When true, use Redis for bulk job state (multi-instance). Requires Redis. Default false.
+    use-redis: ${BULK_JOB_USE_REDIS:false}
+  push:
+    # FCM (Android): Server key from Firebase Console > Project Settings > Cloud Messaging
+    fcm-server-key: ${FCM_SERVER_KEY:}
+    # APNs: enable only when credentials are real; placeholder keys in YAML still "exist" and would otherwise activate the bean and fail at startup.
+    apns-enabled: ${APNS_ENABLED:false}
+    # APNs (iOS): Key ID, Team ID, and .p8 key file path from Apple Developer
+    apns-key-id: ${APNS_KEY_ID:}
+    apns-team-id: ${APNS_TEAM_ID:}
+    apns-key-path: ${APNS_KEY_PATH:}
+    apns-bundle-id: ${APNS_BUNDLE_ID:com.tamixa.app}
+    apns-production: ${APNS_PRODUCTION:false}

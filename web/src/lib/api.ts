@@ -54,14 +54,24 @@ function getStoredRefreshToken(): string | null {
   return localStorage.getItem("tamixa_refresh_token");
 }
 
-function setStoredTokens(access: string, refresh: string) {
+function setStoredTokens(access: string, refresh: string, expiresInSeconds?: number) {
   localStorage.setItem("tamixa_access_token", access);
   localStorage.setItem("tamixa_refresh_token", refresh);
+  if (expiresInSeconds != null) {
+    const expiresAt = Date.now() + expiresInSeconds * 1000;
+    localStorage.setItem("tamixa_token_expires_at", String(expiresAt));
+  }
 }
 
 export function clearStoredTokens() {
   localStorage.removeItem("tamixa_access_token");
   localStorage.removeItem("tamixa_refresh_token");
+  localStorage.removeItem("tamixa_token_expires_at");
+}
+
+export function getStoredTokenExpiresAt(): number | null {
+  const v = localStorage.getItem("tamixa_token_expires_at");
+  return v ? Number(v) : null;
 }
 
 export interface AuthResponse {
@@ -74,6 +84,9 @@ export interface AuthResponse {
 export interface CurrentUser {
   email: string;
   role: string;
+  nickname?: string | null;
+  displayName?: string | null;
+  storyArtPersonalizationOptIn?: boolean;
 }
 
 export interface LibraryStory {
@@ -140,6 +153,13 @@ export interface StreamUrlResponse {
   streamUrl: string;
   avatarUrl?: string | null;
   avatarVideoUrl?: string | null;
+  avatarStatus?: string | null;
+  voiceFallback?: boolean;
+  wordTimings?: { word: string; startSec: number; endSec: number }[] | null;
+  durationSeconds?: number | null;
+  narrativeScenes?: unknown[] | null;
+  /** Muted supplementary clip; pair with primary story audio (muted looping video on web). */
+  hostStoryClipUrl?: string | null;
 }
 
 /** Playback manifest (timeline) — scenes with segments for subtitle sync. From GET /stories/{id}/timeline. */
@@ -263,6 +283,19 @@ export async function getMe(): Promise<CurrentUser> {
   const res = await fetchWithAuth("/auth/me");
   if (!res.ok) throw new Error("Unauthorized");
   return res.json();
+}
+
+export async function updateStoryArtPersonalizationOptIn(optIn: boolean): Promise<boolean> {
+  const res = await fetchWithAuth("/auth/me/story-art-personalization", {
+    method: "PATCH",
+    body: JSON.stringify({ optIn }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err?.message ?? "Failed to update personalization setting");
+  }
+  const data = (await res.json().catch(() => ({}))) as { optIn?: boolean };
+  return data.optIn === true;
 }
 
 /** Permanently delete the authenticated account and all data (GDPR). */
@@ -702,14 +735,16 @@ export async function getListeningProgress(days = 30): Promise<ListeningProgress
   return res.json();
 }
 
-// Magic link (sends link + 6-digit code to email)
+// Legacy compatibility: old callers ask for "magic link" but backend now supports passwordless code flow only.
 export async function requestMagicLink(email: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/auth/magic-link/request`, {
+  const res = await fetch(`${API_BASE}/auth/passwordless`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
   });
-  if (!res.ok) throw new Error("Failed to send magic link");
+  if (!res.ok) throw new Error("Failed to send code");
+  const data = (await res.json()) as { sent?: boolean };
+  if (!data.sent) throw new Error("Failed to send code");
 }
 
 // Passwordless email code (Option A: works for new and existing users)
@@ -772,6 +807,37 @@ export async function uploadVoiceProfile(
     throw new Error(err?.message ?? "Failed to upload");
   }
   return res.json();
+}
+
+/** Matches backend [com.tamixa.api.dto.VoiceCloningJobDto] JSON. */
+export interface VoiceCloningJob {
+  id: number;
+  parentId: number;
+  audioStoragePath: string;
+  audioFileSizeBytes: number;
+  voiceName: string;
+  elevenLabsVoiceId?: string | null;
+  status: string;
+  errorMessage?: string | null;
+  createdAt: string;
+  completedAt?: string | null;
+}
+
+/** Matches backend [com.tamixa.api.dto.VoiceTierDto] JSON. */
+export interface VoiceTier {
+  id: number;
+  name: string;
+  priceMonthly: number;
+  priceYearly: number;
+  maxChildren: number;
+  maxVoices: number;
+  maxAvatarVideos: number;
+  maxSoundscapes: number;
+  allowsVoiceCloning: boolean;
+  allowsAvatarVideo: boolean;
+  allowsSoundscapes: boolean;
+  allowsFamilySharing: boolean;
+  analyticsEnabled: boolean;
 }
 
 // Voice cloning

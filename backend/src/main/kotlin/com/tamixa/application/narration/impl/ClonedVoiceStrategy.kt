@@ -38,9 +38,10 @@ class ClonedVoiceStrategy(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** When true, strategy must not call ElevenLabs (e.g. provider=google). Avoids 401 when only Google is configured. */
-    private val useGoogleOnly: Boolean
+    private val preferGooglePrimary: Boolean
         get() = appProperties.voiceCloning.provider.trim().lowercase() == "google"
+    private val allowElevenLabsFallback: Boolean
+        get() = appProperties.voiceCloning.allowElevenLabsFallback
 
     @PostConstruct
     fun logProviderStatus() {
@@ -91,8 +92,8 @@ class ClonedVoiceStrategy(
             log.warn("Cloned voice: Google synthesize returned empty for profileId={}", profileId)
         }
 
-        // 2. Existing ElevenLabs voice (legacy). Skip when provider=google to avoid 401.
-        if (!useGoogleOnly && !voiceId.isNullOrBlank() && elevenLabs != null) {
+        // 2. Existing ElevenLabs voice (legacy / fallback).
+        if (!voiceId.isNullOrBlank() && elevenLabs != null && (!preferGooglePrimary || allowElevenLabsFallback)) {
             log.debug("Cloned voice: ElevenLabs synthesize profileId={} voiceId={} lang={}", profileId, voiceId.take(8), language)
             val bytes = elevenLabs.synthesize(plainText, voiceId, language)
             if (bytes != null && bytes.isNotEmpty()) {
@@ -102,8 +103,15 @@ class ClonedVoiceStrategy(
             log.warn("Cloned voice: ElevenLabs synthesize returned empty for profileId={}, falling back to XTTS if configured", profileId)
         }
 
-        // 3. No voice_id yet: create ElevenLabs voice from reference on first use. Skip when provider=google.
-        if (!useGoogleOnly && !referencePath.isNullOrBlank() && elevenLabs != null && voiceReferenceStorage != null) {
+        // 3. No voice_id yet: create ElevenLabs voice from reference on first use (legacy / fallback).
+        // Important: do not recreate voices when an existing voiceId already failed synthesize
+        // (e.g. invalid API key/permissions). Recreating on every request can hit voice limits.
+        if (voiceId.isNullOrBlank() &&
+            !referencePath.isNullOrBlank() &&
+            elevenLabs != null &&
+            voiceReferenceStorage != null &&
+            (!preferGooglePrimary || allowElevenLabsFallback)
+        ) {
             log.info("Cloned voice: attempting ElevenLabs (create from reference) profileId={} path={} lang={}", profileId, referencePath, language)
             val refBytes = voiceReferenceStorage.getReferenceAudio(referencePath)
             if (refBytes != null && refBytes.isNotEmpty()) {
@@ -134,22 +142,25 @@ class ClonedVoiceStrategy(
                     log.warn("Cloned voice: could not load reference audio for profileId={} path={}, falling back to XTTS if configured", profileId, referencePath)
                 }
             }
-        } else if (!referencePath.isNullOrBlank() && (useGoogleOnly || elevenLabs == null || voiceReferenceStorage == null)) {
+        } else if (voiceId.isNullOrBlank() &&
+            !referencePath.isNullOrBlank() &&
+            (elevenLabs == null || voiceReferenceStorage == null || (preferGooglePrimary && !allowElevenLabsFallback))
+        ) {
             if (VoiceCloningLanguagePolicy.requiresElevenLabsForCloned(language)) {
-                if (useGoogleOnly) {
-                    log.warn("Cloned voice: Tamil requires google_voice_cloning_key. Complete voice cloning (reference + consent upload, run job); profile has reference only. profileId={}", profileId)
+                if (preferGooglePrimary && !allowElevenLabsFallback) {
+                    log.warn("Cloned voice: Tamil requires google_voice_cloning_key when ElevenLabs fallback is disabled. Complete voice cloning (reference + consent upload, run job). profileId={}", profileId)
                 } else {
                     log.warn("Cloned voice: Tamil failed — ElevenLabs={} voiceReferenceStorage={}. Set ELEVENLABS_API_KEY and STORAGE_TYPE=s3 with S3 credentials so reference audio can be loaded. profileId={}", elevenLabs != null, voiceReferenceStorage != null, profileId)
                 }
-            } else if (!useGoogleOnly) {
+            } else if (!preferGooglePrimary || allowElevenLabsFallback) {
                 log.info("Cloned voice: skipping ElevenLabs (elevenLabs={} voiceRefStorage={}); will use XTTS if configured", elevenLabs != null, voiceReferenceStorage != null)
             }
         }
 
         // 4. Fallback: self-hosted XTTS. Never use XTTS for Tamil — it does not support ta (would 500 or wrong language).
         if (VoiceCloningLanguagePolicy.requiresElevenLabsForCloned(language)) {
-            if (useGoogleOnly) {
-                log.warn("Cloned voice: Tamil (ta) requires Google voice cloning (google_voice_cloning_key). XTTS does not support Tamil. Complete voice cloning job for this profile. profileId={}", profileId)
+            if (preferGooglePrimary) {
+                log.warn("Cloned voice: Tamil (ta) requires Google key or ElevenLabs fallback. XTTS does not support Tamil. Complete Google cloning or enable ElevenLabs fallback. profileId={}", profileId)
             } else {
                 log.warn("Cloned voice: Tamil (ta) requires ElevenLabs. XTTS does not support Tamil. See above log for why ElevenLabs path failed. profileId={}", profileId)
             }

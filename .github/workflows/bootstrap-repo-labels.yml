@@ -1,0 +1,38 @@
+# One-time (or repeat-safe) creation of maintainer labels used by workflows.
+# Run: Actions → "Bootstrap repo labels" → Run workflow.
+name: Bootstrap repo labels
+
+on:
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure skip-spec-first exists
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const name = 'skip-spec-first';
+            try {
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name,
+                color: 'FBCA04',
+                description: 'Bypass spec-first-guard (maintainers only; use sparingly; follow up with spec/ADR).',
+              });
+              core.info(`Created label "${name}".`);
+            } catch (e) {
+              const msg = String(e.response?.data?.message || e.message || '');
+              if (e.status === 422 && /already exists/i.test(msg)) {
+                core.info(`Label "${name}" already exists — skipping.`);
+                return;
+              }
+              throw e;
+            }

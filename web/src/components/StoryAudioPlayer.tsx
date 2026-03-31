@@ -11,6 +11,8 @@ export interface StoryAudioPlayerProps {
   videoRef?: React.RefObject<HTMLVideoElement | null>;
   /** Resolved URL for avatar video; when set, player shows video and uses it for playback. */
   avatarVideoUrl?: string | null;
+  /** Optional muted loop alongside audio-only playback (Phase 4 host clip). */
+  hostClipUrl?: string | null;
   isPlaying: boolean;
   isLoading: boolean;
   title: string | null;
@@ -33,6 +35,7 @@ export default function StoryAudioPlayer({
   audioRef,
   videoRef,
   avatarVideoUrl,
+  hostClipUrl,
   isPlaying,
   isLoading,
   title,
@@ -44,6 +47,35 @@ export default function StoryAudioPlayer({
   onSeek,
 }: StoryAudioPlayerProps) {
   const progressRef = useRef<HTMLInputElement | null>(null);
+  const hostClipRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const clip = hostClipRef.current;
+    if (!clip || !hostClipUrl || avatarVideoUrl) return;
+    clip.muted = true;
+    clip.loop = true;
+    clip.playsInline = true;
+    if (isPlaying) {
+      clip.play().catch(() => {});
+    } else {
+      clip.pause();
+    }
+  }, [hostClipUrl, avatarVideoUrl, isPlaying]);
+
+  useEffect(() => {
+    if (!hostClipUrl || avatarVideoUrl || typeof document === "undefined") return;
+    const onVisibility = () => {
+      const clip = hostClipRef.current;
+      if (!clip) return;
+      if (document.hidden) {
+        clip.pause();
+      } else if (isPlaying) {
+        clip.play().catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [hostClipUrl, avatarVideoUrl, isPlaying]);
 
   useEffect(() => {
     if (avatarVideoUrl && videoRef?.current) return;
@@ -88,6 +120,23 @@ export default function StoryAudioPlayer({
       {avatarVideoUrl && videoRef && (
         <div className="story-audio-player-avatar-wrap" style={{ marginBottom: "0.5rem", borderRadius: 8, overflow: "hidden", maxWidth: 200, aspectRatio: "1" }}>
           <video ref={videoRef as React.RefObject<HTMLVideoElement>} src={avatarVideoUrl} playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} aria-hidden />
+        </div>
+      )}
+      {hostClipUrl && !avatarVideoUrl && (
+        <div
+          className="story-audio-player-host-clip-wrap"
+          style={{ marginBottom: "0.5rem", borderRadius: 8, overflow: "hidden", maxWidth: 360, aspectRatio: "16 / 9" }}
+        >
+          <video
+            ref={hostClipRef}
+            src={hostClipUrl}
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            aria-hidden
+          />
         </div>
       )}
       <p className="story-audio-player-title">{title ?? "Loading…"}</p>

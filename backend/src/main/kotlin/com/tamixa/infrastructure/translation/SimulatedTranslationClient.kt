@@ -42,7 +42,11 @@ class SimulatedTranslationClient(
         return TranslatedContent(
             title = title?.let { "[$targetLang] $it" },
             content = "[$targetLang] $content",
-            moral = moral?.let { "[$targetLang] $it" }
+            moral = moral?.let { "[$targetLang] $it" },
+            // Simulated client doesn't model paraphrase; snapshot is unavailable.
+            titleBeforeParaphrase = null,
+            contentBeforeParaphrase = null,
+            moralBeforeParaphrase = null
         )
     }
 }

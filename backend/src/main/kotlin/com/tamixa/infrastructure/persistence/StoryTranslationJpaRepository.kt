@@ -11,35 +11,99 @@ import org.springframework.transaction.annotation.Transactional
 
 interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, Long> {
 
-    fun findByMasterStoryIdAndLanguage(masterStoryId: Long, language: String): StoryTranslationEntity?
-
-    fun findByMasterStoryIdAndLanguageIgnoreCase(masterStoryId: Long, language: String): StoryTranslationEntity?
-
-    fun findByMasterStoryId(masterStoryId: Long, pageable: Pageable): Page<StoryTranslationEntity>
-
-    fun findByLanguage(language: String, pageable: Pageable): Page<StoryTranslationEntity>
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE t.id = :id AND c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL"
+    )
+    fun findActiveById(@Param("id") id: Long): StoryTranslationEntity?
 
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND t.language = :language AND c.narrationApprovedAt IS NOT NULL"
+            "AND c.deletedAt IS NULL AND t.masterStoryId = :masterStoryId AND t.language = :language"
+    )
+    fun findByMasterStoryIdAndLanguage(
+        @Param("masterStoryId") masterStoryId: Long,
+        @Param("language") language: String
+    ): StoryTranslationEntity?
+
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.masterStoryId = :masterStoryId AND LOWER(t.language) = LOWER(:language)"
+    )
+    fun findByMasterStoryIdAndLanguageIgnoreCase(
+        @Param("masterStoryId") masterStoryId: Long,
+        @Param("language") language: String
+    ): StoryTranslationEntity?
+
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.masterStoryId = :masterStoryId"
+    )
+    fun findByMasterStoryId(masterStoryId: Long, pageable: Pageable): Page<StoryTranslationEntity>
+
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.language = :language"
+    )
+    fun findByLanguage(@Param("language") language: String, pageable: Pageable): Page<StoryTranslationEntity>
+
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND EXISTS (" +
+            "SELECT 1 FROM StoryNarrationAudioEntity a WHERE a.translationId = t.id " +
+            "AND a.voiceProfile = 'default' AND a.status = 'READY' AND LENGTH(a.audioUrl) > 0)"
     )
     fun findByLanguageAndMasterNarrationApproved(
         @Param("language") language: String,
         pageable: Pageable
     ): Page<StoryTranslationEntity>
 
+    /**
+     * Same as [findByLanguageAndMasterNarrationApproved] but narration readiness is tied to the **master** language row
+     * (library_stories.language) or legacy master audio_file_url — not the requested translation's audio.
+     */
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND t.language = :language AND c.narrationApprovedAt IS NOT NULL"
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND (" +
+            "EXISTS (" +
+            "SELECT 1 FROM StoryTranslationEntity tm, StoryNarrationAudioEntity a " +
+            "WHERE tm.masterStoryId = c.id AND LOWER(tm.language) = LOWER(c.language) " +
+            "AND a.translationId = tm.id AND a.voiceProfile = 'default' AND a.status = 'READY' AND LENGTH(a.audioUrl) > 0" +
+            ") OR (c.audioFileUrl IS NOT NULL AND LENGTH(c.audioFileUrl) > 0))"
+    )
+    fun findByLanguageAndMasterNarrationApprovedWithMasterAudio(
+        @Param("language") language: String,
+        pageable: Pageable
+    ): Page<StoryTranslationEntity>
+
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL"
     )
     fun findListingByLanguageAndMasterNarrationApproved(
         @Param("language") language: String,
         pageable: Pageable
     ): Page<StoryTranslationListingProjection>
 
+    /** Same as [findListingByLanguageAndMasterNarrationApproved] with master-language narration readiness (master-only mode). */
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND LOWER(c.theme) = LOWER(:theme)"
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND (" +
+            "EXISTS (" +
+            "SELECT 1 FROM StoryTranslationEntity tm, StoryNarrationAudioEntity a " +
+            "WHERE tm.masterStoryId = c.id AND LOWER(tm.language) = LOWER(c.language) " +
+            "AND a.translationId = tm.id AND a.voiceProfile = 'default' AND a.status = 'READY' AND LENGTH(a.audioUrl) > 0" +
+            ") OR (c.audioFileUrl IS NOT NULL AND LENGTH(c.audioFileUrl) > 0))"
+    )
+    fun findListingByLanguageAndMasterNarrationApprovedWithMasterAudio(
+        @Param("language") language: String,
+        pageable: Pageable
+    ): Page<StoryTranslationListingProjection>
+
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+            "AND LOWER(c.theme) = LOWER(:theme)"
     )
     fun findListingByLanguageAndMasterNarrationApprovedAndTheme(
         @Param("language") language: String,
@@ -49,7 +113,10 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
 
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND LOWER(c.theme) = LOWER(:theme)"
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+            "AND LOWER(c.theme) = LOWER(:theme) AND EXISTS (" +
+            "SELECT 1 FROM StoryNarrationAudioEntity a WHERE a.translationId = t.id " +
+            "AND a.voiceProfile = 'default' AND a.status = 'READY' AND LENGTH(a.audioUrl) > 0)"
     )
     fun findByLanguageAndMasterNarrationApprovedAndTheme(
         @Param("language") language: String,
@@ -57,13 +124,62 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
         pageable: Pageable
     ): Page<StoryTranslationEntity>
 
-    fun findListingByLanguage(language: String, pageable: Pageable): Page<StoryTranslationListingProjection>
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+            "AND LOWER(c.theme) = LOWER(:theme) AND (" +
+            "EXISTS (" +
+            "SELECT 1 FROM StoryTranslationEntity tm, StoryNarrationAudioEntity a " +
+            "WHERE tm.masterStoryId = c.id AND LOWER(tm.language) = LOWER(c.language) " +
+            "AND a.translationId = tm.id AND a.voiceProfile = 'default' AND a.status = 'READY' AND LENGTH(a.audioUrl) > 0" +
+            ") OR (c.audioFileUrl IS NOT NULL AND LENGTH(c.audioFileUrl) > 0))"
+    )
+    fun findByLanguageAndMasterNarrationApprovedWithMasterAudioAndTheme(
+        @Param("language") language: String,
+        @Param("theme") theme: String,
+        pageable: Pageable
+    ): Page<StoryTranslationEntity>
 
-    fun existsByMasterStoryIdAndLanguage(masterStoryId: Long, language: String): Boolean
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.language = :language"
+    )
+    fun findListingByLanguage(
+        @Param("language") language: String,
+        pageable: Pageable
+    ): Page<StoryTranslationListingProjection>
 
-    fun findByMasterStoryId(masterStoryId: Long): List<StoryTranslationEntity>
+    @Query(
+        "SELECT CASE WHEN COUNT(t) > 0 THEN true ELSE false END FROM StoryTranslationEntity t, LibraryStoryEntity c " +
+            "WHERE c.id = t.masterStoryId AND c.deletedAt IS NULL AND t.masterStoryId = :masterStoryId " +
+            "AND t.language = :language"
+    )
+    fun existsByMasterStoryIdAndLanguage(
+        @Param("masterStoryId") masterStoryId: Long,
+        @Param("language") language: String
+    ): Boolean
 
-    fun findByStatusIn(statuses: List<TranslationPipelineStatus>): List<StoryTranslationEntity>
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.masterStoryId = :masterStoryId"
+    )
+    fun findByMasterStoryId(@Param("masterStoryId") masterStoryId: Long): List<StoryTranslationEntity>
+
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.status IN :statuses"
+    )
+    fun findByStatusIn(@Param("statuses") statuses: List<TranslationPipelineStatus>): List<StoryTranslationEntity>
+
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.status IN :statuses AND t.retryCount < :maxRetries ORDER BY t.id"
+    )
+    fun findRetryableByStatusIn(
+        @Param("statuses") statuses: List<TranslationPipelineStatus>,
+        @Param("maxRetries") maxRetries: Int,
+        pageable: Pageable
+    ): Page<StoryTranslationEntity>
 
     @Modifying(clearAutomatically = true)
     @Transactional
@@ -99,6 +215,20 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
             "WHERE e.masterStoryId = :masterStoryId AND e.language = :language"
     )
     fun resetRetryCountByMasterStoryIdAndLanguage(masterStoryId: Long, language: String): Int
+
+    /**
+     * After reject / request-changes: all languages back to a clean pipeline state (content rows kept).
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query(
+        "UPDATE StoryTranslationEntity e SET e.status = :pending, e.lastError = null, e.retryCount = 0, " +
+            "e.narrationApprovedAt = null WHERE e.masterStoryId = :masterStoryId"
+    )
+    fun resetPipelineStateForMasterStory(
+        @Param("masterStoryId") masterStoryId: Long,
+        @Param("pending") pending: TranslationPipelineStatus
+    ): Int
 
     fun deleteByMasterStoryId(masterStoryId: Long)
 }

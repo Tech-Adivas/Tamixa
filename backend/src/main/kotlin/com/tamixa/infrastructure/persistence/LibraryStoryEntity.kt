@@ -80,5 +80,18 @@ class LibraryStoryEntity(
     var reviewNotes: String? = null,
 
     @Column(name = "reject_marked_at")
-    var rejectMarkedAt: java.time.Instant? = null
+    var rejectMarkedAt: java.time.Instant? = null,
+
+    @Column(name = "regenerate_prompt_locked", nullable = false)
+    var regeneratePromptLocked: Boolean = false,
+
+    @Column(name = "regenerate_prompt_lock_approved", nullable = false)
+    var regeneratePromptLockApproved: Boolean = false,
+
+    @Column(name = "regenerate_prompt_unlock_requested_at")
+    var regeneratePromptUnlockRequestedAt: java.time.Instant? = null,
+
+    /** When set, row is excluded from listings; purge job deletes permanently after retention. */
+    @Column(name = "deleted_at")
+    var deletedAt: Instant? = null
 )

@@ -30,11 +30,15 @@ class GoogleCloudTtsClientAdapter(
     @org.springframework.beans.factory.annotation.Autowired(required = false) private val aiApiMetrics: AiApiMetrics?,
     @org.springframework.beans.factory.annotation.Value("\${app.narration.google-tts-api-key:}") private val apiKey: String,
     @org.springframework.beans.factory.annotation.Value("\${app.narration.google-tts-voice-name:Achernar}") private val voiceNameSuffix: String,
-    @org.springframework.beans.factory.annotation.Value("\${app.narration.google-tts-speed:1.0}") private val speed: Double,
+    @org.springframework.beans.factory.annotation.Value("\${app.narration.google-tts-speed:0.95}") private val speed: Double,
     @org.springframework.beans.factory.annotation.Value("\${app.narration.google-tts-use-wavenet-for-indic:true}") private val useWavenetForIndic: Boolean,
     @org.springframework.beans.factory.annotation.Value("\${app.narration.google-tts-audio-encoding:LINEAR16}") private val audioEncoding: String,
     @org.springframework.beans.factory.annotation.Value("\${app.narration.google-tts-sample-rate-hertz:44100}") private val sampleRateHertz: Int,
-    @org.springframework.beans.factory.annotation.Value("\${app.narration.google-tts-volume-gain-db:0}") private val volumeGainDb: Double
+    @org.springframework.beans.factory.annotation.Value("\${app.narration.google-tts-volume-gain-db:0}") private val volumeGainDb: Double,
+    @org.springframework.beans.factory.annotation.Value("\${app.narration.google-tts-voice-overrides:}") private val voiceOverridesRaw: String,
+    @org.springframework.beans.factory.annotation.Value("\${app.narration.style-profile:default}") private val styleProfile: String,
+    @org.springframework.beans.factory.annotation.Value("\${app.narration.modulation-intensity:balanced}") private val modulationIntensity: String,
+    @org.springframework.beans.factory.annotation.Value("\${app.narration.preset:}") private val narrationPreset: String
 ) : TtsClientPort {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -55,14 +59,25 @@ class GoogleCloudTtsClientAdapter(
         "kn" to "kn-IN", "kannada" to "kn-IN",
         "ml" to "ml-IN", "malayalam" to "ml-IN",
         "bn" to "bn-IN", "bengali" to "bn-IN",
-        "en" to "en-IN", "english" to "en-IN"
+        "en" to "en-IN", "english" to "en-IN",
+        "en-us" to "en-US", "en-gb" to "en-GB"
     )
 
-    /** Chirp3-HD voices: most natural, native-sounding for Indian languages. Voice name from config (e.g. Achernar, Leda, Kore). */
-    private fun nativeVoiceName(languageCode: String): String {
-        val suffix = voiceNameSuffix.trim()
-        val normalized = if (suffix.isNotBlank() && suffix.lowercase() in CHIRP3_HD_VOICE_NAMES) {
-            suffix.lowercase().replaceFirstChar { it.uppercaseChar() }
+    private val voiceOverrides: Map<String, String> = parseVoiceOverrides(voiceOverridesRaw)
+
+    private val roleSpecificChirpVoice = mapOf(
+        "narrator-female" to "Achernar",
+        "child-female" to "Kore",
+        "child-male" to "Charon",
+        "child-group" to "Kore",
+        "default" to "Achernar"
+    )
+
+    /** Chirp3-HD voices: most natural, native-sounding for Indian languages. */
+    private fun nativeVoiceName(languageCode: String, preferredSuffix: String? = null): String {
+        val requestedSuffix = preferredSuffix?.trim().orEmpty().ifBlank { voiceNameSuffix.trim() }
+        val normalized = if (requestedSuffix.isNotBlank() && requestedSuffix.lowercase() in CHIRP3_HD_VOICE_NAMES) {
+            requestedSuffix.lowercase().replaceFirstChar { it.uppercaseChar() }
         } else {
             "Achernar"
         }
@@ -83,17 +98,63 @@ class GoogleCloudTtsClientAdapter(
             log.warn("Google Cloud TTS: SSML yielded empty text")
             return null
         }
-        val (languageCode, voiceName) = resolveVoice(language)
+        val (languageCode, voiceCandidates) = resolveVoiceCandidates(language, voiceProfile)
         aiApiMetrics?.recordGoogleTts(1, plainText.length)
-        log.info("Google TTS: requested language={} -> languageCode={} voice={}", language, languageCode, voiceName)
-        val effectiveSpeed = speed.coerceIn(0.25, 2.0)
+        log.info(
+            "Google TTS: requested language={} -> languageCode={} voices={}",
+            language,
+            languageCode,
+            voiceCandidates.joinToString("|")
+        )
+        val effectiveSpeed = applyStyleToSpeed(speed.coerceIn(0.25, 2.0))
 
+        var lastFailure: Exception? = null
+        for ((idx, voiceName) in voiceCandidates.withIndex()) {
+            try {
+                val audio = synthesizeWithVoice(trimmed, plainText, language, languageCode, voiceName, effectiveSpeed)
+                if (idx > 0) {
+                    log.info(
+                        "Google TTS voice fallback recovered synthesis: lang={} languageCode={} voice={}",
+                        language,
+                        languageCode,
+                        voiceName
+                    )
+                }
+                return audio
+            } catch (e: Exception) {
+                lastFailure = e
+                val msg = ApiErrorExtractor.extract(e, objectMapper)
+                log.warn(
+                    "Google TTS voice candidate failed ({}/{}): languageCode={} voice={} err={}",
+                    idx + 1,
+                    voiceCandidates.size,
+                    languageCode,
+                    voiceName,
+                    msg
+                )
+            }
+        }
+
+        throw IllegalStateException(
+            "Google TTS failed for all candidate voices: ${lastFailure?.message ?: "unknown error"}",
+            lastFailure
+        )
+    }
+
+    private fun synthesizeWithVoice(
+        trimmedSsml: String,
+        plainText: String,
+        language: String,
+        languageCode: String,
+        voiceName: String,
+        effectiveSpeed: Double
+    ): ByteArray {
         // Prefer SSML when valid (has prosody/breaks for expression) and fits or can be chunked
-        val ssmlChunks = if (isValidSsml(trimmed)) chunkSsml(trimmed) else emptyList()
+        val ssmlChunks = if (isValidSsml(trimmedSsml)) chunkSsml(trimmedSsml) else emptyList()
         val useSsml = ssmlChunks.isNotEmpty()
-
         val allBytes = mutableListOf<ByteArray>()
         var ssmlFailed = false
+
         if (useSsml) {
             for ((i, ssmlChunk) in ssmlChunks.withIndex()) {
                 try {
@@ -139,11 +200,9 @@ class GoogleCloudTtsClientAdapter(
             log.warn("Google TTS produced no audio")
             throw RuntimeException("Google TTS: produced no audio")
         }
-        return run {
-            val combined = allBytes.reduce { a, b -> a + b }
-            log.debug("Google TTS success: {} chunks, {} bytes total for lang={} (ssml={})", allBytes.size, combined.size, language, useSsml)
-            combined
-        }
+        val combined = allBytes.reduce { a, b -> a + b }
+        log.debug("Google TTS success: {} chunks, {} bytes total for lang={} (ssml={})", allBytes.size, combined.size, language, useSsml)
+        return combined
     }
 
     /** True if SSML looks structured (speak/prosody/break) – safe to pass to API. */
@@ -330,28 +389,110 @@ class GoogleCloudTtsClientAdapter(
         return cleaned.ifBlank { plain }.ifBlank { ssml }
     }
 
-    /** Returns (languageCode, voiceName). Uses WaveNet for Indic when enabled (trained on native speakers; often sounds more natural than Chirp3 for Indian languages). */
-    private fun resolveVoice(language: String): Pair<String, String> {
-        val normalized = language.trim().lowercase().take(10)
-        val langCode = LANGUAGE_CODES[normalized] ?: "en-US"
-        val wavenetSupported = setOf("ta-IN", "hi-IN", "kn-IN", "ml-IN", "bn-IN")
+    /** Returns (languageCode, candidate voices) with role-aware and per-language fallback selection. */
+    private fun resolveVoiceCandidates(language: String, voiceProfile: String): Pair<String, List<String>> {
+        val langCode = normalizeLanguageCode(language)
+        val profile = normalizeVoiceProfile(voiceProfile)
+        val candidates = linkedSetOf<String>()
+
+        val override = voiceOverrides[langCode]
+        if (!override.isNullOrBlank()) {
+            candidates.add(override)
+        }
+
+        val wavenetVoice = defaultWaveNetVoice(langCode, profile)
+        if (useWavenetForIndic && wavenetVoice != null) {
+            candidates.add(wavenetVoice)
+        }
+
+        val chirpSuffix = roleSpecificChirpVoice[profile] ?: roleSpecificChirpVoice.getValue("default")
+        candidates.add(nativeVoiceName(langCode, chirpSuffix))
+        // Provider-safe final fallback; en-IN usually sounds natural for Indian audiences.
+        candidates.add(nativeVoiceName("en-IN", "Achernar"))
+        return langCode to candidates.toList()
+    }
+
+    private fun normalizeLanguageCode(language: String): String {
+        val normalized = language.trim().lowercase()
+        if (normalized.matches(Regex("^[a-z]{2}-[a-z]{2}$"))) {
+            val parts = normalized.split("-")
+            return "${parts[0]}-${parts[1].uppercase()}"
+        }
+        return LANGUAGE_CODES[normalized] ?: run {
+            log.warn("Google TTS: unknown language \"{}\", falling back to en-IN", language)
+            "en-IN"
+        }
+    }
+
+    private fun normalizeVoiceProfile(voiceProfile: String): String {
+        val raw = voiceProfile.trim().lowercase()
+        if (raw.isBlank()) return "default"
         return when {
-            useWavenetForIndic && langCode in wavenetSupported -> {
-                val wavenetVoice = when (langCode) {
-                    "ta-IN" -> "ta-IN-Wavenet-A"   // Female, trained on native Tamil speakers
-                    "hi-IN" -> "hi-IN-Wavenet-A"   // Female, native Hindi
-                    "kn-IN" -> "kn-IN-Wavenet-A"   // Female, native Kannada
-                    "ml-IN" -> "ml-IN-Wavenet-A"   // Female, native Malayalam
-                    "bn-IN" -> "bn-IN-Wavenet-A"   // Female, native Bengali
-                    else -> "$langCode-Chirp3-HD-Achernar"
-                }
-                langCode to wavenetVoice
+            raw.contains("narrator") && raw.contains("female") -> "narrator-female"
+            raw.contains("child") && raw.contains("female") -> "child-female"
+            raw.contains("child") && raw.contains("male") -> "child-male"
+            raw.contains("group") -> "child-group"
+            else -> "default"
+        }
+    }
+
+    /**
+     * WaveNet gives very natural regional pronunciation for supported Indic languages.
+     * For unsupported role/language combinations we intentionally fall back to Chirp3-HD.
+     */
+    private fun defaultWaveNetVoice(langCode: String, voiceProfile: String): String? {
+        return when (langCode) {
+            "ta-IN" -> if (voiceProfile == "child-male") "ta-IN-Wavenet-B" else "ta-IN-Wavenet-A"
+            "hi-IN" -> if (voiceProfile == "child-male") "hi-IN-Wavenet-B" else "hi-IN-Wavenet-A"
+            "te-IN" -> if (voiceProfile == "child-male") "te-IN-Standard-B" else "te-IN-Standard-A"
+            "kn-IN" -> if (voiceProfile == "child-male") "kn-IN-Wavenet-B" else "kn-IN-Wavenet-A"
+            "ml-IN" -> if (voiceProfile == "child-male") "ml-IN-Wavenet-B" else "ml-IN-Wavenet-A"
+            "bn-IN" -> if (voiceProfile == "child-male") "bn-IN-Wavenet-B" else "bn-IN-Wavenet-A"
+            else -> null
+        }
+    }
+
+    private fun parseVoiceOverrides(raw: String): Map<String, String> {
+        if (raw.isBlank()) return emptyMap()
+        return raw.split(",")
+            .mapNotNull { entry ->
+                val parts = entry.split("=", limit = 2).map { it.trim() }
+                if (parts.size != 2 || parts[0].isBlank() || parts[1].isBlank()) null
+                else normalizeLanguageCode(parts[0]) to parts[1]
             }
-            langCode != "en-US" -> langCode to nativeVoiceName(langCode)
-            else -> {
-                log.warn("Google TTS: unknown language \"{}\", using en-US Chirp3-HD; add to LANGUAGE_CODES for correct pronunciation", language)
-                "en-US" to nativeVoiceName("en-US")
-            }
+            .toMap()
+    }
+
+    private fun applyStyleToSpeed(baseSpeed: Double): Double {
+        val style = resolveEffectiveStyleProfile()
+        val styleAdjusted = when (style) {
+            "kid-energy" -> baseSpeed * 1.06
+            "bedtime-calm" -> baseSpeed * 0.93
+            else -> baseSpeed
+        }
+        val intensityFactor = when (resolveEffectiveModulationIntensity()) {
+            "soft" -> 0.97
+            "high" -> 1.03
+            else -> 1.0
+        }
+        return (styleAdjusted * intensityFactor).coerceIn(0.25, 2.0)
+    }
+
+    private fun resolveEffectiveStyleProfile(): String {
+        return when (narrationPreset.trim().lowercase()) {
+            "bedtime" -> "bedtime-calm"
+            "energetic" -> "kid-energy"
+            "balanced" -> "default"
+            else -> styleProfile.trim().lowercase()
+        }
+    }
+
+    private fun resolveEffectiveModulationIntensity(): String {
+        return when (narrationPreset.trim().lowercase()) {
+            "bedtime" -> "soft"
+            "energetic" -> "high"
+            "balanced" -> "balanced"
+            else -> modulationIntensity.trim().lowercase()
         }
     }
 }

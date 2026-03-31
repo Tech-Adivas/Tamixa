@@ -20,17 +20,34 @@ interface StoryTranslationRepositoryPort {
 
     fun findByLanguageAndMasterNarrationApproved(language: String, pageable: Pageable): Page<StoryTranslation>
 
+    fun findByLanguageAndMasterNarrationApprovedWithMasterAudio(language: String, pageable: Pageable): Page<StoryTranslation>
+
     fun findListingByLanguage(language: String, pageable: Pageable): Page<StoryTranslationListing>
 
     fun findListingByLanguageAndMasterNarrationApproved(language: String, pageable: Pageable): Page<StoryTranslationListing>
+
+    fun findListingByLanguageAndMasterNarrationApprovedWithMasterAudio(language: String, pageable: Pageable): Page<StoryTranslationListing>
 
     fun findListingByLanguageAndMasterNarrationApprovedAndTheme(language: String, theme: String, pageable: Pageable): Page<StoryTranslationListing>
 
     fun findByLanguageAndMasterNarrationApprovedAndTheme(language: String, theme: String, pageable: Pageable): Page<StoryTranslation>
 
+    fun findByLanguageAndMasterNarrationApprovedWithMasterAudioAndTheme(
+        language: String,
+        theme: String,
+        pageable: Pageable
+    ): Page<StoryTranslation>
+
     fun findByMasterStoryId(masterStoryId: Long): List<StoryTranslation>
 
     fun findByStatusIn(statuses: List<TranslationPipelineStatus>): List<StoryTranslation>
+
+    /** Paged failed/stuck translations with retryCount strictly less than [maxRetriesExclusive]. */
+    fun findRetryableByStatusIn(
+        statuses: List<TranslationPipelineStatus>,
+        maxRetriesExclusive: Int,
+        pageable: Pageable
+    ): Page<StoryTranslation>
 
     fun atomicStatusUpdate(id: Long, newStatus: TranslationPipelineStatus, lastError: String?): Boolean
 
@@ -39,6 +56,12 @@ interface StoryTranslationRepositoryPort {
     fun resetRetryCountByMasterStoryId(masterStoryId: Long): Int
 
     fun resetRetryCountByMasterStoryIdAndLanguage(masterStoryId: Long, language: String): Int
+
+    /**
+     * Set all translations for this master story to PENDING, clear errors/retries/per-language narration approval.
+     * Call after deleting narration rows. Keeps translated text intact.
+     */
+    fun resetPipelineStateForMasterStory(masterStoryId: Long): Int
 
     /** Delete all translations for a master story (cascade deletes narration audio). Used when story content is edited. */
     fun deleteByMasterStoryId(masterStoryId: Long)

@@ -3,6 +3,8 @@ package com.tamixa.application.subscription
 import com.tamixa.application.port.ReferralCodeRepositoryPort
 import com.tamixa.domain.ReferralCode
 import org.slf4j.LoggerFactory
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -43,7 +45,7 @@ class ReferralCodeService(
 
     fun findById(id: Long): ReferralCode? = referralCodeRepository.findById(id)
     fun findByShortcode(shortcode: String): ReferralCode? = referralCodeRepository.findByShortcode(shortcode)
-    fun findAll(): List<ReferralCode> = referralCodeRepository.findAll()
+    fun findAll(pageable: Pageable): Page<ReferralCode> = referralCodeRepository.findAll(pageable)
 
     @Transactional
     fun create(shortcode: String, shopName: String, offerPercent: Int, expiresAt: java.time.Instant, active: Boolean): ReferralCode {
