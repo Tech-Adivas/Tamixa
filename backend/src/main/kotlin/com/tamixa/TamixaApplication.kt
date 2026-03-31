@@ -119,6 +119,30 @@ private fun applyDatabaseUrlCompatibility() {
     applyPgHostCompatibility(env)
 }
 
+/**
+ * Railway often omits SPRING_PROFILES_ACTIVE. Repo default in application.yml is `dev` (localhost DB), which
+ * breaks containers. When Railway env vars are present, default the active profile to `staging` unless set.
+ */
+private fun applyRailwayDefaultProfile() {
+    val env = System.getenv()
+    val fromEnv = env["SPRING_PROFILES_ACTIVE"]?.takeIf { it.isNotBlank() }
+    val fromProperty = System.getProperty("spring.profiles.active")?.takeIf { it.isNotBlank() }
+    if (!fromEnv.isNullOrBlank() || !fromProperty.isNullOrBlank()) {
+        return
+    }
+    val onRailway =
+        !env["RAILWAY_ENVIRONMENT"].isNullOrBlank() ||
+            !env["RAILWAY_ENVIRONMENT_ID"].isNullOrBlank() ||
+            env["RAILWAY"] == "true"
+    if (!onRailway) {
+        return
+    }
+    System.setProperty("spring.profiles.active", "staging")
+    log.info(
+        "Railway deployment detected: defaulting spring.profiles.active=staging (set SPRING_PROFILES_ACTIVE to override)."
+    )
+}
+
 private fun warnIfDatasourceEnvFamiliesOverlap() {
     val env = System.getenv()
     val hasDatabaseFamily =
@@ -154,9 +178,20 @@ private fun logLikelyDatasourceTarget() {
             }
     val sanitized = url.replace(Regex("://[^/@]+@"), "://***@")
     log.info("Datasource target (resolved from env): {}", sanitized)
+    val active =
+        System.getProperty("spring.profiles.active")?.takeIf { it.isNotBlank() }
+            ?: env["SPRING_PROFILES_ACTIVE"]?.takeIf { it.isNotBlank() }
+    if (sanitized.contains("localhost:5432") == true &&
+        active?.split(",")?.any { it.trim().equals("staging", ignoreCase = true) } == true
+    ) {
+        log.info(
+            "Profile staging is active: if DATABASE_URL/PG* are unset, Spring loads jdbc URL from application-staging.yml (Railway internal host defaults)."
+        )
+    }
 }
 
 fun main(args: Array<String>) {
+    applyRailwayDefaultProfile()
     applyDatabaseUrlCompatibility()
     warnIfDatasourceEnvFamiliesOverlap()
     logLikelyDatasourceTarget()
