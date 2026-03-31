@@ -22,6 +22,8 @@ WORKDIR /app
 RUN apk add --no-cache curl
 
 RUN addgroup -g 1000 app && adduser -u 1000 -G app -D app
+# Ensure runtime log directory exists and is writable for non-root user.
+RUN mkdir -p /app/logs && chown -R app:app /app
 USER app
 
 COPY --from=build /app/backend/build/libs/*.jar app.jar
