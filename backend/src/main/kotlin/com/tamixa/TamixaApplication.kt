@@ -162,6 +162,42 @@ private fun warnIfDatasourceEnvFamiliesOverlap() {
     }
 }
 
+private fun databaseUrlAppearsToEmbedPassword(raw: String): Boolean {
+    if (!raw.startsWith("postgresql://", ignoreCase = true) && !raw.startsWith("postgres://", ignoreCase = true)) {
+        return false
+    }
+    return try {
+        val uri = URI(raw)
+        val ui = uri.userInfo
+        ui != null && ui.contains(":") && ui.substringAfter(":").isNotBlank()
+    } catch (_: Exception) {
+        false
+    }
+}
+
+private fun warnIfLikelyMissingDbCredentials() {
+    val activeRaw = System.getProperty("spring.profiles.active") ?: System.getenv("SPRING_PROFILES_ACTIVE") ?: ""
+    val profiles = activeRaw.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
+    if (!profiles.contains("staging") && !profiles.contains("prod")) {
+        return
+    }
+    val env = System.getenv()
+    val explicitPassword =
+        !env["DATABASE_PASSWORD"].isNullOrBlank() ||
+            !env["POSTGRES_PASSWORD"].isNullOrBlank() ||
+            !env["PGPASSWORD"].isNullOrBlank() ||
+            !env["SPRING_DATASOURCE_PASSWORD"].isNullOrBlank()
+    val sysDsPassword = System.getProperty("spring.datasource.password")?.isNotBlank() == true
+    val dbUrl = env["DATABASE_URL"]?.takeIf { it.isNotBlank() } ?: ""
+    if (explicitPassword || sysDsPassword || databaseUrlAppearsToEmbedPassword(dbUrl)) {
+        return
+    }
+    log.warn(
+        "Active profile is staging/prod but no DB password was detected (DATABASE_PASSWORD / POSTGRES_PASSWORD / PGPASSWORD / SPRING_DATASOURCE_PASSWORD, or user:password in DATABASE_URL). " +
+            "Link Postgres in Railway or set these vars — Hikari will usually fail with 'password authentication failed' or similar."
+    )
+}
+
 private fun logLikelyDatasourceTarget() {
     val env = System.getenv()
     val url =
@@ -195,5 +231,6 @@ fun main(args: Array<String>) {
     applyDatabaseUrlCompatibility()
     warnIfDatasourceEnvFamiliesOverlap()
     logLikelyDatasourceTarget()
+    warnIfLikelyMissingDbCredentials()
     runApplication<TamixaApplication>(*args)
 }
