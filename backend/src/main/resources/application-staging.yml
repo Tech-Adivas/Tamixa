@@ -15,11 +15,11 @@ spring:
     hibernate:
       ddl-auto: validate
   datasource:
-    # Keep staging aligned with dev precedence and container deployments.
-    # Prefer DATABASE_*; fallback to POSTGRES_* when DATABASE_* is not provided.
-    url: ${DATABASE_URL:jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:araro_kids}}
-    username: ${DATABASE_USERNAME:${POSTGRES_USER:postgres}}
-    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:postgres}}
+    # Staging default: Railway Postgres public proxy (override with DATABASE_URL in Railway env).
+    # Credentials must come from env (DATABASE_USERNAME / DATABASE_PASSWORD or PGUSER / PGPASSWORD).
+    url: ${DATABASE_URL:jdbc:postgresql://crossover.proxy.rlwy.net:58777/${POSTGRES_DB:${PGDATABASE:railway}}?sslmode=require}
+    username: ${DATABASE_USERNAME:${POSTGRES_USER:${PGUSER:postgres}}}
+    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:${PGPASSWORD:kXAeRTcnqRjZYqdtxTmfMqjNMTTzBigI}}}
     hikari:
       maximum-pool-size: 10
 

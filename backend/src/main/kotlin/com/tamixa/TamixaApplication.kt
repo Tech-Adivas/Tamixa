@@ -24,24 +24,16 @@ private val log = LoggerFactory.getLogger("TamixaStartup")
 
 private fun decodeUserInfoPart(value: String): String = URLDecoder.decode(value, StandardCharsets.UTF_8)
 
-private fun applyDatabaseUrlCompatibility() {
-    val env = System.getenv()
-    val springDatasourceUrlEnv = env["SPRING_DATASOURCE_URL"]?.takeIf { it.isNotBlank() }
-    if (!springDatasourceUrlEnv.isNullOrBlank()) {
-        return
-    }
-
-    val rawDatabaseUrl = env["DATABASE_URL"]?.takeIf { it.isNotBlank() } ?: return
+private fun applyJdbcPropertiesFromUrl(rawUrl: String, env: Map<String, String>) {
     val looksLikeRailwayStyleUrl =
-        rawDatabaseUrl.startsWith("postgresql://", ignoreCase = true) ||
-            rawDatabaseUrl.startsWith("postgres://", ignoreCase = true)
+        rawUrl.startsWith("postgresql://", ignoreCase = true) ||
+            rawUrl.startsWith("postgres://", ignoreCase = true)
     if (!looksLikeRailwayStyleUrl) {
         return
     }
-
     val uri =
         try {
-            URI(rawDatabaseUrl)
+            URI(rawUrl)
         } catch (e: Exception) {
             log.error("Failed to parse DATABASE_URL for datasource normalization", e)
             return
@@ -85,6 +77,40 @@ private fun applyDatabaseUrlCompatibility() {
     log.info("Normalized DATABASE_URL to JDBC datasource URL for Spring Boot startup")
 }
 
+private fun applyPgHostCompatibility(env: Map<String, String>) {
+    val pgHost = env["PGHOST"]?.takeIf { it.isNotBlank() } ?: return
+    val pgPort = env["PGPORT"]?.takeIf { it.isNotBlank() } ?: "5432"
+    val pgDatabase = env["PGDATABASE"]?.takeIf { it.isNotBlank() } ?: return
+    val jdbcUrl = "jdbc:postgresql://$pgHost:$pgPort/$pgDatabase"
+    System.setProperty("spring.datasource.url", jdbcUrl)
+
+    if (env["SPRING_DATASOURCE_USERNAME"].isNullOrBlank() && env["DATABASE_USERNAME"].isNullOrBlank()) {
+        env["PGUSER"]?.takeIf { it.isNotBlank() }?.let { System.setProperty("spring.datasource.username", it) }
+    }
+    if (env["SPRING_DATASOURCE_PASSWORD"].isNullOrBlank() && env["DATABASE_PASSWORD"].isNullOrBlank()) {
+        env["PGPASSWORD"]?.takeIf { it.isNotBlank() }?.let { System.setProperty("spring.datasource.password", it) }
+    }
+    log.info("Configured datasource from PG* environment variables")
+}
+
+private fun applyDatabaseUrlCompatibility() {
+    val env = System.getenv()
+    val springDatasourceUrlEnv = env["SPRING_DATASOURCE_URL"]?.takeIf { it.isNotBlank() }
+    if (!springDatasourceUrlEnv.isNullOrBlank()) {
+        return
+    }
+
+    val rawDatabaseUrl =
+        env["DATABASE_URL"]?.takeIf { it.isNotBlank() }
+            ?: env["DATABASE_PUBLIC_URL"]?.takeIf { it.isNotBlank() }
+
+    if (!rawDatabaseUrl.isNullOrBlank()) {
+        applyJdbcPropertiesFromUrl(rawDatabaseUrl, env)
+        return
+    }
+    applyPgHostCompatibility(env)
+}
+
 private fun warnIfDatasourceEnvFamiliesOverlap() {
     val env = System.getenv()
     val hasDatabaseFamily =
@@ -112,9 +138,11 @@ private fun logLikelyDatasourceTarget() {
             ?: env["DATABASE_URL"]?.takeIf { it.isNotBlank() }
             ?: run {
                 val host = env["POSTGRES_HOST"]?.takeIf { it.isNotBlank() } ?: "localhost"
-                val port = env["POSTGRES_PORT"]?.takeIf { it.isNotBlank() } ?: "5432"
-                val db = env["POSTGRES_DB"]?.takeIf { it.isNotBlank() } ?: "araro_kids"
-                "jdbc:postgresql://$host:$port/$db"
+                val pgHost = env["PGHOST"]?.takeIf { it.isNotBlank() }
+                val port = env["POSTGRES_PORT"]?.takeIf { it.isNotBlank() } ?: env["PGPORT"]?.takeIf { it.isNotBlank() } ?: "5432"
+                val db = env["POSTGRES_DB"]?.takeIf { it.isNotBlank() } ?: env["PGDATABASE"]?.takeIf { it.isNotBlank() } ?: "araro_kids"
+                val resolvedHost = pgHost ?: host
+                "jdbc:postgresql://$resolvedHost:$port/$db"
             }
     val sanitized = url.replace(Regex("://[^/@]+@"), "://***@")
     log.info("Datasource target (resolved from env): {}", sanitized)
