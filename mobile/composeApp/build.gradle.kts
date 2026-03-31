@@ -93,7 +93,7 @@ kotlin {
                 implementation(libs.androidx.media3.ui)
                 implementation(libs.androidx.media3.datasource)
                 implementation(libs.androidx.core.ktx)
-                implementation("androidx.core:core-splashscreen:1.0.1")
+                implementation("androidx.core:core-splashscreen:1.2.0")
                 implementation(libs.androidx.datastore)
             }
         }
