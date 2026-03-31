@@ -18,6 +18,8 @@ logs/
 *.war
 *.ear
 *.nar
+!gradle/wrapper/gradle-wrapper.jar
+!mobile/gradle/wrapper/gradle-wrapper.jar
 
 # OS
 .DS_Store
