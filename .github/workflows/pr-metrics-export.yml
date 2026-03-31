@@ -11,7 +11,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: pr-metrics-export-${{ github.event.pull_request.number }}
+  group: pr-metrics-export-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -45,7 +45,7 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-          MERGED_BY: ${{ github.event.pull_request.merged_by && github.event.pull_request.merged_by.login || '' }}
+          MERGED_BY: ${{ github.event.pull_request.merged_by.login }}
           WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: python3 .github/scripts/enrich_pr_metrics_export.py
 
@@ -57,8 +57,10 @@ jobs:
           if-no-files-found: error
 
       - name: POST to metrics webhook (optional)
-        if: ${{ secrets.PR_METRICS_WEBHOOK_URL }}
+        if: ${{ env.PR_METRICS_WEBHOOK_URL != '' }}
         env:
+          PR_METRICS_WEBHOOK_URL: ${{ secrets.PR_METRICS_WEBHOOK_URL }}
+          PR_METRICS_WEBHOOK_SECRET: ${{ secrets.PR_METRICS_WEBHOOK_SECRET }}
           URL: ${{ secrets.PR_METRICS_WEBHOOK_URL }}
           SECRET: ${{ secrets.PR_METRICS_WEBHOOK_SECRET }}
         continue-on-error: true
