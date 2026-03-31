@@ -1,5 +1,10 @@
 spring:
   datasource:
+    # Prod default: Railway Postgres public proxy (override with DATABASE_URL in Railway env).
+    # Credentials must come from env only — never commit real passwords.
+    url: ${DATABASE_URL:jdbc:postgresql://crossover.proxy.rlwy.net:58777/${POSTGRES_DB:${PGDATABASE:railway}}?sslmode=require}
+    username: ${DATABASE_USERNAME:${POSTGRES_USER:${PGUSER:postgres}}}
+    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:${PGPASSWORD:}}}
     hikari:
       # Scale with instance count × pool ≤ DB max_connections (leave headroom for migrations, console).
       maximum-pool-size: ${HIKARI_MAXIMUM_POOL_SIZE:30}

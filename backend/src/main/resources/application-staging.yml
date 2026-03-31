@@ -19,7 +19,7 @@ spring:
     # Credentials must come from env (DATABASE_USERNAME / DATABASE_PASSWORD or PGUSER / PGPASSWORD).
     url: ${DATABASE_URL:jdbc:postgresql://crossover.proxy.rlwy.net:58777/${POSTGRES_DB:${PGDATABASE:railway}}?sslmode=require}
     username: ${DATABASE_USERNAME:${POSTGRES_USER:${PGUSER:postgres}}}
-    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:${PGPASSWORD:kXAeRTcnqRjZYqdtxTmfMqjNMTTzBigI}}}
+    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:${PGPASSWORD:}}}
     hikari:
       maximum-pool-size: 10
 
