@@ -80,7 +80,15 @@ private fun applyJdbcPropertiesFromUrl(rawUrl: String, env: Map<String, String>)
 private fun applyPgHostCompatibility(env: Map<String, String>) {
     val pgHost = env["PGHOST"]?.takeIf { it.isNotBlank() } ?: return
     val pgPort = env["PGPORT"]?.takeIf { it.isNotBlank() } ?: "5432"
-    val pgDatabase = env["PGDATABASE"]?.takeIf { it.isNotBlank() } ?: return
+    var pgDatabase =
+        env["PGDATABASE"]?.takeIf { it.isNotBlank() }
+            ?: env["POSTGRES_DB"]?.takeIf { it.isNotBlank() }
+    if (pgDatabase.isNullOrBlank() && pgHost.contains("railway.internal", ignoreCase = true)) {
+        pgDatabase = "railway"
+    }
+    if (pgDatabase.isNullOrBlank()) {
+        return
+    }
     val jdbcUrl = "jdbc:postgresql://$pgHost:$pgPort/$pgDatabase"
     System.setProperty("spring.datasource.url", jdbcUrl)
 
