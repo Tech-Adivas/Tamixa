@@ -11,6 +11,8 @@ spring:
     # Match production strategy: app nodes do not migrate by default.
     enabled: ${FLYWAY_ENABLED:false}
   jpa:
+    # When the pool cannot connect yet, Hibernate still needs a dialect (metadata lookup would fail otherwise).
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     show-sql: false
     hibernate:
       ddl-auto: validate

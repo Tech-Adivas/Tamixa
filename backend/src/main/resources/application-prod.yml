@@ -1,4 +1,7 @@
 spring:
+  jpa:
+    # When JDBC metadata is unavailable (e.g. pool init failure), avoid "Unable to determine Dialect" cascade.
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
   datasource:
     # Prod default: Railway private Postgres (same project). Override with DATABASE_URL for public proxy or other hosts.
     # Credentials must come from env only — never commit real passwords.

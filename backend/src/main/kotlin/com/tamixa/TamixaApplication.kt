@@ -101,46 +101,100 @@ private fun applyPgHostCompatibility(env: Map<String, String>) {
     log.info("Configured datasource from PG* environment variables")
 }
 
+/**
+ * When Railway sets `SPRING_DATASOURCE_URL` (JDBC URL only), we used to return early and never copied
+ * `PGPASSWORD` / `PGUSER` into Spring — credentials must still reach Hikari.
+ */
+private fun applyDatasourceSecretsFromRailwayPgEnv(env: Map<String, String>) {
+    val dsPassProp = System.getProperty("spring.datasource.password")?.takeIf { it.isNotBlank() }
+    val dsUserProp = System.getProperty("spring.datasource.username")?.takeIf { it.isNotBlank() }
+    val hasExplicitPassword =
+        !env["SPRING_DATASOURCE_PASSWORD"].isNullOrBlank() ||
+            !env["DATABASE_PASSWORD"].isNullOrBlank()
+    val hasExplicitUser =
+        !env["SPRING_DATASOURCE_USERNAME"].isNullOrBlank() ||
+            !env["DATABASE_USERNAME"].isNullOrBlank()
+    if (dsPassProp.isNullOrBlank() && !hasExplicitPassword) {
+        val pgPass =
+            env["PGPASSWORD"]?.takeIf { it.isNotBlank() }
+                ?: env.entries.firstOrNull { it.key.equals("PGPASSWORD", ignoreCase = true) }?.value?.takeIf {
+                    it.isNotBlank()
+                }
+        pgPass?.let { System.setProperty("spring.datasource.password", it) }
+    }
+    if (dsUserProp.isNullOrBlank() && !hasExplicitUser) {
+        val pgUser =
+            env["PGUSER"]?.takeIf { it.isNotBlank() }
+                ?: env.entries.firstOrNull { it.key.equals("PGUSER", ignoreCase = true) }?.value?.takeIf {
+                    it.isNotBlank()
+                }
+        pgUser?.let { System.setProperty("spring.datasource.username", it) }
+    }
+}
+
 private fun applyDatabaseUrlCompatibility() {
     val env = System.getenv()
     val springDatasourceUrlEnv = env["SPRING_DATASOURCE_URL"]?.takeIf { it.isNotBlank() }
     if (!springDatasourceUrlEnv.isNullOrBlank()) {
-        return
-    }
+        System.setProperty("spring.datasource.url", springDatasourceUrlEnv)
+    } else {
+        val rawDatabaseUrl =
+            env["DATABASE_URL"]?.takeIf { it.isNotBlank() }
+                ?: env["DATABASE_PUBLIC_URL"]?.takeIf { it.isNotBlank() }
 
-    val rawDatabaseUrl =
-        env["DATABASE_URL"]?.takeIf { it.isNotBlank() }
-            ?: env["DATABASE_PUBLIC_URL"]?.takeIf { it.isNotBlank() }
-
-    if (!rawDatabaseUrl.isNullOrBlank()) {
-        applyJdbcPropertiesFromUrl(rawDatabaseUrl, env)
-        return
+        if (!rawDatabaseUrl.isNullOrBlank()) {
+            applyJdbcPropertiesFromUrl(rawDatabaseUrl, env)
+        } else {
+            applyPgHostCompatibility(env)
+        }
     }
-    applyPgHostCompatibility(env)
+    applyDatasourceSecretsFromRailwayPgEnv(env)
 }
 
 /**
  * Railway often omits SPRING_PROFILES_ACTIVE. Repo default in application.yml is `dev` (localhost DB), which
- * breaks containers. When Railway env vars are present, default the active profile to `staging` unless set.
+ * breaks containers. When any Railway runtime env is present, default the active profile to `staging` unless
+ * already set (env, JVM -D, or CLI args). We also pass `--spring.profiles.active=staging` so it wins over YAML
+ * defaults even if config resolution order differs from System.setProperty alone.
  */
-private fun applyRailwayDefaultProfile() {
+private fun isRailwayDeployment(env: Map<String, String>): Boolean =
+    env.entries.any { (key, value) -> key.startsWith("RAILWAY_") && !value.isNullOrBlank() }
+
+private fun springProfilesActiveExplicitlySet(args: Array<String>): Boolean {
     val env = System.getenv()
-    val fromEnv = env["SPRING_PROFILES_ACTIVE"]?.takeIf { it.isNotBlank() }
-    val fromProperty = System.getProperty("spring.profiles.active")?.takeIf { it.isNotBlank() }
-    if (!fromEnv.isNullOrBlank() || !fromProperty.isNullOrBlank()) {
-        return
+    if (!env["SPRING_PROFILES_ACTIVE"].isNullOrBlank()) {
+        return true
     }
-    val onRailway =
-        !env["RAILWAY_ENVIRONMENT"].isNullOrBlank() ||
-            !env["RAILWAY_ENVIRONMENT_ID"].isNullOrBlank() ||
-            env["RAILWAY"] == "true"
-    if (!onRailway) {
-        return
+    if (!System.getProperty("spring.profiles.active").isNullOrBlank()) {
+        return true
+    }
+    var i = 0
+    while (i < args.size) {
+        val a = args[i]
+        when {
+            a.startsWith("--spring.profiles.active=") -> return true
+            a == "--spring.profiles.active" && i + 1 < args.size -> return true
+            a.startsWith("-Dspring.profiles.active=") -> return true
+        }
+        i++
+    }
+    return false
+}
+
+private fun applyRailwayDefaultProfile(args: Array<String>): Array<String> {
+    if (springProfilesActiveExplicitlySet(args)) {
+        return args
+    }
+    val env = System.getenv()
+    if (!isRailwayDeployment(env)) {
+        return args
     }
     System.setProperty("spring.profiles.active", "staging")
     log.info(
-        "Railway deployment detected: defaulting spring.profiles.active=staging (set SPRING_PROFILES_ACTIVE to override)."
+        "Railway deployment detected: defaulting active profile to staging " +
+            "(set SPRING_PROFILES_ACTIVE, JVM -Dspring.profiles.active=..., or --spring.profiles.active=... to override)."
     )
+    return arrayOf("--spring.profiles.active=staging", *args)
 }
 
 private fun warnIfDatasourceEnvFamiliesOverlap() {
@@ -186,7 +240,8 @@ private fun warnIfLikelyMissingDbCredentials() {
         !env["DATABASE_PASSWORD"].isNullOrBlank() ||
             !env["POSTGRES_PASSWORD"].isNullOrBlank() ||
             !env["PGPASSWORD"].isNullOrBlank() ||
-            !env["SPRING_DATASOURCE_PASSWORD"].isNullOrBlank()
+            !env["SPRING_DATASOURCE_PASSWORD"].isNullOrBlank() ||
+            env.entries.any { it.key.equals("PGPASSWORD", ignoreCase = true) && it.value.isNotBlank() }
     val sysDsPassword = System.getProperty("spring.datasource.password")?.isNotBlank() == true
     val dbUrl = env["DATABASE_URL"]?.takeIf { it.isNotBlank() } ?: ""
     if (explicitPassword || sysDsPassword || databaseUrlAppearsToEmbedPassword(dbUrl)) {
@@ -200,6 +255,13 @@ private fun warnIfLikelyMissingDbCredentials() {
 
 private fun logLikelyDatasourceTarget() {
     val env = System.getenv()
+    val activeRaw =
+        System.getProperty("spring.profiles.active")?.takeIf { it.isNotBlank() }
+            ?: env["SPRING_PROFILES_ACTIVE"]?.takeIf { it.isNotBlank() }
+            ?: ""
+    val stagingActive =
+        activeRaw.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.contains("staging")
+
     val url =
         System.getProperty("spring.datasource.url")?.takeIf { it.isNotBlank() }
             ?: env["SPRING_DATASOURCE_URL"]?.takeIf { it.isNotBlank() }
@@ -210,27 +272,43 @@ private fun logLikelyDatasourceTarget() {
                 val port = env["POSTGRES_PORT"]?.takeIf { it.isNotBlank() } ?: env["PGPORT"]?.takeIf { it.isNotBlank() } ?: "5432"
                 val db = env["POSTGRES_DB"]?.takeIf { it.isNotBlank() } ?: env["PGDATABASE"]?.takeIf { it.isNotBlank() } ?: "araro_kids"
                 val resolvedHost = pgHost ?: host
-                "jdbc:postgresql://$resolvedHost:$port/$db"
+                if (stagingActive && host == "localhost" && pgHost.isNullOrBlank()) {
+                    // application-staging.yml defaults when POSTGRES_* / PG* are unset
+                    "jdbc:postgresql://postgres.railway.internal:5432/railway"
+                } else {
+                    "jdbc:postgresql://$resolvedHost:$port/$db"
+                }
             }
     val sanitized = url.replace(Regex("://[^/@]+@"), "://***@")
-    log.info("Datasource target (resolved from env): {}", sanitized)
-    val active =
-        System.getProperty("spring.profiles.active")?.takeIf { it.isNotBlank() }
-            ?: env["SPRING_PROFILES_ACTIVE"]?.takeIf { it.isNotBlank() }
-    if (sanitized.contains("localhost:5432") == true &&
-        active?.split(",")?.any { it.trim().equals("staging", ignoreCase = true) } == true
+    log.info("Datasource target (pre-Spring bind, best-effort): {}", sanitized)
+
+    val dsUrlSetAtStartup = System.getProperty("spring.datasource.url")?.isNotBlank() == true
+    val hasJdbcFromDatabaseUrl =
+        !env["DATABASE_URL"].isNullOrBlank() ||
+            !env["DATABASE_PUBLIC_URL"].isNullOrBlank() ||
+            !env["SPRING_DATASOURCE_URL"].isNullOrBlank()
+    val hasPgHostEnv = !env["PGHOST"].isNullOrBlank()
+    if (stagingActive && !dsUrlSetAtStartup && !hasJdbcFromDatabaseUrl && !hasPgHostEnv) {
+        log.info(
+            "Staging profile: no DATABASE_URL / SPRING_DATASOURCE_URL / PGHOST was applied before Spring starts; " +
+                "the live datasource URL and credentials come from application-staging.yml " +
+                "(default jdbc:postgresql://postgres.railway.internal:5432/railway plus DATABASE_USERNAME / POSTGRES_* / PGPASSWORD from env). " +
+                "Override with DATABASE_URL or PG* if needed."
+        )
+    } else if (sanitized.contains("localhost:5432") &&
+        stagingActive
     ) {
         log.info(
-            "Profile staging is active: if DATABASE_URL/PG* are unset, Spring loads jdbc URL from application-staging.yml (Railway internal host defaults)."
+            "Staging profile is active but datasource looks like localhost; set DATABASE_URL or Railway Postgres variables so staging does not use a local DB."
         )
     }
 }
 
 fun main(args: Array<String>) {
-    applyRailwayDefaultProfile()
+    val startupArgs = applyRailwayDefaultProfile(args)
     applyDatabaseUrlCompatibility()
     warnIfDatasourceEnvFamiliesOverlap()
     logLikelyDatasourceTarget()
     warnIfLikelyMissingDbCredentials()
-    runApplication<TamixaApplication>(*args)
+    runApplication<TamixaApplication>(*startupArgs)
 }
