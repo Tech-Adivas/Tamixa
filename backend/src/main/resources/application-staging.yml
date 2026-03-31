@@ -22,6 +22,7 @@ spring:
     password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:${PGPASSWORD:}}}
     hikari:
       maximum-pool-size: 10
+      minimum-idle: ${HIKARI_MINIMUM_IDLE:2}
 
 logging:
   level:

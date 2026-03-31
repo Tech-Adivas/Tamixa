@@ -38,6 +38,8 @@ spring:
     hikari:
       connection-timeout: 30000
       maximum-pool-size: 20
+      # Below max so the pool can shrink; otherwise Hikari is "fixed size" and idle-timeout is ignored (WARN at startup).
+      minimum-idle: ${HIKARI_MINIMUM_IDLE:5}
       idle-timeout: 300000
       max-lifetime: 1200000
       keepalive-time: 30000
