@@ -102,8 +102,9 @@ private fun applyPgHostCompatibility(env: Map<String, String>) {
 }
 
 /**
- * When Railway sets `SPRING_DATASOURCE_URL` (JDBC URL only), we used to return early and never copied
- * `PGPASSWORD` / `PGUSER` into Spring — credentials must still reach Hikari.
+ * Railway usually provides `DATABASE_URL` (often `postgresql://...`) and `PGPASSWORD` / `PGUSER` separately.
+ * After we set `spring.datasource.url` from DATABASE_URL or `SPRING_DATASOURCE_URL`, still copy PG* into
+ * Spring properties when Spring-specific password env vars are not set.
  */
 private fun applyDatasourceSecretsFromRailwayPgEnv(env: Map<String, String>) {
     val dsPassProp = System.getProperty("spring.datasource.password")?.takeIf { it.isNotBlank() }
@@ -134,19 +135,23 @@ private fun applyDatasourceSecretsFromRailwayPgEnv(env: Map<String, String>) {
 
 private fun applyDatabaseUrlCompatibility() {
     val env = System.getenv()
-    val springDatasourceUrlEnv = env["SPRING_DATASOURCE_URL"]?.takeIf { it.isNotBlank() }
-    if (!springDatasourceUrlEnv.isNullOrBlank()) {
-        System.setProperty("spring.datasource.url", springDatasourceUrlEnv)
-    } else {
-        val rawDatabaseUrl =
-            env["DATABASE_URL"]?.takeIf { it.isNotBlank() }
-                ?: env["DATABASE_PUBLIC_URL"]?.takeIf { it.isNotBlank() }
+    // Prefer Railway's DATABASE_URL over SPRING_DATASOURCE_URL (Railway standard).
+    val rawDatabaseUrl =
+        env["DATABASE_URL"]?.takeIf { it.isNotBlank() }
+            ?: env["DATABASE_PUBLIC_URL"]?.takeIf { it.isNotBlank() }
 
-        if (!rawDatabaseUrl.isNullOrBlank()) {
-            applyJdbcPropertiesFromUrl(rawDatabaseUrl, env)
-        } else {
-            applyPgHostCompatibility(env)
+    if (!rawDatabaseUrl.isNullOrBlank()) {
+        when {
+            rawDatabaseUrl.startsWith("jdbc:postgresql:", ignoreCase = true) ||
+                rawDatabaseUrl.startsWith("jdbc:postgres:", ignoreCase = true) -> {
+                System.setProperty("spring.datasource.url", rawDatabaseUrl)
+            }
+            else -> applyJdbcPropertiesFromUrl(rawDatabaseUrl, env)
         }
+    } else {
+        env["SPRING_DATASOURCE_URL"]?.takeIf { it.isNotBlank() }?.let {
+            System.setProperty("spring.datasource.url", it)
+        } ?: applyPgHostCompatibility(env)
     }
     applyDatasourceSecretsFromRailwayPgEnv(env)
 }
@@ -248,8 +253,8 @@ private fun warnIfLikelyMissingDbCredentials() {
         return
     }
     log.warn(
-        "Active profile is staging/prod but no DB password was detected (DATABASE_PASSWORD / POSTGRES_PASSWORD / PGPASSWORD / SPRING_DATASOURCE_PASSWORD, or user:password in DATABASE_URL). " +
-            "Link Postgres in Railway or set these vars — Hikari will usually fail with 'password authentication failed' or similar."
+        "Active profile is staging/prod but no DB password was detected (DATABASE_PASSWORD / POSTGRES_PASSWORD / PGPASSWORD / SPRING_DATASOURCE_PASSWORD, or user:password inside DATABASE_URL). " +
+            "On Railway, use the linked Postgres DATABASE_URL and PGPASSWORD (or a single DATABASE_URL with credentials). Hikari will usually fail with 'password authentication failed' or similar."
     )
 }
 
@@ -290,10 +295,10 @@ private fun logLikelyDatasourceTarget() {
     val hasPgHostEnv = !env["PGHOST"].isNullOrBlank()
     if (stagingActive && !dsUrlSetAtStartup && !hasJdbcFromDatabaseUrl && !hasPgHostEnv) {
         log.info(
-            "Staging profile: no DATABASE_URL / SPRING_DATASOURCE_URL / PGHOST was applied before Spring starts; " +
+            "Staging profile: no DATABASE_URL / DATABASE_PUBLIC_URL / SPRING_DATASOURCE_URL / PGHOST was applied before Spring starts; " +
                 "the live datasource URL and credentials come from application-staging.yml " +
                 "(default jdbc:postgresql://postgres.railway.internal:5432/railway plus DATABASE_USERNAME / POSTGRES_* / PGPASSWORD from env). " +
-                "Override with DATABASE_URL or PG* if needed."
+                "On Railway, prefer DATABASE_URL from the linked Postgres service."
         )
     } else if (sanitized.contains("localhost:5432") &&
         stagingActive

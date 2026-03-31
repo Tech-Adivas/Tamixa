@@ -17,7 +17,7 @@ spring:
     hibernate:
       ddl-auto: validate
   datasource:
-    # Staging default: Railway private Postgres (same project). Override with DATABASE_URL for public proxy or other hosts.
+    # Staging default: Railway private Postgres (same project). Railway: reference linked Postgres DATABASE_URL; override for public proxy or other hosts.
     # Credentials must come from env (DATABASE_USERNAME / DATABASE_PASSWORD or PGUSER / PGPASSWORD).
     url: ${DATABASE_URL:jdbc:postgresql://${POSTGRES_HOST:${PGHOST:postgres.railway.internal}}:${POSTGRES_PORT:${PGPORT:5432}}/${POSTGRES_DB:${PGDATABASE:railway}}}
     username: ${DATABASE_USERNAME:${POSTGRES_USER:${PGUSER:postgres}}}
