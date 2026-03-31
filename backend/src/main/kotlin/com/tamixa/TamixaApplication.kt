@@ -13,7 +13,7 @@ import org.springframework.scheduling.annotation.EnableScheduling
 import org.slf4j.LoggerFactory
 
 @SpringBootApplication
-@EnableJpaRepositories(entityManagerFactoryRef = "entityManagerFactory")
+@EnableJpaRepositories
 @EnableRetry
 @EnableAsync
 @EnableScheduling
