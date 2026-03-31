@@ -1,8 +1,8 @@
 spring:
   datasource:
-    # Prod default: Railway Postgres public proxy (override with DATABASE_URL in Railway env).
+    # Prod default: Railway private Postgres (same project). Override with DATABASE_URL for public proxy or other hosts.
     # Credentials must come from env only — never commit real passwords.
-    url: ${DATABASE_URL:jdbc:postgresql://crossover.proxy.rlwy.net:58777/${POSTGRES_DB:${PGDATABASE:railway}}?sslmode=require}
+    url: ${DATABASE_URL:jdbc:postgresql://${POSTGRES_HOST:${PGHOST:postgres.railway.internal}}:${POSTGRES_PORT:${PGPORT:5432}}/${POSTGRES_DB:${PGDATABASE:railway}}}
     username: ${DATABASE_USERNAME:${POSTGRES_USER:${PGUSER:postgres}}}
     password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:${PGPASSWORD:}}}
     hikari:
