@@ -71,7 +71,7 @@ kotlin {
                 implementation(libs.coil.network.ktor)
                 // Pin to 3.0.3: 3.4.x is built with Kotlin 2.3 (ABI 2.3.0), incompatible with Kotlin 2.2.x
                 implementation("io.coil-kt.coil3:coil-gif:3.0.3")
-                implementation("org.jetbrains.androidx.navigation:navigation-compose:2.8.0-alpha10")
+                implementation("org.jetbrains.androidx.navigation:navigation-compose:2.9.10-alpha01")
             }
         }
         val androidMain by getting {
