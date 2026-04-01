@@ -19,7 +19,7 @@ app:
     # Integration tests use Hibernate `create` schema without V76 seed; keep story runs off unless a test seeds workflows.
     story-workflow-integration-enabled: false
   cors:
-    # SecurityConfig requires non-empty origins when profile is not "dev"
+    # Explicit origins for tests (non-dev profiles need origins and/or allowed-origin-patterns)
     allowed-origins: http://localhost:8080,http://localhost:3000
   rate-limit:
     requests-per-minute: 2

@@ -170,8 +170,16 @@ data class AppProperties(
     )
 
     data class CorsProperties(
-        /** Comma-separated origins; empty or "*" = allow all (dev only). */
-        val allowedOrigins: String = "*"
+        /**
+         * Comma-separated exact origins. Empty or "*" means "not configured" unless [allowedOriginPatterns] is set.
+         * Prefer env `CORS_ALLOWED_ORIGINS` (see application.yml).
+         */
+        val allowedOrigins: String = "*",
+        /**
+         * Comma-separated CORS origin patterns (Spring `allowedOriginPatterns`), e.g. `https://*.example.com`.
+         * Env: `CORS_ALLOWED_ORIGIN_PATTERNS`. Profile YAML supplies environment-specific defaults (staging, dev).
+         */
+        val allowedOriginPatterns: String = ""
     )
 
     data class RateLimitProperties(

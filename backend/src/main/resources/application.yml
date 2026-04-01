@@ -136,8 +136,10 @@ app:
     # Dev only: fixed code accepted for web passwordless (e.g. 123456). Set in dev profile; leave empty in prod.
     dev-passwordless-code: ${DEV_PASSWORDLESS_CODE:}
   cors:
-    # Comma-separated origins for production; empty or "*" = allow all (dev only)
+    # Comma-separated exact origins. "*" = unset for non-dev unless allowed-origin-patterns is set (see profile YAML).
     allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+    # Comma-separated origin patterns (optional). Staging/dev profiles set defaults; prod should use explicit origins.
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:}
   rate-limit:
     enabled: ${RATE_LIMIT_ENABLED:true}
     # Set true for multi-instance: uses Redis. Requires Redis. Default false.

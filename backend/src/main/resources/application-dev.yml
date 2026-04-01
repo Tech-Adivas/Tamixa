@@ -8,6 +8,9 @@ app:
   auth:
     dev-otp-code: ${DEV_OTP_CODE:123456}
     dev-passwordless-code: ${DEV_PASSWORDLESS_CODE:123456}
+  cors:
+    # Dev: explicit localhost admin/web ports (override with CORS_ALLOWED_ORIGINS / CORS_ALLOWED_ORIGIN_PATTERNS).
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001}
 spring:
   jpa:
     show-sql: false  # Use org.hibernate.SQL logger instead (show-sql writes to stdout separately = duplicate logs)

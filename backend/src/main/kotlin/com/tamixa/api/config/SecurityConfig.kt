@@ -24,7 +24,6 @@ import org.springframework.http.HttpMethod
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
-import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.time.Instant
 
@@ -41,7 +40,6 @@ class SecurityConfig(
     private val storyGenerationRateLimitFilter: StoryGenerationRateLimitFilter,
     private val objectMapper: ObjectMapper
 ) {
-    private val log = LoggerFactory.getLogger(SecurityConfig::class.java)
 
     /** Exactly one of [RedisRateLimitingFilter] / [RateLimitingFilter] is registered (see @ConditionalOnProperty). */
     private val rateLimitingFilter: OncePerRequestFilter =
@@ -67,39 +65,35 @@ class SecurityConfig(
     fun corsConfigurationSource(): CorsConfigurationSource {
         val config = CorsConfiguration().apply {
             allowCredentials = true
-            val origins = appProperties.cors.allowedOrigins.trim()
-            val isDev = environment.activeProfiles.contains("dev")
-            if (origins.isNotEmpty() && origins != "*") {
-                allowedOrigins = origins.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-            } else if (isDev) {
-                // Dev: allow admin app (Next.js default port) so login works from browser
-                allowedOrigins = listOf(
-                    "http://localhost:3000",
-                    "http://127.0.0.1:3000",
-                    "http://localhost:3001",
-                    "http://127.0.0.1:3001"
-                )
-            } else if (environment.activeProfiles.any { it.equals("staging", ignoreCase = true) } &&
-                (origins.isEmpty() || origins == "*")
-            ) {
-                // Staging (e.g. Railway): default YAML uses *; explicit origins still required for prod.
-                // Patterns cover local UIs and typical Railway HTTPS hostnames until CORS_ALLOWED_ORIGINS is set.
-                allowedOriginPatterns = listOf(
-                    "http://localhost:*",
-                    "http://127.0.0.1:*",
-                    "https://*.up.railway.app",
-                    "https://*.railway.app"
-                )
-                log.warn(
-                    "CORS: staging uses default origin patterns (localhost + Railway). " +
-                        "Set CORS_ALLOWED_ORIGINS to comma-separated HTTPS origins for stricter control."
-                )
-            } else {
-                // Production: ALLOWED_ORIGINS must be explicitly configured; fail-fast to prevent open CORS
-                throw IllegalStateException(
-                    "ALLOWED_ORIGINS must be set in production. Set environment variable CORS_ALLOWED_ORIGINS " +
-                        "(or app.cors.allowed-origins) to a comma-separated list of allowed browser origins (HTTPS), not *."
-                )
+            val originsRaw = appProperties.cors.allowedOrigins.trim()
+            val patternsRaw = appProperties.cors.allowedOriginPatterns
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+            val explicitOrigins = originsRaw.isNotEmpty() && originsRaw != "*"
+            if (explicitOrigins) {
+                allowedOrigins = originsRaw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            }
+            if (patternsRaw.isNotEmpty()) {
+                allowedOriginPatterns = patternsRaw
+            }
+            val hasCorsPolicy = explicitOrigins || patternsRaw.isNotEmpty()
+            if (!hasCorsPolicy) {
+                if (environment.activeProfiles.contains("dev")) {
+                    // Last resort if dev profile is active but cors was not bound from application-dev.yml
+                    allowedOrigins = listOf(
+                        "http://localhost:3000",
+                        "http://127.0.0.1:3000",
+                        "http://localhost:3001",
+                        "http://127.0.0.1:3001"
+                    )
+                } else {
+                    throw IllegalStateException(
+                        "CORS is not configured for this environment. Set CORS_ALLOWED_ORIGINS (comma-separated " +
+                            "HTTPS origins, not *) and/or CORS_ALLOWED_ORIGIN_PATTERNS, or activate a profile that " +
+                            "defines app.cors in application-<profile>.yml (e.g. dev, staging)."
+                    )
+                }
             }
             allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
             allowedHeaders = listOf("*")
