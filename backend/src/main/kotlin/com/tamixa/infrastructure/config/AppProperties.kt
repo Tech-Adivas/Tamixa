@@ -129,7 +129,7 @@ data class AppProperties(
         /** Signed URL validity in minutes when listing completed exports. */
         val signedUrlExpiryMinutes: Long = 60,
         /** Cron for processing pending export jobs. Default: every 2 minutes. */
-        val processCron: String = "0 */2 * * * *",
+        val processCron: String = "0 " + "*" + "/2 * * * *",
         /** DB page size when streaming stories into export JSON (memory vs round-trips). */
         val storyPageSize: Int = 200,
         /** DB page size for consent rows in export. */
@@ -170,15 +170,9 @@ data class AppProperties(
     )
 
     data class CorsProperties(
-        /**
-         * Comma-separated exact origins. Empty or "*" means "not configured" unless [allowedOriginPatterns] is set.
-         * Prefer env `CORS_ALLOWED_ORIGINS` (see application.yml).
-         */
+        /** Comma-separated exact origins. Empty or star means unset unless allowed-origin-patterns is set (see application.yml). */
         val allowedOrigins: String = "*",
-        /**
-         * Comma-separated CORS origin patterns (Spring `allowedOriginPatterns`), e.g. `https://*.example.com`.
-         * Env: `CORS_ALLOWED_ORIGIN_PATTERNS`. Profile YAML supplies environment-specific defaults (staging, dev).
-         */
+        /** Comma-separated CORS origin patterns (Spring allowedOriginPatterns). Env: CORS_ALLOWED_ORIGIN_PATTERNS. */
         val allowedOriginPatterns: String = ""
     )
 
@@ -244,7 +238,7 @@ data class AppProperties(
          * When true, parent-generated stories stop at [com.tamixa.domain.StoryStatus.PENDING_REVIEW] until an admin
          * approves in Story moderation; then status becomes PENDING and narration/cover jobs run.
          */
-        val humanReviewBeforeNarration: Boolean = false,
+        val humanReviewBeforeNarration: Boolean = false
     )
 
     data class AiTokenLimitProperties(
@@ -306,13 +300,12 @@ data class AppProperties(
         val hostStoryClipUrl: String = ""
     )
 
-    /** CDN/signed URLs: S3 presigned URLs (10 min expiry). */
-    data class StorageProperties(
+    /** CDN/signed URLs: S3 presigned URLs (10 min expiry). Not a data class: includes derived [effectiveS3Bucket]. */
+    class StorageProperties(
         val type: String = "s3",
         val s3Bucket: String = "tamixa-audio",
         val s3Region: String = "us-east-1"
     ) {
-        /** Effective S3 bucket: s3Bucket if set, else default tamixa-audio. Use everywhere instead of ifBlank fallback. */
         val effectiveS3Bucket: String get() = s3Bucket.ifBlank { "tamixa-audio" }
     }
 
@@ -322,8 +315,8 @@ data class AppProperties(
         val signedUrlExpiryMinutes: Long = 10,
         /** Cache TTL for CDN (seconds) */
         val cacheTtlSeconds: Long = 86400,
-        /** Don't cache paths matching PENDING indicator */
-        val noCachePattern: String = "/stories/.*/pending/"
+        /** Regex: paths under stories with a pending segment should not be CDN-cached. */
+        val noCachePattern: String = "/stories/" + ".*" + "/pending/"
     )
 
     data class VoiceProperties(
