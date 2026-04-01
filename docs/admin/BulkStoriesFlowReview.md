@@ -36,10 +36,10 @@ Senior review (Mobile dev, AI/ML, UI/UX) of the bulk story generation flow: gaps
 
 | Issue | Severity | Description |
 |-------|----------|-------------|
-| **Max tokens too low for long stories** | High | `generateStory()` uses `app.openai.max-tokens` (default **1024**). Prompt asks for 600–1500 words (~800–2000 tokens). Output can be truncated and invalid JSON or cut-off story_text. |
+| **Max tokens too low for long stories** | High | `generateStory()` uses `app.openai.max-tokens` (default **1024**). Prompt asks for 1500–1750 words. Output can be truncated and invalid JSON or cut-off story_text. |
 | **Duplicate title fails entire story** | Medium | `create()` checks `existsByTitle(title)`. If the model returns the same title twice (e.g. “Friendship Story 1”) the second save throws and that story is counted as failed. |
 | **No idempotency / rate limit for bulk** | Low | Two admins (or double-click) can run bulk at once; OpenAI rate limits may hit. No per-admin or global “one bulk run at a time” guard. |
-| **estimated_duration not parsed** | Low | Prompt asks for `estimated_duration` in JSON; backend does not read or store it. Optional improvement for analytics/display. |
+| **estimated_duration_seconds parsed** | Low | Prompt asks for `estimated_duration_seconds` in JSON (legacy `estimated_duration` still supported); backend parses it into `readingTimeMinutes`. Optional improvement: display it in UI. |
 | **Single prompt = no system message** | Low | Bulk uses one user message. Tamixa system persona is only in single-story flow. Quality is acceptable but could be aligned with `StoryPromptBuilder` for consistency. |
 | **Error message to frontend** | Low | On failure (e.g. IllegalArgumentException), backend returns 400 with `message`. Some errors (e.g. “A story with this title already exists”) are user-actionable; others (e.g. “Model returned empty story_text”) are operational. |
 
@@ -67,7 +67,7 @@ Senior review (Mobile dev, AI/ML, UI/UX) of the bulk story generation flow: gaps
    - **Option A:** Show a clear message: “Bulk generation can take 2–5 minutes. Do not close this page.”
    - **Option B:** Make bulk async: POST returns a job id, frontend polls for status and result (recommended for 25 stories).
 2. **Increase max_tokens for bulk**  
-   Use a higher limit for bulk generation (e.g. **2048**) so 600–1500 word stories are not truncated. Either:
+   Use a higher limit for bulk generation (e.g. **2048**) so 1500–1750 word stories are not truncated. Either:
    - add `openai.bulk-max-tokens` and use it in a bulk-specific path, or
    - raise default `OPENAI_MAX_TOKENS` and document that bulk needs it.
 3. **Duplicate title handling**  
@@ -84,7 +84,7 @@ Senior review (Mobile dev, AI/ML, UI/UX) of the bulk story generation flow: gaps
 
 ### 3.3 Low priority
 
-7. **Parse and store estimated_duration** from bulk JSON when present.
+7. **Optional UI**: display the model’s estimated duration/reading time (backend already parses `estimated_duration_seconds`).
 8. **Empty/failure state copy** when `createdCount === 0`: suggest checking API key and reducing count.
 9. **Accessibility**: ensure labels and live region for result summary (e.g. “Created 25 stories, 0 failed”).
 10. **Clickable created rows**: link id/title to `/dashboard/stories?id=...` or open view modal.
@@ -114,4 +114,4 @@ Senior review (Mobile dev, AI/ML, UI/UX) of the bulk story generation flow: gaps
 - [ ] “View in Stories” / “Story for review” after success
 - [ ] Optional: progress (SSE/WS) or “may take several minutes”
 - [ ] Optional: trigger executor queue size or batch job
-- [ ] Optional: parse estimated_duration, better empty/failure copy, a11y, clickable rows
+- [ ] Optional: better empty/failure copy, a11y, clickable rows

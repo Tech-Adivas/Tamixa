@@ -11,6 +11,8 @@ Operational runbooks and debugging guides. Use this index to find the right doc 
 | **Story → Audio → Avatar** | [../admin/STORY_AUDIO_AVATAR_FLOW.md](../admin/STORY_AUDIO_AVATAR_FLOW.md) | End-to-end flow, config matrix, enterprise practices. |
 | **Avatar video** | [AVATAR_VIDEO_TROUBLESHOOTING.md](AVATAR_VIDEO_TROUBLESHOOTING.md) | Avatar failures, provider fallback, recovery. |
 | **Logging** | [../backend/LOGGING.md](../backend/LOGGING.md) | Backend logging, levels, and what to grep for. |
+| **Backups & restore** | [BACKUP_AND_RESTORE.md](BACKUP_AND_RESTORE.md) | PostgreSQL backup, encrypted storage, **tested** restore cadence. |
+| **K8s / container probes** | [../DEPLOYMENT_CHECKLIST.md](../DEPLOYMENT_CHECKLIST.md) (Kubernetes section) | Liveness/readiness paths, Prometheus scrape note. |
 
 ## Quick actions
 

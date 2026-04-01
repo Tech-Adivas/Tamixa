@@ -222,9 +222,10 @@ The **`guardrails-service/`** directory is a **Git submodule** to a **product-ag
 | **Auth** | Optional shared secret: env `GUARDRAILS_API_KEY` on Python side → header `X-Guardrails-Api-Key` from the HTTP client |
 | **Tamixa config** | `app.guardrails-service.*` via `GUARDRAILS_SERVICE_*` (see `application.yml`, `.env.example`) |
 | **When down** | `fail-open-on-error: true` skips remote validation only; Kotlin pipeline still runs. If `false`, API returns **503** (`ExternalGuardrailUnavailableException`). |
-| **Docker** | Compose service `guardrails-service` (port 8090). |
+| **Docker** | Compose builds `guardrails-service`, backend **`depends_on`** its healthcheck, and **`GUARDRAILS_SERVICE_ENABLED` defaults to `true`**. Set `GUARDRAILS_SERVICE_ENABLED=false` if you run backend without that container. |
+| **Mobile** | Story generate maps **503** → `StoryValidationServiceUnavailableException` and localized `Strings.storyValidationTemporarilyUnavailable()`. |
 
-Backend wiring: `StructuredStoryRemoteGuardrailPort`, `HttpStructuredStoryGuardrailAdapter` (`@ConditionalOnProperty` `app.guardrails-service.enabled=true`).
+Backend wiring: `StructuredStoryRemoteGuardrailPort`, `HttpStructuredStoryGuardrailAdapter` (`@ConditionalOnProperty` `app.guardrails-service.enabled=true`). `StoryService` marks the story **FAILED** on `ExternalGuardrailUnavailableException` so rows do not stay stuck in `MODERATION_CHECK`.
 
 ---
 

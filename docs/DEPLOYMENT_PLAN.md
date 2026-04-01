@@ -19,6 +19,9 @@ This plan covers deployment of the **Tamixa** application—a multi-component sy
 
 **Critical gap:** The web app currently hardcodes `http://localhost:8080` for the API. Production builds must use `VITE_API_URL` (see Phase 1).
 
+**See also:** **[AWS deployment plan](DEPLOYMENT_PLAN_AWS.md)** — VPC, RDS, ECS Fargate, ALB, ACM, S3, CloudFront, ECR, secrets, and DNS (including external DNS like Squarespace).  
+[Tamixa cost & marketing plan](TAMIXA_COST_AND_MARKETING_PLAN.md) — assumption-driven opex/COGS scenarios, subscription breakeven math, and GTM; ties hosting choices here to fixed-tech spend. Env vars that drive third-party cost (OpenAI, TTS, SMS, storage) are summarized in [Environment reference](ENV_REFERENCE.md). Subscription caps and fair-use guardrails are documented there with pointers to `SubscriptionPlan` / `AppProperties`.
+
 ---
 
 ## Phase 0: Pre-flight Checklist
@@ -108,12 +111,12 @@ Before any deployment work:
 | **Railway** | Docker | Static | Service | Managed Postgres + Redis |
 | **Render** | Docker | Static | Web service | Managed Postgres + Redis |
 | **Fly.io** | Fly app | Static | Fly app | Fly Postgres; external Redis/Kafka |
-| **AWS** | ECS / Cloud Run | S3+CloudFront | Same or separate | RDS, ElastiCache, MSK |
+| **AWS** | ECS Fargate / EC2 + ALB ([AWS plan](DEPLOYMENT_PLAN_AWS.md)) | S3+CloudFront | Amplify / ECS / App Runner | RDS, ElastiCache, MSK |
 | **GCP** | Cloud Run | Static / Firebase | Same | Cloud SQL, Memorystore, Pub/Sub |
 
 ### 3.2 Provision
 
-- **PostgreSQL 16** – Run Flyway on startup (or dedicated migration job with `FLYWAY_ENABLED=true`)
+- **PostgreSQL 16** – Run Flyway on startup (or dedicated migration job with `FLYWAY_ENABLED=true`). **Order:** pending migrations (e.g. **V70** — regenerate-prompt gate columns on `library_stories`) must be applied **before** the new backend version that uses them is serving traffic. See [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md#22-database-migrations-flyway).
 - **Redis 7** – If using rate limiting / caches
 - **S3 (or equivalent)** – Bucket + IAM for audio/assets
 - **Kafka** – Optional for MVP; sync story generation works without it
@@ -128,6 +131,8 @@ Before any deployment work:
 ---
 
 ## Phase 4: Deploy Backend
+
+0. **Database** — Confirm Flyway has applied all migrations required by this release (if you disable Flyway on app instances, run the migrate job first). See checklist section [Database migrations (Flyway)](DEPLOYMENT_CHECKLIST.md#22-database-migrations-flyway).
 
 1. **Build image**
    ```bash
@@ -259,6 +264,7 @@ Add deploy job to `.github/workflows/ci.yml`:
 | Build script | `scripts/build-production.sh` |
 | Admin deploy | `admin/DEPLOYMENT.md` |
 | Full checklist | `docs/DEPLOYMENT_CHECKLIST.md` |
+| Cost & marketing (opex, COGS, GTM) | `docs/TAMIXA_COST_AND_MARKETING_PLAN.md` |
 
 ---
 

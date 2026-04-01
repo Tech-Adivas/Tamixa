@@ -2,6 +2,8 @@
 
 Single reference for backend and admin environment variables. Copy from root `.env.example` and admin `.env.example` (or `admin/.env.local`) and override as needed. **Never commit `.env`**; use a secrets manager in production.
 
+**See also:** [Tamixa cost & marketing plan](TAMIXA_COST_AND_MARKETING_PLAN.md) — how variable COGS (LLM, TTS, SMS, storage, optional avatar/voice providers) maps to this surface; [Deployment plan](DEPLOYMENT_PLAN.md) for prod rollout. **Pricing guardrails:** story/voice quotas and trial/grace defaults live in `AppProperties.SubscriptionProperties` (e.g. `SUBSCRIPTION_FREE_STORIES_PER_MONTH`, `SUBSCRIPTION_STARTER_STORIES_PER_MONTH`) and plan semantics in `SubscriptionPlan` — see the “Plan-level guardrails” section in the cost & marketing doc.
+
 ## Feature flags & when they are required
 
 | Variable | Effect | Required when |

@@ -62,7 +62,7 @@ Configure ` signingConfigs` in `build.gradle.kts` with your keystore, then use `
 | `SPRING_PROFILES_ACTIVE` | `dev` | Use `prod` for production |
 | `REDIS_HOST` | `localhost` | Redis for caches |
 | `REDIS_PORT` | `6379` | |
-| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | For story TTS pipeline |
+| `KAFKA_BOOTSTRAP_SERVERS` | — | **Not used by the Spring app today** (narration is in-process). Compose may still start Kafka for future/async work; safe to omit. |
 | `MAGIC_LINK_BASE_URL` | `http://localhost:3000` | Web app URL for magic links |
 | `SENDGRID_API_KEY` | — | Real magic link emails |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | — | Real OTP SMS |
@@ -103,6 +103,21 @@ See [SECURITY_DEPLOYMENT.md](SECURITY_DEPLOYMENT.md) for details.
 - **`SEED_ADMIN_ENABLED`** and **`POST /api/v1/dev/seed-admin`** are for **development only**. They create or reset an admin user (e.g. `admin@techadivas.com` / default password).
 - **Never** set `SEED_ADMIN_ENABLED=true` in production. In production use `SPRING_PROFILES_ACTIVE=prod`; the dev seed controller is only loaded when the `dev` profile is active.
 - Ensure production environment does not activate the `dev` profile and does not expose `/api/v1/dev/*` to the internet if the profile were ever enabled.
+
+---
+
+## 2.2 Database migrations (Flyway)
+
+Scripts live in `backend/src/main/resources/db/migration/`. Spring Boot runs Flyway on startup when **`FLYWAY_ENABLED`** is not set to `false` (default is **enabled**; see `application.yml`).
+
+**Before deploying a backend build that expects new schema:**
+
+1. **App runs Flyway on boot (typical dev / many prod setups)** — Deploy the new image or JAR; the first healthy start applies any pending migrations automatically. No separate step unless Flyway is disabled.
+2. **Flyway disabled on application nodes (`FLYWAY_ENABLED=false`)** — Run migrations in a **dedicated release/migrate job** (or one-off task) with the same artifact and DB URL, **`FLYWAY_ENABLED=true`**, **before** rolling out new app replicas that depend on the new columns.
+
+**Example — V70 (`V70__regenerate_prompt_gate.sql`):** adds `regenerate_prompt_locked`, `regenerate_prompt_lock_approved`, and `regenerate_prompt_unlock_requested_at` on `library_stories` for admin “Regenerate with prompt” gating after machine translation. If this migration has not run, Hibernate schema validation or runtime SQL can fail against an older database.
+
+Verify applied versions: check table `flyway_schema_history` in PostgreSQL (or logs on first startup after deploy).
 
 ---
 
@@ -154,6 +169,34 @@ curl http://localhost:8080/actuator/health
 curl http://localhost:8080/actuator/health/readiness
 ```
 
+### Kubernetes / container probes (Phase 1)
+
+Point your workload at Spring Boot Actuator (see `management.endpoint.health` in `application.yml`):
+
+| Probe | Path | Purpose |
+|-------|------|---------|
+| **Liveness** | `GET /actuator/health/liveness` | JVM up; restart pod if failing. |
+| **Readiness** | `GET /actuator/health/readiness` | DB + Redis + diskSpace; remove from service when not ready. |
+
+Example (adjust port and scheme):
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8080
+  initialDelaySeconds: 60
+  periodSeconds: 10
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 5
+```
+
+**Metrics:** scrape `GET /actuator/prometheus` from inside the cluster or a dedicated metrics collector (actuator web exposure is configured in `application.yml`; protect with network policy or auth in production).
+
 ### Automated E2E (Playwright)
 With web and admin dev servers running:
 ```bash
@@ -176,13 +219,17 @@ See `e2e/README.md` for full flows and env vars.
 
 ---
 
-## 6. Kafka Topics (if using Kafka)
+## 6. Kafka (optional / future only)
+
+The **backend does not publish or consume Kafka** today; story narration uses **in-process** workers (`InlineStoryEventPublisher`). If you introduce a real async pipeline later, create topics as needed, for example:
 
 ```bash
 kafka-topics --create --topic story-created --bootstrap-server <broker>
 kafka-topics --create --topic story-created.DLT --bootstrap-server <broker>
 kafka-topics --create --topic curated-story-created --bootstrap-server <broker>
 ```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 

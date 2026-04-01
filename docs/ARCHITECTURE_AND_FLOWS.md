@@ -140,3 +140,58 @@
 1. **High:** iOS Keychain for tokens; add tests for auth and subscription flows.  
 2. **Medium:** Deep links; backend wordTimings when TTS provides them.  
 3. **Low:** Backend wordTimings for stream URL; optional logout API; deep links; session-expired snackbar.
+
+---
+
+## 9. Curated library story pipeline (target admin process)
+
+This is the **intended operational sequence** for **library / curated** stories (not parent instant generation). The backend already implements most of it when translation pipeline flags are set as below.
+
+### 9.1 Target phases (your model → product today)
+
+| Phase | What you want | How it maps in Tamixa today |
+|--------|----------------|-----------------------------|
+| **1. Raw story** | Authoring draft | **`DRAFT`** on `library_stories`. Create/edit in Admin → Story library. |
+| **2. Regenerate with prompt (polish + translate all languages)** | One conceptual “make it good, then go multilingual” | **Polish:** Admin story edit → **AI Rephrase** (`LibraryStoryRephraseService` — Tamil editorial pass; apply title/content). **Translate to all configured languages:** run the narration **pipeline in translation-only mode** (`StoryProcessingService.processSync(..., translationOnly=true)`), which runs **translate + conversational rewrite** per language and persists **TTS-oriented scripts** (`story_translations`, `TranslationPipelineStatus.AWAITING_AUDIO`). Trigger via **Trigger pipeline** when `audio-after-approval` is on and narration is not yet approved (see `AdminController.triggerLibraryStoryPipeline`). There is **no single API** that runs “custom polish prompt + all languages” in one click; bulk/theme flows are separate (`bulk-generate`). |
+| **3. “Translate” → TTS-ready scripts** | All languages have narration-ready text | Covered by the same **translation-only** pipeline pass: per language, **translate** (`TranslationService`) then **rewrite for speech** (`RewriteService`). Status ends at **`AWAITING_AUDIO`** until TTS runs. |
+| **4. Submit for review** | Lock content for human QA | Admin saves with **Submit for review** → status **`PUBLISHED`** (and `narration_approved_at` cleared so it appears in **Story for review**). `pipeline-on-submit-only` (default **true**) avoids surprise full pipeline on save when configured that way. |
+| **5. Approve** | Human sign-off on **content** (not necessarily audio yet) | **Approve narration / approve for delivery** (`StoryLibraryService.approveNarration`) sets **`narration_approved_at`**. |
+| **6. Generate audio (TTS)** | Synthesis only after approval | With **`audio-after-approval: true`** (default), TTS is **not** part of the translation-only pass. After approval, ops use **Narration (Story to Speech)** → **Generate audio** / **Trigger pipeline** (full pass or TTS-only path for rows in **`AWAITING_AUDIO`**). If **`auto-tts-on-approve: true`**, approval can also kick off background TTS when still needed. |
+
+### 9.2 Configuration (backend)
+
+In `application.yml` under `app.translation-pipeline`:
+
+- **`pipeline-on-submit-only`** (default **true**): pipeline runs when you intend (e.g. **Trigger pipeline** / submit flows), not hidden on every save.
+- **`audio-after-approval`** (default **true**): translation + rewrite can complete **without** TTS; TTS happens **after** human approval.
+- **`auto-tts-on-approve`** (default **false**): if **true**, approval may start TTS automatically when audio is still missing.
+
+### 9.3 Flow diagram (curated)
+
+```mermaid
+flowchart LR
+  subgraph prep [Content prep]
+    D[DRAFT raw]
+    R[AI Rephrase optional TA]
+    P[Trigger pipeline translationOnly]
+  end
+  subgraph review [Review]
+    S[Submit for review PUBLISHED]
+    A[Approve narration]
+  end
+  subgraph audio [Audio]
+    T[TTS / Generate audio]
+  end
+  D --> R
+  R --> P
+  P --> S
+  S --> A
+  A --> T
+```
+
+### 9.4 Product gap (if you need stricter SLDC)
+
+- **Single “regenerate with prompt”** that both **polishes master with an arbitrary prompt** and **fans out to all languages** in one job is **not** a first-class endpoint today; today you combine **Rephrase** (fixed Tamil editor prompt) + **Trigger pipeline** (translate + rewrite per language).
+- **Hard enforcement** (e.g. cannot submit for review until every language is `AWAITING_AUDIO`) would require extra validation in `StoryLibraryService` and clearer status surfaced in admin; not implemented as a strict gate in this pass.
+
+**Parent-generated stories** use a different path (`StoryService`, optional `PENDING_REVIEW` human gate, then `InlineStoryEventPublisher` for narration). Library curated content uses **`library_stories` + `story_translations`** and the pipeline above.

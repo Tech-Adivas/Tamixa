@@ -100,7 +100,7 @@
 ### Components (shared)
 - **TamixaHeroBanner:** Carousel image `contentDescription = null` — use story title or “Story cover” for the visible item.
 - **StoryCoverImage:** Placeholder/fallback already use `contentDescription = story.theme`; ensure AsyncImage in player has avatar description (see AudioPlayerScreen).
-- **TamixaMascot / TamixaEmojiDisplay:** Decorative; `contentDescription = null` is OK or use “Decorative” to skip in a11y.
+- **TamixaMascot / TamixaEmojiDisplay:** `TamixaMascot` is a compose-only gradient orb + emoji host (no raster mascot asset); `contentDescription = null` is OK or use “Decorative” to skip in a11y.
 
 ---
 

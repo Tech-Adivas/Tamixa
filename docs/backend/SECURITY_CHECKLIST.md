@@ -7,14 +7,14 @@ Quick-reference checklist aligned with [SECURITY.md](../SECURITY.md). Use before
 - [ ] `JWT_SECRET` – Strong secret (≥256 bits); unique per environment
 - [ ] `CORS_ALLOWED_ORIGINS` – Explicit origins; no `*` with credentials
 - [ ] `SEED_ADMIN_ENABLED=false` – Disable dev seed endpoint
-- [ ] `DEV_OTP_CODE` – Unset or remove in production
+- [ ] `DEV_OTP_CODE` / `DEV_PASSWORDLESS_CODE` – **Unset in production** (startup fails if set with `prod` profile — `ProductionDevBypassValidator`)
 - [ ] Stripe/Zoho webhook secrets – Valid and kept secret
 - [ ] If Stripe enabled: `SUBSCRIPTION_WEBHOOK_ENCRYPTION_KEY` set (32-byte Base64 AES) – required in prod so webhook payloads are encrypted at rest (PCI/compliance)
 - [ ] `OPENAI_API_KEY`, `AWS_*` – From secrets manager, not `.env` in CI
 
 ## Completion Steps
 
-1. Run `./gradlew :backend:test -Ptamixa.backendOnly=true` – ensure tests pass
+1. Run `./scripts/verify-phase1-enterprise.sh` or `./gradlew :backend:test -Ptamixa.backendOnly=true` – ensure tests pass
 2. Grep for hardcoded secrets: `rg -i "api_key|password|secret" backend/src --glob '!*Test*'`
 3. Verify `.env` is gitignored and `.env.example` has no real values
 4. Set `spring.profiles.active=prod` in production
@@ -32,6 +32,8 @@ Quick-reference checklist aligned with [SECURITY.md](../SECURITY.md). Use before
 | Input validation | `@Valid` on DTOs | DTOs, Controllers |
 | Content safety | Story moderation | ModerationService |
 | Dev endpoints | `@Profile("dev")` | Dev controllers |
+| Prod startup | JWT secret, CORS, dev bypass codes | `JwtSecretValidator`, `CorsOriginValidator`, `ProductionDevBypassValidator` |
+| HTTP headers | Clickjacking + referrer policy | `SecurityConfig` — `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin` |
 
 ## Compliance & monitoring (recommended)
 

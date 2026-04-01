@@ -15,7 +15,7 @@ See `StoryPromptBuilder.buildSystemMessage()` for the canonical implementation. 
 - **Cultural context (Indian)**: Indian folklore and mythology (e.g. Tenali Rama, Panchatantra, regional tales); festival themes (Diwali, Pongal, Onam, Ugadi) in the story's native language with appropriate terms; village/town/nature settings; culturally familiar names and values; family-friendly and inclusive.
 - **Educational perspective (Tamixa differentiator)**: Every story is designed to support learning as well as enjoyment. Age-banded learning (cause-and-effect for 1–4; empathy, sequencing, wonder words for 5–7; inference and perspective-taking for 8–12). SEL: characters name feelings; kind/brave choices; conflict resolved through understanding. Wonder words: 2–4 age-appropriate rich words in context. Inference-friendly: moments that reward paying attention. One clear problem, one earned resolution. NEP/life-skills aligned (critical thinking, collaboration, values) implicitly in the plot. Optional **learningFocus** in the user request can emphasize: empathy, problem_solving, vocabulary, curiosity, perseverance, sharing, honesty, courage, kindness, friendship, responsibility.
 - **Security & compliance (mandatory — zero tolerance)**: Child safety (suitable for under 12; no violence, gore, horror, abuse, fear, dangerous imitation, self-harm, substances). Indian compliance (no disparagement of religion/community/region/language; no political/hateful/discriminatory content). Positive values only; conflicts resolved peacefully. Prohibited: violence, weapons, death, war, politics, religious conflict, drugs, alcohol, self-harm, advertising, real celebrities/places, adult themes.
-- **Length & multilingual naturalness**: ~900–1500 words; language-specific grammar and vocabulary (Tamil, Hindi, Telugu, Kannada, Malayalam, English).
+- **Length & multilingual naturalness**: ~1500–1750 words; language-specific grammar and vocabulary (Tamil, Hindi, Telugu, Kannada, Malayalam, English).
 - **Output contract**: Single valid JSON only; keys exactly title, category, theme, moral, story_text, estimated_duration_seconds; no markdown/code fence; before responding confirm no prohibited content, language/grammar, valid JSON.
 
 ## User prompt (conversational)
@@ -30,7 +30,7 @@ Generate a story in ta based on this request: for my child {childName} (age {age
 Use clear, everyday words. Short to medium sentences.
 Set the story in a Tamil-friendly context: family, village or town, respect for elders, friendship, nature...
 
-Keep to at most 1500 words. Return only valid JSON: title, category, theme, moral, story_text, estimated_duration_seconds (number, in seconds). No markdown, no code block.
+Aim for about 1500–1750 words; keep it within the configured maximum word cap (e.g. $maxWords). Return only valid JSON: title, category, theme, moral, story_text, estimated_duration_seconds (number, in seconds). No markdown, no code block.
 ```
 
 ## Fallback user prompt (on parse failure)
@@ -94,6 +94,8 @@ Each language has its own grammar, vocabulary, and style. Prompts instruct the m
 ## Regenerate with prompt (all languages)
 
 Admin "Regenerate with prompt" (edit story) transforms the current story content with the default Tamixa conversion prompt and returns the rewritten content, title, moral, and **category/theme**. The prompt instructs the LLM to choose an appropriate **category** from the app’s canonical list (Animals, Friendship, Adventure, Village Life, Moral Stories, Funny Stories, Family Stories, Fantasy, Nature, Bravery) based on the story; the backend normalizes it and returns it so the edit form can update the story’s category. By default it also **generates story content for all other languages** (en, hi, te, kn, ml): the backend calls `TranslationService.translateIfNeeded` for each target language and returns a `translations` map in the response. If a language had no story content before, the translated content is created and shown in the edit form; the admin can then Save or Submit for review so the pipeline can run rewrite + TTS for each language. Request body can include `"generateForAllLanguages": false` to skip generating other languages (legacy behaviour: only source-language transform).
+
+The conversion prompt also aims for the full-length target: roughly **1500–1750 words** (about **10–12 minutes** of TTS at natural pacing), while staying within any configured maximum word cap enforced by validation in the pipeline.
 
 ## Translate + rewrite process (in the pipeline)
 
@@ -198,10 +200,11 @@ Bulk generation (admin "Bulk story generator") uses a single user prompt (no sep
   - **Age-appropriate**: Suitable for children (including under 12); no mature themes, romance, or content unsuitable for general family audience in India.
 - **Story quality & ending**: Mild conflict with peaceful resolution; positive, satisfying ending; moral as one short sentence; title catchy and specific (not generic).
 - **Narration structure**: Short blocks (1–3 sentences), spoken transitions ("Once upon a time…", "One day…"), dialogue simple and sparse; every sentence natural when read aloud.
+- **Educational perspective**: Build learning into the plot (no lecturing), include SEL (characters name feelings), weave in 2–4 wonder words used clearly and at least twice, add an inference-friendly moment, and ensure one clear problem with an earned resolution (age band approx. 5–7).
 - **Do not include**: Explicit banned list—violence, weapons, death, war, politics, religious conflict, drugs, alcohol, self-harm, advertising/brand names, real celebrities or sensitive real places, adult themes. Purely fictional and uplifting.
-- **Structure**: Same Tamixa style (family-friendly, 600–1500 words, JSON with title, category, theme, story_text, moral, estimated_duration). Cultural context (Indian village/town, kindness/friendship) and JSON output format apply.
+- **Structure**: Same Tamixa style (family-friendly, 1500–1750 words, JSON with title, category, theme, story_text, moral, estimated_duration_seconds). Cultural context (Indian village/town, kindness/friendship) and JSON output format apply.
 - **Flow**: One prompt per story; `openAI.generateStory(prompt, 2048)` is called in a loop. Stored prompt is saved on the library story as `convertPromptUsed` for audit.
-- **estimated_duration**: When the model returns `estimated_duration` (e.g. "10 min") or `estimated_duration_seconds`, it is parsed and used as `readingTimeMinutes` for the library story (clamped 0.5–30 min).
+- **estimated_duration_seconds**: When the model returns `estimated_duration_seconds` (or legacy `estimated_duration` like "10 min"), it is parsed and used as `readingTimeMinutes` for the library story (clamped 0.5–30 min).
 - **Story review before deliver**: Before saving each story to the system, the generated `story_text` is run through **content moderation** (`StoryModerationService.moderateBeforeSave`). The same multi-layer moderation used for user-generated stories applies: OpenAI Moderation API, keyword blocklist, red-flag pattern detection, age-based vocabulary. If moderation rejects the content, that story is not saved and is reported in the bulk result as failed with error `content_moderation: ...`. Only stories that pass moderation are persisted and (if publish) submitted to the pipeline.
 
 ### Optional additions (if you extend the prompt later)

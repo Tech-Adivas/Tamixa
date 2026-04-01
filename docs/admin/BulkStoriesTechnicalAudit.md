@@ -27,7 +27,7 @@ Senior technical verification that the bulk stories flow is implemented as per t
 | 7 | JSON parse: title, theme, category, story_text, moral | ✅ | extractStoryTextFromBulkJson for story_text; path("title") etc. for others. |
 | 8 | story_text non-empty or throw | ✅ | if (storyText.isBlank()) throw IllegalArgumentException(...). |
 | 8b | Story review (moderation) before save | ✅ | storyModeration?.moderateBeforeSave(storyText, ModerationContext("bulk-{idx}", language, 7)); on rejection add to failed with content_moderation. |
-| 8c | estimated_duration from JSON → readingTimeMinutes | ✅ | parseEstimatedMinutesFromBulkJson(); create(..., estimatedReadingMinutes = estimatedMinutes). Optional param on create(); fallback word-count-derived. |
+| 8c | estimated_duration_seconds (or legacy estimated_duration) → readingTimeMinutes | ✅ | parseEstimatedMinutesFromBulkJson(); create(..., estimatedReadingMinutes = estimatedMinutes). Optional param on create(); fallback word-count-derived. |
 | 8d | Bulk progress log per story | ✅ | log.info("Bulk story generation {idx+1}/{total} lang= category="). |
 | 9 | create() = library story + initial story_translation | ✅ | After repository.save(story), storyTranslationRepository.save(initialTranslation) for saved.language. |
 | 10 | Duplicate title: retry with " (idx+1)" | ✅ | try/catch IllegalArgumentException "already exists", retry create with uniqueTitle. |
@@ -80,5 +80,5 @@ Senior technical verification that the bulk stories flow is implemented as per t
 ## Improvements applied (non-breaking)
 
 - **Progress logging**: Each bulk story logs `Bulk story generation {idx+1}/{total} lang= category=` at info level for observability.
-- **estimated_duration from JSON**: Bulk JSON may include `estimated_duration` (e.g. "10 min") or `estimated_duration_seconds`; when present, it is parsed and passed to `create(estimatedReadingMinutes = ...)` so `readingTimeMinutes` reflects the model’s estimate (clamped 0.5–30 min).
+- **estimated_duration_seconds from JSON**: Bulk JSON may include `estimated_duration_seconds` (and legacy `estimated_duration`); when present, it is parsed and passed to `create(estimatedReadingMinutes = ...)` so `readingTimeMinutes` reflects the model’s estimate (clamped 0.5–30 min).
 - **beforeunload on submit**: Admin bulk-generate page registers a `beforeunload` handler while the request is in progress to reduce accidental tab close/refresh during long runs.

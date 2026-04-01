@@ -15,6 +15,23 @@ You don’t run a separate “agent app”—you use Cursor’s chat or Composer
 
 ---
 
+## SDLC prompt files (repo-wide, tool-agnostic)
+
+Repeatable **planning / implementation / test / security / release** prompts live under **[`.github/prompts/`](../.github/prompts/)**. Use them in Cursor, Copilot Chat, or any assistant by pasting the file contents and filling in inputs.
+
+| File | Use when |
+|------|----------|
+| [plan-feature.prompt.md](../.github/prompts/plan-feature.prompt.md) | Mini-spec before coding (required areas: schema, auth, payments, voice consent, providers, deploy) |
+| [implement-feature.prompt.md](../.github/prompts/implement-feature.prompt.md) | Scoped implementation with Think → Research → Plan → Act |
+| [generate-tests.prompt.md](../.github/prompts/generate-tests.prompt.md) | Test ideas from a diff or behavior description |
+| [review-security.prompt.md](../.github/prompts/review-security.prompt.md) | Security pass on a plan or PR |
+| [prepare-release.prompt.md](../.github/prompts/prepare-release.prompt.md) | Release notes, smoke tests, rollback draft (no direct deploy) |
+| [evaluate-output.prompt.md](../.github/prompts/evaluate-output.prompt.md) | Per-output scores (story, multilingual, code/tests, PR) + learning-loop feedback |
+
+**Governed workflow and human gates:** [AGENTS.md](../AGENTS.md). **MCP policy:** [MCP_POLICY.md](MCP_POLICY.md). **ADRs / specs:** [docs/adr/README.md](adr/README.md), [docs/specs/README.md](specs/README.md). **Evaluation + cost + boundaries:** [AI_EVALUATION_SYSTEM.md](AI_EVALUATION_SYSTEM.md), [COST_GOVERNANCE.md](COST_GOVERNANCE.md), [AGENT_EXECUTION_BOUNDARIES.md](AGENT_EXECUTION_BOUNDARIES.md).
+
+---
+
 ## Three Ways to Use an Agent
 
 ### 1. Rule Picker (before or during chat)
@@ -40,7 +57,7 @@ If the rule isn’t enabled, the AI may still follow the spirit of the agent if 
 
 ### 3. Always-apply rules
 
-Some rules (e.g. security, professional standards, naming) are set to `alwaysApply: true`. They’re always in context. The **specialized agents** (Review, Testing, Delivery, Security, Prompt/Story, Refactoring, Documentation, API Design, Database/Migrations, Observability) are **off by default** so you can turn them on only when needed.
+Some rules (e.g. security, professional standards, naming) are set to `alwaysApply: true`. They’re always in context. The **specialized agents** (Review, Evaluation, Testing, Delivery, Security, Prompt/Story, Refactoring, Documentation, API Design, Database/Migrations, Observability, Code Validation, Figma/Design) are **off by default** so you can turn them on only when needed.
 
 ---
 
@@ -51,6 +68,7 @@ Use the table below to choose an agent, then copy or adapt the sample prompts.
 | Agent | When to use it | Rule file |
 |-------|----------------|-----------|
 | **Review** | Code review, PR feedback, merge checklist | `review-agent.mdc` |
+| **Evaluation** | Per-output quality scores; story / multilingual / code / PR rubrics | `evaluation-agent.mdc` |
 | **Testing** | Adding tests, running tests, test patterns | `testing-agent.mdc` |
 | **Delivery** | CI/CD, release, deployment | `delivery-agent.mdc` |
 | **Security** | Security review, audit, vulnerability checks | `security-agent.mdc` |
@@ -79,6 +97,25 @@ Use the table below to choose an agent, then copy or adapt the sample prompts.
 
 3. **Pre-merge checklist**  
    *“Run the Review agent’s pre-merge checklist on the current diff and tell me pass/fail for each item with a one-line reason.”*
+
+---
+
+### Evaluation Agent
+
+**When:** After the AI (or a human) produces story text, a prompt change, code/tests, or a full PR; you want **structured scores** and **learning-loop** suggestions—not only a quarterly scorecard.
+
+**Sample prompts:**
+
+1. **Score a story draft**  
+   *“Use the Evaluation agent. Score this Tamil story draft 0–5 on safety, fluency, cultural fit, and TTS speakability. List blockers and one concrete change to `docs/context-packs/` or prompts.”*
+
+2. **Score a PR / diff**  
+   *“Act as the Evaluation agent. Evaluate this diff for architecture fit, test quality, and PR acceptance likelihood. Tie scores to the rubric in evaluation-agent.mdc.”*
+
+3. **Feed the learning loop**  
+   *“Following the Evaluation agent: we rejected this AI output twice. Propose a single durable fix (which prompt file or rule to edit) and what metric we should watch.”*
+
+See [AI_EVALUATION_SYSTEM.md](AI_EVALUATION_SYSTEM.md) and [.github/prompts/evaluate-output.prompt.md](../.github/prompts/evaluate-output.prompt.md).
 
 ---
 
@@ -284,6 +321,7 @@ Use the table below to choose an agent, then copy or adapt the sample prompts.
 All agents live under `.cursor/rules/`:
 
 - `review-agent.mdc`
+- `evaluation-agent.mdc`
 - `testing-agent.mdc`
 - `delivery-agent.mdc`
 - `security-agent.mdc`
