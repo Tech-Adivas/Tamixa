@@ -3,13 +3,21 @@
  * Use localhost for local development. Override via env vars for staging/production.
  *
  * Usage:
- * - Web: imports DEFAULT_API_BASE_URL (vite proxy), API_PATH (api.ts)
- * - Admin: imports DEFAULT_API_BASE_URL; override with NEXT_PUBLIC_API_URL in .env.local
- * - Mobile: ApiConfig.kt should match DEFAULT_API_BASE_URL
+ * - Web: imports DEFAULT_API_BASE_URL (vite). Set VITE_API_BASE_URL at build time for prod (see web/Dockerfile).
+ * - Admin: override with NEXT_PUBLIC_API_URL in .env.local (does not use this file for runtime in Next).
+ * - Mobile: ApiConfig.kt should match deployed API URL.
  */
 
-/** Backend API base URL. Default: localhost for development. */
-export const DEFAULT_API_BASE_URL = "http://localhost:8080";
+/** Backend API base URL. Vite: VITE_API_BASE_URL at build time; else localhost for dev. */
+export const DEFAULT_API_BASE_URL = (() => {
+  try {
+    const v = (import.meta as { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL
+    if (typeof v === "string" && v.trim().length > 0) return v.trim().replace(/\/$/, "")
+  } catch {
+    /* non-Vite consumers */
+  }
+  return "http://localhost:8080"
+})()
 
 /** API path prefix. */
 export const API_PATH = "/api/v1";

@@ -27,6 +27,8 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      # Railway Redis and most managed Redis require a password; leave empty for local no-auth Redis.
+      password: ${REDIS_PASSWORD:}
       repositories:
         enabled: false  # Only RedisTemplate used; no Spring Data Redis repos
   servlet:

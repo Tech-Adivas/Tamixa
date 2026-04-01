@@ -22,3 +22,8 @@ README.md
 # Test and local
 .env
 .env.*
+
+# Node (smaller web/admin Docker contexts from repo root)
+**/node_modules
+web/dist
+admin/.next
