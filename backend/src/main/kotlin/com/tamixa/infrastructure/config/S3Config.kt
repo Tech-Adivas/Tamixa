@@ -43,7 +43,20 @@ class S3Config {
                     }
                 }
             } else {
-                log.warn("No AWS credentials in env. Tried .env at cwd={} and parent dirs. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY or add .env at project root.", cwd.absolutePath)
+                val onRailway = System.getenv().keys.any { it.startsWith("RAILWAY_") }
+                if (onRailway) {
+                    log.info(
+                        "S3: no AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY in process env and no .env in the image (expected on Railway). " +
+                            "Add AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET, and S3_REGION to this service's Variables, " +
+                            "or use an IAM role only if your runtime provides the AWS SDK default credential chain."
+                    )
+                } else {
+                    log.warn(
+                        "No AWS credentials in env. Tried .env at cwd={} and parent dirs. " +
+                            "Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY or add .env at project root.",
+                        cwd.absolutePath,
+                    )
+                }
             }
         }
         return accessKey to secretKey

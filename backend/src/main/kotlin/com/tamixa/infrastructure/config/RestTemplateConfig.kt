@@ -4,6 +4,7 @@ import com.tamixa.infrastructure.avatar.DidAvatarVideoCondition
 import com.tamixa.infrastructure.avatar.GooeyLipSyncCondition
 import com.tamixa.infrastructure.avatar.ReplicateSadTalkerCondition
 import org.slf4j.LoggerFactory
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Conditional
 import org.springframework.boot.web.client.RestTemplateBuilder
@@ -101,9 +102,17 @@ class RestTemplateConfig {
             .build()
     }
 
-    /** RestTemplate for Google Cloud TTS: per-chunk read timeout (Chirp3/WaveNet for full story = many chunks). */
+    /**
+     * Google Cloud Text-to-Speech HTTP client (narration + voice-cloning key API share the same endpoint style).
+     * Must exist whenever [GoogleCloudTtsClientAdapter] OR [GoogleCloudVoiceCloningAdapter] is active.
+     * Default `app.voice-cloning.provider` is `google` while `app.narration.tts-provider` may stay `tamixa` — without this,
+     * the context fails with "No qualifying bean ... googleTtsRestTemplate".
+     */
     @Bean("googleTtsRestTemplate")
-    @ConditionalOnProperty(name = ["app.narration.tts-provider"], havingValue = "google")
+    @ConditionalOnExpression(
+        "'\${app.narration.tts-provider:tamixa}'.equalsIgnoreCase('google') || " +
+            "'\${app.voice-cloning.provider:google}'.equalsIgnoreCase('google')",
+    )
     fun googleTtsRestTemplate(
         builder: RestTemplateBuilder,
         appProperties: AppProperties

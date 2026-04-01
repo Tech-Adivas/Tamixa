@@ -131,8 +131,15 @@ private fun applyJdbcPropertiesFromUrl(rawUrl: String, env: Map<String, String>)
 }
 
 private fun applyPgHostCompatibility(env: Map<String, String>) {
-    val pgHost = envValueIgnoringCase(env, "PGHOST") ?: return
-    val pgPort = envValueIgnoringCase(env, "PGPORT") ?: "5432"
+    // Railway / Docker often expose PG*; some templates only set POSTGRES_HOST on the consuming service.
+    val pgHost =
+        envValueIgnoringCase(env, "PGHOST")
+            ?: envValueIgnoringCase(env, "POSTGRES_HOST")
+            ?: return
+    val pgPort =
+        envValueIgnoringCase(env, "PGPORT")
+            ?: envValueIgnoringCase(env, "POSTGRES_PORT")
+            ?: "5432"
     var pgDatabase =
         envValueIgnoringCase(env, "PGDATABASE")
             ?: envValueIgnoringCase(env, "POSTGRES_DB")
@@ -157,7 +164,7 @@ private fun applyPgHostCompatibility(env: Map<String, String>) {
         val pw = envValueIgnoringCase(env, "PGPASSWORD") ?: envValueIgnoringCase(env, "POSTGRES_PASSWORD")
         pw?.takeIf { it.isNotBlank() }?.let { System.setProperty("spring.datasource.password", it) }
     }
-    log.info("Configured datasource from PG* environment variables")
+    log.info("Configured datasource from PG* / POSTGRES_* host environment variables")
 }
 
 /**
@@ -383,7 +390,8 @@ private fun warnIfLikelyMissingDbCredentials() {
 }
 
 /**
- * On Railway, **staging** must receive Postgres connection variables on the **backend** service (Variable Reference).
+ * On Railway, **staging** must receive Postgres connection variables on **the same service that runs this JVM**
+ * (Variable Reference from the Postgres plugin — even in a single-service / monorepo deploy).
  * Without them, Spring used to use a placeholder JDBC URL with no password (SCRAM / NPE noise). **Prod** is not halted here:
  * `application-prod.yml` can build a private `jdbc:postgresql://postgres.railway.internal/...` URL with only `PGPASSWORD` set.
  */
@@ -407,10 +415,12 @@ private fun haltIfRailwayMissingPostgresConnectionEnv() {
         return
     }
     log.error(
-        "Railway: no database connection variables are visible to this service (DATABASE_PUBLIC_URL, DATABASE_URL, " +
-            "SPRING_DATASOURCE_URL, PGHOST, or POSTGRES_HOST). Open the **backend** service → Variables → " +
-            "Reference your Postgres plugin (at minimum DATABASE_URL or DATABASE_PUBLIC_URL, plus POSTGRES_PASSWORD or PGPASSWORD " +
-            "if the URL has no embedded password), redeploy, and ensure the DB service is in the same project."
+        "Railway: Postgres env is not visible to this JVM (needs DATABASE_URL, DATABASE_PUBLIC_URL, SPRING_DATASOURCE_URL, " +
+            "or PGHOST/POSTGRES_HOST with PGDATABASE/POSTGRES_DB). Railway does not auto-inject DB vars: open the service that runs " +
+            "this container → Variables → New Variable → Variable Reference → pick your **Postgres** service → add DATABASE_URL " +
+            "(and DATABASE_PUBLIC_URL if you use it), plus PGPASSWORD/POSTGRES_PASSWORD if the URL has no password. " +
+            "Raw-editor equivalent looks like: DATABASE_URL=\${{ Postgres.DATABASE_URL }} (use your actual Postgres service name). " +
+            "Save and redeploy."
     )
     exitProcess(1)
 }
