@@ -11,6 +11,7 @@ import org.springframework.retry.annotation.EnableRetry
 import org.springframework.scheduling.annotation.EnableAsync
 import org.springframework.scheduling.annotation.EnableScheduling
 import org.slf4j.LoggerFactory
+import kotlin.system.exitProcess
 
 @SpringBootApplication
 @EnableJpaRepositories
@@ -160,10 +161,6 @@ private fun applyPgHostCompatibility(env: Map<String, String>) {
 }
 
 /**
- * Railway provides `DATABASE_PUBLIC_URL` (TCP proxy) and `DATABASE_URL` (private when both exist — private is
- * the in-project default). We prefer **DATABASE_PUBLIC_URL** when set so the app connects from environments
- * without Private Networking; for **private networking only**, omit `DATABASE_PUBLIC_URL` on the service so
- * `DATABASE_URL` is used.
  * After we set `spring.datasource.url`, copy PG* / POSTGRES_* into Spring properties when Spring-specific env is unset
  * (JDBC URLs without embedded credentials need a separate password env — reference `PGPASSWORD` or `POSTGRES_PASSWORD`).
  */
@@ -188,10 +185,17 @@ private fun applyDatasourceSecretsFromRailwayPgEnv(env: Map<String, String>) {
 
 private fun applyDatabaseUrlCompatibility() {
     val env = System.getenv()
-    // Prefer DATABASE_PUBLIC_URL when set; else DATABASE_URL (Railway private / in-project).
+    // URL choice when both Railway URLs exist:
+    // - On Railway (RAILWAY_*): prefer private DATABASE_URL (postgres.railway.internal) — same DB, lower latency, no public proxy hop.
+    // - Off Railway (e.g. laptop with railway.env): prefer DATABASE_PUBLIC_URL so internal hostnames are not tried first.
     val rawDatabaseUrl =
-        envValueIgnoringCase(env, "DATABASE_PUBLIC_URL")
-            ?: envValueIgnoringCase(env, "DATABASE_URL")
+        if (isRailwayDeployment(env)) {
+            envValueIgnoringCase(env, "DATABASE_URL")
+                ?: envValueIgnoringCase(env, "DATABASE_PUBLIC_URL")
+        } else {
+            envValueIgnoringCase(env, "DATABASE_PUBLIC_URL")
+                ?: envValueIgnoringCase(env, "DATABASE_URL")
+        }
 
     if (!rawDatabaseUrl.isNullOrBlank()) {
         when {
@@ -378,31 +382,37 @@ private fun warnIfLikelyMissingDbCredentials() {
     )
 }
 
-private fun warnIfRailwayStagingHasNoPostgresEnv() {
+/**
+ * On Railway, **staging** must receive Postgres connection variables on the **backend** service (Variable Reference).
+ * Without them, Spring used to use a placeholder JDBC URL with no password (SCRAM / NPE noise). **Prod** is not halted here:
+ * `application-prod.yml` can build a private `jdbc:postgresql://postgres.railway.internal/...` URL with only `PGPASSWORD` set.
+ */
+private fun haltIfRailwayMissingPostgresConnectionEnv() {
     val env = System.getenv()
     if (!isRailwayDeployment(env)) {
         return
     }
     val activeRaw = System.getProperty("spring.profiles.active") ?: env["SPRING_PROFILES_ACTIVE"] ?: ""
-    val stagingActive =
-        activeRaw.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.contains("staging")
-    if (!stagingActive) {
+    val profiles = activeRaw.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
+    if (!profiles.contains("staging")) {
         return
     }
-    val hasUrl =
+    val hasConnectionHint =
         envValueIgnoringCase(env, "DATABASE_PUBLIC_URL") != null ||
             envValueIgnoringCase(env, "DATABASE_URL") != null ||
-            envValueIgnoringCase(env, "SPRING_DATASOURCE_URL") != null
-    val hasPgHost = envValueIgnoringCase(env, "PGHOST") != null
-    if (hasUrl || hasPgHost) {
+            envValueIgnoringCase(env, "SPRING_DATASOURCE_URL") != null ||
+            envValueIgnoringCase(env, "PGHOST") != null ||
+            !envValueIgnoringCase(env, "POSTGRES_HOST").isNullOrBlank()
+    if (hasConnectionHint) {
         return
     }
     log.error(
-        "Railway + staging: DATABASE_PUBLIC_URL, DATABASE_URL, SPRING_DATASOURCE_URL, and PGHOST are all missing from the JVM environment. " +
-            "The app will fall back to the public proxy default in application-staging.yml (crossover.proxy.rlwy.net + sslmode=require). " +
-            "You still need PGPASSWORD / POSTGRES_PASSWORD and PGUSER / POSTGRES_USER (or credentials inside the connection URL). " +
-            "Best fix: backend service → Variables → **Reference** Postgres (private: DATABASE_URL and password vars; public proxy: DATABASE_PUBLIC_URL), then redeploy."
+        "Railway: no database connection variables are visible to this service (DATABASE_PUBLIC_URL, DATABASE_URL, " +
+            "SPRING_DATASOURCE_URL, PGHOST, or POSTGRES_HOST). Open the **backend** service → Variables → " +
+            "Reference your Postgres plugin (at minimum DATABASE_URL or DATABASE_PUBLIC_URL, plus POSTGRES_PASSWORD or PGPASSWORD " +
+            "if the URL has no embedded password), redeploy, and ensure the DB service is in the same project."
     )
+    exitProcess(1)
 }
 
 private fun logLikelyDatasourceTarget() {
@@ -430,8 +440,7 @@ private fun logLikelyDatasourceTarget() {
                         ?: envValueIgnoringCase(env, "PGDATABASE") ?: "araro_kids"
                 val resolvedHost = pgHost ?: host
                 if (stagingActive && host == "localhost" && pgHost.isNullOrBlank()) {
-                    // application-staging.yml defaults when POSTGRES_* / PG* are unset (public Railway proxy)
-                    "jdbc:postgresql://crossover.proxy.rlwy.net:58777/railway?sslmode=require"
+                    "(staging: configure DATABASE_PUBLIC_URL or DATABASE_URL — no default proxy in application-staging.yml)"
                 } else {
                     "jdbc:postgresql://$resolvedHost:$port/$db"
                 }
@@ -444,11 +453,12 @@ private fun logLikelyDatasourceTarget() {
         envValueIgnoringCase(env, "DATABASE_PUBLIC_URL") != null ||
             envValueIgnoringCase(env, "DATABASE_URL") != null ||
             envValueIgnoringCase(env, "SPRING_DATASOURCE_URL") != null
+    val hasPostgresHostEnv = !envValueIgnoringCase(env, "POSTGRES_HOST").isNullOrBlank()
     val hasPgHostEnv = envValueIgnoringCase(env, "PGHOST") != null
-    if (stagingActive && !dsUrlSetAtStartup && !hasJdbcFromDatabaseUrl && !hasPgHostEnv) {
+    if (stagingActive && !dsUrlSetAtStartup && !hasJdbcFromDatabaseUrl && !hasPgHostEnv && !hasPostgresHostEnv) {
         log.warn(
-            "Staging profile: no DATABASE_PUBLIC_URL / DATABASE_URL / SPRING_DATASOURCE_URL / PGHOST visible to the JVM before Spring starts; " +
-                "Spring will use application-staging.yml default (Railway public proxy crossover.proxy.rlwy.net:58777 + sslmode=require) unless you reference Postgres on the backend service."
+            "Staging profile: no DATABASE_PUBLIC_URL / DATABASE_URL / SPRING_DATASOURCE_URL / PGHOST / POSTGRES_HOST visible to the JVM before Spring starts; " +
+                "set spring.datasource.url via env (reference Postgres on Railway) or the app will not connect."
         )
     } else if (sanitized.contains("localhost:5432") &&
         stagingActive
@@ -464,7 +474,7 @@ fun main(args: Array<String>) {
     applyDatabaseUrlCompatibility()
     warnIfDatasourceEnvFamiliesOverlap()
     logLikelyDatasourceTarget()
-    warnIfRailwayStagingHasNoPostgresEnv()
+    haltIfRailwayMissingPostgresConnectionEnv()
     warnIfLikelyMissingDbCredentials()
     runApplication<TamixaApplication>(*startupArgs)
 }

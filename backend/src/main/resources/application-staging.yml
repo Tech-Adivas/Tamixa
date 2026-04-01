@@ -17,9 +17,8 @@ spring:
     hibernate:
       ddl-auto: validate
   datasource:
-    # Prefer DATABASE_PUBLIC_URL (Railway public proxy), then DATABASE_URL. If both unset, default JDBC uses public proxy host (no Private Networking).
-    # Override host/port with RAILWAY_DATABASE_PUBLIC_HOST / RAILWAY_DATABASE_PUBLIC_PORT if Railway assigns a different proxy port.
-    url: ${DATABASE_PUBLIC_URL:${DATABASE_URL:jdbc:postgresql://${RAILWAY_DATABASE_PUBLIC_HOST:crossover.proxy.rlwy.net}:${RAILWAY_DATABASE_PUBLIC_PORT:58777}/${POSTGRES_DB:${PGDATABASE:railway}}?sslmode=require}}
+    # Require an explicit Railway (or other) URL — no baked-in proxy host. Reference Postgres DATABASE_PUBLIC_URL and/or DATABASE_URL on the service.
+    url: ${DATABASE_PUBLIC_URL:${DATABASE_URL:}}
     username: ${DATABASE_USERNAME:${POSTGRES_USER:${PGUSER:postgres}}}
     password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:${PGPASSWORD:}}}
     hikari:
