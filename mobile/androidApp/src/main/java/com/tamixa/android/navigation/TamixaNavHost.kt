@@ -753,7 +753,7 @@ fun TamixaNavHost(
                 onLogout = {
                     authViewModel.logout()
                     navController.navigate(Screen.Login.route) {
-                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                        popUpTo(navController.graph.startDestinationRoute ?: Screen.Splash.route) { inclusive = true }
                     }
                 },
                 onDeleteAccount = {
@@ -762,7 +762,7 @@ fun TamixaNavHost(
                             .onSuccess {
                                 authViewModel.logout()
                                 navController.navigate(Screen.Login.route) {
-                                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                                    popUpTo(navController.graph.startDestinationRoute ?: Screen.Splash.route) { inclusive = true }
                                 }
                             }
                             .onFailure { appMessageNotifier.showError() }

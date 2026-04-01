@@ -101,4 +101,30 @@ class NsUserDefaultsPreferences : PreferencesPort {
         defaults.setBool(optIn, forKey = "${prefix}story_art_personalization_opt_in")
         defaults.synchronize()
     }
+
+    override suspend fun getApiBaseUrlOverride(): String =
+        defaults.stringForKey("${prefix}api_base_url_override")?.trim().orEmpty()
+
+    override suspend fun setApiBaseUrlOverride(value: String) {
+        val t = value.trim()
+        if (t.isEmpty()) {
+            defaults.removeObjectForKey("${prefix}api_base_url_override")
+        } else {
+            defaults.setObject(t, forKey = "${prefix}api_base_url_override")
+        }
+        defaults.synchronize()
+    }
+
+    override suspend fun getSubscriptionWebUrlOverride(): String =
+        defaults.stringForKey("${prefix}subscription_web_url_override")?.trim().orEmpty()
+
+    override suspend fun setSubscriptionWebUrlOverride(value: String) {
+        val t = value.trim()
+        if (t.isEmpty()) {
+            defaults.removeObjectForKey("${prefix}subscription_web_url_override")
+        } else {
+            defaults.setObject(t, forKey = "${prefix}subscription_web_url_override")
+        }
+        defaults.synchronize()
+    }
 }

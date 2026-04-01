@@ -125,6 +125,27 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
         }
     }
 
+    override suspend fun getApiBaseUrlOverride(): String =
+        context.dataStore.data.first()[API_BASE_URL_OVERRIDE_KEY]?.trim().orEmpty()
+
+    override suspend fun setApiBaseUrlOverride(value: String) {
+        context.dataStore.edit { prefs ->
+            val t = value.trim()
+            if (t.isEmpty()) prefs.remove(API_BASE_URL_OVERRIDE_KEY) else prefs[API_BASE_URL_OVERRIDE_KEY] = t
+        }
+    }
+
+    override suspend fun getSubscriptionWebUrlOverride(): String =
+        context.dataStore.data.first()[SUBSCRIPTION_WEB_URL_OVERRIDE_KEY]?.trim().orEmpty()
+
+    override suspend fun setSubscriptionWebUrlOverride(value: String) {
+        context.dataStore.edit { prefs ->
+            val t = value.trim()
+            if (t.isEmpty()) prefs.remove(SUBSCRIPTION_WEB_URL_OVERRIDE_KEY)
+            else prefs[SUBSCRIPTION_WEB_URL_OVERRIDE_KEY] = t
+        }
+    }
+
     companion object {
         private val USE_SYSTEM_THEME_KEY = booleanPreferencesKey("use_system_theme")
         private val DARK_MODE_KEY = booleanPreferencesKey("dark_mode")
@@ -137,5 +158,7 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
         private val BEDTIME_REMINDER_HOUR_KEY = intPreferencesKey("bedtime_reminder_hour")
         private val BEDTIME_REMINDER_MINUTE_KEY = intPreferencesKey("bedtime_reminder_minute")
         private val STORY_ART_PERSONALIZATION_OPT_IN_KEY = booleanPreferencesKey("story_art_personalization_opt_in")
+        private val API_BASE_URL_OVERRIDE_KEY = stringPreferencesKey("api_base_url_override")
+        private val SUBSCRIPTION_WEB_URL_OVERRIDE_KEY = stringPreferencesKey("subscription_web_url_override")
     }
 }

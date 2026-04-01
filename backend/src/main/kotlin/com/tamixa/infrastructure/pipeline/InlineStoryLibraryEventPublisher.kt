@@ -1,13 +1,12 @@
 package com.tamixa.infrastructure.pipeline
 
-import com.tamixa.application.narration.StoryProcessingService
 import com.tamixa.application.port.StoryLibraryEventPublisherPort
+import com.tamixa.application.port.StoryPipelineTriggerPort
 import com.tamixa.infrastructure.config.AppProperties
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.context.annotation.Lazy
 import org.springframework.context.annotation.Primary
 import org.springframework.context.annotation.Profile
-import org.springframework.core.task.TaskExecutor
 import org.springframework.stereotype.Component
 import org.springframework.transaction.support.TransactionSynchronization
 import org.springframework.transaction.support.TransactionSynchronizationManager
@@ -23,9 +22,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @Primary
 @Profile("!test")
 class InlineStoryLibraryEventPublisher(
-    private val storyProcessingService: StoryProcessingService,
-    private val appProperties: AppProperties,
-    @Qualifier("triggerPipelineExecutor") private val triggerPipelineExecutor: TaskExecutor
+    @Lazy private val storyPipelineTriggerPort: StoryPipelineTriggerPort,
+    private val appProperties: AppProperties
 ) : StoryLibraryEventPublisherPort {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -58,13 +56,7 @@ class InlineStoryLibraryEventPublisher(
     }
 
     private fun schedulePipeline(masterStoryId: Long) {
-        triggerPipelineExecutor.execute {
-            try {
-                storyProcessingService.processSync(masterStoryId)
-                log.info("Create pipeline completed for story id={}", masterStoryId)
-            } catch (e: Exception) {
-                log.error("Create pipeline failed for story id={}: {}", masterStoryId, e.message, e)
-            }
-        }
+        storyPipelineTriggerPort.scheduleProcessSync(masterStoryId, translationOnly = false)
+        log.info("Create pipeline scheduled for story id={}", masterStoryId)
     }
 }

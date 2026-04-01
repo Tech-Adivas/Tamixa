@@ -128,6 +128,10 @@ class SubscriptionService(
         val current = subscriptionRepository.findById(subscriptionId)
             ?: throw SubscriptionNotFoundException(subscriptionId)
         if (current.parentId != parentId) throw SubscriptionAccessDeniedException()
+        // Free tier / already canceled: idempotent no-op (parent app may call cancel from settings).
+        if (current.status == SubscriptionStatus.FREE || current.status == SubscriptionStatus.CANCELED) {
+            return current
+        }
         if (current.status !in listOf(SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL)) {
             throw InvalidSubscriptionTransitionException(current.status, SubscriptionStatus.CANCELED)
         }

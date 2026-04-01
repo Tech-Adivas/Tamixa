@@ -88,49 +88,77 @@ mobile/
 
 ## Build
 
-The mobile app uses a single **composeApp** module (Kotlin Multiplatform + Compose) for shared code and Android. Build from the `mobile/` directory:
+The mobile app uses a single **composeApp** module (Kotlin Multiplatform + Compose) for shared code and Android. Build from the `mobile/` directory (or use `:mobile:composeApp:` from the repo root).
+
+### Android environments (`productFlavors`)
+
+| Flavor | `BuildConfig.BASE_URL` (default) | Override |
+|--------|----------------------------------|----------|
+| **dev** | `mobile/local.properties` → `TAMIXA_API_BASE_URL`, else `http://10.0.2.2:8080` | Same file: `TAMIXA_WEB_APP_URL` for subscription host |
+| **qa** | `https://api-qa.tamixa.com` | `-PTAMIXA_QA_API_BASE_URL=` / `-PTAMIXA_QA_WEB_APP_URL=` |
+| **prod** | `https://api.tamixa.com` | `-PTAMIXA_API_BASE_URL=` / `-PTAMIXA_WEB_APP_URL=` |
+
+`BuildConfig` also exposes `TAMIXA_ENVIRONMENT` (`dev` / `qa` / `prod`). Launcher label is **Tamixa (Dev)** / **Tamixa (QA)** for non-prod flavors.
+
+Examples:
 
 ```bash
 cd mobile
 
-# Android debug
+# One debug APK (fast local loop) — dev flavor
+./gradlew :composeApp:assembleDevDebug
+./gradlew :composeApp:installDebug   # alias → installs devDebug
+
+# QA / prod release (Play-style minified)
+./gradlew :composeApp:assembleQaRelease \
+  -PTAMIXA_QA_API_BASE_URL=https://your-qa-api.example.com \
+  -PTAMIXA_QA_WEB_APP_URL=https://your-qa-app.example.com
+
+./gradlew :composeApp:assembleProdRelease \
+  -PTAMIXA_API_BASE_URL=https://api.tamixa.com \
+  -PTAMIXA_WEB_APP_URL=https://app.tamixa.com
+
+# All debug or all release variants (slower)
 ./gradlew :composeApp:assembleDebug
-
-# Android release
 ./gradlew :composeApp:assembleRelease
+```
 
-# iOS framework (for Xcode integration)
+APK output names: `tamixa-<variant>.apk` (e.g. `tamixa-devDebug.apk`, `tamixa-prodRelease.apk`) under `composeApp/build/outputs/apk/<flavor>/<buildType>/`.
+
+```bash
+# iOS shared framework (Kotlin/Native: Debug or Release only — not Android dev/qa/prod)
+./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64
 ./gradlew :composeApp:linkReleaseFrameworkIosArm64
 ```
 
-To run on a connected device or emulator:
-```bash
-./gradlew :composeApp:installDebug
-```
+**Note:** The mobile module has its own `settings.gradle.kts` and Gradle wrapper for standalone builds. From the repo root, use `./gradlew :mobile:composeApp:assembleDevDebug` (same tasks with a `:mobile:` prefix).
 
-**Note:** The mobile module has its own `settings.gradle.kts` and Gradle wrapper for standalone builds. Building from the project root with `./gradlew :mobile:composeApp:assembleDebug` may have compatibility constraints; prefer building from `mobile/` for reliable results.
-
-Set `BASE_URL` in `composeApp` `build.gradle.kts` (BuildConfig) to your API base URL.
+`local.properties` for **dev** is resolved as `mobile/local.properties` (monorepo) or `local.properties` next to the mobile root when you open `mobile/` alone.
 
 ## iOS Setup
 
-The `composeApp` module builds a **shared** framework for iOS with platform ports (TokenStorage, PreferencesPort, StoryCache), Koin init, and shared UI code. To complete the iOS app:
+The repo includes **`mobile/iosApp/Tamixa.xcodeproj`**, which runs a script build phase that links the Gradle-built **`shared.framework`** (Kotlin/Native **Debug** or **Release** only). App-level **dev / qa / prod** is selected with **Xcode build configurations** (not separate Gradle flavors).
 
-1. **Create an Xcode project** (or use Compose Multiplatform’s iOS app template) and add the `shared` framework.
-2. **Call Koin init** from Swift in your app launch:
-   ```swift
-   IosAppKt.doInitKoin(baseUrl: "http://127.0.0.1:8080")  // Simulator
-   ```
-3. **Host Compose UI** in a `UIViewController` using `ComposeUIViewController()` from the Compose framework.
-4. **Navigation & playback**: `TamixaNavHost` and audio/video playback are Android-specific (ExoPlayer, Media3). For full iOS parity, you need to:
-   - Add multiplatform navigation (or an `iosMain`-specific NavHost)
-   - Implement AVPlayer-based playback controllers for streaming, TTS, and avatar video
-   - Add `FamilyVoiceRecordDialog` using AVAudioRecorder
-   - Configure background audio via AVAudioSession
+### iOS environments (Xcode build configurations)
+
+| Configuration | Default API | Default subscription page | Home-screen name |
+|---------------|-------------|----------------------------|------------------|
+| **DevDebug** / **DevRelease** | `http://127.0.0.1:8080` | `http://127.0.0.1:3000/subscription` | Tamixa (Dev) |
+| **QaDebug** / **QaRelease** | `https://api-qa.tamixa.com` | `https://app-qa.tamixa.com/subscription` | Tamixa (QA) |
+| **ProdDebug** / **ProdRelease** | `https://api.tamixa.com` | `https://app.tamixa.com/subscription` | Tamixa |
+
+Values come from **target Build Settings** (`TAMIXA_API_BASE_URL`, `TAMIXA_SUBSCRIPTION_WEB_URL`, `TAMIXA_ENVIRONMENT`, `TAMIXA_DISPLAY_NAME`) and are merged into `Info.plist`. The shared **Tamixa** scheme uses **DevDebug** for Run and **ProdRelease** for Archive. Change the run configuration under **Product → Scheme → Edit Scheme… → Run → Build configuration** (e.g. **QaDebug**).
+
+Swift passes plist values into Kotlin via `MainViewController(baseUrl:defaultSubscriptionWebUrl:environment:)`; `IosBuildTimeEnvironment` feeds the subscription default used by `getSubscriptionWebUrl()`.
+
+**Navigation & playback**: `TamixaNavHost` and much playback are Android-oriented; iOS still needs fuller navigation and AVPlayer-based streaming where applicable.
 
 ## API Base URL
 
-Defaults to `ApiConfig.DEFAULT_BASE_URL`; override via `BuildConfig.BASE_URL` in the Android app (see `TamixaApplication` and `build.gradle.kts`).
+- **Android:** flavor-specific `BuildConfig.BASE_URL` (see **Android environments**).
+- **iOS:** build-configuration-specific `TAMIXA_API_BASE_URL` in Xcode (table above).
+
+Runtime overrides for staging are in **Settings → Server (advanced)**; API override applies after a full app restart.
 
 ## Running on a physical device
 
@@ -154,15 +182,10 @@ On a **physical phone/tablet**, `localhost` and `10.0.2.2` point to the device i
    TAMIXA_API_BASE_URL=http://YOUR_IP:8080
    ```
    Optional: `TAMIXA_WEB_APP_URL=http://YOUR_IP:3000` if the subscription web view points to your local web app.  
-   Rebuild and install: `./gradlew :composeApp:installDebug`.
+   Rebuild and install: `./gradlew :composeApp:installDebug` (installs **dev** debug).
 
 5. **iOS**  
-   In `iosApp/Tamixa/Info.plist`, set `TAMIXA_API_BASE_URL` to your machine’s URL, e.g.:
-   ```xml
-   <key>TAMIXA_API_BASE_URL</key>
-   <string>http://192.168.1.5:8080</string>
-   ```
-   Rebuild the app in Xcode and run on the device.
+   In Xcode: **Target Tamixa → Build Settings**, locate the user-defined keys (filter `TAMIXA_`) for the configuration you run (e.g. **DevDebug**), and set **TAMIXA_API_BASE_URL** to `http://YOUR_IP:8080` (and **TAMIXA_SUBSCRIPTION_WEB_URL** if your local web app is not on port 3000). Rebuild and run on the device.
 
 6. **Firewall**: Ensure your OS/firewall allows incoming TCP connections on port 8080 from the local network.
 

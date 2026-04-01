@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -87,7 +88,16 @@ fun SettingsScreen(
     onNavigateToShortContent: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     storyArtPersonalizationOptIn: Boolean = false,
-    onStoryArtPersonalizationOptInChange: (Boolean) -> Unit = {}
+    onStoryArtPersonalizationOptInChange: (Boolean) -> Unit = {},
+    apiBaseUrlOverride: String = "",
+    subscriptionWebUrlOverride: String = "",
+    serverEnvironmentMessage: String? = null,
+    serverEnvironmentError: String? = null,
+    onApiBaseUrlOverrideChange: (String) -> Unit = {},
+    onSubscriptionWebUrlOverrideChange: (String) -> Unit = {},
+    onSaveServerEnvironment: () -> Unit = {},
+    onClearServerEnvironment: () -> Unit = {},
+    onDismissServerEnvironmentMessage: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
@@ -419,6 +429,76 @@ fun SettingsScreen(
                                 checked = darkMode,
                                 onCheckedChange = onDarkModeChange
                             )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(TamixaDesignTokens.cardSpacing))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
+                colors = TamixaCardColors.surfaceVariant(),
+                elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation)
+            ) {
+                Column(modifier = Modifier.padding(TamixaDesignTokens.cardContentPadding)) {
+                    Text(
+                        Strings.serverEnvironmentTitle(),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        Strings.serverEnvironmentDescription(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TamixaContentColors.cardSecondary()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = apiBaseUrlOverride,
+                        onValueChange = onApiBaseUrlOverrideChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(Strings.apiBaseUrlHint()) },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = subscriptionWebUrlOverride,
+                        onValueChange = onSubscriptionWebUrlOverrideChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(Strings.subscriptionWebUrlHint()) },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(onClick = onSaveServerEnvironment) {
+                            Text(Strings.saveServerEnvironment())
+                        }
+                        OutlinedButton(onClick = onClearServerEnvironment) {
+                            Text(Strings.clearServerEnvironment())
+                        }
+                    }
+                    serverEnvironmentError?.let { err ->
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = err,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    serverEnvironmentMessage?.let { msg ->
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = msg,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TamixaContentColors.cardSecondary()
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        TextButton(onClick = onDismissServerEnvironmentMessage) {
+                            Text(Strings.close())
                         }
                     }
                 }

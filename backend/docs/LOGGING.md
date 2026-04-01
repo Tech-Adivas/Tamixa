@@ -14,7 +14,7 @@ Request-scoped fields automatically included in log output:
 
 | Key | Source | Description |
 |-----|--------|-------------|
-| `traceId` | `RequestTracingFilter` | UUID per request; also in `X-Request-Id` response header |
+| `traceId` | `RequestTracingFilter` | From `X-Correlation-Id` or `X-Request-Id` if valid, else new UUID; both echoed on response |
 | `masterStoryId` | `StoryContextMdcFilter` | Parsed from path (e.g. `/stories/42/...`) |
 | `language` | `StoryContextMdcFilter` | From query param `language` |
 

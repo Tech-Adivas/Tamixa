@@ -1,6 +1,7 @@
 package com.tamixa.ui.viewmodel
 
 import com.tamixa.application.port.PreferencesPort
+import com.tamixa.runtime.ServerEnvironmentCache
 import com.tamixa.network.ConsentRecordDto
 import com.tamixa.repository.AuthRepository
 import com.tamixa.network.ExportJobDto
@@ -31,7 +32,12 @@ data class SettingsState(
     val settingsLoading: Boolean = false,
     val settingsLoadError: String? = null,
     val exporting: Boolean = false,
-    val storyArtPersonalizationOptIn: Boolean = false
+    val storyArtPersonalizationOptIn: Boolean = false,
+    /** Runtime API base override (staging / Railway). Empty = build default at next launch. */
+    val apiBaseUrlOverride: String = "",
+    val subscriptionWebUrlOverride: String = "",
+    val serverEnvironmentMessage: String? = null,
+    val serverEnvironmentError: String? = null
 )
 
 class SettingsViewModel(
@@ -53,6 +59,8 @@ class SettingsViewModel(
             val preferredVoiceProfile = preferencesPort.getPreferredVoiceProfile()
             val preferredThemes = preferencesPort.getPreferredThemes()
             val storyArtOptIn = preferencesPort.getStoryArtPersonalizationOptIn()
+            val apiOverride = preferencesPort.getApiBaseUrlOverride()
+            val subOverride = preferencesPort.getSubscriptionWebUrlOverride()
             _state.value = _state.value.copy(
                 useSystemTheme = useSystemTheme,
                 darkMode = darkMode,
@@ -62,6 +70,8 @@ class SettingsViewModel(
                 preferredVoiceProfile = preferredVoiceProfile.ifEmpty { com.tamixa.util.TamixaConstants.VOICE_PROFILE_DEFAULT },
                 preferredThemes = preferredThemes,
                 storyArtPersonalizationOptIn = storyArtOptIn,
+                apiBaseUrlOverride = apiOverride,
+                subscriptionWebUrlOverride = subOverride,
                 settingsLoaded = true
             )
         }
@@ -200,5 +210,58 @@ class SettingsViewModel(
             _state.value = _state.value.copy(exporting = false)
             onComplete()
         }
+    }
+
+    fun setApiBaseUrlOverrideDraft(value: String) {
+        _state.value = _state.value.copy(apiBaseUrlOverride = value, serverEnvironmentError = null)
+    }
+
+    fun setSubscriptionWebUrlOverrideDraft(value: String) {
+        _state.value = _state.value.copy(subscriptionWebUrlOverride = value, serverEnvironmentError = null)
+    }
+
+    fun dismissServerEnvironmentMessage() {
+        _state.value = _state.value.copy(serverEnvironmentMessage = null, serverEnvironmentError = null)
+    }
+
+    fun saveServerEnvironment() {
+        scope.launch {
+            val api = _state.value.apiBaseUrlOverride.trim()
+            val sub = _state.value.subscriptionWebUrlOverride.trim()
+            if (api.isNotEmpty() && !isPlausibleHttpUrl(api)) {
+                _state.value = _state.value.copy(serverEnvironmentError = com.tamixa.ui.strings.Strings.serverEnvironmentInvalidUrl())
+                return@launch
+            }
+            if (sub.isNotEmpty() && !isPlausibleHttpUrl(sub)) {
+                _state.value = _state.value.copy(serverEnvironmentError = com.tamixa.ui.strings.Strings.serverEnvironmentInvalidUrl())
+                return@launch
+            }
+            preferencesPort.setApiBaseUrlOverride(api)
+            preferencesPort.setSubscriptionWebUrlOverride(sub)
+            ServerEnvironmentCache.subscriptionWebUrlOverride = sub
+            _state.value = _state.value.copy(
+                serverEnvironmentError = null,
+                serverEnvironmentMessage = com.tamixa.ui.strings.Strings.serverEnvironmentSavedHint()
+            )
+        }
+    }
+
+    fun clearServerEnvironment() {
+        scope.launch {
+            preferencesPort.setApiBaseUrlOverride("")
+            preferencesPort.setSubscriptionWebUrlOverride("")
+            ServerEnvironmentCache.subscriptionWebUrlOverride = ""
+            _state.value = _state.value.copy(
+                apiBaseUrlOverride = "",
+                subscriptionWebUrlOverride = "",
+                serverEnvironmentError = null,
+                serverEnvironmentMessage = com.tamixa.ui.strings.Strings.serverEnvironmentClearedHint()
+            )
+        }
+    }
+
+    private fun isPlausibleHttpUrl(s: String): Boolean {
+        val t = s.trim()
+        return t.startsWith("http://", ignoreCase = true) || t.startsWith("https://", ignoreCase = true)
     }
 }

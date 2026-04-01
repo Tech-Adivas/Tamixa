@@ -21,9 +21,9 @@ import platform.Foundation.NSTemporaryDirectory
 import platform.posix.fclose
 import platform.posix.fopen
 import platform.posix.fwrite
+import com.tamixa.ios.IosBuildTimeEnvironment
+import com.tamixa.runtime.ServerEnvironmentCache
 import platform.UIKit.UIApplication
-
-private const val SUBSCRIPTION_WEB_URL = "https://app.tamixa.com/subscription"
 
 @OptIn(ExperimentalForeignApi::class)
 actual fun openUrl(url: String) {
@@ -31,7 +31,8 @@ actual fun openUrl(url: String) {
     UIApplication.sharedApplication.openURL(nsUrl)
 }
 
-actual fun getSubscriptionWebUrl(): String = SUBSCRIPTION_WEB_URL
+actual fun getSubscriptionWebUrl(): String =
+    ServerEnvironmentCache.effectiveSubscriptionWebUrl(IosBuildTimeEnvironment.defaultSubscriptionWebUrl)
 
 @OptIn(ExperimentalForeignApi::class)
 actual fun shareStory(title: String, text: String) {

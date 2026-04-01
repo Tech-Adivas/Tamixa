@@ -179,6 +179,60 @@ object Strings {
         else -> "Use system theme (day/night)"
     }
 
+    fun serverEnvironmentTitle(): String = when (languageCode) {
+        "ta" -> "சேவையகம் (மேம்பட்டது)"
+        "hi" -> "सर्वर (उन्नत)"
+        else -> "Server (advanced)"
+    }
+
+    fun serverEnvironmentDescription(): String = when (languageCode) {
+        "ta" -> "சோதனை / ஸ்டேஜிங். API மாற்றத்திற்கு பயன்பாட்டை மீண்டும் தொடங்கவும்."
+        "hi" -> "टेस्ट / स्टेजिंग। API बदलने के लिए ऐप पूरी तरह बंद करके खोलें।"
+        else -> "For testing or staging. Fully restart the app after changing the API URL."
+    }
+
+    fun apiBaseUrlHint(): String = when (languageCode) {
+        "ta" -> "API அடிப்படை URL (https://…, பாதை இல்லாமல்)"
+        "hi" -> "API बेस URL (https://…, बिना पथ)"
+        else -> "API base URL (https://…, no path)"
+    }
+
+    fun subscriptionWebUrlHint(): String = when (languageCode) {
+        "ta" -> "சந்தா / நிர்வாக URL (முழு https)"
+        "hi" -> "सदस्यता प्रबंधन URL (पूरा https)"
+        else -> "Subscription manage URL (full https)"
+    }
+
+    fun saveServerEnvironment(): String = when (languageCode) {
+        "ta" -> "சேமி"
+        "hi" -> "सहेजें"
+        else -> "Save"
+    }
+
+    fun clearServerEnvironment(): String = when (languageCode) {
+        "ta" -> "இயல்புநிலைக்கு மீட்டமை"
+        "hi" -> "डिफ़ॉल्ट पर रीसेट"
+        else -> "Reset to defaults"
+    }
+
+    fun serverEnvironmentInvalidUrl(): String = when (languageCode) {
+        "ta" -> "http:// அல்லது https:// உடன் செல்லுபடியாகும் URL ஐ உள்ளிடவும்."
+        "hi" -> "मान्य URL http:// या https:// से शुरू होना चाहिए।"
+        else -> "Enter a valid URL starting with http:// or https://."
+    }
+
+    fun serverEnvironmentSavedHint(): String = when (languageCode) {
+        "ta" -> "சேமிக்கப்பட்டது. சந்தா இணைப்பு உடனே புதுப்பிக்கப்படும். API க்கு பயன்பாட்டை முழுவதுமாக மீண்டும் தொடங்கவும்."
+        "hi" -> "सहेजा गया। सदस्यता लिंक तुरंत अपडेट। API के लिए ऐप पूरी तरह रीस्टार्ट करें।"
+        else -> "Saved. Subscription link updates now. Fully restart the app for the new API server."
+    }
+
+    fun serverEnvironmentClearedHint(): String = when (languageCode) {
+        "ta" -> "மீட்டமைக்கப்பட்டது. மாற்றங்களுக்கு பயன்பாட்டை மீண்டும் தொடங்கவும்."
+        "hi" -> "रीसेट। परिवर्तनों के लिए ऐप रीस्टार्ट करें।"
+        else -> "Reset. Restart the app to apply."
+    }
+
     fun selectLanguage(): String = when (languageCode) {
         "ta" -> "மொழியைத் தேர்ந்தெடு"
         "hi" -> "भाषा चुनें"

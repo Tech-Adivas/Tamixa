@@ -57,4 +57,16 @@ interface PreferencesPort {
     suspend fun getStoryArtPersonalizationOptIn(): Boolean
 
     suspend fun setStoryArtPersonalizationOptIn(optIn: Boolean)
+
+    // --- Runtime API / subscription URLs (staging, Railway, QA). Empty = build-time default. ---
+
+    /** Overrides API base at next cold start. No trailing slash. */
+    suspend fun getApiBaseUrlOverride(): String
+
+    suspend fun setApiBaseUrlOverride(value: String)
+
+    /** Full https URL for subscription management; applies after save via [com.tamixa.runtime.ServerEnvironmentCache]. */
+    suspend fun getSubscriptionWebUrlOverride(): String
+
+    suspend fun setSubscriptionWebUrlOverride(value: String)
 }

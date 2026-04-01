@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.InputStream
 import java.util.Properties
 
 plugins {
@@ -112,6 +113,30 @@ kotlin {
     }
 }
 
+/** Tamixa URL overrides: prefer mobile/local.properties (monorepo), else repo/mobile-root local.properties. */
+val tamixaLocalProps: Properties by lazy {
+    val p = Properties()
+    val mobileLocal = rootProject.file("mobile/local.properties")
+    val rootLocal = rootProject.file("local.properties")
+    val stream: InputStream? = when {
+        mobileLocal.exists() -> mobileLocal.inputStream()
+        rootLocal.exists() -> rootLocal.inputStream()
+        else -> null
+    }
+    stream?.use { p.load(it) }
+    p
+}
+
+fun tamixaDevApiBase(): String =
+    (tamixaLocalProps["TAMIXA_API_BASE_URL"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: "http://10.0.2.2:8080"
+
+fun tamixaDevWebRoot(): String {
+    val api = tamixaDevApiBase()
+    return (tamixaLocalProps["TAMIXA_WEB_APP_URL"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: api.replaceAfterLast(":", "3000")
+}
+
 android {
     namespace = "com.tamixa.android"
     compileSdk = 35
@@ -123,16 +148,43 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
-        // Physical device: set TAMIXA_API_BASE_URL in mobile/local.properties (e.g. http://192.168.1.5:8080)
-        val localProps = Properties()
-        val localFile = rootProject.file("local.properties")
-        if (localFile.exists()) localProps.load(localFile.inputStream())
-        val apiBaseUrl = (localProps["TAMIXA_API_BASE_URL"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
-            ?: "http://10.0.2.2:8080"
-        val subscriptionWebUrl = (localProps["TAMIXA_WEB_APP_URL"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
-            ?: apiBaseUrl.replaceAfterLast(":", "3000")
-        buildConfigField("String", "BASE_URL", "\"$apiBaseUrl\"")
-        buildConfigField("String", "SUBSCRIPTION_WEB_URL", "\"$subscriptionWebUrl/subscription\"")
+    }
+
+    flavorDimensions += "environment"
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            versionNameSuffix = "-dev"
+            resValue("string", "app_name", "Tamixa (Dev)")
+            val api = tamixaDevApiBase()
+            val webRoot = tamixaDevWebRoot()
+            buildConfigField("String", "BASE_URL", "\"$api\"")
+            buildConfigField("String", "SUBSCRIPTION_WEB_URL", "\"$webRoot/subscription\"")
+            buildConfigField("String", "TAMIXA_ENVIRONMENT", "\"dev\"")
+        }
+        create("qa") {
+            dimension = "environment"
+            versionNameSuffix = "-qa"
+            resValue("string", "app_name", "Tamixa (QA)")
+            val api = (project.findProperty("TAMIXA_QA_API_BASE_URL") as? String)?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "https://api-qa.tamixa.com"
+            val webRoot = (project.findProperty("TAMIXA_QA_WEB_APP_URL") as? String)?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "https://app-qa.tamixa.com"
+            buildConfigField("String", "BASE_URL", "\"$api\"")
+            buildConfigField("String", "SUBSCRIPTION_WEB_URL", "\"$webRoot/subscription\"")
+            buildConfigField("String", "TAMIXA_ENVIRONMENT", "\"qa\"")
+        }
+        create("prod") {
+            dimension = "environment"
+            isDefault = true
+            val api = (project.findProperty("TAMIXA_API_BASE_URL") as? String)?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "https://api.tamixa.com"
+            val webRoot = (project.findProperty("TAMIXA_WEB_APP_URL") as? String)?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "https://app.tamixa.com"
+            buildConfigField("String", "BASE_URL", "\"$api\"")
+            buildConfigField("String", "SUBSCRIPTION_WEB_URL", "\"$webRoot/subscription\"")
+            buildConfigField("String", "TAMIXA_ENVIRONMENT", "\"prod\"")
+        }
     }
 
     buildTypes {
@@ -143,12 +195,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            val prodUrl = project.findProperty("TAMIXA_API_BASE_URL") as? String
-                ?: "https://api.tamixa.com"
-            val webUrl = project.findProperty("TAMIXA_WEB_APP_URL") as? String
-                ?: "https://app.tamixa.com"
-            buildConfigField("String", "BASE_URL", "\"$prodUrl\"")
-            buildConfigField("String", "SUBSCRIPTION_WEB_URL", "\"$webUrl/subscription\"")
         }
     }
 
@@ -180,4 +226,11 @@ android.applicationVariants.all {
 
 dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
+}
+
+// With product flavors, AGP does not expose a unique `installDebug`; default local flow = dev.
+tasks.register("installDebug") {
+    group = "Install"
+    description = "Installs devDebug on a device (use installQaDebug / installProdDebug for other flavors)."
+    dependsOn("installDevDebug")
 }

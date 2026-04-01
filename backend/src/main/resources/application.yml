@@ -137,6 +137,11 @@ app:
     web-base-url: ${TAMIXA_WEB_APP_URL:http://localhost:3000}
     # Dev only: fixed code accepted for web passwordless (e.g. 123456). Set in dev profile; leave empty in prod.
     dev-passwordless-code: ${DEV_PASSWORDLESS_CODE:}
+  # Strangler: POST magic-link email to tamixa-notifications (internal API). When true, backend skips in-process SendGrid for passwordless.
+  notifications-email:
+    remote-enabled: ${NOTIFICATIONS_EMAIL_REMOTE_ENABLED:false}
+    base-url: ${NOTIFICATIONS_EMAIL_BASE_URL:}
+    internal-api-key: ${NOTIFICATIONS_INTERNAL_API_KEY:}
   cors:
     # Comma-separated exact origins. "*" = unset for non-dev unless allowed-origin-patterns is set (see profile YAML).
     allowed-origins: ${CORS_ALLOWED_ORIGINS:*}

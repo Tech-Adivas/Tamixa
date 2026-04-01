@@ -95,7 +95,7 @@ async function proxy(
   const urls = buildCandidateBackendUrls(base).map((candidateBase) => `${candidateBase}/api/${pathStr}${search}`);
 
   const headers = new Headers();
-  const forwardKeys = ["content-type", "x-request-id"];
+  const forwardKeys = ["content-type", "x-request-id", "x-correlation-id"];
   request.headers.forEach((value, key) => {
     if (forwardKeys.includes(key.toLowerCase()) && value) {
       headers.set(key, value);

@@ -5,6 +5,10 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+  task:
+    scheduling:
+      # Avoid @Scheduled jobs + Shedlock noise during integration tests (no real DB product detection edge cases).
+      enabled: false
   jpa:
     hibernate:
       # `create-drop` runs a large delayed DROP on SessionFactory shutdown; with Testcontainers the DB
@@ -13,7 +17,8 @@ spring:
       ddl-auto: create
     show-sql: false  # Use org.hibernate.SQL logger; set LOG_LEVEL_HIBERNATE_SQL=DEBUG for SQL in tests
 
-# Rate limit: low for tests so we can hit 429 quickly
+# Rate limiting: off by default so the suite does not share one in-memory bucket (2/min was causing 429 across tests).
+# Enable only in RateLimitingIntegrationTest via @TestPropertySource.
 app:
   control-plane:
     # Integration tests use Hibernate `create` schema without V76 seed; keep story runs off unless a test seeds workflows.
@@ -22,7 +27,7 @@ app:
     # Explicit origins for tests (non-dev profiles need origins and/or allowed-origin-patterns)
     allowed-origins: http://localhost:8080,http://localhost:3000
   rate-limit:
-    requests-per-minute: 2
+    enabled: false
 
 # Override readiness: Redis excluded above, so don't require it in health group
 management:

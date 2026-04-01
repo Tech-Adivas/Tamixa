@@ -20,12 +20,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.ComposeUIViewController
 import com.tamixa.di.initKoin
 import com.tamixa.di.iosPlatformModule
+import com.tamixa.runtime.ServerEnvironmentCache
 import com.tamixa.ui.TamixaApp
 import com.tamixa.ui.theme.TamixaTheme
 import platform.Foundation.NSLog
+import platform.Foundation.NSUserDefaults
 import platform.UIKit.UIViewController
 
 private var koinInitialized = false
+
+private fun readIosServerPref(suffix: String): String =
+    NSUserDefaults.standardUserDefaults.stringForKey("tamixa_pref_$suffix")?.trim().orEmpty()
 
 /** Set by Swift so pickers (audio/image) can be presented. Optional; if null, pickers are no-op. */
 var hostViewControllerForPickers: UIViewController? = null
@@ -48,8 +53,12 @@ fun warmupOnMainThread() {
  */
 fun doInitKoin(baseUrl: String = "http://127.0.0.1:8080") {
     if (koinInitialized) return
+    val apiOverride = readIosServerPref("api_base_url_override")
+    val subOverride = readIosServerPref("subscription_web_url_override")
+    ServerEnvironmentCache.subscriptionWebUrlOverride = subOverride
+    val resolvedBase = apiOverride.ifBlank { baseUrl.trim().ifBlank { "http://127.0.0.1:8080" } }
     koinInitialized = true
-    initKoin(baseUrl, iosPlatformModule())
+    initKoin(resolvedBase, iosPlatformModule())
 }
 
 /**
@@ -57,12 +66,19 @@ fun doInitKoin(baseUrl: String = "http://127.0.0.1:8080") {
  * Catches any throwable and logs via NSLog so the real error is visible in Xcode console.
  */
 @androidx.compose.runtime.Composable
-private fun IosAppContent(baseUrl: String = "http://127.0.0.1:8080") {
+private fun IosAppContent(
+    baseUrl: String = "http://127.0.0.1:8080",
+    defaultSubscriptionWebUrl: String = "https://app.tamixa.com/subscription",
+    environment: String = "prod"
+) {
     var ready by remember { mutableStateOf(koinInitialized) }
     var initError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         try {
+            val sub = defaultSubscriptionWebUrl.trim().ifEmpty { "https://app.tamixa.com/subscription" }
+            IosBuildTimeEnvironment.defaultSubscriptionWebUrl = sub
+            IosBuildTimeEnvironment.label = environment.trim().ifEmpty { "prod" }
             doInitKoin(baseUrl)
             ready = true
         } catch (e: Throwable) {
@@ -116,9 +132,17 @@ private fun IosAppContent(baseUrl: String = "http://127.0.0.1:8080") {
 
 /**
  * Returns the main Compose UIViewController for the iOS app.
- * Call from Swift: IosAppKt.MainViewController() or IosAppKt.MainViewController(baseUrl: "http://192.168.x.x:8080") for physical device.
+ * Call from Swift: pass URLs from Info.plist (see Xcode build configurations Dev/Qa/Prod).
  * Koin is initialized inside the Compose tree (no need to call doInitKoin from Swift).
  */
-fun MainViewController(baseUrl: String = "http://127.0.0.1:8080"): UIViewController = ComposeUIViewController {
-    IosAppContent(baseUrl = baseUrl)
+fun MainViewController(
+    baseUrl: String = "http://127.0.0.1:8080",
+    defaultSubscriptionWebUrl: String = "https://app.tamixa.com/subscription",
+    environment: String = "prod"
+): UIViewController = ComposeUIViewController {
+    IosAppContent(
+        baseUrl = baseUrl,
+        defaultSubscriptionWebUrl = defaultSubscriptionWebUrl,
+        environment = environment
+    )
 }

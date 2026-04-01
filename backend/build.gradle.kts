@@ -135,6 +135,20 @@ tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // Avoid multiple JVMs each starting Postgres (resource-heavy); keep one fork unless changed deliberately.
+    maxParallelForks = 1
+    // Local shells often export SPRING_DATASOURCE_* for bootRun; those override @DynamicPropertySource and break
+    // Testcontainers (stale port / wrong DB). CI sets CI=true and provides the service Postgres URL on purpose.
+    if (System.getenv("CI") != "true") {
+        val env = System.getenv().toMutableMap()
+        env.keys.filter { key ->
+            key.equals("SPRING_DATASOURCE_URL", ignoreCase = true) ||
+                key.equals("SPRING_DATASOURCE_USERNAME", ignoreCase = true) ||
+                key.equals("SPRING_DATASOURCE_PASSWORD", ignoreCase = true)
+        }.forEach { env.remove(it) }
+        @Suppress("UNCHECKED_CAST")
+        environment = env as MutableMap<String, Any>
+    }
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {

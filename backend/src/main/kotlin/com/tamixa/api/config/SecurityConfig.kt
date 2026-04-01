@@ -97,7 +97,14 @@ class SecurityConfig(
             }
             allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
             allowedHeaders = listOf("*")
-            exposedHeaders = listOf("X-Request-Id", "Authorization", "X-RateLimit-Limit", "X-RateLimit-Remaining")
+            exposedHeaders =
+                listOf(
+                    "X-Request-Id",
+                    "X-Correlation-Id",
+                    "Authorization",
+                    "X-RateLimit-Limit",
+                    "X-RateLimit-Remaining",
+                )
         }
         val source = UrlBasedCorsConfigurationSource()
         source.registerCorsConfiguration("/**", config)
@@ -149,10 +156,11 @@ class SecurityConfig(
                     writeJsonError(response, HttpServletResponse.SC_FORBIDDEN, "Access denied. Please log in with a valid account.")
                 }
             }
-            .addFilterBefore(storyGenerationRateLimitFilter, UsernamePasswordAuthenticationFilter::class.java)
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)
+            // Outermost first: MDC traceId must exist before rate limit / JWT / story-gen filters (they log traceId).
             .addFilterBefore(rateLimitingFilter, UsernamePasswordAuthenticationFilter::class.java)
-            .addFilterBefore(requestTracingFilter, UsernamePasswordAuthenticationFilter::class.java)
+            .addFilterBefore(jwtAuthenticationFilter, rateLimitingFilter::class.java)
+            .addFilterBefore(storyGenerationRateLimitFilter, jwtAuthenticationFilter::class.java)
+            .addFilterBefore(requestTracingFilter, storyGenerationRateLimitFilter::class.java)
             .build()
     }
 

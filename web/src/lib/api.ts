@@ -11,6 +11,35 @@ const API_BASE =
     ? `${DEFAULT_API_BASE_URL}${API_PATH}`
     : API_PATH;
 
+const CORRELATION_SESSION_KEY = "tamixa_x_correlation_id";
+
+/** Stable per-tab id for log correlation; aligns with backend X-Correlation-Id / X-Request-Id. */
+function getOrCreateCorrelationId(): string {
+  try {
+    if (typeof sessionStorage === "undefined") return crypto.randomUUID();
+    let id = sessionStorage.getItem(CORRELATION_SESSION_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      sessionStorage.setItem(CORRELATION_SESSION_KEY, id);
+    }
+    return id;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
+/** Per-request id plus optional session correlation (browser only). */
+function buildTracingHeaders(): Record<string, string> {
+  const requestId = crypto.randomUUID();
+  if (typeof window === "undefined") {
+    return { "X-Request-Id": requestId };
+  }
+  return {
+    "X-Correlation-Id": getOrCreateCorrelationId(),
+    "X-Request-Id": requestId,
+  };
+}
+
 /** Origin of the backend API (e.g. http://localhost:8080). Used to detect same-origin stream URLs for blob fetch. */
 export function getApiOrigin(): string {
   try {
@@ -38,7 +67,7 @@ export async function fetchStreamAsBlobUrl(streamUrl: string): Promise<string> {
   const token = getStoredToken();
   if (!token) throw new Error("Not authenticated");
   const res = await fetch(streamUrl, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, ...buildTracingHeaders() },
     credentials: "omit",
   });
   if (!res.ok) throw new Error(`Stream failed: ${res.status}`);
@@ -202,6 +231,7 @@ async function fetchWithAuth(path: string, options: RequestInit = {}, retry = tr
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
   const headers: HeadersInit = {
     "Content-Type": "application/json",
+    ...buildTracingHeaders(),
     ...(options.headers as Record<string, string>),
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -214,7 +244,7 @@ async function fetchWithAuth(path: string, options: RequestInit = {}, retry = tr
       try {
         const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
           body: JSON.stringify({ refreshToken: refresh }),
         });
         if (refreshRes.ok) {
@@ -240,7 +270,7 @@ async function fetchWithAuth(path: string, options: RequestInit = {}, retry = tr
 export async function login(email: string, password: string): Promise<AuthResponse> {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
     body: JSON.stringify({ email, password }),
   });
   if (!res.ok) {
@@ -261,7 +291,7 @@ export async function register(
 ): Promise<AuthResponse> {
   const res = await fetch(`${API_BASE}/auth/register`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
     body: JSON.stringify({
       email,
       password,
@@ -739,7 +769,7 @@ export async function getListeningProgress(days = 30): Promise<ListeningProgress
 export async function requestMagicLink(email: string): Promise<void> {
   const res = await fetch(`${API_BASE}/auth/passwordless`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
     body: JSON.stringify({ email }),
   });
   if (!res.ok) throw new Error("Failed to send code");
@@ -751,7 +781,7 @@ export async function requestMagicLink(email: string): Promise<void> {
 export async function requestPasswordlessCode(email: string): Promise<boolean> {
   const res = await fetch(`${API_BASE}/auth/passwordless`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
     body: JSON.stringify({ email }),
   });
   if (!res.ok) {
@@ -771,7 +801,7 @@ export async function verifyPasswordlessCode(
 ): Promise<AuthResponse> {
   const res = await fetch(`${API_BASE}/auth/passwordless/verify`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
     body: JSON.stringify({ email, code, acceptedTerms, acceptedPrivacy, acceptedParentalAttestation }),
   });
   if (!res.ok) {
@@ -795,7 +825,7 @@ export async function uploadVoiceProfile(
     formData.append("userConsent", "true");
   }
   const token = getStoredToken();
-  const headers: HeadersInit = {};
+  const headers: HeadersInit = { ...buildTracingHeaders() };
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${API_BASE}/voice/upload`, {
     method: "POST",

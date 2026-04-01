@@ -58,10 +58,10 @@ if $BUILD_ADMIN; then
 fi
 
 if $BUILD_MOBILE; then
-  echo ">>> Building mobile release APK..."
+  echo ">>> Building mobile prod release APK..."
   cd "$ROOT/mobile"
-  ./gradlew :composeApp:assembleRelease -PTAMIXA_API_BASE_URL="$API_URL"
-  echo ">>> Mobile: mobile/composeApp/build/outputs/apk/release/composeApp-release-unsigned.apk"
+  ./gradlew :composeApp:assembleProdRelease -PTAMIXA_API_BASE_URL="$API_URL"
+  echo ">>> Mobile: mobile/composeApp/build/outputs/apk/prod/release/tamixa-prodRelease.apk"
   echo ""
 fi
 

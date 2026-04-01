@@ -17,7 +17,6 @@ import java.net.URI
  * When key is empty/unset, LoggingEmailSender is used instead (logs code to stdout).
  */
 @Component
-@org.springframework.context.annotation.Primary
 @org.springframework.boot.autoconfigure.condition.ConditionalOnExpression("!'${'$'}{app.email.sendgrid-api-key:}'.isEmpty()")
 class SendGridEmailSender(
     @Qualifier("notificationRestTemplate") private val rest: RestTemplate,

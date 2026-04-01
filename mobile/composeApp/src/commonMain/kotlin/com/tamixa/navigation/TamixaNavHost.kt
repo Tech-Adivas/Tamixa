@@ -168,7 +168,9 @@ fun TamixaNavHost(
             authViewModel.logout()
             authViewModel.clearSessionExpired()
             navController.navigate(Screen.Login.route) {
-                popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                val root =
+                    navController.graph.startDestinationRoute ?: Screen.Splash.route
+                popUpTo(root) { inclusive = true }
                 launchSingleTop = true
             }
         }
@@ -1405,6 +1407,15 @@ fun TamixaNavHost(
                 onPreferredVoiceChange = { settingsViewModel.setPreferredVoiceProfile(it) },
                 storyArtPersonalizationOptIn = settingsState.storyArtPersonalizationOptIn,
                 onStoryArtPersonalizationOptInChange = { settingsViewModel.setStoryArtPersonalizationOptIn(it) },
+                apiBaseUrlOverride = settingsState.apiBaseUrlOverride,
+                subscriptionWebUrlOverride = settingsState.subscriptionWebUrlOverride,
+                serverEnvironmentMessage = settingsState.serverEnvironmentMessage,
+                serverEnvironmentError = settingsState.serverEnvironmentError,
+                onApiBaseUrlOverrideChange = { settingsViewModel.setApiBaseUrlOverrideDraft(it) },
+                onSubscriptionWebUrlOverrideChange = { settingsViewModel.setSubscriptionWebUrlOverrideDraft(it) },
+                onSaveServerEnvironment = { settingsViewModel.saveServerEnvironment() },
+                onClearServerEnvironment = { settingsViewModel.clearServerEnvironment() },
+                onDismissServerEnvironmentMessage = { settingsViewModel.dismissServerEnvironmentMessage() },
                 onLanguageChange = { code ->
                     settingsViewModel.setLanguage(code)
                     Strings.setLanguage(code)
@@ -1418,7 +1429,9 @@ fun TamixaNavHost(
                     appMessageNotifier.clear()
                     authViewModel.logout()
                     navController.navigate(Screen.Login.route) {
-                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                        val root =
+                            navController.graph.startDestinationRoute ?: Screen.Splash.route
+                        popUpTo(root) { inclusive = true }
                     }
                 },
                 onDeleteAccount = {
@@ -1427,7 +1440,10 @@ fun TamixaNavHost(
                             .onSuccess {
                                 authViewModel.logout()
                                 navController.navigate(Screen.Login.route) {
-                                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                                    val root =
+                                        navController.graph.startDestinationRoute
+                                            ?: Screen.Splash.route
+                                    popUpTo(root) { inclusive = true }
                                 }
                             }
                             .onFailure { appMessageNotifier.showError() }

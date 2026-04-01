@@ -3,6 +3,7 @@ package com.tamixa.api.exception
 import com.tamixa.api.config.RequestTracingFilter
 import com.tamixa.application.account.AccountDeletionException
 import com.tamixa.application.auth.AccountSuspendedException
+import com.tamixa.application.auth.ConsentRequiredException
 import com.tamixa.application.auth.InvalidCredentialsException
 import com.tamixa.application.guardrail.ExternalGuardrailUnavailableException
 import com.tamixa.application.story.ContentModerationException
@@ -59,6 +60,13 @@ class GlobalExceptionHandler {
     fun handleAccountSuspended(e: AccountSuspendedException): ResponseEntity<Map<String, Any>> {
         log.debug("Login failed: account suspended")
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorBody(e.message ?: "Account suspended", HttpStatus.FORBIDDEN))
+    }
+
+    @ExceptionHandler(ConsentRequiredException::class)
+    fun handleConsentRequired(e: ConsentRequiredException): ResponseEntity<Map<String, Any>> {
+        log.debug("Registration rejected: {}", e.message)
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(errorBody(e.message ?: "Consent required", HttpStatus.BAD_REQUEST))
     }
 
     @ExceptionHandler(AccountDeletionException::class)

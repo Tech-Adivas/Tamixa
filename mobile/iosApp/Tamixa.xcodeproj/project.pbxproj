@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A1B2C3D4E5F60001001 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60002001 /* App.swift */; };
 		A1B2C3D4E5F60001002 /* ComposeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60002002 /* ComposeViewController.swift */; };
+		B1B2C3D4E5F6100F01 /* TamixaInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1B2C3D4E5F6100F02 /* TamixaInfo.swift */; };
 		A1B2C3D4E5F60001003 /* shared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60002003 /* shared.framework */; };
 		A1B2C3D4E5F60001006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60002006 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -16,6 +17,7 @@
 /* Begin PBXFileReference section */
 		A1B2C3D4E5F60002001 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60002002 /* ComposeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeViewController.swift; sourceTree = "<group>"; };
+		B1B2C3D4E5F6100F02 /* TamixaInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TamixaInfo.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60002003 /* shared.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = shared.framework; path = "shared.framework"; sourceTree = "<group>"; };
 		A1B2C3D4E5F60002004 /* Tamixa.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tamixa.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D4E5F60002005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -39,6 +41,7 @@
 			children = (
 				A1B2C3D4E5F60002001 /* App.swift */,
 				A1B2C3D4E5F60002002 /* ComposeViewController.swift */,
+				B1B2C3D4E5F6100F02 /* TamixaInfo.swift */,
 				A1B2C3D4E5F60002006 /* Assets.xcassets */,
 				A1B2C3D4E5F60001030 /* Frameworks */,
 				A1B2C3D4E5F60001040 /* Resources */,
@@ -163,7 +166,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n# PROJECT_DIR = .../mobile/iosApp, ../.. = repo root (tamixa-kids)\nREPO_ROOT=\"${PROJECT_DIR}/../..\"\ncd \"$REPO_ROOT\" || { echo \"Error: could not cd to repo root $REPO_ROOT\"; exit 1; }\nif [ ! -x \"./gradlew\" ]; then echo \"Error: gradlew not found in $(pwd)\"; exit 1; fi\nif [ -z \"$CONFIGURATION\" ]; then CONFIGURATION=Debug; fi\ncase \"${SDK_NAME:-iphonesimulator}\" in\n  *simulator*) TASK=\":mobile:composeApp:link${CONFIGURATION}FrameworkIosSimulatorArm64\"\n    CFG=$(echo \"$CONFIGURATION\" | tr '[:upper:]' '[:lower:]')\n    FRAMEWORK_SRC=\"mobile/composeApp/build/bin/iosSimulatorArm64/${CFG}Framework/shared.framework\" ;;\n  *) TASK=\":mobile:composeApp:link${CONFIGURATION}FrameworkIosArm64\"\n    CFG=$(echo \"$CONFIGURATION\" | tr '[:upper:]' '[:lower:]')\n    FRAMEWORK_SRC=\"mobile/composeApp/build/bin/iosArm64/${CFG}Framework/shared.framework\" ;;\nesac\n./gradlew \"$TASK\" -Pkotlin.native.cacheKind=none -Ptamixa.iosOnly=true\nABS_SRC=\"$(pwd)/$FRAMEWORK_SRC\"\nif [ ! -f \"$ABS_SRC/Headers/shared.h\" ]; then echo \"Error: framework missing Headers/shared.h at $ABS_SRC\"; exit 1; fi\nFRAMEWORK_DST=\"${PROJECT_DIR}/Tamixa/Frameworks/shared.framework\"\nmkdir -p \"${PROJECT_DIR}/Tamixa/Frameworks\"\nrm -rf \"$FRAMEWORK_DST\"\nln -s \"$ABS_SRC\" \"$FRAMEWORK_DST\"\n";
+			shellScript = "set -e\n# PROJECT_DIR = .../mobile/iosApp, ../.. = repo root. Xcode configs DevDebug/QaDebug/... map to Kotlin Debug|Release only.\nREPO_ROOT=\"${PROJECT_DIR}/../..\"\ncd \"$REPO_ROOT\" || { echo \"Error: could not cd to repo root $REPO_ROOT\"; exit 1; }\nif [ ! -x \"./gradlew\" ]; then echo \"Error: gradlew not found in $(pwd)\"; exit 1; fi\nif [ -z \"$CONFIGURATION\" ]; then CONFIGURATION=DevDebug; fi\ncase \"$CONFIGURATION\" in\n  DevDebug|QaDebug|ProdDebug|Debug) KOTLIN_CFG=Debug ;;\n  DevRelease|QaRelease|ProdRelease|Release) KOTLIN_CFG=Release ;;\n  *) echo \"Error: unknown CONFIGURATION=$CONFIGURATION (expected DevDebug, QaDebug, …)\"; exit 1 ;;\nesac\ncase \"${SDK_NAME:-iphonesimulator}\" in\n  *simulator*) TASK=\":mobile:composeApp:link${KOTLIN_CFG}FrameworkIosSimulatorArm64\"\n    CFG=$(echo \"$KOTLIN_CFG\" | tr '[:upper:]' '[:lower:]')\n    FRAMEWORK_SRC=\"mobile/composeApp/build/bin/iosSimulatorArm64/${CFG}Framework/shared.framework\" ;;\n  *) TASK=\":mobile:composeApp:link${KOTLIN_CFG}FrameworkIosArm64\"\n    CFG=$(echo \"$KOTLIN_CFG\" | tr '[:upper:]' '[:lower:]')\n    FRAMEWORK_SRC=\"mobile/composeApp/build/bin/iosArm64/${CFG}Framework/shared.framework\" ;;\nesac\n./gradlew \"$TASK\" -Pkotlin.native.cacheKind=none -Ptamixa.iosOnly=true\nABS_SRC=\"$(pwd)/$FRAMEWORK_SRC\"\nif [ ! -f \"$ABS_SRC/Headers/shared.h\" ]; then echo \"Error: framework missing Headers/shared.h at $ABS_SRC\"; exit 1; fi\nFRAMEWORK_DST=\"${PROJECT_DIR}/Tamixa/Frameworks/shared.framework\"\nmkdir -p \"${PROJECT_DIR}/Tamixa/Frameworks\"\nrm -rf \"$FRAMEWORK_DST\"\nln -s \"$ABS_SRC\" \"$FRAMEWORK_DST\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -174,13 +177,14 @@
 			files = (
 				A1B2C3D4E5F60001001 /* App.swift in Sources */,
 				A1B2C3D4E5F60001002 /* ComposeViewController.swift in Sources */,
+				B1B2C3D4E5F6100F01 /* TamixaInfo.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		A1B2C3D4E5F600010A1 /* Debug */ = {
+		B1B2C3D4E5F611D01 /* DevDebug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -241,9 +245,135 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
-			name = Debug;
+			name = DevDebug;
 		};
-		A1B2C3D4E5F600010A2 /* Release */ = {
+		B1B2C3D4E5F611D02 /* QaDebug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = QaDebug;
+		};
+		B1B2C3D4E5F611D03 /* ProdDebug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = ProdDebug;
+		};
+		B1B2C3D4E5F611R01 /* DevRelease */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -297,9 +427,121 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
-			name = Release;
+			name = DevRelease;
 		};
-		A1B2C3D4E5F600010A3 /* Debug */ = {
+		B1B2C3D4E5F611R02 /* QaRelease */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = QaRelease;
+		};
+		B1B2C3D4E5F611R03 /* ProdRelease */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = ProdRelease;
+		};
+		B1B2C3D4E5F611T01 /* DevDebug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -308,6 +550,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(SRCROOT)/Tamixa/Frameworks",
+				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Tamixa/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -316,20 +561,21 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tamixa.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Tamixa/Tamixa-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
+				TAMIXA_API_BASE_URL = "http://127.0.0.1:8080";
+				TAMIXA_DISPLAY_NAME = "Tamixa (Dev)";
+				TAMIXA_ENVIRONMENT = "dev";
+				TAMIXA_SUBSCRIPTION_WEB_URL = "http://127.0.0.1:3000/subscription";
 				TARGETED_DEVICE_FAMILY = "1,2";
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(SRCROOT)/Tamixa/Frameworks",
-				);
-				OTHER_LDFLAGS = "-ObjC";
 			};
-			name = Debug;
+			name = DevDebug;
 		};
-		A1B2C3D4E5F600010A4 /* Release */ = {
+		B1B2C3D4E5F611T02 /* QaDebug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -338,6 +584,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(SRCROOT)/Tamixa/Frameworks",
+				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Tamixa/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -346,18 +595,155 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tamixa.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Tamixa/Tamixa-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
+				TAMIXA_API_BASE_URL = "https://api-qa.tamixa.com";
+				TAMIXA_DISPLAY_NAME = "Tamixa (QA)";
+				TAMIXA_ENVIRONMENT = "qa";
+				TAMIXA_SUBSCRIPTION_WEB_URL = "https://app-qa.tamixa.com/subscription";
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = QaDebug;
+		};
+		B1B2C3D4E5F611T03 /* ProdDebug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(SRCROOT)/Tamixa/Frameworks",
 				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Tamixa/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
 				OTHER_LDFLAGS = "-ObjC";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tamixa.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Tamixa/Tamixa-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TAMIXA_API_BASE_URL = "https://api.tamixa.com";
+				TAMIXA_DISPLAY_NAME = "Tamixa";
+				TAMIXA_ENVIRONMENT = "prod";
+				TAMIXA_SUBSCRIPTION_WEB_URL = "https://app.tamixa.com/subscription";
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
-			name = Release;
+			name = ProdDebug;
+		};
+		B1B2C3D4E5F611U01 /* DevRelease */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(SRCROOT)/Tamixa/Frameworks",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Tamixa/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = "-ObjC";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tamixa.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Tamixa/Tamixa-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TAMIXA_API_BASE_URL = "http://127.0.0.1:8080";
+				TAMIXA_DISPLAY_NAME = "Tamixa (Dev)";
+				TAMIXA_ENVIRONMENT = "dev";
+				TAMIXA_SUBSCRIPTION_WEB_URL = "http://127.0.0.1:3000/subscription";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = DevRelease;
+		};
+		B1B2C3D4E5F611U02 /* QaRelease */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(SRCROOT)/Tamixa/Frameworks",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Tamixa/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = "-ObjC";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tamixa.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Tamixa/Tamixa-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TAMIXA_API_BASE_URL = "https://api-qa.tamixa.com";
+				TAMIXA_DISPLAY_NAME = "Tamixa (QA)";
+				TAMIXA_ENVIRONMENT = "qa";
+				TAMIXA_SUBSCRIPTION_WEB_URL = "https://app-qa.tamixa.com/subscription";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = QaRelease;
+		};
+		B1B2C3D4E5F611U03 /* ProdRelease */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(SRCROOT)/Tamixa/Frameworks",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Tamixa/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = "-ObjC";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tamixa.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Tamixa/Tamixa-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TAMIXA_API_BASE_URL = "https://api.tamixa.com";
+				TAMIXA_DISPLAY_NAME = "Tamixa";
+				TAMIXA_ENVIRONMENT = "prod";
+				TAMIXA_SUBSCRIPTION_WEB_URL = "https://app.tamixa.com/subscription";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = ProdRelease;
 		};
 /* End XCBuildConfiguration section */
 
@@ -365,20 +751,28 @@
 		A1B2C3D4E5F60001080 /* Build configuration list for PBXNativeTarget "Tamixa" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A1B2C3D4E5F600010A3 /* Debug */,
-				A1B2C3D4E5F600010A4 /* Release */,
+				B1B2C3D4E5F611T01 /* DevDebug */,
+				B1B2C3D4E5F611T02 /* QaDebug */,
+				B1B2C3D4E5F611T03 /* ProdDebug */,
+				B1B2C3D4E5F611U01 /* DevRelease */,
+				B1B2C3D4E5F611U02 /* QaRelease */,
+				B1B2C3D4E5F611U03 /* ProdRelease */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = ProdRelease;
 		};
 		A1B2C3D4E5F60001091 /* Build configuration list for PBXProject "Tamixa" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A1B2C3D4E5F600010A1 /* Debug */,
-				A1B2C3D4E5F600010A2 /* Release */,
+				B1B2C3D4E5F611D01 /* DevDebug */,
+				B1B2C3D4E5F611D02 /* QaDebug */,
+				B1B2C3D4E5F611D03 /* ProdDebug */,
+				B1B2C3D4E5F611R01 /* DevRelease */,
+				B1B2C3D4E5F611R02 /* QaRelease */,
+				B1B2C3D4E5F611R03 /* ProdRelease */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = ProdRelease;
 		};
 /* End XCConfigurationList section */
 	};

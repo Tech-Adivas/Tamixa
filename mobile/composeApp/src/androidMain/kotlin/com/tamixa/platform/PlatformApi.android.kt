@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.tamixa.android.BuildConfig
+import com.tamixa.runtime.ServerEnvironmentCache
 import com.tamixa.android.component.FamilyVoiceRecordDialog as AndroidFamilyVoiceRecordDialog
 import com.tamixa.android.component.AvatarVideoSurface as AndroidAvatarVideoSurface
 import com.tamixa.android.player.synthesizeStoryToFile as androidSynthesizeStoryToFile
@@ -23,7 +24,8 @@ actual fun openUrl(url: String) {
     ctx.startActivity(intent)
 }
 
-actual fun getSubscriptionWebUrl(): String = BuildConfig.SUBSCRIPTION_WEB_URL
+actual fun getSubscriptionWebUrl(): String =
+    ServerEnvironmentCache.effectiveSubscriptionWebUrl(BuildConfig.SUBSCRIPTION_WEB_URL)
 
 actual fun shareStory(title: String, text: String) {
     val ctx = getApplicationContext()

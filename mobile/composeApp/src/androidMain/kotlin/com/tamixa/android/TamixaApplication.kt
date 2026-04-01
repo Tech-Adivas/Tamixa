@@ -11,9 +11,12 @@ import coil3.request.crossfade
 import com.tamixa.di.androidPlatformModule
 import com.tamixa.di.sharedModule
 import com.tamixa.di.viewModelModule
+import com.tamixa.platform.DataStorePreferences
 import com.tamixa.platform.setPlatformAppContext
+import com.tamixa.runtime.ServerEnvironmentCache
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.runBlocking
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
@@ -24,7 +27,11 @@ class TamixaApplication : Application() {
         setPlatformAppContext(this)
         // Only enable Crashlytics in release; debug uses placeholder google-services.json (see FIREBASE_SETUP.md)
         FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)
-        val baseUrl = BuildConfig.BASE_URL ?: "http://10.0.2.2:8080"
+        val prefsBootstrap = DataStorePreferences(this)
+        val apiOverride = runBlocking { prefsBootstrap.getApiBaseUrlOverride().trim() }
+        val subOverride = runBlocking { prefsBootstrap.getSubscriptionWebUrlOverride().trim() }
+        ServerEnvironmentCache.subscriptionWebUrlOverride = subOverride
+        val baseUrl = apiOverride.ifBlank { BuildConfig.BASE_URL ?: "http://10.0.2.2:8080" }
         startKoin {
             androidContext(this@TamixaApplication)
             modules(

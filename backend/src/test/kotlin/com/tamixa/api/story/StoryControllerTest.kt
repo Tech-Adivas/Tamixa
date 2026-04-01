@@ -9,6 +9,7 @@ import com.tamixa.domain.StoryStatus
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.boot.test.mock.mockito.MockBean
@@ -67,7 +68,7 @@ class StoryControllerTest : IntegrationTestBase() {
     fun `generate story returns 201 and story response`() {
         val request = GenerateStoryRequest(
             age = 6,
-            language = "en",
+            language = "ta",
             theme = "dinosaurs",
             childName = "Alex",
             childId = null
@@ -78,7 +79,7 @@ class StoryControllerTest : IntegrationTestBase() {
             childId = null,
             content = "Once upon a time...",
             theme = "dinosaurs",
-            language = "en",
+            language = "ta",
             age = 6,
             childName = "Alex",
             wordCount = 50,
@@ -91,7 +92,18 @@ class StoryControllerTest : IntegrationTestBase() {
             safetyScore = 85
         )
         whenever(
-            storyService.generate(any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+            storyService.generate(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyOrNull(),
+                anyOrNull(),
+                anyOrNull(),
+                anyOrNull(),
+                anyOrNull()
+            )
         ).thenReturn(savedStory)
 
         mockMvc.perform(
@@ -105,14 +117,25 @@ class StoryControllerTest : IntegrationTestBase() {
             .andExpect(jsonPath("$.theme").value("dinosaurs"))
             .andExpect(jsonPath("$.status").value("PENDING"))
 
-        verify(storyService).generate(any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+        verify(storyService).generate(
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            anyOrNull(),
+            anyOrNull(),
+            anyOrNull(),
+            anyOrNull(),
+            anyOrNull()
+        )
     }
 
     @Test
     fun `generate without auth returns 401`() {
         val request = GenerateStoryRequest(
             age = 6,
-            language = "en",
+            language = "ta",
             theme = "dinosaurs",
             childName = "Alex",
             childId = null

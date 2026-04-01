@@ -34,7 +34,21 @@ data class AppProperties(
     val guardrailsService: GuardrailsServiceProperties = GuardrailsServiceProperties(),
     /** AI control plane (governance registry + workflow runs). */
     val controlPlane: ControlPlaneProperties = ControlPlaneProperties(),
+    /**
+     * Strangler: send passwordless magic-link email via extracted notifications service (HTTP)
+     * instead of in-process SendGrid. When [NotificationsEmailProperties.remoteEnabled] is true,
+     * [com.tamixa.infrastructure.notification.NotificationEmailDispatcher] prefers the remote client.
+     */
+    val notificationsEmail: NotificationsEmailProperties = NotificationsEmailProperties(),
 ) {
+
+    data class NotificationsEmailProperties(
+        val remoteEnabled: Boolean = false,
+        /** Base URL of notifications service (no path), e.g. http://notifications:8100 */
+        val baseUrl: String = "",
+        /** Shared secret; must match notifications service NOTIFICATIONS_INTERNAL_API_KEY. */
+        val internalApiKey: String = "",
+    )
 
     data class ControlPlaneProperties(
         /**
