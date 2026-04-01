@@ -24,6 +24,7 @@ import org.springframework.http.HttpMethod
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
+import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.time.Instant
 
@@ -40,6 +41,7 @@ class SecurityConfig(
     private val storyGenerationRateLimitFilter: StoryGenerationRateLimitFilter,
     private val objectMapper: ObjectMapper
 ) {
+    private val log = LoggerFactory.getLogger(SecurityConfig::class.java)
 
     /** Exactly one of [RedisRateLimitingFilter] / [RateLimitingFilter] is registered (see @ConditionalOnProperty). */
     private val rateLimitingFilter: OncePerRequestFilter =
@@ -77,10 +79,26 @@ class SecurityConfig(
                     "http://localhost:3001",
                     "http://127.0.0.1:3001"
                 )
+            } else if (environment.activeProfiles.any { it.equals("staging", ignoreCase = true) } &&
+                (origins.isEmpty() || origins == "*")
+            ) {
+                // Staging (e.g. Railway): default YAML uses *; explicit origins still required for prod.
+                // Patterns cover local UIs and typical Railway HTTPS hostnames until CORS_ALLOWED_ORIGINS is set.
+                allowedOriginPatterns = listOf(
+                    "http://localhost:*",
+                    "http://127.0.0.1:*",
+                    "https://*.up.railway.app",
+                    "https://*.railway.app"
+                )
+                log.warn(
+                    "CORS: staging uses default origin patterns (localhost + Railway). " +
+                        "Set CORS_ALLOWED_ORIGINS to comma-separated HTTPS origins for stricter control."
+                )
             } else {
                 // Production: ALLOWED_ORIGINS must be explicitly configured; fail-fast to prevent open CORS
                 throw IllegalStateException(
-                    "ALLOWED_ORIGINS must be set in production. Set app.cors.allowed-origins to a comma-separated list of allowed origins."
+                    "ALLOWED_ORIGINS must be set in production. Set environment variable CORS_ALLOWED_ORIGINS " +
+                        "(or app.cors.allowed-origins) to a comma-separated list of allowed browser origins (HTTPS), not *."
                 )
             }
             allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
