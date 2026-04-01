@@ -147,41 +147,48 @@ private fun applyPgHostCompatibility(env: Map<String, String>) {
     if (envValueIgnoringCase(env, "SPRING_DATASOURCE_USERNAME").isNullOrBlank() &&
         envValueIgnoringCase(env, "DATABASE_USERNAME").isNullOrBlank()
     ) {
-        envValueIgnoringCase(env, "PGUSER")?.let { System.setProperty("spring.datasource.username", it) }
+        val user = envValueIgnoringCase(env, "PGUSER") ?: envValueIgnoringCase(env, "POSTGRES_USER")
+        user?.takeIf { it.isNotBlank() }?.let { System.setProperty("spring.datasource.username", it) }
     }
     if (envValueIgnoringCase(env, "SPRING_DATASOURCE_PASSWORD").isNullOrBlank() &&
         envValueIgnoringCase(env, "DATABASE_PASSWORD").isNullOrBlank()
     ) {
-        envValueIgnoringCase(env, "PGPASSWORD")?.let { System.setProperty("spring.datasource.password", it) }
+        val pw = envValueIgnoringCase(env, "PGPASSWORD") ?: envValueIgnoringCase(env, "POSTGRES_PASSWORD")
+        pw?.takeIf { it.isNotBlank() }?.let { System.setProperty("spring.datasource.password", it) }
     }
     log.info("Configured datasource from PG* environment variables")
 }
 
 /**
- * Railway often provides both `DATABASE_URL` (private / internal) and `DATABASE_PUBLIC_URL` (TCP proxy).
- * We prefer **DATABASE_PUBLIC_URL** when set so the app connects from services without Private Networking.
- * After we set `spring.datasource.url`, still copy PG* into Spring properties when Spring-specific env is unset.
+ * Railway provides `DATABASE_PUBLIC_URL` (TCP proxy) and `DATABASE_URL` (private when both exist — private is
+ * the in-project default). We prefer **DATABASE_PUBLIC_URL** when set so the app connects from environments
+ * without Private Networking; for **private networking only**, omit `DATABASE_PUBLIC_URL` on the service so
+ * `DATABASE_URL` is used.
+ * After we set `spring.datasource.url`, copy PG* / POSTGRES_* into Spring properties when Spring-specific env is unset
+ * (JDBC URLs without embedded credentials need a separate password env — reference `PGPASSWORD` or `POSTGRES_PASSWORD`).
  */
 private fun applyDatasourceSecretsFromRailwayPgEnv(env: Map<String, String>) {
     val dsPassProp = System.getProperty("spring.datasource.password")?.takeIf { it.isNotBlank() }
     val dsUserProp = System.getProperty("spring.datasource.username")?.takeIf { it.isNotBlank() }
-    val hasExplicitPassword =
+    val hasSpringOrDatabasePassword =
         !envValueIgnoringCase(env, "SPRING_DATASOURCE_PASSWORD").isNullOrBlank() ||
             !envValueIgnoringCase(env, "DATABASE_PASSWORD").isNullOrBlank()
-    val hasExplicitUser =
+    val hasSpringOrDatabaseUser =
         !envValueIgnoringCase(env, "SPRING_DATASOURCE_USERNAME").isNullOrBlank() ||
             !envValueIgnoringCase(env, "DATABASE_USERNAME").isNullOrBlank()
-    if (dsPassProp.isNullOrBlank() && !hasExplicitPassword) {
-        envValueIgnoringCase(env, "PGPASSWORD")?.let { System.setProperty("spring.datasource.password", it) }
+    if (dsPassProp.isNullOrBlank() && !hasSpringOrDatabasePassword) {
+        val pw = envValueIgnoringCase(env, "PGPASSWORD") ?: envValueIgnoringCase(env, "POSTGRES_PASSWORD")
+        pw?.takeIf { it.isNotBlank() }?.let { System.setProperty("spring.datasource.password", it) }
     }
-    if (dsUserProp.isNullOrBlank() && !hasExplicitUser) {
-        envValueIgnoringCase(env, "PGUSER")?.let { System.setProperty("spring.datasource.username", it) }
+    if (dsUserProp.isNullOrBlank() && !hasSpringOrDatabaseUser) {
+        val user = envValueIgnoringCase(env, "PGUSER") ?: envValueIgnoringCase(env, "POSTGRES_USER")
+        user?.takeIf { it.isNotBlank() }?.let { System.setProperty("spring.datasource.username", it) }
     }
 }
 
 private fun applyDatabaseUrlCompatibility() {
     val env = System.getenv()
-    // Prefer DATABASE_PUBLIC_URL (Railway public proxy) over DATABASE_URL (often internal-only) when both exist.
+    // Prefer DATABASE_PUBLIC_URL when set; else DATABASE_URL (Railway private / in-project).
     val rawDatabaseUrl =
         envValueIgnoringCase(env, "DATABASE_PUBLIC_URL")
             ?: envValueIgnoringCase(env, "DATABASE_URL")
@@ -366,8 +373,8 @@ private fun warnIfLikelyMissingDbCredentials() {
         return
     }
     log.warn(
-        "Active profile is staging/prod but no DB password was detected (DATABASE_PASSWORD / POSTGRES_PASSWORD / PGPASSWORD / SPRING_DATASOURCE_PASSWORD, or user:password inside DATABASE_PUBLIC_URL / DATABASE_URL). " +
-            "On Railway, reference Postgres DATABASE_PUBLIC_URL (public) or DATABASE_URL and PGPASSWORD (or embed credentials in the URL). Hikari will usually fail with 'password authentication failed' or similar."
+        "Active profile is staging/prod but no DB password was detected (DATABASE_PASSWORD / POSTGRES_PASSWORD / PGPASSWORD / SPRING_DATASOURCE_PASSWORD, or user:password inside DATABASE_* URLs / SPRING_DATASOURCE_URL). " +
+            "Private networking: reference DATABASE_URL (omit DATABASE_PUBLIC_URL on the service if you want private only) and PGPASSWORD or POSTGRES_PASSWORD when the connection URL has no embedded credentials. Hikari will usually fail with 'password authentication failed' or similar."
     )
 }
 
@@ -393,8 +400,8 @@ private fun warnIfRailwayStagingHasNoPostgresEnv() {
     log.error(
         "Railway + staging: DATABASE_PUBLIC_URL, DATABASE_URL, SPRING_DATASOURCE_URL, and PGHOST are all missing from the JVM environment. " +
             "The app will fall back to the public proxy default in application-staging.yml (crossover.proxy.rlwy.net + sslmode=require). " +
-            "You still need PGPASSWORD / PGUSER (or credentials inside DATABASE_PUBLIC_URL). " +
-            "Best fix: backend service → Variables → **Reference** Postgres → DATABASE_PUBLIC_URL (recommended without Private Networking), plus PGPASSWORD if not in the URL, then redeploy."
+            "You still need PGPASSWORD / POSTGRES_PASSWORD and PGUSER / POSTGRES_USER (or credentials inside the connection URL). " +
+            "Best fix: backend service → Variables → **Reference** Postgres (private: DATABASE_URL and password vars; public proxy: DATABASE_PUBLIC_URL), then redeploy."
     )
 }
 
