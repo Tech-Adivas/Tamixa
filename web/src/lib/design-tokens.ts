@@ -170,7 +170,7 @@ export const isLowEndDevice = (): boolean => {
   if (typeof navigator === 'undefined') return false;
   
   // Check device memory (if available)
-  const deviceMemory = (navigator as any).deviceMemory;
+  const deviceMemory = navigator.deviceMemory;
   if (deviceMemory && deviceMemory < performance.lowEndDeviceThreshold.ram) {
     return true;
   }
@@ -181,7 +181,7 @@ export const isLowEndDevice = (): boolean => {
   }
   
   // Check connection type (if available)
-  const connection = (navigator as any).connection;
+  const connection = navigator.connection;
   if (connection && (connection.effectiveType === 'slow-2g' || connection.effectiveType === '2g')) {
     return true;
   }

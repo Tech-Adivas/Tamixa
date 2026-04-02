@@ -1,6 +1,7 @@
 # Gradle
 .gradle/
 build/
+.kotlin/
 
 # IDE
 .idea/
@@ -38,6 +39,9 @@ Thumbs.db
 
 # Test
 /test-output/
+
+# Local DB dumps (never commit)
+*.dump
 
 # Local runs of PR governance scripts (repo root)
 /pr-governance.json

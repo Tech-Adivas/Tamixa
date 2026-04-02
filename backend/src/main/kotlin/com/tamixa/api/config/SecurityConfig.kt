@@ -111,6 +111,9 @@ class SecurityConfig(
         return source
     }
 
+    private fun devProfileActive(): Boolean =
+        environment.activeProfiles.any { it.equals("dev", ignoreCase = true) }
+
     @Bean
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
         val v1 = ApiVersion.V1
@@ -125,28 +128,40 @@ class SecurityConfig(
                 it.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             }
             .authorizeHttpRequests { auth ->
-                auth
-                    // Actuator: only health (and liveness/readiness) public for load balancers; rest require auth in prod
-                    .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
-                    .requestMatchers("/actuator/**").authenticated()
-                    .requestMatchers("$v1/health").permitAll()
-                    .requestMatchers("$v1/auth/register", "$v1/auth/login", "$v1/auth/refresh", "$v1/auth/otp/send", "$v1/auth/otp/verify", "$v1/auth/passwordless", "$v1/auth/passwordless/verify").permitAll()
-                    .requestMatchers("$v1/dev/**").permitAll()
-                    .requestMatchers("$v1/webhooks/**").permitAll()
-                    // Swagger and api-docs: require authenticated in prod to reduce reconnaissance
-                    .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").authenticated()
-                    // Audio files: permit when CDN disabled for direct playback (ExoPlayer does not send auth headers)
-                    .requestMatchers("/audio/**").permitAll()
-                    // Cover images: proxy to S3; permit for unauthenticated img loads
-                    .requestMatchers("$v1/covers/**").permitAll()
-                    // Admin voice test: explicit allow for any admin role (avoids 403 when permission bean is strict)
-                    .requestMatchers(
-                        AntPathRequestMatcher.antMatcher(HttpMethod.GET, "$v1/admin/parents/*/voice"),
-                        AntPathRequestMatcher.antMatcher(HttpMethod.POST, "$v1/admin/parents/*/voice/upload")
-                    ).hasAnyRole("ADMIN", "SUPER_ADMIN", "CONTENT_MANAGER", "REVENUE_ANALYST", "SUPPORT")
-                    // Reserved public control-plane prefix; use `/api/v1/admin/ai-control-plane/` (RBAC) for operations.
-                    .requestMatchers("/api/control-plane/**").denyAll()
-                    .anyRequest().authenticated()
+                // Actuator: only health (and liveness/readiness) public for load balancers; rest require auth in prod
+                auth.requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+                auth.requestMatchers("/actuator/**").authenticated()
+                auth.requestMatchers("$v1/health").permitAll()
+                auth.requestMatchers(
+                    "$v1/auth/register",
+                    "$v1/auth/login",
+                    "$v1/auth/refresh",
+                    "$v1/auth/otp/send",
+                    "$v1/auth/otp/verify",
+                    "$v1/auth/passwordless",
+                    "$v1/auth/passwordless/verify"
+                ).permitAll()
+                // Dev controllers are @Profile("dev"); deny /dev/** in non-dev so misconfiguration cannot expose tooling.
+                if (devProfileActive()) {
+                    auth.requestMatchers("$v1/dev/**").permitAll()
+                } else {
+                    auth.requestMatchers("$v1/dev/**").denyAll()
+                }
+                auth.requestMatchers("$v1/webhooks/**").permitAll()
+                // Swagger and api-docs: require authenticated in prod to reduce reconnaissance
+                auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").authenticated()
+                // Audio files: permit when CDN disabled for direct playback (ExoPlayer does not send auth headers)
+                auth.requestMatchers("/audio/**").permitAll()
+                // Cover images: proxy to S3; permit for unauthenticated img loads
+                auth.requestMatchers("$v1/covers/**").permitAll()
+                // Admin voice test: explicit allow for any admin role (avoids 403 when permission bean is strict)
+                auth.requestMatchers(
+                    AntPathRequestMatcher.antMatcher(HttpMethod.GET, "$v1/admin/parents/*/voice"),
+                    AntPathRequestMatcher.antMatcher(HttpMethod.POST, "$v1/admin/parents/*/voice/upload")
+                ).hasAnyRole("ADMIN", "SUPER_ADMIN", "CONTENT_MANAGER", "REVENUE_ANALYST", "SUPPORT")
+                // Reserved public control-plane prefix; use `/api/v1/admin/ai-control-plane/` (RBAC) for operations.
+                auth.requestMatchers("/api/control-plane/**").denyAll()
+                auth.anyRequest().authenticated()
             }
             .exceptionHandling { ex ->
                 ex.authenticationEntryPoint { request, response, authException ->

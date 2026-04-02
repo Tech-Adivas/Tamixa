@@ -3,7 +3,7 @@
  * In the browser we use the full backend URL so the Authorization header is sent
  * (Vite proxy can strip it, causing "Unauthorized. Please log in.").
  */
-import { API_PATH, DEFAULT_API_BASE_URL } from "../../../config/api.config";
+import { API_PATH, DEFAULT_API_BASE_URL } from "../config/api.config";
 import { logger } from "./logger";
 
 const API_BASE =

@@ -45,11 +45,9 @@ export function useDeviceCapabilities() {
   });
 
   useEffect(() => {
-    const nav = navigator as any;
-    
-    const deviceMemory = nav.deviceMemory;
-    const hardwareConcurrency = nav.hardwareConcurrency;
-    const connection = nav.connection;
+    const deviceMemory = navigator.deviceMemory;
+    const hardwareConcurrency = navigator.hardwareConcurrency;
+    const connection = navigator.connection;
     
     const isLowEnd = 
       (deviceMemory && deviceMemory < designTokens.performance.lowEndDeviceThreshold.ram) ||
@@ -164,7 +162,7 @@ export function usePerformanceMonitoring() {
 
     // Monitor memory usage if available
     const updateMemoryUsage = () => {
-      const memory = (performance as any).memory;
+      const memory = performance.memory;
       if (memory) {
         setMetrics(prev => ({
           ...prev,

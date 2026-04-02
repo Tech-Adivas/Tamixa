@@ -70,9 +70,9 @@ export function PerformanceProvider({ children }: PerformanceProviderProps) {
         prefersReducedMotion,
         isLowEnd,
         deviceCapabilities: {
-          memory: (navigator as any).deviceMemory,
+          memory: navigator.deviceMemory,
           cores: navigator.hardwareConcurrency,
-          connection: (navigator as any).connection?.effectiveType,
+          connection: navigator.connection?.effectiveType,
         },
       });
     }

@@ -42,4 +42,13 @@ class SecurityIntegrationTest : IntegrationTestBase() {
         )
         assertThat(response.statusCode).isEqualTo(HttpStatus.OK)
     }
+
+    @Test
+    fun `dev API prefix is not publicly accessible when not in dev profile`() {
+        val response = restTemplate.getForEntity(
+            "${ApiVersion.V1}/dev/verify-connections",
+            Map::class.java
+        )
+        assertThat(response.statusCode).isIn(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN)
+    }
 }

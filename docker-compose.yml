@@ -64,8 +64,11 @@ services:
       retries: 5
       start_period: 30s
 
-  # Reusable structured-output guardrails API (own repo: copy guardrails-service/). Optional for local dev.
+  # Python guardrails sidecar (submodule / optional). Default stack does not start it — use:
+  #   docker compose --profile guardrails up -d
   guardrails-service:
+    profiles:
+      - guardrails
     build:
       context: ./guardrails-service
       dockerfile: Dockerfile
@@ -95,8 +98,6 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-      guardrails-service:
-        condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       SERVER_PORT: ${SERVER_PORT:-8080}
@@ -123,11 +124,17 @@ services:
       # Optional: OpenAI, Translation, Voice encryption (set in production)
       TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-simulated}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      # Optional: Python guardrails sidecar (enable when running guardrails-service)
-      GUARDRAILS_SERVICE_ENABLED: ${GUARDRAILS_SERVICE_ENABLED:-true}
+      # Python guardrails: enable with `docker compose --profile guardrails up` and set URL/key.
+      GUARDRAILS_SERVICE_ENABLED: ${GUARDRAILS_SERVICE_ENABLED:-false}
       GUARDRAILS_SERVICE_URL: ${GUARDRAILS_SERVICE_URL:-http://guardrails-service:8090}
       GUARDRAILS_SERVICE_API_KEY: ${GUARDRAILS_SERVICE_API_KEY:-}
-      GUARDRAILS_SERVICE_FAIL_OPEN: ${GUARDRAILS_SERVICE_FAIL_OPEN:-false}
+      GUARDRAILS_SERVICE_FAIL_OPEN: ${GUARDRAILS_SERVICE_FAIL_OPEN:-true}
+      # Optional: delegate magic-link email to an external notifications HTTP service. Default off for this compose file.
+      NOTIFICATIONS_EMAIL_REMOTE_ENABLED: ${NOTIFICATIONS_EMAIL_REMOTE_ENABLED:-false}
+      NOTIFICATIONS_EMAIL_BASE_URL: ${NOTIFICATIONS_EMAIL_BASE_URL:-}
+      NOTIFICATIONS_INTERNAL_API_KEY: ${NOTIFICATIONS_INTERNAL_API_KEY:-}
+      # Links in passwordless emails (host browser → parent web).
+      TAMIXA_WEB_APP_URL: ${TAMIXA_WEB_APP_URL:-http://localhost:3000}
       VOICE_ENCRYPTION_KEY: ${VOICE_ENCRYPTION_KEY:-}
       # Audio stream fallback: use 10.0.2.2 for Android emulator
       AUDIO_PUBLIC_BASE_URL: ${AUDIO_PUBLIC_BASE_URL:-http://localhost:8080}
@@ -148,17 +155,35 @@ services:
       retries: 5
       start_period: 60s
 
-  # Vite parent web — build context MUST be repo root (see web/Dockerfile). Not ./web.
+  # Vite parent web — build context is ./web (Railway-friendly; see web/Dockerfile).
   web:
     build:
-      context: .
-      dockerfile: web/Dockerfile
+      context: ./web
+      dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
     image: tamixa-web:latest
     container_name: tamixa-web
+    depends_on:
+      backend:
+        condition: service_healthy
     ports:
       - "${WEB_PORT:-3000}:3000"
+
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    image: tamixa-admin:${IMAGE_TAG:-local}
+    container_name: tamixa-admin
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      API_URL: http://backend:8080
+      NEXT_PUBLIC_API_URL: ${ADMIN_NEXT_PUBLIC_API_URL:-http://localhost:8080}
+    ports:
+      - "${ADMIN_PORT:-3001}:3000"
 
 volumes:
   postgres_data:

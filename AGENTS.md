@@ -73,6 +73,7 @@ If two sources conflict, prefer the **narrower scope** and escalate in PR discus
 - **Backend** (Kotlin, Spring Boot) – REST API, PostgreSQL, Redis, S3
 - **Admin** (Next.js) – Dashboard for content ops
 - **Web** (React, Vite) – Parent-facing web app
+- **Optional platform deployment** – Some environments use a **separate** repo for gateway, notifications, and multi-service Compose. **This monorepo has no build-time or CI dependency on that stack**; see [docs/MICROSERVICES_PLATFORM.md](docs/MICROSERVICES_PLATFORM.md) for the boundary.
 
 ## Priorities
 

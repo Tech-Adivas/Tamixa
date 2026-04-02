@@ -8,19 +8,13 @@ import com.tamixa.domain.LibraryStory
 import com.tamixa.domain.StoryTranslation
 import com.tamixa.domain.narration.NarrationAudioStatus
 import com.tamixa.domain.narration.ToneMode
-import com.tamixa.application.narration.SafetyValidationRequest
-import com.tamixa.domain.narration.EmotionTaggedScript
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
-import org.mockito.ArgumentMatchers.any
-import org.mockito.ArgumentMatchers.anyInt
-import org.mockito.ArgumentMatchers.anyLong
-import org.mockito.ArgumentMatchers.anyString
-import org.mockito.ArgumentMatchers.eq
-import org.mockito.Mockito.`when`
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.test.context.ActiveProfiles
@@ -67,27 +61,22 @@ class StoryProcessingOrchestratorIntegrationTest : IntegrationTestBase() {
     @MockBean
     private lateinit var premiumVoiceValidator: NarrationPremiumVoiceValidator
 
-    @MockBean
-    private lateinit var concurrencyLimiter: NarrationConcurrencyLimiter
+    /** Real limiter avoids Kotlin-default-parameter stubbing issues with [NarrationConcurrencyLimiter.tryAcquire]. */
 
     @org.junit.jupiter.api.BeforeEach
     fun setUpMocks() {
-        org.mockito.Mockito.`when`(
-            premiumVoiceValidator.canUseVoice(
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.nullable(Long::class.javaObjectType)
+        whenever(premiumVoiceValidator.canUseVoice(org.mockito.kotlin.any(), anyOrNull())).thenReturn(true)
+        whenever(
+            rewriteService.rewrite(
+                org.mockito.kotlin.any(),
+                org.mockito.kotlin.any(),
+                org.mockito.kotlin.any(),
+                org.mockito.kotlin.any()
             )
-        ).thenReturn(true)
-        org.mockito.Mockito.`when`(concurrencyLimiter.tryAcquire(org.mockito.ArgumentMatchers.anyLong()))
-            .thenReturn(true)
-        `when`(rewriteService.rewrite(anyString(), anyInt(), eq(ToneMode.CALM), anyString()))
-            .thenReturn(RewriteResult("Formatted story", 10, 5))
-        `when`(rewriteService.rewrite(anyString(), anyInt(), eq(ToneMode.EXPRESSIVE), anyString()))
-            .thenReturn(RewriteResult("Formatted story", 10, 5))
+        ).thenReturn(RewriteResult("Formatted story", 10, 5))
     }
 
     @Test
-    @Disabled("Mockito matcher resolution with new premiumVoiceValidator/concurrencyLimiter mocks; multi-voice logic verified via unit tests")
     fun `orchestrator processes translation and saves READY audio`() {
         val libraryStory = LibraryStory(
             id = 0,
@@ -121,16 +110,24 @@ class StoryProcessingOrchestratorIntegrationTest : IntegrationTestBase() {
         val savedTranslation = translationRepository.save(translation)
 
         val calm = ToneMode.CALM
-        `when`(narrationFormatter.formatNarration(anyString(), anyInt(), calm, anyString()))
+        whenever(narrationFormatter.formatNarration(org.mockito.kotlin.any(), org.mockito.kotlin.any(), eq(calm), org.mockito.kotlin.any()))
             .thenReturn(NarrationFormatResult("Formatted story", 10, 5))
-        `when`(safetyValidator.validate(org.mockito.ArgumentMatchers.any(SafetyValidationRequest::class.java))).thenReturn(ValidationResult(true, 100))
-        `when`(ssmlBuilder.buildSSMLFromEmotionTagged(org.mockito.ArgumentMatchers.any(EmotionTaggedScript::class.java), anyString(), anyInt(), calm))
+        whenever(safetyValidator.validate(org.mockito.kotlin.any())).thenReturn(ValidationResult(true, 100))
+        whenever(
+            ssmlBuilder.buildSSMLFromEmotionTagged(org.mockito.kotlin.any(), org.mockito.kotlin.any(), org.mockito.kotlin.any(), eq(calm))
+        ).thenReturn("<speak>Formatted</speak>")
+        whenever(ssmlBuilder.buildSSML(org.mockito.kotlin.any(), org.mockito.kotlin.any(), org.mockito.kotlin.any(), eq(calm)))
             .thenReturn("<speak>Formatted</speak>")
-        `when`(ssmlBuilder.buildSSML(anyString(), anyString(), anyInt(), calm)).thenReturn("<speak>Formatted</speak>")
-        `when`(ttsService.synthesize(anyString(), anyString(), anyString())).thenReturn(byteArrayOf(1, 2, 3))
-        `when`(audioStorage.uploadNarrationAudio(anyLong(), anyString(), anyString(), org.mockito.ArgumentMatchers.any(ByteArray::class.java))).thenReturn(
-            "stories/${savedLibraryStory.id}/en/v1.mp3"
-        )
+        whenever(ttsService.synthesize(org.mockito.kotlin.any(), org.mockito.kotlin.any(), org.mockito.kotlin.any()))
+            .thenReturn(byteArrayOf(1, 2, 3))
+        whenever(
+            audioStorage.uploadNarrationAudio(
+                org.mockito.kotlin.any(),
+                org.mockito.kotlin.any(),
+                org.mockito.kotlin.any(),
+                org.mockito.kotlin.any()
+            )
+        ).thenReturn("stories/${savedLibraryStory.id}/en/v1.mp3")
 
         orchestrator.process(savedTranslation)
 

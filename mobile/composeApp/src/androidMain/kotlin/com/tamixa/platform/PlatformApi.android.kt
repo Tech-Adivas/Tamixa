@@ -15,6 +15,7 @@ import com.tamixa.runtime.ServerEnvironmentCache
 import com.tamixa.android.component.FamilyVoiceRecordDialog as AndroidFamilyVoiceRecordDialog
 import com.tamixa.android.component.AvatarVideoSurface as AndroidAvatarVideoSurface
 import com.tamixa.android.player.synthesizeStoryToFile as androidSynthesizeStoryToFile
+import com.tamixa.util.TamixaLog
 
 actual fun openUrl(url: String) {
     val ctx = getApplicationContext()
@@ -123,9 +124,15 @@ actual fun playSplashRevealSound() {
         )
         toneGenerator.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 180)
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            try { toneGenerator.release() } catch (_: Exception) {}
+            try {
+                toneGenerator.release()
+            } catch (e: Exception) {
+                TamixaLog.w("PlatformAndroid", "ToneGenerator.release failed", e)
+            }
         }, 250)
-    } catch (_: Exception) { /* No-op if ToneGenerator unavailable */ }
+    } catch (e: Exception) {
+        TamixaLog.w("PlatformAndroid", "playSplashRevealSound failed", e)
+    }
 }
 
 // Application context holder for platform API calls from non-Composable code

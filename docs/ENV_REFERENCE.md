@@ -13,11 +13,12 @@ Single reference for backend and admin environment variables. Copy from root `.e
 | `VOICE_CLONING_ENABLED` | Enables voice cloning from uploaded samples. | Set to `true` when offering cloned voices; requires provider key (e.g. `GOOGLE_CLOUD_TTS_API_KEY`, `ELEVENLABS_API_KEY`). |
 | `SHARE_CLIP_ENABLED` | Enables shareable clip generation (Premium+). | Set to `true` when share clip feature is on; may require `SHARE_CLIP_FFMPEG_ENABLED` and ffmpeg. |
 | `app.rate-limit.enabled` | Backend general rate limiting. | Default true; set via `application.yml` or override. |
+| `NOTIFICATIONS_EMAIL_REMOTE_ENABLED` | Delegates magic-link email to a **notifications HTTP service** over internal HTTP (any deployment that implements the contract). | When `true`, set `NOTIFICATIONS_EMAIL_BASE_URL` and `NOTIFICATIONS_INTERNAL_API_KEY`; run that service separately and configure `SENDGRID_API_KEY` (or equivalent) there. See [MICROSERVICES_PLATFORM.md](MICROSERVICES_PLATFORM.md). |
 
 ## Backend (root `.env`)
 
-- **API / URLs**: `API_BASE_URL`, `AUDIO_PUBLIC_BASE_URL`, `MAGIC_LINK_BASE_URL`
-- **Auth / Email**: `SENDGRID_API_KEY`, `DEV_OTP_CODE`
+- **API / URLs**: `API_BASE_URL`, `AUDIO_PUBLIC_BASE_URL`, `MAGIC_LINK_BASE_URL`, `TAMIXA_WEB_APP_URL` (passwordless email links)
+- **Auth / Email**: `SENDGRID_API_KEY` (in-process SendGrid when remote notifications off), `NOTIFICATIONS_EMAIL_REMOTE_ENABLED`, `NOTIFICATIONS_EMAIL_BASE_URL`, `NOTIFICATIONS_INTERNAL_API_KEY`, `DEV_OTP_CODE`
 - **Database / Redis**: Set via `SPRING_DATASOURCE_*`, `REDIS_HOST`, `REDIS_PORT` (or defaults in `application.yml`)
 - **Storage**: `STORAGE_TYPE`, `S3_BUCKET`, `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
 - **Translation**: `TRANSLATION_PROVIDER`

@@ -87,7 +87,7 @@ export default function Stories() {
   const [tab, setTab] = useState<Tab>("library");
   const [library, setLibrary] = useState<LibraryStory[]>([]);
   const [mine, setMine] = useState<Story[]>([]);
-  const [_minePage, setMinePage] = useState({ page: 0, totalPages: 0, last: true });
+  const [, setMinePage] = useState({ page: 0, totalPages: 0, last: true });
   const [favorites, setFavorites] = useState<{ storyId: number; storySource: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -195,6 +195,7 @@ export default function Stories() {
       playStory(id, resumeSource, startPos);
       setSearchParams({});
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resume handshake: omit playStory/setSearchParams to avoid loops
   }, [resumeId, resumeSource, tab, loading, library.length, mine.length, favorites.length]);
 
   // Handle "Play from Dashboard" recommended: navigate with state { playStoryId, playStorySource } → auto-play
@@ -212,6 +213,7 @@ export default function Stories() {
     playFromStateHandled.current = true;
     playStory(sid, ssrc);
     navigate(location.pathname, { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dashboard play intent: omit navigate/playStory to avoid loops
   }, [playFromState.playStoryId, playFromState.playStorySource, library.length, mine.length, favorites.length, loading]);
 
   const isFav = (storyId: number) => favorites.some((f) => f.storyId === storyId);

@@ -1,9 +1,9 @@
 /**
- * Shared API configuration for Tamixa apps.
+ * Shared API configuration for Tamixa apps (reference / non-web consumers).
  * Use localhost for local development. Override via env vars for staging/production.
  *
  * Usage:
- * - Web: imports DEFAULT_API_BASE_URL (vite). Set VITE_API_BASE_URL at build time for prod (see web/Dockerfile).
+ * - Web: runtime copy in `web/src/config/api.config.ts` (Docker builds use `web/` as context). Keep both in sync.
  * - Admin: override with NEXT_PUBLIC_API_URL in .env.local (does not use this file for runtime in Next).
  * - Mobile: ApiConfig.kt should match deployed API URL.
  */

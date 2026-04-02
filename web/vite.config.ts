@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
-import { DEFAULT_API_BASE_URL } from "../config/api.config"
+import { DEFAULT_API_BASE_URL } from "./src/config/api.config"
 
 export default defineConfig({
   plugins: [react()],
