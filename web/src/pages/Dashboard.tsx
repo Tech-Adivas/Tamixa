@@ -85,7 +85,7 @@ export default function Dashboard() {
   const name = greetingName(user);
 
   return (
-    <div className="page prime-page dash-page">
+    <div className="page dash-page app-surface-page">
       {loading ? (
         <div className="dash-loading" aria-busy="true" aria-live="polite">
           <div className="dash-hero dash-hero--skeleton">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -9,6 +9,24 @@ const navItems = [
   { to: "/voice", label: "Voice" },
   { to: "/settings", label: "Settings" },
 ] as const;
+
+const ROUTE_PAGE_TITLES: Record<string, string> = {
+  "/stories": "Stories",
+  "/dashboard": "Home",
+  "/subscription": "Subscription",
+  "/voice": "Voice",
+  "/settings": "Settings",
+};
+
+function pageTitleForPath(pathname: string): string {
+  if (ROUTE_PAGE_TITLES[pathname]) {
+    return ROUTE_PAGE_TITLES[pathname];
+  }
+  const match = Object.keys(ROUTE_PAGE_TITLES).find(
+    (p) => p !== "/" && pathname.startsWith(`${p}/`),
+  );
+  return match ? ROUTE_PAGE_TITLES[match] : "Tamixa";
+}
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -36,8 +54,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       : user.email
     : "";
 
+  const mobilePageTitle = useMemo(() => pageTitleForPath(location.pathname), [location.pathname]);
+
   return (
     <div className="app-shell">
+      <a href="#main-content" className="skip-to-content">
+        Skip to main content
+      </a>
       <button
         type="button"
         className="app-shell-nav-toggle"
@@ -83,6 +106,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 key={to}
                 to={to}
                 className={`app-sidebar-link ${active ? "app-sidebar-link--active" : ""}`}
+                aria-current={active ? "page" : undefined}
               >
                 <span className="app-sidebar-link-label">{label}</span>
               </Link>
@@ -105,7 +129,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="app-shell-stage">
         <header className="app-shell-topbar" role="banner">
           <div className="app-shell-topbar-inner">
-            <span className="app-shell-topbar-brand">Tamixa</span>
+            <div className="app-shell-topbar-titles">
+              <span className="app-shell-topbar-page">{mobilePageTitle}</span>
+              <span className="app-shell-topbar-app">Tamixa</span>
+            </div>
             {displayEmail ? (
               <span className="app-shell-topbar-user" title={user?.email ?? ""}>
                 {displayEmail}

@@ -116,7 +116,7 @@ async function proxy(
       {
         message: "Admin API proxy is not configured.",
         hint:
-          "Railway → admin service → Variables: set API_URL (or TAMIXA_API_BASE_URL) to your Spring API HTTPS origin, no trailing slash. Optionally also NEXT_PUBLIC_API_URL for client code; redeploy after changes.",
+          "Railway → admin service → Variables: set API_URL, API_BASE_URL, NEXT_PUBLIC_API_URL, or TAMIXA_API_BASE_URL to your Spring API HTTPS origin (e.g. https://tamixa-prod.up.railway.app)—not the admin app URL. No trailing slash; redeploy after changes.",
       },
       { status: 503 }
     );
