@@ -18,7 +18,7 @@ jobs:
       DORA_ADMIN_BEARER_TOKEN: ${{ secrets.DORA_ADMIN_BEARER_TOKEN }}
       DORA_DEFAULT_ENVIRONMENT: ${{ vars.DORA_DEFAULT_ENVIRONMENT }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Decide if workflow should emit DORA deployment
         id: decide
