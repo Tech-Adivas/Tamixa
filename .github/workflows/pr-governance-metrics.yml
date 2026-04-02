@@ -34,7 +34,7 @@ jobs:
         run: python3 .github/scripts/parse_pr_governance.py < pr-body.txt
 
       - name: Upload governance JSON
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pr-governance-${{ github.event.pull_request.number }}
           path: pr-governance.json

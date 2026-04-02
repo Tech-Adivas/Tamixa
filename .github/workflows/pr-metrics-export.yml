@@ -50,7 +50,7 @@ jobs:
         run: python3 .github/scripts/enrich_pr_metrics_export.py
 
       - name: Upload export JSON
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pr-metrics-export-${{ github.event.pull_request.number }}
           path: pr-metrics-export.json
