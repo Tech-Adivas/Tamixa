@@ -12,6 +12,8 @@ export const runtime = "nodejs";
 /** Base URL for Spring Boot (no trailing slash). Read per request so `next dev` picks up .env.local changes. */
 let apiEnvMismatchWarned = false;
 const LONG_RUNNING_ADMIN_OP_TIMEOUT_MS = 20 * 60 * 1000;
+/** Fail fast when Spring is down or API_URL is wrong; avoids minute-long hangs (undici default). */
+const PROXY_DEFAULT_TIMEOUT_MS = 25_000;
 
 function warnIfApiEnvMismatch(): void {
   if (apiEnvMismatchWarned) return;
@@ -25,13 +27,19 @@ function warnIfApiEnvMismatch(): void {
   );
 }
 
-function backendBaseUrl(): string {
+/**
+ * Spring API origin (no path, no trailing slash). In production both env vars must be set
+ * so the server proxy never falls back to 127.0.0.1 inside the container (which breaks login).
+ */
+function backendBaseUrl(): string | null {
   warnIfApiEnvMismatch();
   const raw =
     process.env.API_URL?.trim() ||
     process.env.NEXT_PUBLIC_API_URL?.trim() ||
-    "http://127.0.0.1:8080";
-  return raw.replace(/\/$/, "");
+    "";
+  if (raw) return raw.replace(/\/$/, "");
+  if (process.env.NODE_ENV !== "production") return "http://127.0.0.1:8080";
+  return null;
 }
 
 function buildCandidateBackendUrls(base: string): string[] {
@@ -52,8 +60,19 @@ function looksLikeConnectionFailure(err: Error): boolean {
     msg.includes("econnreset") ||
     msg.includes("enotfound") ||
     msg.includes("eai_again") ||
-    msg.includes("fetch failed")
+    msg.includes("fetch failed") ||
+    msg.includes("aborted") ||
+    msg.includes("timeout") ||
+    msg.includes("etimedout")
   );
+}
+
+function safeApiOrigin(base: string): string {
+  try {
+    return new URL(base).origin;
+  } catch {
+    return "(invalid API_URL)";
+  }
 }
 
 /**
@@ -92,6 +111,15 @@ async function proxy(
 
   const search = request.nextUrl.search;
   const base = backendBaseUrl();
+  if (!base) {
+    return NextResponse.json(
+      {
+        message:
+          "Admin API proxy is not configured. Set API_URL and NEXT_PUBLIC_API_URL on this service to your Spring Boot public HTTPS origin (same value, no trailing slash), then redeploy.",
+      },
+      { status: 503 }
+    );
+  }
   const urls = buildCandidateBackendUrls(base).map((candidateBase) => `${candidateBase}/api/${pathStr}${search}`);
 
   const headers = new Headers();
@@ -140,8 +168,9 @@ async function proxy(
     pathStr.includes("bulk-generate");
   const initWithTimeout = init as RequestInit & { signal?: AbortSignal };
   if (isLongRunningAdminOp) {
-    // Allow long-running admin jobs to finish before fetch timeout.
     initWithTimeout.signal = AbortSignal.timeout(LONG_RUNNING_ADMIN_OP_TIMEOUT_MS);
+  } else {
+    initWithTimeout.signal = AbortSignal.timeout(PROXY_DEFAULT_TIMEOUT_MS);
   }
 
   let lastErr: Error | null = null;
@@ -175,6 +204,13 @@ async function proxy(
   const isDev = process.env.NODE_ENV === "development";
   const message = isDev
     ? `Backend unreachable (proxy → ${lastTriedUrl}). Start Spring Boot (e.g. ./gradlew :backend:bootRun) and ensure admin/.env.local points API_URL or NEXT_PUBLIC_API_URL to the running backend.`
-    : "Backend unreachable";
-  return NextResponse.json({ message, detail: lastErr?.message }, { status: 502 });
+    : "Backend unreachable from admin. Confirm the API service is running, healthy, and reachable at the URL in configuredApiOrigin (open …/api/v1/health in a browser). On Railway, use each service’s public HTTPS URL for API_URL / NEXT_PUBLIC_API_URL.";
+  return NextResponse.json(
+    {
+      message,
+      detail: lastErr?.message,
+      configuredApiOrigin: safeApiOrigin(base),
+    },
+    { status: 502 }
+  );
 }
