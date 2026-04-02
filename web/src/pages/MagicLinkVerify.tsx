@@ -16,7 +16,6 @@ export default function MagicLinkVerify() {
     const code = searchParams.get("code")?.trim() ?? "";
     const token = searchParams.get("token");
     if (!email || !code) {
-      // Backend no longer supports token-based magic link verification.
       if (token) {
         setErrorMessage("This sign-in link format is no longer supported. Please request a new code.");
       }
@@ -40,14 +39,42 @@ export default function MagicLinkVerify() {
       });
   }, [searchParams, setUser, navigate]);
 
-  if (status === "verifying") return <div className="page"><p>Signing you in…</p></div>;
-  if (status === "error") {
+  if (status === "verifying") {
     return (
-      <div className="page">
-        <p className="error">{errorMessage}</p>
-        <p><Link to="/login">Go to login</Link></p>
+      <div className="auth-shell auth-shell--minimal">
+        <div className="auth-shell-panel auth-shell-panel--solo">
+          <div className="auth-card auth-card--pro auth-card--compact">
+            <p className="auth-card-eyebrow">Tamixa</p>
+            <h1 className="auth-card-title">Signing you in</h1>
+            <p className="muted auth-card-subtitle">Verifying your link—this only takes a moment.</p>
+            <div className="auth-verify-spinner-wrap" aria-busy="true" aria-live="polite">
+              <div className="auth-verify-spinner" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
+
+  if (status === "error") {
+    return (
+      <div className="auth-shell auth-shell--minimal">
+        <div className="auth-shell-panel auth-shell-panel--solo">
+          <div className="auth-card auth-card--pro auth-card--compact">
+            <p className="auth-card-eyebrow">Tamixa</p>
+            <h1 className="auth-card-title">Couldn&apos;t sign you in</h1>
+            <p className="error">{errorMessage}</p>
+            <p className="muted auth-card-subtitle" style={{ marginBottom: "1rem" }}>
+              Request a fresh code from the login page and try again.
+            </p>
+            <Link to="/login" className="btn btn-primary btn-block">
+              Go to login
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return null;
 }

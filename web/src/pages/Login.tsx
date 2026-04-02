@@ -116,7 +116,7 @@ export default function Login() {
   };
 
   return (
-    <main className="page auth-page auth-page--bedtime" role="main" aria-label="Login page">
+    <main className="auth-shell" role="main" aria-label="Login page">
       <audio
         ref={ambientRef}
         src="/audio/calm-ambient.mp3"
@@ -125,122 +125,140 @@ export default function Login() {
         className="auth-bg-music"
         preload="metadata"
       />
-      <button
-        type="button"
-        onClick={toggleAmbientSound}
-        className="auth-ambient-toggle"
-        aria-label={ambientPlaying ? "Mute background sound" : "Play background sound"}
-      >
-        {ambientPlaying ? "🔊 Mute" : "🔈 Play sound"}
-      </button>
-      <div className="auth-page__stars" aria-hidden="true" />
-      <div className="auth-page__lantern auth-page__lantern--1" aria-hidden="true" />
-      <div className="auth-page__lantern auth-page__lantern--2" aria-hidden="true" />
-      <div className="auth-card auth-card--bedtime">
-        <Link to="/" className="auth-logo-link">
-          <img src="/tamixa-logo.svg" alt="Tamixa" className="auth-logo" />
-        </Link>
-        <p className="auth-welcome">Welcome to Tamixa</p>
-        <p className="auth-tagline auth-tagline--bedtime">
-          Listen your way—personalized for you.
-        </p>
-        <h1 id="login-heading">Sign in</h1>
-        <p id="login-desc" className="muted">Sign in to access stories for your child.</p>
 
-      {!codeSentTo ? (
-        <form onSubmit={handleSendCode} className="form" aria-labelledby="login-heading" aria-describedby="login-desc">
-          {error && <p className="error">{error}</p>}
-          <div className="field">
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-              placeholder="you@example.com"
-            />
-          </div>
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? "Sending…" : "Send code"}
-          </button>
-          <p className="muted" style={{ marginTop: "0.75rem" }}>
-            We&apos;ll email you a 6-digit code. No password needed — same as the mobile app.
-          </p>
-        </form>
-      ) : (
-        <form onSubmit={handleVerifyCode} className="form">
-          {error && <p className="error">{error}</p>}
-          <p className="muted">Code sent to {codeSentTo}</p>
-          <div className="field">
-            <label htmlFor="code">Enter 6-digit code</label>
-            <input
-              id="code"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={OTP_LENGTH}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-              placeholder="000000"
-              autoComplete="one-time-code"
-            />
-          </div>
-          <div className="field" style={{ marginTop: "0.5rem" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={acceptedTerms}
-                onChange={(e) => setAcceptedTerms(e.target.checked)}
-              />
-              I agree to Terms of Service
-            </label>
-          </div>
-          <div className="field">
-            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={acceptedPrivacy}
-                onChange={(e) => setAcceptedPrivacy(e.target.checked)}
-              />
-              I agree to Privacy Policy
-            </label>
-          </div>
-          <div className="field">
-            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={acceptedParentalAttestation}
-                onChange={(e) => setAcceptedParentalAttestation(e.target.checked)}
-              />
-              I am the parent or guardian and am at least 18 years old
-            </label>
-          </div>
-          <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}>
-            Required for new accounts
-          </p>
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? "Signing in…" : "Continue"}
-          </button>
+      <div className="auth-shell-brand">
+        <div className="auth-shell-brand-inner">
           <button
             type="button"
-            className="btn btn-outline"
-            style={{ marginLeft: "0.5rem" }}
-            onClick={resetToEmailStep}
-            disabled={loading}
+            onClick={toggleAmbientSound}
+            className="auth-shell-ambient"
+            aria-label={ambientPlaying ? "Mute background sound" : "Play background sound"}
           >
-            Back
+            {ambientPlaying ? "Sound on" : "Ambient"}
           </button>
-        </form>
-      )}
+          <Link to="/" className="auth-shell-brand-logo">
+            <img src="/tamixa-logo.svg" alt="Tamixa" width={180} height={48} className="auth-shell-brand-logo-img" />
+          </Link>
+          <p className="auth-shell-brand-kicker">Parent portal</p>
+          <h2 className="auth-shell-brand-headline">Stories that feel made for your child</h2>
+          <p className="auth-shell-brand-copy">
+            Secure sign-in with a one-time code—no passwords to remember. Same trusted flow as the Tamixa mobile app.
+          </p>
+          <ul className="auth-shell-brand-list">
+            <li>Personalized library and AI-assisted stories</li>
+            <li>Safe, age-appropriate content for family listening</li>
+            <li>Voice and language options you control</li>
+          </ul>
+        </div>
+      </div>
 
-      <p className="muted auth-footer-text">
-        Don&apos;t have an account? Enter your email above and we&apos;ll create one when you verify the code.
-      </p>
-      <p className="auth-back">
-        <Link to="/">← Back to home</Link>
-      </p>
+      <div className="auth-shell-panel">
+        <div className="auth-card auth-card--pro">
+          <p className="auth-card-eyebrow">Welcome back</p>
+          <h1 id="login-heading" className="auth-card-title">
+            Sign in
+          </h1>
+          <p id="login-desc" className="auth-card-subtitle muted">
+            Enter your email. We&apos;ll send a 6-digit code to sign in or create your account.
+          </p>
+
+          {!codeSentTo ? (
+            <form onSubmit={handleSendCode} className="form auth-form" aria-labelledby="login-heading" aria-describedby="login-desc">
+              {error ? <p className="error">{error}</p> : null}
+              <div className="field field--full">
+                <label htmlFor="email">Work or personal email</label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                />
+              </div>
+              <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
+                {loading ? "Sending…" : "Send sign-in code"}
+              </button>
+              <p className="muted auth-form-hint">
+                New here? Use the same email to verify—we&apos;ll set up your account when you confirm the code.
+              </p>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyCode} className="form auth-form" aria-labelledby="login-heading">
+              {error ? <p className="error">{error}</p> : null}
+              <p className="auth-code-sent muted">
+                Code sent to <strong className="auth-code-sent-email">{codeSentTo}</strong>
+              </p>
+              <div className="field field--full">
+                <label htmlFor="code">6-digit code</label>
+                <input
+                  id="code"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={OTP_LENGTH}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="000000"
+                  autoComplete="one-time-code"
+                  className="auth-input-code"
+                />
+              </div>
+              <div className="field field--full">
+                <label className="auth-check-label">
+                  <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />
+                  <span>
+                    I agree to the{" "}
+                    <a href="/terms" target="_blank" rel="noopener noreferrer">
+                      Terms of Service
+                    </a>
+                  </span>
+                </label>
+              </div>
+              <div className="field field--full">
+                <label className="auth-check-label">
+                  <input type="checkbox" checked={acceptedPrivacy} onChange={(e) => setAcceptedPrivacy(e.target.checked)} />
+                  <span>
+                    I agree to the{" "}
+                    <a href="/privacy" target="_blank" rel="noopener noreferrer">
+                      Privacy Policy
+                    </a>
+                  </span>
+                </label>
+              </div>
+              <div className="field field--full">
+                <label className="auth-check-label">
+                  <input
+                    type="checkbox"
+                    checked={acceptedParentalAttestation}
+                    onChange={(e) => setAcceptedParentalAttestation(e.target.checked)}
+                  />
+                  <span>I am the parent or guardian and am at least 18 years old</span>
+                </label>
+              </div>
+              <p className="muted auth-form-hint auth-form-hint--small">Required for new accounts</p>
+              <div className="auth-form-actions">
+                <button type="submit" className="btn btn-primary" disabled={loading}>
+                  {loading ? "Signing in…" : "Continue"}
+                </button>
+                <button type="button" className="btn btn-outline" onClick={resetToEmailStep} disabled={loading}>
+                  Use different email
+                </button>
+              </div>
+            </form>
+          )}
+
+          <p className="muted auth-footer-text">
+            Prefer a password?{" "}
+            <Link to="/register" className="auth-inline-link">
+              Create an account with email and password
+            </Link>
+          </p>
+          <p className="auth-back">
+            <Link to="/">← Back to home</Link>
+          </p>
+        </div>
       </div>
     </main>
   );

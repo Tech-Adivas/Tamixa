@@ -36,7 +36,7 @@ describe("Login", () => {
       </MemoryRouter>
     );
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /send code/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign-in code/i })).toBeInTheDocument();
   });
 
   it("has accessible form controls with proper labels", () => {
@@ -46,6 +46,6 @@ describe("Login", () => {
       </MemoryRouter>
     );
     expect(screen.getByPlaceholderText(/you@example\.com/i)).toHaveAttribute("type", "email");
-    expect(screen.getByRole("button", { name: /send code/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign-in code/i })).toBeInTheDocument();
   });
 });

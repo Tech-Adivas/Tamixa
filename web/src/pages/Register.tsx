@@ -46,84 +46,122 @@ export default function Register() {
   };
 
   return (
-    <main className="page auth-page" role="main" aria-label="Registration page">
-      <div className="auth-card">
-        <Link to="/" className="auth-logo-link">
-          <img src="/tamixa-logo.svg" alt="Tamixa" className="auth-logo" />
-        </Link>
-        <p className="auth-tagline">Listen • Learn • Shine</p>
-        <h1 id="register-heading">Create account</h1>
-        <p id="register-desc" className="muted">Create an account to start creating stories for your child.</p>
-      <form onSubmit={handleSubmit} className="form" aria-labelledby="register-heading" aria-describedby="register-desc">
-        {(error || validationError) && <p className="error">{error || validationError}</p>}
-        <div className="field" role="group" aria-label="Email">
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-            aria-required="true"
-          />
+    <main className="auth-shell" role="main" aria-label="Registration page">
+      <div className="auth-shell-brand">
+        <div className="auth-shell-brand-inner">
+          <Link to="/" className="auth-shell-brand-logo">
+            <img src="/tamixa-logo.svg" alt="Tamixa" width={180} height={48} className="auth-shell-brand-logo-img" />
+          </Link>
+          <p className="auth-shell-brand-kicker">Get started</p>
+          <h2 className="auth-shell-brand-headline">One account for the whole family</h2>
+          <p className="auth-shell-brand-copy">
+            Create a parent account to manage stories, voices, and subscriptions. Your data is protected with the same standards we use across Tamixa.
+          </p>
+          <ul className="auth-shell-brand-list">
+            <li>Email and password sign-in for the web portal</li>
+            <li>Or use passwordless sign-in on the login page—your choice</li>
+            <li>Clear consent flows designed for parents and guardians</li>
+          </ul>
         </div>
-        <div className="field" role="group" aria-label="Password">
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="new-password"
-            minLength={8}
-            aria-required="true"
-          />
+      </div>
+
+      <div className="auth-shell-panel">
+        <div className="auth-card auth-card--pro">
+          <p className="auth-card-eyebrow">Tamixa</p>
+          <h1 id="register-heading" className="auth-card-title">
+            Create account
+          </h1>
+          <p id="register-desc" className="auth-card-subtitle muted">
+            Set up your email and password to access the parent portal.
+          </p>
+          <form onSubmit={handleSubmit} className="form auth-form" aria-labelledby="register-heading" aria-describedby="register-desc">
+            {(error || validationError) ? <p className="error">{error || validationError}</p> : null}
+            <div className="field field--full" role="group" aria-label="Email">
+              <label htmlFor="email">Email</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                aria-required="true"
+                placeholder="you@example.com"
+              />
+            </div>
+            <div className="field field--full" role="group" aria-label="Password">
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+                minLength={8}
+                aria-required="true"
+                placeholder="At least 8 characters"
+              />
+            </div>
+            <div className="field field--full">
+              <label className="auth-check-label">
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  aria-label="I accept the Terms of Service"
+                />
+                <span>
+                  I accept the{" "}
+                  <a href="/terms" target="_blank" rel="noopener noreferrer">
+                    Terms of Service
+                  </a>
+                </span>
+              </label>
+            </div>
+            <div className="field field--full">
+              <label className="auth-check-label">
+                <input
+                  type="checkbox"
+                  checked={acceptedPrivacy}
+                  onChange={(e) => setAcceptedPrivacy(e.target.checked)}
+                  aria-label="I accept the Privacy Policy"
+                />
+                <span>
+                  I accept the{" "}
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer">
+                    Privacy Policy
+                  </a>
+                </span>
+              </label>
+            </div>
+            <div className="field field--full">
+              <label className="auth-check-label">
+                <input
+                  type="checkbox"
+                  checked={acceptedParentalAttestation}
+                  onChange={(e) => setAcceptedParentalAttestation(e.target.checked)}
+                  aria-label="I am the parent or guardian and am at least 18 years old"
+                />
+                <span>
+                  I am the parent or guardian of the child(ren) who will use this account and I am at least 18 years old
+                </span>
+              </label>
+            </div>
+            <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
+              {loading ? "Creating account…" : "Create account"}
+            </button>
+          </form>
+          <p className="muted auth-footer-text">
+            Already have an account?{" "}
+            <Link to="/login" className="auth-inline-link">
+              Sign in
+            </Link>
+          </p>
+          <p className="auth-back">
+            <Link to="/">← Back to home</Link>
+          </p>
         </div>
-        <div className="field">
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={acceptedTerms}
-              onChange={(e) => setAcceptedTerms(e.target.checked)}
-              aria-label="I accept the Terms of Service"
-            />
-            <span>I accept the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a></span>
-          </label>
-        </div>
-        <div className="field">
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={acceptedPrivacy}
-              onChange={(e) => setAcceptedPrivacy(e.target.checked)}
-              aria-label="I accept the Privacy Policy"
-            />
-            <span>I accept the <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a></span>
-          </label>
-        </div>
-        <div className="field">
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={acceptedParentalAttestation}
-              onChange={(e) => setAcceptedParentalAttestation(e.target.checked)}
-              aria-label="I am the parent or guardian and am at least 18 years old"
-            />
-            <span>I am the parent or guardian of the child(ren) who will use this account and I am at least 18 years old</span>
-          </label>
-        </div>
-        <button type="submit" className="btn btn-primary" disabled={loading}>
-          {loading ? "Creating account…" : "Create account"}
-        </button>
-      </form>
-      <p className="muted auth-footer-text">
-        Already have an account? <Link to="/login">Sign in</Link>
-      </p>
-      <p className="auth-back">
-        <Link to="/">← Back to home</Link>
-      </p>
       </div>
     </main>
   );

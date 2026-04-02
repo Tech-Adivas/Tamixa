@@ -7,6 +7,9 @@ COPY package.json package-lock.json* ./
 RUN npm ci
 
 COPY . .
+# Railway/build hosts: pass the same value as service Variables so `next build` can inline NEXT_PUBLIC_*.
+ARG NEXT_PUBLIC_API_URL=
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 RUN npm run build
 
 # Production stage

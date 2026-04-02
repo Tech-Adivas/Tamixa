@@ -4,12 +4,18 @@ import { MemoryRouter } from "react-router-dom";
 import Dashboard from "./Dashboard";
 
 vi.mock("../contexts/AuthContext", () => ({
-  useAuth: () => ({}),
+  useAuth: () => ({ user: { email: "parent@example.com", role: "PARENT" } }),
 }));
 
 vi.mock("../lib/api", () => ({
   getRecommendedStories: vi.fn().mockResolvedValue([]),
   getRecentPlayback: vi.fn().mockResolvedValue([]),
+  getListeningProgress: vi.fn().mockResolvedValue({
+    periodDays: 30,
+    storiesStarted: 2,
+    storiesCompleted: 1,
+    completionRate: 0.5,
+  }),
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -27,19 +33,24 @@ const routerFuture = {
   v7_relativeSplatPath: true,
 } as const;
 
+async function flushDashboard() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 describe("Dashboard", () => {
-  it("renders Home header and subtitle", async () => {
+  it("renders welcome heading and overview", async () => {
     render(
       <MemoryRouter future={routerFuture}>
         <Dashboard />
       </MemoryRouter>
     );
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Home");
-    expect(screen.getByText(/Continue listening, recommendations/i)).toBeInTheDocument();
+    await flushDashboard();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Welcome back/i);
+    expect(screen.getByText(/Pick up where you left off/i)).toBeInTheDocument();
   });
 
   it("shows Continue listening section", async () => {
@@ -48,10 +59,7 @@ describe("Dashboard", () => {
         <Dashboard />
       </MemoryRouter>
     );
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await flushDashboard();
     expect(screen.getByRole("heading", { name: /Continue listening/i })).toBeInTheDocument();
   });
 
@@ -61,10 +69,7 @@ describe("Dashboard", () => {
         <Dashboard />
       </MemoryRouter>
     );
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await flushDashboard();
     expect(screen.getByRole("heading", { name: /Recommended for you/i })).toBeInTheDocument();
   });
 });

@@ -28,8 +28,9 @@ function warnIfApiEnvMismatch(): void {
 }
 
 /**
- * Spring API origin (no path, no trailing slash). In production both env vars must be set
- * so the server proxy never falls back to 127.0.0.1 inside the container (which breaks login).
+ * Spring API origin (no path, no trailing slash). In production, API_URL is read at runtime
+ * (Railway Variables — often no image rebuild needed). NEXT_PUBLIC_API_URL is inlined at `next build`;
+ * keep both identical; use Docker ARG NEXT_PUBLIC_API_URL when building the admin image.
  */
 function backendBaseUrl(): string | null {
   warnIfApiEnvMismatch();
@@ -114,8 +115,9 @@ async function proxy(
   if (!base) {
     return NextResponse.json(
       {
-        message:
-          "Admin API proxy is not configured. Set API_URL and NEXT_PUBLIC_API_URL on this service to your Spring Boot public HTTPS origin (same value, no trailing slash), then redeploy.",
+        message: "Admin API proxy is not configured.",
+        hint:
+          "Railway → this admin service → Variables: set API_URL to your Spring API HTTPS origin (no trailing slash), e.g. https://your-api.up.railway.app. Save and redeploy/restart. API_URL is runtime-only. Set NEXT_PUBLIC_API_URL to the same value and rebuild the admin image so client bundles match.",
       },
       { status: 503 }
     );

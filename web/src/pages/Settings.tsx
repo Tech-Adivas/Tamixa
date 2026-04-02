@@ -92,8 +92,8 @@ export default function Settings() {
   };
 
   return (
-    <div className="page">
-      <header className="page-header-tamixa" style={{ marginTop: 0 }}>
+    <div className="page app-surface-page">
+      <header className="app-page-header">
         <h1>Settings & Privacy</h1>
         <p className="page-subtitle">Consent, data export, listening progress</p>
       </header>

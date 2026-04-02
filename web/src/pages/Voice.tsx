@@ -45,8 +45,8 @@ export default function Voice() {
   };
 
   return (
-    <div className="page">
-      <header className="page-header-tamixa" style={{ marginTop: 0 }}>
+    <div className="page app-surface-page">
+      <header className="app-page-header">
         <h1>Clone your voice</h1>
         <p className="page-subtitle">Upload a voice sample to use your voice for story narration</p>
       </header>
@@ -97,7 +97,7 @@ export default function Voice() {
             </label>
             <button
               type="button"
-              className="button primary"
+              className="btn btn-primary"
               onClick={handleUpload}
               disabled={uploading || !userConsent}
               style={{ alignSelf: "flex-start", marginTop: "0.75rem" }}

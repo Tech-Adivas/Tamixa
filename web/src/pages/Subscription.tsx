@@ -102,8 +102,8 @@ export default function Subscription() {
   const showUpgrade = sub && (sub.plan === "FREE" || !sub.isEntitledToUnlimitedStories);
 
   return (
-    <div className="page">
-      <header className="page-header-tamixa" style={{ marginTop: 0 }}>
+    <div className="page app-surface-page">
+      <header className="app-page-header">
         <h1>Subscription</h1>
         <p className="page-subtitle">Your plan and usage</p>
       </header>
@@ -129,7 +129,7 @@ export default function Subscription() {
                   <p>Max children: {sub.maxChildren}</p>
                   {showUpgrade ? (
                     <>
-                      <div className="referral-section" style={{ marginTop: "1rem", padding: "1rem", background: "var(--card-bg, #f8f8f8)", borderRadius: "8px" }}>
+                      <div className="subscription-referral-panel">
                         <p className="section-card-subtitle" style={{ marginBottom: "0.5rem" }}>Referral code (e.g. AMAZ5, SHOPSTOP10)</p>
                         <div className="field" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
                           <input
