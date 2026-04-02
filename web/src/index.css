@@ -1,32 +1,32 @@
-/* Tamixa Design System – Listen • Learn • Shine (aligned with admin + mobile) */
+/* Tamixa web — storytelling & entertainment (warm night / story-time; not admin-console) */
 
 :root {
-  /* Brand palette (design system) */
-  --tamixa-blue: #3B82F6;
-  --tamixa-purple: #7C3AED;
-  --tamixa-yellow: #FFD84D;
-  --tamixa-orange: #FF8A00;
-  --tamixa-pink: #FF4D8D;
-  --tamixa-indigo: #4F46E5;
+  /* Brand palette */
+  --tamixa-blue: #38bdf8;
+  --tamixa-purple: #f0abfc;
+  --tamixa-yellow: #fcd34d;
+  --tamixa-orange: #fb923c;
+  --tamixa-pink: #fb7185;
+  --tamixa-indigo: #f97316;
 
-  /* Gradients */
-  --tamixa-gradient-primary: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
-  --tamixa-gradient-reward: linear-gradient(135deg, #FFD84D 0%, #FF8A00 100%);
-  --tamixa-gradient-page: linear-gradient(160deg, #EFF6FF 0%, #EDE9FE 35%, #F5F3FF 100%);
-  --tamixa-gradient-page-dark: linear-gradient(160deg, hsl(263 45% 8%) 0%, hsl(263 50% 6%) 100%);
+  /* Gradients — sunset / lantern (primary actions) */
+  --tamixa-gradient-primary: linear-gradient(125deg, #fbbf24 0%, #f97316 42%, #ec4899 100%);
+  --tamixa-gradient-reward: linear-gradient(135deg, #fde68a 0%, #fb923c 55%, #f472b6 100%);
+  --tamixa-gradient-page: linear-gradient(160deg, #fff7ed 0%, #ffedd5 40%, #fef3c7 100%);
+  --tamixa-gradient-page-dark: linear-gradient(165deg, hsl(215 40% 9%) 0%, hsl(25 30% 8%) 100%);
 
-  /* Dark theme surfaces (web default) */
-  --tamixa-bg: #0d0d0d;
-  --tamixa-surface: #16142a;
-  --tamixa-surface-variant: #1e1b33;
-  --tamixa-border: #2d2a42;
-  --tamixa-cream: #f5f5f5;
-  --tamixa-lavender: #e8e0f0;
-  --tamixa-gray: #a8a4b8;
-  --tamixa-input-bg: #ffffff;
-  --tamixa-input-text: #2c2520;
-  --tamixa-error: #e57373;
-  --tamixa-error-bg: rgba(229, 115, 115, 0.15);
+  /* Surfaces — cozy evening “story nook” */
+  --tamixa-bg: #101820;
+  --tamixa-surface: #1a2632;
+  --tamixa-surface-variant: #243240;
+  --tamixa-border: rgba(254, 215, 170, 0.14);
+  --tamixa-cream: #fff8f0;
+  --tamixa-lavender: #e8dcc8;
+  --tamixa-gray: #a8b0bc;
+  --tamixa-input-bg: #fffdfb;
+  --tamixa-input-text: #1c1917;
+  --tamixa-error: #fca5a5;
+  --tamixa-error-bg: rgba(248, 113, 113, 0.12);
 
   /* Legacy gold (now accent / reward) */
   --tamixa-gold: #FFD84D;
@@ -59,9 +59,9 @@
   --tamixa-radius-lg: 1rem;       /* 16px - inputRadius, cardRadius */
   --tamixa-radius-xl: 1.25rem;    /* 20px - cardRadiusLarge */
   --tamixa-radius-2xl: 1.5rem;    /* 24px - dialogRadius, buttonRadius */
-  --tamixa-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  --tamixa-shadow-hover: 0 4px 16px rgba(124, 58, 237, 0.25);
-  --tamixa-shadow-glow: 0 0 24px -4px rgba(124, 58, 237, 0.35);
+  --tamixa-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  --tamixa-shadow-hover: 0 8px 24px rgba(249, 115, 22, 0.22);
+  --tamixa-shadow-glow: 0 0 32px -4px rgba(251, 191, 36, 0.45);
   --tamixa-shadow-card: 0 2px 8px -2px rgba(0, 0, 0, 0.15), 0 4px 12px -4px rgba(0, 0, 0, 0.1);
   
   /* Motion — aligned with mobile P0 enhancements */
@@ -75,11 +75,11 @@
   /* Accessibility — P0 enhancement */
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
-  --focus-ring-color: hsl(217 91% 60%);
+  --focus-ring-color: #fbbf24;
 
-  /* Typography */
-  --font-display: "Sora", "Nunito", system-ui, sans-serif;
-  --font-body: "Plus Jakarta Sans", "Source Sans 3", system-ui, sans-serif;
+  /* Typography — storybook display + friendly body */
+  --font-display: "Fraunces", "Georgia", "Times New Roman", serif;
+  --font-body: "Nunito", system-ui, sans-serif;
   --font-size-base: 16px;
   --font-size-scale: 1;
   --high-contrast: 0;
@@ -93,10 +93,26 @@ body {
   margin: 0;
   font-family: var(--font-body);
   font-size: calc(var(--font-size-base) * var(--font-size-scale));
-  background: var(--tamixa-bg);
+  background-color: var(--tamixa-bg);
+  background-image:
+    radial-gradient(ellipse 120% 70% at 50% -15%, rgba(251, 191, 36, 0.09) 0%, transparent 55%),
+    radial-gradient(ellipse 90% 55% at 100% 100%, rgba(236, 72, 153, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 45% at 0% 80%, rgba(56, 189, 248, 0.05) 0%, transparent 45%);
+  background-attachment: fixed;
   color: var(--tamixa-cream);
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Optical sizing for story display font */
+h1,
+h2,
+h3,
+.page-header-tamixa h1,
+.dash-hero h1,
+.auth-card-title,
+.marketing-hero-title {
+  font-optical-sizing: auto;
 }
 
 body.high-contrast {
@@ -315,8 +331,8 @@ body.high-contrast .btn-outline {
 .field select:focus,
 .field textarea:focus {
   outline: none;
-  border-color: var(--tamixa-purple);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.22);
 }
 
 .field textarea {
@@ -361,20 +377,21 @@ body.high-contrast .btn-outline {
   border: 1px solid rgba(229, 115, 115, 0.3);
 }
 
-/* Buttons */
+/* Buttons — playful, app-like (not admin table actions) */
 .btn {
-  padding: 0.6rem 1.25rem;
+  padding: 0.65rem 1.35rem;
   min-height: 48px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--tamixa-radius-lg);
+  border-radius: 9999px;
   cursor: pointer;
   font-size: 1rem;
-  font-family: var(--font-display);
-  font-weight: 600;
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: 0.01em;
   border: none;
-  transition: transform 0.15s, box-shadow 0.2s, background 0.2s;
+  transition: transform 0.15s, box-shadow 0.2s, background 0.2s, filter 0.2s;
 }
 
 .btn:disabled {
@@ -388,23 +405,25 @@ body.high-contrast .btn-outline {
 
 .btn-primary {
   background: var(--tamixa-gradient-primary);
-  color: #fff;
+  color: #1c1917;
   box-shadow: var(--tamixa-shadow);
 }
 
 .btn-primary:hover:not(:disabled) {
   box-shadow: var(--tamixa-shadow-glow);
-  filter: brightness(1.05);
+  filter: brightness(1.04) saturate(1.05);
 }
 
 .btn-outline {
   background: transparent;
-  border: 2px solid var(--tamixa-purple);
-  color: var(--tamixa-purple);
+  border: 2px solid rgba(251, 191, 36, 0.55);
+  color: #fde68a;
 }
 
 .btn-outline:hover:not(:disabled) {
-  background: rgba(124, 58, 237, 0.15);
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(253, 224, 71, 0.75);
+  color: #fffbeb;
 }
 
 .btn-sm {
@@ -554,9 +573,9 @@ body.high-contrast .btn-outline {
 }
 
 .tab.active {
-  background: var(--tamixa-purple);
-  color: #fff;
-  border-color: var(--tamixa-purple);
+  background: linear-gradient(125deg, rgba(251, 191, 36, 0.35) 0%, rgba(249, 115, 22, 0.25) 100%);
+  color: #fffbeb;
+  border-color: rgba(251, 191, 36, 0.5);
 }
 
 /* Cards */
@@ -952,8 +971,8 @@ body.high-contrast .btn-outline {
   position: sticky;
   top: 0;
   z-index: 50;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(13, 13, 13, 0.78);
+  border-bottom: 1px solid var(--tamixa-border);
+  background: rgba(16, 24, 32, 0.82);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
@@ -1033,7 +1052,13 @@ body.high-contrast .btn-outline {
   transform: translateX(-50%);
   width: min(900px, 140vw);
   height: min(500px, 80vw);
-  background: radial-gradient(ellipse at center, rgba(124, 58, 237, 0.35) 0%, transparent 65%);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(251, 191, 36, 0.2) 0%,
+    rgba(249, 115, 22, 0.12) 35%,
+    rgba(236, 72, 153, 0.08) 55%,
+    transparent 70%
+  );
   pointer-events: none;
 }
 
@@ -1047,11 +1072,12 @@ body.high-contrast .btn-outline {
 
 .marketing-hero-eyebrow {
   margin: 0 0 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  font-size: 0.8rem;
+  font-weight: 800;
+  font-family: var(--font-body);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #c4b5fd;
+  color: #fcd34d;
 }
 
 .marketing-hero-title {
@@ -1164,10 +1190,10 @@ body.high-contrast .btn-outline {
 }
 
 .marketing-feature-icon {
-  font-size: 1.25rem;
-  color: #c4b5fd;
+  font-size: 1.35rem;
   margin-bottom: 0.65rem;
-  font-family: var(--font-display);
+  font-family: var(--font-body);
+  filter: drop-shadow(0 2px 6px rgba(251, 191, 36, 0.25));
 }
 
 .marketing-feature-title {
@@ -1186,9 +1212,9 @@ body.high-contrast .btn-outline {
 
 .marketing-cta-band {
   margin: 0 1rem 2rem;
-  border-radius: 1.25rem;
-  border: 1px solid rgba(124, 58, 237, 0.25);
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.18) 0%, rgba(79, 70, 229, 0.08) 100%);
+  border-radius: 1.5rem;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.12) 0%, rgba(236, 72, 153, 0.1) 50%, rgba(56, 189, 248, 0.06) 100%);
 }
 
 @media (min-width: 768px) {
@@ -1275,8 +1301,8 @@ body.high-contrast .btn-outline {
   min-height: 100vh;
   display: flex;
   background:
-    radial-gradient(ellipse 120% 80% at 100% 0%, rgba(124, 58, 237, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse 80% 50% at 0% 100%, rgba(59, 130, 246, 0.08) 0%, transparent 45%),
+    radial-gradient(ellipse 130% 85% at 95% 5%, rgba(251, 146, 60, 0.1) 0%, transparent 52%),
+    radial-gradient(ellipse 90% 60% at 0% 95%, rgba(236, 72, 153, 0.07) 0%, transparent 48%),
     var(--tamixa-bg);
 }
 
@@ -1345,9 +1371,9 @@ body.high-contrast .btn-outline {
   display: flex;
   flex-direction: column;
   padding: 1.25rem 1rem 1rem;
-  background: linear-gradient(180deg, hsl(262 32% 14%) 0%, hsl(262 28% 10%) 100%);
+  background: linear-gradient(185deg, #1c2430 0%, #141c24 45%, #101820 100%);
   border-right: 1px solid var(--tamixa-border);
-  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.25);
+  box-shadow: 8px 0 36px rgba(0, 0, 0, 0.35);
   transform: translateX(-100%);
   transition: transform var(--tamixa-duration-standard) var(--tamixa-ease-out-expo);
 }
@@ -1406,11 +1432,13 @@ body.high-contrast .btn-outline {
 
 .app-sidebar-tagline {
   margin: 0.5rem 0 0;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--tamixa-gray);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-family: var(--font-body);
+  color: #fcd34d;
+  opacity: 0.95;
 }
 
 .app-sidebar-nav {
@@ -1442,9 +1470,10 @@ body.high-contrast .btn-outline {
 }
 
 .app-sidebar-link--active {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.35) 0%, rgba(79, 70, 229, 0.2) 100%);
-  color: #fff;
-  border: 1px solid rgba(124, 58, 237, 0.35);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(249, 115, 22, 0.12) 100%);
+  color: #fffbeb;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  box-shadow: 0 0 20px -6px rgba(251, 191, 36, 0.35);
 }
 
 .app-sidebar-footer {
@@ -1485,7 +1514,7 @@ body.high-contrast .btn-outline {
   min-height: 3.25rem;
   padding: 0 1rem 0 3.75rem;
   border-bottom: 1px solid var(--tamixa-border);
-  background: rgba(13, 13, 13, 0.85);
+  background: rgba(16, 24, 32, 0.88);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   position: sticky;
@@ -1659,11 +1688,12 @@ body.high-contrast .btn-outline {
 
 .dash-hero-eyebrow {
   margin: 0 0 0.35rem;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-family: var(--font-body);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #a78bfa;
+  color: #fcd34d;
 }
 
 .dash-hero h1 {
@@ -1692,13 +1722,13 @@ body.high-contrast .btn-outline {
 }
 
 .btn-hero-secondary {
-  border-color: rgba(196, 181, 253, 0.45);
-  color: #e9d5ff;
+  border-color: rgba(253, 224, 71, 0.5);
+  color: #fef9c3;
 }
 
 .btn-hero-secondary:hover:not(:disabled) {
-  background: rgba(124, 58, 237, 0.12);
-  color: #fff;
+  background: rgba(251, 191, 36, 0.14);
+  color: #fffbeb;
 }
 
 .dash-stat-grid {
@@ -1716,9 +1746,10 @@ body.high-contrast .btn-outline {
 
 .dash-stat-card {
   padding: 1rem 1.15rem;
-  border-radius: 1rem;
+  border-radius: 1.2rem;
   border: 1px solid var(--tamixa-border);
-  background: linear-gradient(165deg, rgba(30, 27, 51, 0.55) 0%, rgba(22, 20, 42, 0.35) 100%);
+  background: linear-gradient(165deg, rgba(36, 50, 64, 0.75) 0%, rgba(26, 38, 50, 0.45) 100%);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
 .dash-stat-card--skeleton {
@@ -1740,7 +1771,7 @@ body.high-contrast .btn-outline {
   font-weight: 700;
   font-size: 1.75rem;
   letter-spacing: -0.02em;
-  color: var(--tamixa-cream);
+  color: #fde68a;
   line-height: 1.1;
 }
 
@@ -1769,9 +1800,9 @@ body.high-contrast .btn-outline {
   align-items: flex-start;
   gap: 0.2rem;
   padding: 1rem 1rem 1.1rem;
-  border-radius: var(--tamixa-radius-lg);
+  border-radius: 1.15rem;
   border: 1px solid var(--tamixa-border);
-  background: var(--tamixa-surface-variant);
+  background: linear-gradient(160deg, rgba(36, 50, 64, 0.6) 0%, rgba(26, 38, 50, 0.4) 100%);
   text-decoration: none;
   color: inherit;
   transition:
@@ -1781,9 +1812,9 @@ body.high-contrast .btn-outline {
 }
 
 .dash-quick-card:hover {
-  border-color: rgba(124, 58, 237, 0.4);
-  box-shadow: 0 8px 28px -8px rgba(0, 0, 0, 0.35);
-  transform: translateY(-2px);
+  border-color: rgba(251, 191, 36, 0.4);
+  box-shadow: 0 10px 32px -10px rgba(251, 146, 60, 0.2);
+  transform: translateY(-3px);
   text-decoration: none;
   color: inherit;
 }
@@ -1794,10 +1825,9 @@ body.high-contrast .btn-outline {
 }
 
 .dash-quick-icon {
-  font-size: 1.1rem;
-  color: #c4b5fd;
+  font-size: 1.45rem;
+  line-height: 1;
   margin-bottom: 0.15rem;
-  font-family: var(--font-display);
 }
 
 .dash-quick-title {
@@ -1836,8 +1866,9 @@ body.high-contrast .btn-outline {
 
 .dash-section-link {
   font-size: 0.9rem;
-  font-weight: 600;
-  color: #c4b5fd;
+  font-weight: 700;
+  font-family: var(--font-body);
+  color: #fde68a;
   text-decoration: none;
 }
 
@@ -1885,9 +1916,9 @@ body.high-contrast .btn-outline {
 .dash-empty {
   padding: 1.75rem 1.25rem;
   text-align: center;
-  border-radius: 1rem;
-  border: 1px dashed rgba(124, 58, 237, 0.28);
-  background: rgba(124, 58, 237, 0.06);
+  border-radius: 1.25rem;
+  border: 1px dashed rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.06);
 }
 
 .dash-empty-title {
@@ -2575,10 +2606,11 @@ body.high-contrast .btn-outline {
   padding: 2rem 1.5rem 2.5rem;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 100% 80% at 20% 20%, rgba(124, 58, 237, 0.45) 0%, transparent 55%),
-    radial-gradient(ellipse 70% 60% at 90% 80%, rgba(59, 130, 246, 0.25) 0%, transparent 50%),
-    linear-gradient(165deg, hsl(262 42% 18%) 0%, hsl(262 38% 8%) 55%, hsl(240 30% 6%) 100%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    radial-gradient(ellipse 110% 90% at 15% 15%, rgba(251, 191, 36, 0.28) 0%, transparent 52%),
+    radial-gradient(ellipse 80% 70% at 95% 75%, rgba(236, 72, 153, 0.2) 0%, transparent 48%),
+    radial-gradient(ellipse 60% 50% at 50% 100%, rgba(56, 189, 248, 0.12) 0%, transparent 45%),
+    linear-gradient(168deg, hsl(215 42% 16%) 0%, hsl(220 35% 10%) 45%, hsl(25 28% 8%) 100%);
+  border-bottom: 1px solid var(--tamixa-border);
 }
 
 @media (min-width: 960px) {
