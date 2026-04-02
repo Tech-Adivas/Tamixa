@@ -11,6 +11,14 @@ const API_BASE =
     ? `${DEFAULT_API_BASE_URL}${API_PATH}`
     : API_PATH;
 
+/**
+ * Base URL for `/api/v1` requests. Matches `fetchWithAuth` (full backend origin in the browser).
+ * Use for calls that bypass `fetchWithAuth` (for example proactive refresh on the deployed site).
+ */
+export function getApiV1Base(): string {
+  return API_BASE;
+}
+
 const CORRELATION_SESSION_KEY = "tamixa_x_correlation_id";
 
 /** Stable per-tab id for log correlation; aligns with backend X-Correlation-Id / X-Request-Id. */

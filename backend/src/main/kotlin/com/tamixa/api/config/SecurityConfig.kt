@@ -128,6 +128,8 @@ class SecurityConfig(
                 it.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             }
             .authorizeHttpRequests { auth ->
+                // Root: public JSON so API-only Railway URLs are not a confusing 401 in the browser
+                auth.requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/")).permitAll()
                 // Actuator: only health (and liveness/readiness) public for load balancers; rest require auth in prod
                 auth.requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
                 auth.requestMatchers("/actuator/**").authenticated()

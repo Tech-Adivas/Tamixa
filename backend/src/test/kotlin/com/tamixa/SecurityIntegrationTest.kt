@@ -35,6 +35,17 @@ class SecurityIntegrationTest : IntegrationTestBase() {
     }
 
     @Test
+    fun `GET root is public and identifies API`() {
+        val response = restTemplate.getForEntity(
+            "/",
+            Map::class.java
+        )
+        assertThat(response.statusCode).isEqualTo(HttpStatus.OK)
+        assertThat(response.body?.get("service")).isEqualTo("tamixa-api")
+        assertThat(response.body?.get("parentWebAppUrl")).isNotNull()
+    }
+
+    @Test
     fun `actuator health is accessible without auth`() {
         val response = restTemplate.getForEntity(
             "/actuator/health",
