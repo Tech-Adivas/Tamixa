@@ -55,13 +55,16 @@ import type {
 } from "@/types/api";
 import { touchActivity } from "./activity-tracker";
 import { broadcastTokenUpdate } from "./session-sync";
+import {
+  getApiUrlPairForMismatchWarn,
+  getBackendApiOriginFromEnv,
+} from "./server-runtime-env";
 
 let apiEnvMismatchWarned = false;
 
 function warnIfApiEnvMismatch(): void {
   if (apiEnvMismatchWarned || typeof process === "undefined") return;
-  const apiUrl = process.env.API_URL?.trim();
-  const nextPublicApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  const { apiUrl, nextPublicApiUrl } = getApiUrlPairForMismatchWarn();
   if (!apiUrl || !nextPublicApiUrl || apiUrl === nextPublicApiUrl) return;
   apiEnvMismatchWarned = true;
   console.warn(
@@ -76,12 +79,8 @@ export const getApiBaseUrl = (): string => {
   // which forwards Authorization header. Direct backend URL via rewrites does NOT.
   if (typeof window !== "undefined") return "";
   warnIfApiEnvMismatch();
-  // Server-side (SSR): match proxy precedence to avoid split reads across different backends.
-  const explicit =
-    (typeof process !== "undefined" && process.env?.API_URL) ||
-    (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL);
-  if (explicit && explicit.trim() !== "") return explicit.trim();
-  return "";
+  // Server-side (SSR): same resolution as API route proxy (runtime env, not build-inlined).
+  return getBackendApiOriginFromEnv() ?? "";
 };
 
 const getBaseUrl = getApiBaseUrl;

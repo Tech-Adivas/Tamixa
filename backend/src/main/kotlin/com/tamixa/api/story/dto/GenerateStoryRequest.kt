@@ -35,7 +35,7 @@ data class GenerateStoryRequest(
     @field:Size(max = 10)
     val conversationMessages: List<String>? = null,
 
-    /** Optional educational focus: empathy, problem_solving, vocabulary, curiosity, perseverance, sharing, honesty, courage, kindness, friendship, responsibility. Ignored if not in allowlist. */
+    /** Optional educational focus: empathy, problem_solving, vocabulary, curiosity, perseverance, sharing, honesty, courage, kindness, friendship, responsibility, public_speaking, money_literacy, research_skills. Ignored if not in allowlist. */
     @field:Size(max = 30)
     val learningFocus: String? = null
 )

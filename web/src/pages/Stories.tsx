@@ -3,6 +3,7 @@ import { Link, useSearchParams, useLocation, useNavigate } from "react-router-do
 import StoryAudioPlayer from "../components/StoryAudioPlayer";
 import {
   getLibraryStories,
+  getLibraryCategories,
   getMyStories,
   generateStory,
   regenerateStoryCover,
@@ -93,6 +94,8 @@ export default function Stories() {
   const [error, setError] = useState("");
   const [genTheme, setGenTheme] = useState("");
   const [genAge, setGenAge] = useState(5);
+  /** Empty string = omit learningFocus in API request. */
+  const [genLearningFocus, setGenLearningFocus] = useState("");
   const [generating, setGenerating] = useState(false);
   const [favToggling, setFavToggling] = useState<number | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -112,6 +115,8 @@ export default function Stories() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchStoryItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [libraryCategories, setLibraryCategories] = useState<string[]>([]);
+  const [libraryThemeFilter, setLibraryThemeFilter] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [playingAvatarVideoUrl, setPlayingAvatarVideoUrl] = useState<string | null>(null);
@@ -136,13 +141,30 @@ export default function Stories() {
   }, [searchQuery]);
 
   useEffect(() => {
+    getLibraryCategories("ta")
+      .then(setLibraryCategories)
+      .catch(() => setLibraryCategories([]));
+  }, []);
+
+  useEffect(() => {
+    if (tab !== "library") return;
+    let cancelled = false;
     setLoading(true);
     setError("");
-    getLibraryStories("ta")
-      .then(setLibrary)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+    getLibraryStories("ta", 0, 50, libraryThemeFilter)
+      .then((rows) => {
+        if (!cancelled) setLibrary(rows);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, libraryThemeFilter]);
 
   useEffect(() => {
     if (tab === "mine") {
@@ -475,6 +497,7 @@ export default function Stories() {
         childName: "Listener",
         age: genAge,
         language: "ta",
+        ...(genLearningFocus.trim() ? { learningFocus: genLearningFocus.trim() } : {}),
       });
       setTab("mine");
       const p = await getMyStories(0, 20);
@@ -490,7 +513,7 @@ export default function Stories() {
   const showPlayer = playingTitle != null || loadingStreamId != null;
 
   return (
-    <div className={`page prime-page${showPlayer ? " has-audio-player" : ""}`}>
+    <div className={`page prime-page stories-page${showPlayer ? " has-audio-player" : ""}`}>
       <StoryAudioPlayer
         audioRef={audioRef}
         videoRef={videoRef}
@@ -506,32 +529,41 @@ export default function Stories() {
         onDurationChange={setAudioDuration}
         onSeek={handleSeek}
       />
-      <section className="prime-hero prime-hero-tamixa stories-hero">
-        <div className="prime-hero-content stories-hero-content">
-          <h1>Stories</h1>
-          <p className="prime-hero-subtitle">Browse the story library or generate new ones with AI. Click any story to play audio.</p>
-          <div className="stories-search-wrap stories-search-center">
-            <label htmlFor="stories-search" className="stories-search-label">Search</label>
+      <header className="stories-page-top">
+        <h1 className="stories-page-top__title">Stories</h1>
+        <div className="stories-page-top__row">
+          <div className="stories-page-top__search">
+            <label htmlFor="stories-search" className="visually-hidden">
+              Search stories
+            </label>
+            <span className="stories-page-top__search-icon" aria-hidden="true">
+              ⌕
+            </span>
             <input
               id="stories-search"
               type="search"
-              className="stories-search-input"
-              placeholder="Search by theme or title…"
+              className="stories-page-top__input"
+              placeholder="Search…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              autoComplete="off"
               aria-label="Search stories"
             />
           </div>
+          <a href="#generate-story-section" className="stories-page-top__cta">
+            New tale
+          </a>
         </div>
-      </section>
+      </header>
 
       {searchQuery.trim().length >= 2 && (
-        <section className="prime-row">
-          <div className="prime-row-header">
-            <h2 className="prime-row-title">Search results</h2>
+        <section className="stories-section stories-section--search">
+          <div className="stories-section-head">
+            <h2 className="stories-section-title">Search results</h2>
+            <span className="stories-section-meta muted">{searchLoading ? "Searching…" : `${searchResults.length} found`}</span>
           </div>
           {searchLoading ? (
-            <div className="prime-row-grid">
+            <div className="stories-grid">
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div key={i} className="poster-card" style={{ pointerEvents: "none" }}>
                   <div className="poster-card-cover"><div className="poster-card-placeholder skeleton" style={{ margin: 0 }} /></div>
@@ -541,13 +573,13 @@ export default function Stories() {
               ))}
             </div>
           ) : searchResults.length === 0 ? (
-            <p className="muted" style={{ padding: "0 0.125rem" }}>No stories match &quot;{searchQuery}&quot;</p>
+            <p className="stories-empty-hint muted">No stories match &quot;{searchQuery}&quot;. Try another word or browse the library.</p>
           ) : (
-            <div className="prime-row-grid">
+            <div className="stories-grid">
               {searchResults.map((s) => (
                 <div
                   key={`${s.storySource}-${s.storyId}`}
-                  className="poster-card poster-card-clickable"
+                  className="poster-card poster-card-clickable story-card-tile"
                   role="button"
                   tabIndex={0}
                   onClick={() => playStory(s.storyId, s.storySource, undefined, s.title || s.theme)}
@@ -590,42 +622,89 @@ export default function Stories() {
         </section>
       )}
 
-      <section className="prime-row" style={{ paddingTop: "0.25rem" }}>
-      <div className="tabs" role="tablist" aria-label="Story tabs">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "library"}
-          aria-controls="library-panel"
-          id="tab-library"
-          className={tab === "library" ? "tab active" : "tab"}
-          onClick={() => setTab("library")}
-        >
-          Library
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "mine"}
-          aria-controls="mine-panel"
-          id="tab-mine"
-          className={tab === "mine" ? "tab active" : "tab"}
-          onClick={() => setTab("mine")}
-        >
-          My generated stories
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "favorites"}
-          aria-controls="favorites-panel"
-          id="tab-favorites"
-          className={tab === "favorites" ? "tab active" : "tab"}
-          onClick={() => setTab("favorites")}
-        >
-          Favorites ({favorites.length})
-        </button>
-      </div>
+      <section className="stories-main-panel stories-main-panel--compact" aria-labelledby="stories-collections-heading">
+        <h2 id="stories-collections-heading" className="visually-hidden">
+          Library, your stories, and favorites
+        </h2>
+        <div className="stories-controls-row">
+          <div className="stories-tabs-wrap" role="tablist" aria-label="Story collections">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "library"}
+              aria-controls="stories-collections-panel"
+              id="tab-library"
+              className={tab === "library" ? "stories-tab stories-tab--active" : "stories-tab"}
+              onClick={() => setTab("library")}
+            >
+              Library
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "mine"}
+              aria-controls="stories-collections-panel"
+              id="tab-mine"
+              className={tab === "mine" ? "stories-tab stories-tab--active" : "stories-tab"}
+              onClick={() => setTab("mine")}
+            >
+              My stories
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "favorites"}
+              aria-controls="stories-collections-panel"
+              id="tab-favorites"
+              className={tab === "favorites" ? "stories-tab stories-tab--active" : "stories-tab"}
+              onClick={() => setTab("favorites")}
+            >
+              Favorites
+              <span className="stories-tab-count">{favorites.length}</span>
+            </button>
+          </div>
+          <div className="stories-voice-inline">
+            <label htmlFor="voice-select" className="stories-voice-inline__label">
+              Voice
+            </label>
+            <select
+              id="voice-select"
+              value={selectedVoice}
+              onChange={(e) => setSelectedVoice(e.target.value)}
+              className="stories-voice-inline__select voice-select"
+              aria-describedby="voice-hint"
+              title="Premium Calm voice needs an active plan"
+            >
+              <option value="default">Default</option>
+              <option value="calm">Calm · Pass</option>
+            </select>
+            <span id="voice-hint" className="visually-hidden">
+              Premium voices require an active Tamixa plan.
+            </span>
+          </div>
+        </div>
+
+        {tab === "library" && libraryCategories.length > 0 ? (
+          <div className="stories-chips stories-chips--compact" role="group" aria-label="Filter by theme">
+            <button
+              type="button"
+              className={libraryThemeFilter == null ? "stories-chip stories-chip--active" : "stories-chip"}
+              onClick={() => setLibraryThemeFilter(null)}
+            >
+              All
+            </button>
+            {libraryCategories.slice(0, 28).map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={libraryThemeFilter === c ? "stories-chip stories-chip--active" : "stories-chip"}
+                onClick={() => setLibraryThemeFilter(c)}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
       {error && (
         <p className="error">
@@ -641,28 +720,18 @@ export default function Stories() {
         </p>
       )}
 
-      <div className="voice-picker">
-        <label htmlFor="voice-select">Narration voice:</label>
-        <select
-          id="voice-select"
-          value={selectedVoice}
-          onChange={(e) => setSelectedVoice(e.target.value)}
-          className="voice-select"
-          aria-describedby="voice-hint"
-        >
-          <option value="default">Default</option>
-          <option value="calm">Calm (Premium)</option>
-        </select>
-        <span id="voice-hint" className="muted voice-hint">Premium voices require subscription.</span>
-      </div>
-
-      <div className="story-tab-panel">
+      <div
+        className="stories-tab-panel"
+        id="stories-collections-panel"
+        role="tabpanel"
+        aria-labelledby={tab === "library" ? "tab-library" : tab === "mine" ? "tab-mine" : "tab-favorites"}
+      >
       {tab === "library" && (
         <>
           {loading ? (
-            <div className="prime-row-grid">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="poster-card" style={{ pointerEvents: "none" }}>
+            <div className="stories-grid">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <div key={i} className="poster-card story-card-tile story-card-tile--skeleton" style={{ pointerEvents: "none" }}>
                   <div className="poster-card-cover"><div className="poster-card-placeholder skeleton" style={{ margin: 0 }} /></div>
                   <p className="poster-card-title"><span className="skeleton" style={{ display: "block", height: 14, width: "80%" }} /></p>
                   <p className="poster-card-meta"><span className="skeleton" style={{ display: "block", height: 12, width: "60%" }} /></p>
@@ -677,11 +746,11 @@ export default function Stories() {
               action={{ label: "Generate Story", onClick: () => setTab("mine") }}
             />
           ) : (
-            <div className="prime-row-grid">
+            <div className="stories-grid">
               {library.map((s) => (
                 <div
                   key={s.id}
-                  className="poster-card poster-card-clickable"
+                  className="poster-card poster-card-clickable story-card-tile"
                   role="button"
                   tabIndex={0}
                   onClick={() => playStory(s.id, "library")}
@@ -727,9 +796,9 @@ export default function Stories() {
       {tab === "mine" && (
         <>
           {loading ? (
-            <div className="prime-row-grid">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="poster-card" style={{ pointerEvents: "none" }}>
+            <div className="stories-grid">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <div key={i} className="poster-card story-card-tile story-card-tile--skeleton" style={{ pointerEvents: "none" }}>
                   <div className="poster-card-cover"><div className="poster-card-placeholder skeleton" style={{ margin: 0 }} /></div>
                   <p className="poster-card-title"><span className="skeleton" style={{ display: "block", height: 14, width: "80%" }} /></p>
                   <p className="poster-card-meta"><span className="skeleton" style={{ display: "block", height: 12, width: "60%" }} /></p>
@@ -745,11 +814,11 @@ export default function Stories() {
             />
           ) : (
             <>
-            <div className="prime-row-grid">
+            <div className="stories-grid">
               {mine.map((s) => (
                 <div
                   key={s.id}
-                  className="poster-card poster-card-clickable"
+                  className="poster-card poster-card-clickable story-card-tile"
                   role="button"
                   tabIndex={0}
                   onClick={() => playStory(s.id, "generated")}
@@ -864,7 +933,7 @@ export default function Stories() {
               action={{ label: "Browse Library", onClick: () => setTab("library") }}
             />
           ) : (
-            <div className="prime-row-grid">
+            <div className="stories-grid">
               {favorites.map((f) => {
                 const s = library.find((c) => c.id === f.storyId) || mine.find((m) => m.id === f.storyId);
                 const coverImageUrl = s && "coverImageUrl" in s ? s.coverImageUrl : null;
@@ -873,7 +942,7 @@ export default function Stories() {
                 return (
                   <div
                     key={`${f.storyId}-${f.storySource}`}
-                    className="poster-card poster-card-clickable"
+                    className="poster-card poster-card-clickable story-card-tile"
                     role="button"
                     tabIndex={0}
                     onClick={() => playStory(f.storyId, f.storySource)}
@@ -919,11 +988,11 @@ export default function Stories() {
       </div>
       </section>
 
-      <section className="prime-row">
-        <div className="prime-row-header">
-          <h2 className="prime-row-title">Feedback</h2>
+      <section className="stories-section stories-section--footer">
+        <div className="stories-section-head">
+          <h2 className="stories-section-title">Feedback</h2>
         </div>
-        <div style={{ padding: "0 0.125rem" }}>
+        <div className="stories-section-body">
         <button type="button" className="btn btn-outline" onClick={() => setFeedbackOpen(!feedbackOpen)}>
           {feedbackOpen ? "Hide" : "Send feedback"}
         </button>
@@ -955,12 +1024,12 @@ export default function Stories() {
         </div>
       </section>
 
-      <section id="generate-story-section" className="prime-row">
-        <div className="prime-row-header">
-          <h2 className="prime-row-title">Generate new story</h2>
+      <section id="generate-story-section" className="stories-section stories-section--generate">
+        <div className="stories-section-head">
+          <h2 className="stories-section-title">Create a new tale</h2>
+          <p className="stories-section-desc muted">AI writes in Tamil from your theme, age, and optional learning focus (speaking, money, research).</p>
         </div>
-        <div style={{ padding: "0 0.125rem" }}>
-        <p className="muted" style={{ marginBottom: "0.75rem" }}>AI will create a Tamil story. Enter a theme and age.</p>
+        <div className="stories-generate-card">
         <form onSubmit={handleGenerate} className="form">
           <div className="field">
             <label htmlFor="theme">Theme</label>
@@ -982,6 +1051,24 @@ export default function Stories() {
               value={genAge}
               onChange={(e) => setGenAge(parseInt(e.target.value, 10) || 5)}
             />
+          </div>
+          <div className="field">
+            <label htmlFor="learning-focus">Learning focus (optional)</label>
+            <select
+              id="learning-focus"
+              value={genLearningFocus}
+              onChange={(e) => setGenLearningFocus(e.target.value)}
+              aria-label="Learning focus"
+            >
+              <option value="">None</option>
+              <option value="public_speaking">Public speaking</option>
+              <option value="money_literacy">Money smarts</option>
+              <option value="research_skills">Research &amp; facts</option>
+              <option value="empathy">Empathy</option>
+              <option value="problem_solving">Problem solving</option>
+              <option value="vocabulary">Vocabulary</option>
+              <option value="curiosity">Curiosity</option>
+            </select>
           </div>
             <button type="submit" className="btn btn-primary" disabled={generating}>
               {generating ? "Generating…" : "Generate story"}

@@ -21,7 +21,8 @@ class StoryPromptBuilder {
     /** Allowed learning-focus values for optional parent request (lowercase). */
     private val allowedLearningFocuses = setOf(
         "empathy", "problem_solving", "vocabulary", "curiosity", "perseverance",
-        "sharing", "honesty", "courage", "kindness", "friendship", "responsibility"
+        "sharing", "honesty", "courage", "kindness", "friendship", "responsibility",
+        "public_speaking", "money_literacy", "research_skills",
     )
     /** Max words by age; upper ages target full-length (~850–950 words). */
     private val maxWordsByAge = mapOf(
@@ -204,7 +205,8 @@ Generate a story in $lang based on this request: for my child $childName (age $a
         childName: String,
         maxWordsOverride: Int? = null,
         emotionMode: String? = null,
-        customPrompt: String? = null
+        customPrompt: String? = null,
+        learningFocus: String? = null
     ): String {
         val safeLang = normalizeLanguage(language)
         val maxWords = maxWordsOverride ?: maxWordsByAge[age.coerceIn(1, 12)] ?: TARGET_WORDS_FULL_LENGTH
@@ -213,11 +215,12 @@ Generate a story in $lang based on this request: for my child $childName (age $a
         val tonePhrase = emotionMode?.let { emotionHint(it) } ?: "Warm, positive, and age-appropriate."
         val opener = buildUserRequest(safeLang, childName, age, theme, tonePhrase)
         val clarityHint = "Use clear sentences: one idea per sentence, clear subject and action, short to medium length. English is the reference for clarity; when writing in another language, apply the same clarity then express in that language. Use varied, precise vocabulary; avoid repetition; prefer everyday and native terms. One continuous storyline with clear transitions—no unexplained gaps; conversational spoken style in the output language."
+        val learningLine = learningFocusHint(learningFocus)
         val customLine = customPrompt?.takeIf { it.isNotBlank() }?.let { "Specific request: $it" } ?: ""
         val voiceSplitAndSsml = voiceSplitAndSsmlRequirements()
         val durationHint = if (maxWords >= 850) "Aim for about 7–8 minutes of narration (estimated_duration_seconds around ${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MIN}–${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MAX}). " else ""
         val constraints = "${durationHint}Keep to at most $maxWords words. Return only valid JSON: title, category, theme, moral, story_text, estimated_duration_seconds (number, in seconds). No markdown, no code block."
-        return listOf(opener, vocab, clarityHint, culture, customLine, voiceSplitAndSsml, constraints)
+        return listOf(opener, vocab, clarityHint, learningLine, culture, customLine, voiceSplitAndSsml, constraints)
             .filter { it.isNotBlank() }
             .joinToString("\n\n")
     }
@@ -292,6 +295,9 @@ SSML CONVERSION REQUIREMENTS
             "kindness" -> "Learning focus: Kindness—show acts of kindness that help another character."
             "friendship" -> "Learning focus: Friendship—show friends helping each other or resolving a small conflict."
             "responsibility" -> "Learning focus: Responsibility—show a character taking care of something or keeping a promise."
+            "public_speaking" -> "Learning focus: Public speaking—show a character preparing a short message (clear beginning, one main idea, confident close); end with a gentle invitation for the listener to try saying one sentence aloud, woven into the story naturally (not a lecture)."
+            "money_literacy" -> "Learning focus: Money literacy—age-appropriate ideas only: saving toward a small goal, needs vs wants, honesty with money, or earning through effort; no investing advice, debt products, or adult financial instruments. Keep positive and practical."
+            "research_skills" -> "Learning focus: Research and curiosity—show a character wondering about something true, checking a second source or asking a trusted adult/teacher, and correcting a mistaken assumption. Celebrate careful thinking, not internet randomness."
             else -> ""
         }
     }

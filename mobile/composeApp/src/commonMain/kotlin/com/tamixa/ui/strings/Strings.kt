@@ -1447,6 +1447,36 @@ object Strings {
         else -> "Bedtime story (calm)"
     }
 
+    fun learningFocusOptional(): String = when (languageCode) {
+        "ta" -> "கற்றல் நோக்கம் (விரும்பினால்)"
+        "hi" -> "सीखने पर ध्यान (वैकल्पिक)"
+        else -> "Learning focus (optional)"
+    }
+
+    fun learningFocusNone(): String = when (languageCode) {
+        "ta" -> "இல்லை"
+        "hi" -> "कोई नहीं"
+        else -> "None"
+    }
+
+    fun learningFocusPublicSpeaking(): String = when (languageCode) {
+        "ta" -> "பேச்சு திறன்"
+        "hi" -> "बोलने का आत्मविश्वास"
+        else -> "Public speaking"
+    }
+
+    fun learningFocusMoneyLiteracy(): String = when (languageCode) {
+        "ta" -> "பண அறிவு"
+        "hi" -> "पैसे की समझ"
+        else -> "Money smarts"
+    }
+
+    fun learningFocusResearchSkills(): String = when (languageCode) {
+        "ta" -> "ஆராய்ச்சி & உண்மைகள்"
+        "hi" -> "जाँच और सच्चाई"
+        else -> "Research & facts"
+    }
+
     fun storyFromOurFamilyHint(): String = when (languageCode) {
         "ta" -> "உங்கள் குடும்பத்தை கதையில் சேர்க்கவும் (விரும்பினால்)"
         "hi" -> "कहानी में अपना विवरण जोड़ें (वैकल्पिक)"

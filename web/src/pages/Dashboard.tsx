@@ -112,78 +112,78 @@ export default function Dashboard() {
         <>
           <header className="dash-hero">
             <div className="dash-hero-text">
-              <p className="dash-hero-eyebrow">Parent home</p>
+              <p className="dash-hero-eyebrow">Your story nook</p>
               <h1>Welcome back, {name}</h1>
               <p className="dash-hero-subtitle">
-                Pick up where you left off, explore recommendations, and jump into the story library whenever you&apos;re
-                ready.
+                Jump back into the tale you paused, see what Tamixa suggests next, or open the library for a brand-new
+                adventure.
               </p>
             </div>
             <div className="dash-hero-actions">
               <Link to="/stories" className="btn btn-primary">
-                Open stories
+                Start listening
               </Link>
               <Link to="/stories" className="btn btn-outline btn-hero-secondary">
-                Browse library
+                Browse tales
               </Link>
             </div>
           </header>
 
-          <section className="dash-stat-grid" aria-label="Listening overview">
+          <section className="dash-stat-grid" aria-label="Your listening fun">
             <div className="dash-stat-card">
-              <p className="dash-stat-label">Stories started</p>
+              <p className="dash-stat-label">Adventures begun</p>
               <p className="dash-stat-value">{progress != null ? progress.storiesStarted : "—"}</p>
-              <p className="dash-stat-hint muted">Last 30 days</p>
+              <p className="dash-stat-hint muted">Last 30 evenings</p>
             </div>
             <div className="dash-stat-card">
-              <p className="dash-stat-label">Completed</p>
+              <p className="dash-stat-label">Tales finished</p>
               <p className="dash-stat-value">{progress != null ? progress.storiesCompleted : "—"}</p>
-              <p className="dash-stat-hint muted">Finished listens</p>
+              <p className="dash-stat-hint muted">All the way to the end</p>
             </div>
             <div className="dash-stat-card">
-              <p className="dash-stat-label">Completion rate</p>
+              <p className="dash-stat-label">Stick-with-it score</p>
               <p className="dash-stat-value">
                 {progress != null ? `${completionPercent(progress.completionRate)}%` : "—"}
               </p>
-              <p className="dash-stat-hint muted">Of started stories</p>
+              <p className="dash-stat-hint muted">Stories you complete</p>
             </div>
           </section>
 
           <nav className="dash-quick" aria-label="Shortcuts">
             <Link to="/stories" className="dash-quick-card">
               <span className="dash-quick-icon" aria-hidden>
-                ◆
+                📚
               </span>
               <span className="dash-quick-title">Stories</span>
-              <span className="dash-quick-desc muted">Library, favorites & generate</span>
+              <span className="dash-quick-desc muted">Library, favorites &amp; new tales</span>
             </Link>
             <Link to="/subscription" className="dash-quick-card">
               <span className="dash-quick-icon" aria-hidden>
-                ◇
+                ✨
               </span>
-              <span className="dash-quick-title">Subscription</span>
-              <span className="dash-quick-desc muted">Plan &amp; usage</span>
+              <span className="dash-quick-title">Tamixa Pass</span>
+              <span className="dash-quick-desc muted">Plan &amp; listening perks</span>
             </Link>
             <Link to="/voice" className="dash-quick-card">
               <span className="dash-quick-icon" aria-hidden>
-                ◉
+                🎙️
               </span>
-              <span className="dash-quick-title">Voice</span>
-              <span className="dash-quick-desc muted">Narration profiles</span>
+              <span className="dash-quick-title">Voices</span>
+              <span className="dash-quick-desc muted">Narration that feels like you</span>
             </Link>
             <Link to="/settings" className="dash-quick-card">
               <span className="dash-quick-icon" aria-hidden>
-                ✦
+                🛡️
               </span>
-              <span className="dash-quick-title">Settings</span>
-              <span className="dash-quick-desc muted">Privacy & preferences</span>
+              <span className="dash-quick-title">Family & privacy</span>
+              <span className="dash-quick-desc muted">Account & safety</span>
             </Link>
           </nav>
 
-          <section className="dash-section" aria-labelledby="dash-continue-heading">
+          <section className="dash-section dash-section--stories" aria-labelledby="dash-continue-heading">
             <div className="dash-section-head">
-              <h2 id="dash-continue-heading" className="dash-section-title">
-                Continue listening
+              <h2 id="dash-continue-heading" className="dash-section-title dash-section-title--spotlight">
+                Resume a story
               </h2>
               {recent.length > 0 ? (
                 <Link to="/stories" className="dash-section-link">
@@ -211,21 +211,21 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="dash-empty">
-                <p className="dash-empty-title">Nothing in progress yet</p>
+                <p className="dash-empty-title">No cliffhangers yet</p>
                 <p className="dash-empty-desc muted">
-                  Start any story from the library. We&apos;ll save your place so you can resume here.
+                  Press play on any tale in the library—we&apos;ll bookmark your spot so the next chapter is one tap away.
                 </p>
                 <Link to="/stories" className="btn btn-primary">
-                  Explore stories
+                  Find a story
                 </Link>
               </div>
             )}
           </section>
 
-          <section className="dash-section" aria-labelledby="dash-rec-heading">
+          <section className="dash-section dash-section--stories" aria-labelledby="dash-rec-heading">
             <div className="dash-section-head">
-              <h2 id="dash-rec-heading" className="dash-section-title">
-                Recommended for you
+              <h2 id="dash-rec-heading" className="dash-section-title dash-section-title--spotlight">
+                Tonight&apos;s picks
               </h2>
               <Link to="/stories" className="dash-section-link">
                 See all
@@ -252,12 +252,12 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="dash-empty">
-                <p className="dash-empty-title">Recommendations will appear here</p>
+                <p className="dash-empty-title">We&apos;re lining up magic for you</p>
                 <p className="dash-empty-desc muted">
-                  Favorite stories you love—we use that signal to suggest what to play next.
+                  Heart a few favorites in the library—Tamixa learns what your family loves and builds a fresher playlist.
                 </p>
                 <Link to="/stories" className="btn btn-outline">
-                  Open story library
+                  Discover stories
                 </Link>
               </div>
             )}

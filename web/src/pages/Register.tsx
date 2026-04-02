@@ -37,7 +37,7 @@ export default function Register() {
       authStorage.setTokens(tokens.accessToken, tokens.refreshToken, tokens.expiresInSeconds);
       const user = await getMe();
       setUser(user);
-      navigate("/dashboard");
+      navigate("/stories");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
@@ -52,15 +52,16 @@ export default function Register() {
           <Link to="/" className="auth-shell-brand-logo">
             <img src="/tamixa-logo.svg" alt="Tamixa" width={180} height={48} className="auth-shell-brand-logo-img" />
           </Link>
-          <p className="auth-shell-brand-kicker">Get started</p>
-          <h2 className="auth-shell-brand-headline">One account for the whole family</h2>
+          <p className="auth-shell-brand-kicker">Join the fun</p>
+          <h2 className="auth-shell-brand-headline">One cozy login for every bedtime adventure</h2>
           <p className="auth-shell-brand-copy">
-            Create a parent account to manage stories, voices, and subscriptions. Your data is protected with the same standards we use across Tamixa.
+            Create a family account to save favorites, voices, and your listening world—protected the Tamixa way, built for
+            kids and grown-ups together.
           </p>
           <ul className="auth-shell-brand-list">
-            <li>Email and password sign-in for the web portal</li>
-            <li>Or use passwordless sign-in on the login page—your choice</li>
-            <li>Clear consent flows designed for parents and guardians</li>
+            <li>Password sign-in here on the web, or a magic code on the login page</li>
+            <li>Stories, voices, and listening history in one place</li>
+            <li>Simple consent steps so parents stay in charge</li>
           </ul>
         </div>
       </div>

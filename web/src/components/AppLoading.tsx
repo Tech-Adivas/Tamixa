@@ -9,7 +9,7 @@ export function AppLoading() {
           <img src="/tamixa-logo.svg" alt="" width={48} height={48} className="app-loading-logo" />
         </div>
         <div className="app-loading-spinner" aria-hidden />
-        <p className="app-loading-label">Loading your workspace…</p>
+        <p className="app-loading-label">Setting the stage for story time…</p>
       </div>
     </div>
   );

@@ -50,7 +50,7 @@ describe("Dashboard", () => {
     );
     await flushDashboard();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Welcome back/i);
-    expect(screen.getByText(/Pick up where you left off/i)).toBeInTheDocument();
+    expect(screen.getByText(/Jump back into the tale you paused/i)).toBeInTheDocument();
   });
 
   it("shows Continue listening section", async () => {
@@ -60,7 +60,7 @@ describe("Dashboard", () => {
       </MemoryRouter>
     );
     await flushDashboard();
-    expect(screen.getByRole("heading", { name: /Continue listening/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Resume a story/i })).toBeInTheDocument();
   });
 
   it("shows Recommended for you section", async () => {
@@ -70,6 +70,6 @@ describe("Dashboard", () => {
       </MemoryRouter>
     );
     await flushDashboard();
-    expect(screen.getByRole("heading", { name: /Recommended for you/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Tonight's picks/i })).toBeInTheDocument();
   });
 });

@@ -347,7 +347,7 @@ class StoryService(
             childAvatarChoice = childContext.avatarChoice,
             learningFocus = learningFocus
         )
-        val fallbackPrompt = storyPromptBuilder.buildFallbackUserPrompt(age, language, theme, childName, maxWords, emotionMode, customPrompt)
+        val fallbackPrompt = storyPromptBuilder.buildFallbackUserPrompt(age, language, theme, childName, maxWords, emotionMode, customPrompt, learningFocus)
 
         fun attemptGenerate(userPromptToUse: String, isFallback: Boolean, allowClientFallback: Boolean): StructuredStoryPayload? {
             return try {

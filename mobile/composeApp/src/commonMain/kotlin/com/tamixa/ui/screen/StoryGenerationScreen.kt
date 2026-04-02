@@ -46,7 +46,10 @@ import com.tamixa.ui.theme.TamixaColors
 import com.tamixa.ui.theme.TamixaDesignTokens
 import com.tamixa.ui.theme.TamixaDialogDefaults
 
-private val STORY_THEMES = listOf("Adventure", "Fantasy", "Animals", "Nature", "Space", "Bedtime")
+private val STORY_THEMES = listOf(
+    "Adventure", "Fantasy", "Animals", "Nature", "Space", "Bedtime",
+    "History & heroes", "Festivals", "Science & discovery",
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,6 +69,8 @@ fun StoryGenerationScreen(
     var age by remember { mutableStateOf(com.tamixa.util.TamixaConstants.DEFAULT_CHILD_AGE.toString()) }
     var parentCustomPrompt by remember { mutableStateOf("") }
     var bedtimeMode by remember { mutableStateOf(false) }
+    /** null = no learning-focus hint sent to API. */
+    var learningFocusSelection by remember { mutableStateOf<String?>(null) }
     val language = com.tamixa.util.TamixaConstants.DEFAULT_LANGUAGE
     val scrollState = rememberScrollState()
     val effectiveListenerName = listenerName.trim().ifBlank { Strings.listener() }
@@ -198,6 +203,39 @@ fun StoryGenerationScreen(
                             onClick = { bedtimeMode = !bedtimeMode },
                             label = { Text(Strings.bedtimeStory(), style = MaterialTheme.typography.labelMedium) }
                         )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            text = Strings.learningFocusOptional(),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = learningFocusSelection == null,
+                                onClick = { learningFocusSelection = null },
+                                label = { Text(Strings.learningFocusNone(), style = MaterialTheme.typography.labelMedium) }
+                            )
+                            FilterChip(
+                                selected = learningFocusSelection == "public_speaking",
+                                onClick = { learningFocusSelection = "public_speaking" },
+                                label = { Text(Strings.learningFocusPublicSpeaking(), style = MaterialTheme.typography.labelMedium) }
+                            )
+                            FilterChip(
+                                selected = learningFocusSelection == "money_literacy",
+                                onClick = { learningFocusSelection = "money_literacy" },
+                                label = { Text(Strings.learningFocusMoneyLiteracy(), style = MaterialTheme.typography.labelMedium) }
+                            )
+                            FilterChip(
+                                selected = learningFocusSelection == "research_skills",
+                                onClick = { learningFocusSelection = "research_skills" },
+                                label = { Text(Strings.learningFocusResearchSkills(), style = MaterialTheme.typography.labelMedium) }
+                            )
+                        }
                         Spacer(Modifier.height(24.dp))
                         when (generateState) {
                             is UiState.Loading -> {
@@ -255,7 +293,8 @@ fun StoryGenerationScreen(
                                         childName = effectiveListenerName,
                                         childId = null,
                                         emotionMode = if (bedtimeMode) "CALM" else null,
-                                        parentCustomPrompt = parentCustomPrompt.trim().takeIf { it.isNotBlank() }
+                                        parentCustomPrompt = parentCustomPrompt.trim().takeIf { it.isNotBlank() },
+                                        learningFocus = learningFocusSelection,
                                     )
                                 )
                             },

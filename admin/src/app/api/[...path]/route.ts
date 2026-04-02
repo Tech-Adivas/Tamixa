@@ -6,6 +6,10 @@
  */
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import {
+  getApiUrlPairForMismatchWarn,
+  getBackendApiOriginFromEnv,
+} from "@/lib/server-runtime-env";
 
 export const runtime = "nodejs";
 
@@ -17,8 +21,7 @@ const PROXY_DEFAULT_TIMEOUT_MS = 25_000;
 
 function warnIfApiEnvMismatch(): void {
   if (apiEnvMismatchWarned) return;
-  const apiUrl = process.env.API_URL?.trim();
-  const nextPublicApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  const { apiUrl, nextPublicApiUrl } = getApiUrlPairForMismatchWarn();
   if (!apiUrl || !nextPublicApiUrl || apiUrl === nextPublicApiUrl) return;
   apiEnvMismatchWarned = true;
   console.warn(
@@ -28,17 +31,13 @@ function warnIfApiEnvMismatch(): void {
 }
 
 /**
- * Spring API origin (no path, no trailing slash). In production, API_URL is read at runtime
- * (Railway Variables — often no image rebuild needed). NEXT_PUBLIC_API_URL is inlined at `next build`;
- * keep both identical; use Docker ARG NEXT_PUBLIC_API_URL when building the admin image.
+ * Spring API origin from runtime env (API_URL, NEXT_PUBLIC_API_URL, or TAMIXA_API_BASE_URL).
+ * Uses dynamic env reads so Docker/Railway variables are not wiped by Next build-time inlining.
  */
 function backendBaseUrl(): string | null {
   warnIfApiEnvMismatch();
-  const raw =
-    process.env.API_URL?.trim() ||
-    process.env.NEXT_PUBLIC_API_URL?.trim() ||
-    "";
-  if (raw) return raw.replace(/\/$/, "");
+  const raw = getBackendApiOriginFromEnv();
+  if (raw) return raw;
   if (process.env.NODE_ENV !== "production") return "http://127.0.0.1:8080";
   return null;
 }
@@ -117,7 +116,7 @@ async function proxy(
       {
         message: "Admin API proxy is not configured.",
         hint:
-          "Railway → this admin service → Variables: set API_URL to your Spring API HTTPS origin (no trailing slash), e.g. https://your-api.up.railway.app. Save and redeploy/restart. API_URL is runtime-only. Set NEXT_PUBLIC_API_URL to the same value and rebuild the admin image so client bundles match.",
+          "Railway → admin service → Variables: set API_URL (or TAMIXA_API_BASE_URL) to your Spring API HTTPS origin, no trailing slash. Optionally also NEXT_PUBLIC_API_URL for client code; redeploy after changes.",
       },
       { status: 503 }
     );

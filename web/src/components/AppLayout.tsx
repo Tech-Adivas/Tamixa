@@ -3,8 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
 const navItems = [
-  { to: "/dashboard", label: "Home" },
   { to: "/stories", label: "Stories" },
+  { to: "/dashboard", label: "Home" },
   { to: "/subscription", label: "Subscription" },
   { to: "/voice", label: "Voice" },
   { to: "/settings", label: "Settings" },
@@ -66,13 +66,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         aria-label="Application"
       >
         <div className="app-sidebar-brand">
-          <Link to="/dashboard" className="app-sidebar-logo" aria-label="Tamixa Home">
+          <Link to="/stories" className="app-sidebar-logo" aria-label="Tamixa Stories">
             <span className="app-sidebar-logo-mark">
               <img src="/tamixa-logo.svg" alt="" width={40} height={40} className="app-sidebar-logo-img" />
             </span>
             <span className="app-sidebar-logo-word">Tamixa</span>
           </Link>
-          <p className="app-sidebar-tagline">Listen · Learn · Shine</p>
+          <p className="app-sidebar-tagline">Where every night needs a story</p>
         </div>
 
         <nav className="app-sidebar-nav" aria-label="Main navigation">

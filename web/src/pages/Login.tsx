@@ -16,7 +16,7 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const { setUser } = useAuth();
-  const from = (location.state as { from?: string })?.from ?? "/dashboard";
+  const from = (location.state as { from?: string })?.from ?? "/stories";
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -139,10 +139,10 @@ export default function Login() {
           <Link to="/" className="auth-shell-brand-logo">
             <img src="/tamixa-logo.svg" alt="Tamixa" width={180} height={48} className="auth-shell-brand-logo-img" />
           </Link>
-          <p className="auth-shell-brand-kicker">Parent portal</p>
-          <h2 className="auth-shell-brand-headline">Stories that feel made for your child</h2>
+          <p className="auth-shell-brand-kicker">Tamixa for families</p>
+          <h2 className="auth-shell-brand-headline">Your family&apos;s story room, on any screen</h2>
           <p className="auth-shell-brand-copy">
-            Secure sign-in with a one-time code—no passwords to remember. Same trusted flow as the Tamixa mobile app.
+            Sign in with a one-time code—no password to forget. Same cozy, trusted flow as the Tamixa app on your phone.
           </p>
           <ul className="auth-shell-brand-list">
             <li>Personalized library and AI-assisted stories</li>
@@ -154,7 +154,7 @@ export default function Login() {
 
       <div className="auth-shell-panel">
         <div className="auth-card auth-card--pro">
-          <p className="auth-card-eyebrow">Welcome back</p>
+          <p className="auth-card-eyebrow">Glad you&apos;re here</p>
           <h1 id="login-heading" className="auth-card-title">
             Sign in
           </h1>

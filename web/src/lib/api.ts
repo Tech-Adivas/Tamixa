@@ -174,6 +174,17 @@ export interface StoriesPage {
   last: boolean;
 }
 
+/** Parent GET /stories/library returns Spring-style paged JSON (same shape as mobile). */
+export interface LibraryStoriesPage {
+  content: LibraryStory[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  first: boolean;
+  last: boolean;
+}
+
 export interface GenerateStoryRequest {
   age: number;
   language?: string;
@@ -184,6 +195,8 @@ export interface GenerateStoryRequest {
   emotionMode?: string | null;
   parentCustomPrompt?: string | null;
   conversationMessages?: string[] | null;
+  /** Backend allowlist: e.g. public_speaking, money_literacy, research_skills, empathy, … */
+  learningFocus?: string | null;
 }
 
 export interface StreamUrlResponse {
@@ -377,14 +390,41 @@ export async function searchStories(
   return res.json();
 }
 
-// Curated stories (browse library)
-export async function getLibraryStories(language = "ta"): Promise<LibraryStory[]> {
-  const res = await fetchWithAuth(`/stories/library?language=${encodeURIComponent(language)}&size=50`);
+/** Distinct library themes/categories for the current language (browse chips). */
+export async function getLibraryCategories(language = "ta"): Promise<string[]> {
+  const res = await fetchWithAuth(`/stories/library/categories?language=${encodeURIComponent(language)}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { categories?: string[] };
+  return Array.isArray(data.categories) ? data.categories : [];
+}
+
+// Curated stories (browse library) — API returns PagedResponse<LibraryStoryResponse>, not a bare array.
+export async function getLibraryStories(
+  language = "ta",
+  page = 0,
+  size = 50,
+  theme?: string | null
+): Promise<LibraryStory[]> {
+  const params = new URLSearchParams({
+    language,
+    page: String(page),
+    size: String(size),
+  });
+  const t = theme?.trim();
+  if (t) params.set("theme", t);
+  const res = await fetchWithAuth(`/stories/library?${params}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { message?: string };
     throw new Error(err?.message ?? "Failed to load stories");
   }
-  return res.json();
+  const data = (await res.json()) as LibraryStory[] | LibraryStoriesPage;
+  if (Array.isArray(data)) {
+    return data;
+  }
+  if (data && Array.isArray(data.content)) {
+    return data.content;
+  }
+  return [];
 }
 
 // Generated stories (parent's AI stories)

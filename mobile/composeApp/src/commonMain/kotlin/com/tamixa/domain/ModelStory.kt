@@ -146,5 +146,7 @@ data class GenerateStoryRequest(
     /** Conversation messages (feelings, preferences) to tune the prompt. */
     val conversationMessages: List<String>? = null,
     /** Phase 2: Parent's voice profile ID for cloned TTS. */
-    val voiceProfileId: Long? = null
+    val voiceProfileId: Long? = null,
+    /** Optional educational steer: public_speaking, money_literacy, research_skills, or SEL values allowed by backend. */
+    val learningFocus: String? = null,
 )

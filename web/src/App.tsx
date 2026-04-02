@@ -1,6 +1,13 @@
 import { useState, lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+
+function RootRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <AppLoading />;
+  if (user) return <Navigate to="/stories" replace />;
+  return <Home />;
+}
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppLayout } from "./components/AppLayout";
 import { AppLoading } from "./components/AppLoading";
@@ -30,14 +37,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <AppLoading />;
-  if (user) return <Navigate to="/dashboard" replace />;
+  if (user) return <Navigate to="/stories" replace />;
   return <>{children}</>;
 }
 
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Home />} />
+      <Route path="/" element={<RootRoute />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/auth/magic-link" element={<MagicLinkVerify />} />

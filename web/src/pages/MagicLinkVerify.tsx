@@ -30,7 +30,7 @@ export default function MagicLinkVerify() {
       .then((user) => {
         setUser(user);
         setStatus("success");
-        navigate("/dashboard");
+        navigate("/stories");
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : "Invalid or expired link. Please try again.";
