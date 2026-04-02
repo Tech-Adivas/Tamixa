@@ -15,7 +15,7 @@ jobs:
       # Mitigate ENETUNREACH on IPv6 when runners cannot reach Cloudflare over IPv6.
       NODE_OPTIONS: --dns-result-order=ipv4first
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # v3+ often timed out fetching checksums; v4 embeds more known checksums. allow-checksums
       # accepts our JARs if the action still needs to verify offline-adjacent paths.
       - uses: gradle/actions/wrapper-validation@v4.4.4

@@ -122,7 +122,7 @@ jobs:
       DORA_API_BASE_URL: ${{ secrets.DORA_API_BASE_URL || '' }}
       DORA_ADMIN_BEARER_TOKEN: ${{ secrets.DORA_ADMIN_BEARER_TOKEN || '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Validate secrets
         run: |
