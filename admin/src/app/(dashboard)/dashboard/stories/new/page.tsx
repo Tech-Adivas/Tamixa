@@ -95,6 +95,8 @@ export default function NewLibraryStoryPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [coverGenerating, setCoverGenerating] = useState(false);
+  /** Optional notes appended after the standard Tamixa cover template when AI generates a cover on Save/Publish. */
+  const [coverCustomPrompt, setCoverCustomPrompt] = useState("");
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const autosaveRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -188,7 +190,11 @@ export default function NewLibraryStoryPage() {
       if (regenerateCover && created?.id) {
         setCoverGenerating(true);
         try {
-          await api.admin.regenerateLibraryStoryCover(created.id, false);
+          await api.admin.regenerateLibraryStoryCover(
+            created.id,
+            false,
+            coverCustomPrompt.trim() || null
+          );
           showSuccess(
             publish ? "Story published" : "Story saved",
             publish
@@ -450,6 +456,9 @@ export default function NewLibraryStoryPage() {
                     className="mt-1 rounded-xl"
                   />
                 </div>
+                <p className="text-xs text-muted-foreground rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                  Optional <strong>custom cover instructions</strong> live in the <strong>AI cover notes</strong> card (right column on wide screens, below on mobile) for Content, Cover &amp; languages, and Save — same field everywhere.
+                </p>
                 <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
                   <li>After create, open the story → Edit → step <strong>Cover &amp; languages</strong>.</li>
                   <li>
@@ -534,6 +543,34 @@ export default function NewLibraryStoryPage() {
         </div>
 
         <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+          {workflowStep <= 2 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">AI cover notes</CardTitle>
+                <p className="text-xs text-muted-foreground font-normal">
+                  Shown on Content, Cover &amp; languages, and Save. Used only when you save or publish <strong>without</strong> a cover URL:
+                  standard Tamixa cover template first, then your notes.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                <Label htmlFor="new-story-cover-custom-prompt" className="text-xs font-medium">
+                  Custom cover instructions (optional)
+                </Label>
+                <textarea
+                  id="new-story-cover-custom-prompt"
+                  className="w-full min-h-[88px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="e.g. Warmer evening light; river in the background; keep characters younger…"
+                  value={coverCustomPrompt}
+                  onChange={(e) => setCoverCustomPrompt(e.target.value.slice(0, 8000))}
+                  disabled={submitting || coverGenerating}
+                  maxLength={8000}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {coverCustomPrompt.length}/8000 characters
+                </p>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold">On this page</CardTitle>

@@ -303,6 +303,7 @@ export default function EditLibraryStoryPage() {
   const [form, setForm] = useState<CreateLibraryStoryRequest | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [coverGenerating, setCoverGenerating] = useState(false);
+  const [coverCustomPrompt, setCoverCustomPrompt] = useState("");
   const [coverRefreshKey, setCoverRefreshKey] = useState(0);
   const [coverVideoUrl, setCoverVideoUrl] = useState<string | null>(null);
   const [rephrasing, setRephrasing] = useState(false);
@@ -313,6 +314,8 @@ export default function EditLibraryStoryPage() {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   /** Regenerate-with-prompt + save + rebuild-narration-pipeline (single admin action). */
   const [scriptSyncInProgress, setScriptSyncInProgress] = useState(false);
+  /** Optional notes appended after the standard Tamixa conversion template for “Regenerate & sync”. */
+  const [regenerateCustomPrompt, setRegenerateCustomPrompt] = useState("");
   /** Per-language content for non-Tamil languages (optional). When set, sent as translationContentEntries so other languages are updated. */
   const [translationContentEntries, setTranslationContentEntries] = useState<
     Record<string, { content: string; title: string; moral: string }>
@@ -672,7 +675,13 @@ export default function EditLibraryStoryPage() {
       setParaphraseBefore(null);
       setParaphraseBeforeByLang(null);
       setShowParaphraseDiff(false);
-      const result = await api.admin.regenerateStoryWithPrompt(id, form.content, true, form.language ?? "ta");
+      const result = await api.admin.regenerateStoryWithPrompt(
+        id,
+        form.content,
+        true,
+        form.language ?? "ta",
+        regenerateCustomPrompt.trim() || null
+      );
       if (result.paraphraseBefore) {
         const beforeParsed =
           result.paraphraseBefore.content?.trim().startsWith("{")
@@ -811,6 +820,7 @@ export default function EditLibraryStoryPage() {
     refreshRegenerateStatus,
     loadStoryContent,
     pollTranslationsAfterRebuild,
+    regenerateCustomPrompt,
   ]);
 
   const handleSubmit = async (publish: boolean) => {
@@ -1402,8 +1412,7 @@ export default function EditLibraryStoryPage() {
         </div>
 
         <div className="space-y-6 lg:sticky lg:top-20 lg:self-start">
-          {workflowStep === 1 && (
-          <>
+          {(workflowStep === 0 || workflowStep === 1) && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold">Cover</CardTitle>
@@ -1416,6 +1425,24 @@ export default function EditLibraryStoryPage() {
                 placeholder="URL or regenerate"
                 className="rounded-lg h-9 text-sm"
               />
+              <div className="space-y-1.5">
+                <Label htmlFor="cover-custom-prompt" className="text-xs font-medium">
+                  Custom cover instructions (optional)
+                </Label>
+                <textarea
+                  id="cover-custom-prompt"
+                  className="w-full min-h-[88px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="e.g. Warmer evening light; show the river in the background; keep characters younger; more magical sparkles in the sky…"
+                  value={coverCustomPrompt}
+                  onChange={(e) => setCoverCustomPrompt(e.target.value.slice(0, 8000))}
+                  disabled={coverGenerating || !id}
+                  maxLength={8000}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Standard Tamixa cover template (story title + excerpt + style rules) is always applied first; your text is appended for
+                  illustration and motion. {coverCustomPrompt.length}/8000 characters.
+                </p>
+              </div>
               <div className="flex gap-2 flex-wrap">
                 <Button
                   type="button"
@@ -1428,7 +1455,11 @@ export default function EditLibraryStoryPage() {
                     setCoverGenerating(true);
                     try {
                       const hasCover = !!(form.coverImageUrl?.trim() || coverVideoUrl?.trim());
-                      const updated = await api.admin.regenerateLibraryStoryCover(id, hasCover);
+                      const updated = await api.admin.regenerateLibraryStoryCover(
+                        id,
+                        hasCover,
+                        coverCustomPrompt.trim() || null
+                      );
                       setForm((f) => (f ? { ...f, coverImageUrl: updated?.coverImageUrl?.trim() ?? f.coverImageUrl ?? "" } : f));
                       setCoverVideoUrl(updated?.coverVideoUrl ?? null);
                       setCoverRefreshKey(Date.now());
@@ -1471,7 +1502,9 @@ export default function EditLibraryStoryPage() {
               )}
             </CardContent>
           </Card>
+          )}
 
+          {workflowStep === 1 && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold">TTS script &amp; language sync</CardTitle>
@@ -1480,6 +1513,24 @@ export default function EditLibraryStoryPage() {
               </p>
             </CardHeader>
             <CardContent className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="regenerate-custom-prompt" className="text-xs font-medium">
+                  Custom instructions (optional)
+                </Label>
+                <textarea
+                  id="regenerate-custom-prompt"
+                  className="w-full min-h-[88px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="e.g. Emphasize dialogue between the two siblings; keep the festival scene longer; soften the scare in act two…"
+                  value={regenerateCustomPrompt}
+                  onChange={(e) => setRegenerateCustomPrompt(e.target.value.slice(0, 8000))}
+                  disabled={regenerateBusy || regenerateBlockedForRole || scriptSyncInProgress}
+                  maxLength={8000}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Standard Tamixa TTS conversion template is always applied first; your text is appended so the model can steer tone,
+                  pacing, or emphasis without replacing safety and JSON rules. {regenerateCustomPrompt.length}/8000 characters.
+                </p>
+              </div>
               <Button
                 type="button"
                 variant="secondary"
@@ -1542,7 +1593,6 @@ export default function EditLibraryStoryPage() {
               </p>
             </CardContent>
           </Card>
-          </>
           )}
 
           {workflowStep === 0 && (
@@ -1550,8 +1600,8 @@ export default function EditLibraryStoryPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold">AI &amp; unlock</CardTitle>
               <p className="text-xs text-muted-foreground">
-                Tamixa TTS script conversion and language sync live on the <strong>Cover &amp; languages</strong> step:{" "}
-                <strong>Regenerate &amp; sync all languages</strong>.
+                Use <strong>Generate cover</strong> above for the poster. Tamixa TTS script conversion and language sync are on the{" "}
+                <strong>Cover &amp; languages</strong> step: <strong>Regenerate &amp; sync all languages</strong>.
               </p>
             </CardHeader>
             <CardContent className="space-y-3">

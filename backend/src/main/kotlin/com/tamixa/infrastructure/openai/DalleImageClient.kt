@@ -69,7 +69,8 @@ class DalleImageClient(
      * Avoids fixed visual motifs (e.g. temple/kid/gold) unless the story explicitly asks for them.
      */
     private fun buildChildSafePrompt(theme: String): String {
-        val safe = theme.take(900).replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
+        // DALL·E 3 allows up to ~4000 chars; keep wrapper + scene text under that so library cover prompts (template + editor notes) survive.
+        val safe = theme.take(3200).replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
         return (
             "Create a premium storybook cover illustration for Tamixa app. " +
                 "Follow the story scene details exactly; do not default to generic temple, child portrait, or gold-tinted composition unless explicitly described. " +

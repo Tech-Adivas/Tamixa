@@ -1047,10 +1047,16 @@ const admin = {
     }
   },
 
-  regenerateLibraryStoryCover: async (id: number, force = false) => {
+  regenerateLibraryStoryCover: async (id: number, force = false, customPrompt?: string | null) => {
     const url = `/api/v1/admin/stories/${id}/regenerate-cover${force ? "?force=true" : ""}`;
+    const trimmed = customPrompt?.trim();
+    const body =
+      trimmed && trimmed.length > 0
+        ? JSON.stringify({ customPrompt: trimmed.slice(0, 8000) })
+        : undefined;
     const r = await fetchWithAuth(url, {
       method: "POST",
+      ...(body != null ? { body } : {}),
     });
     if (!r.ok) {
       const err = (await r.json().catch(() => ({}))) as { message?: string };
@@ -1461,7 +1467,9 @@ const admin = {
     content?: string | null,
     generateForAllLanguages = true,
     /** ISO language code for the main rewrite (ta, en, hi, …). Should match the admin edit form; defaults on server if omitted. */
-    language?: string | null
+    language?: string | null,
+    /** Appended after the standard Tamixa conversion template (max 8000 chars server-side). */
+    customPrompt?: string | null
   ): Promise<{
     content: string;
     title: string;
@@ -1478,9 +1486,11 @@ const admin = {
     /** Optional snapshots of converted content before the mandatory paraphrase pass, per target language. */
     translationsParaphraseBefore?: Record<string, { content: string; title: string; moral: string }>;
   }> => {
-    const body: { content?: string; generateForAllLanguages?: boolean; language?: string } = {};
+    const body: { content?: string; generateForAllLanguages?: boolean; language?: string; customPrompt?: string } = {};
     if (content != null && content.trim() !== "") body.content = content.trim();
     if (generateForAllLanguages) body.generateForAllLanguages = true;
+    const custom = customPrompt?.trim();
+    if (custom) body.customPrompt = custom.slice(0, 8000);
     const raw = language?.trim().toLowerCase();
     if (raw) {
       const aliases: Record<string, string> = {

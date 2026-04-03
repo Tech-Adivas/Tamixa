@@ -1246,11 +1246,23 @@ class AdminController(
     @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
     fun regenerateCuratedStoryCover(
         @PathVariable id: Long,
-        @org.springframework.web.bind.annotation.RequestParam(name = "force", required = false, defaultValue = "true") force: Boolean
+        @org.springframework.web.bind.annotation.RequestParam(name = "force", required = false, defaultValue = "true") force: Boolean,
+        @RequestBody(required = false) body: Map<String, Any?>?
     ): ResponseEntity<*> {
-        log.info("Regenerate cover requested for curated story id={} force={}", id, force)
+        val customFromEditor = body?.get("customPrompt")?.toString()?.trim()?.takeIf { it.isNotBlank() }
+            ?: body?.get("custom_prompt")?.toString()?.trim()?.takeIf { it.isNotBlank() }
+        if (customFromEditor != null) {
+            log.info(
+                "Regenerate cover requested for curated story id={} force={} customPromptChars={}",
+                id,
+                force,
+                minOf(customFromEditor.length, 8000)
+            )
+        } else {
+            log.info("Regenerate cover requested for curated story id={} force={}", id, force)
+        }
         val story = storyLibraryService.findById(id) ?: return ResponseEntity.notFound().build<Unit>()
-        val updated = libraryStoryIllustrationService.generateCoverForStory(story, force)
+        val updated = libraryStoryIllustrationService.generateCoverForStory(story, force, customFromEditor)
         return if (updated != null) {
             log.info("Regenerate cover success for curated story id={}", id)
             ResponseEntity.ok(
@@ -1347,7 +1359,39 @@ class AdminController(
                 "regenerate-with-prompt id={} outputLang={} rawBodyLang={} story.language={}",
                 id, outputLang, rawBodyLang, story.language
             )
-            val prompt = storyPromptBuilder.buildDefaultConversionPrompt(StoryCategories.canonical, outputLang)
+            val basePrompt = storyPromptBuilder.buildDefaultConversionPrompt(StoryCategories.canonical, outputLang)
+            val customFromEditor = body?.get("customPrompt")?.toString()?.trim()?.takeIf { it.isNotBlank() }
+                ?: body?.get("custom_prompt")?.toString()?.trim()?.takeIf { it.isNotBlank() }
+            val customAppendMaxChars = 8000
+            val prompt = if (customFromEditor != null) {
+                val safeCustom = customFromEditor.take(customAppendMaxChars)
+                if (customFromEditor.length > customAppendMaxChars) {
+                    log.warn(
+                        "regenerate-with-prompt id={}: customPrompt truncated from {} to {} chars",
+                        id,
+                        customFromEditor.length,
+                        customAppendMaxChars
+                    )
+                }
+                log.info(
+                    "regenerate-with-prompt id={}: using standard template plus custom editor instructions (customChars={})",
+                    id,
+                    safeCustom.length
+                )
+                buildString {
+                    append(basePrompt)
+                    append("\n\n")
+                    append("## Additional instructions from the editor\n")
+                    append(
+                        "The following notes were added in the admin UI. Apply them while still honoring all system rules above " +
+                            "(safety, single-language output, required JSON keys and shapes, word targets). " +
+                            "If anything conflicts, prefer child safety and the fixed JSON contract.\n\n"
+                    )
+                    append(safeCustom)
+                }
+            } else {
+                basePrompt
+            }
             val transformed = try {
                 adminTtsPreviewService.transformContent(contentStr, prompt, outputLang)
             } catch (e: IllegalArgumentException) {

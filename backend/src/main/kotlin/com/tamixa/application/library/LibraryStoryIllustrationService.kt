@@ -51,13 +51,25 @@ class LibraryStoryIllustrationService(
         }
     }
 
+    companion object {
+        private const val COVER_CUSTOM_PROMPT_MAX_CHARS = 8000
+    }
+
     /**
      * Generate cover: DALL-E bytes, try animated GIF upload first, then static image upload.
      * When force=true, clears existing cover and video then regenerates.
      * Otherwise idempotent: skips if already has cover.
+     * Optional [customPrompt] is trimmed and capped; appended after the standard cover template (image + fallback + motion hints).
      */
-    fun generateCoverForStory(story: LibraryStory, force: Boolean = false): LibraryStory? {
-        log.info("Generating cover for library story id={} theme={} force={}", story.id, story.theme, force)
+    fun generateCoverForStory(story: LibraryStory, force: Boolean = false, customPrompt: String? = null): LibraryStory? {
+        val editorCustom = normalizeCoverCustomPrompt(story.id, customPrompt)
+        log.info(
+            "Generating cover for library story id={} theme={} force={} customPromptChars={}",
+            story.id,
+            story.theme,
+            force,
+            editorCustom?.length ?: 0
+        )
         var current = story
         if (force && (!story.coverImageUrl.isNullOrBlank() || !story.coverVideoUrl.isNullOrBlank())) {
             log.info("Force regenerate: deleting old cover and video from storage, then clearing for story {}", story.id)
@@ -75,13 +87,13 @@ class LibraryStoryIllustrationService(
             log.debug("Library story {} already has cover, skipping (use force=true for alternate)", story.id)
             return repository.findById(story.id)
         }
-        val prompt = buildAnimatedHdPrompt(current)
+        val prompt = appendCoverEditorInstructions(buildAnimatedHdPrompt(current), editorCustom)
         log.debug("DALL-E primary prompt length={} excerpt={}", prompt.length, prompt.take(80))
         val primaryImageBytes = imageGeneration.generateImage(prompt)
         val imageBytes = if (primaryImageBytes != null) {
             primaryImageBytes
         } else {
-            val fallbackPrompt = buildPolicySafeFallbackPrompt(current)
+            val fallbackPrompt = buildPolicySafeFallbackPrompt(current, editorCustom)
             log.warn(
                 "Primary DALL-E prompt failed for story {}. Retrying with policy-safe fallback prompt length={}",
                 current.id,
@@ -99,7 +111,7 @@ class LibraryStoryIllustrationService(
         log.info("DALL-E returned {} bytes for story {}", imageBytes.size, current.id)
         var coverAnimationPath: String? = null
         if (coverVideoGeneration != null && coverVideoStorage != null) {
-            val motionPrompt = buildCoverVideoMotionPrompt(current)
+            val motionPrompt = buildCoverVideoMotionPrompt(current, editorCustom)
             log.info("Sora (preferred): generating cover animation for library story {} before static upload", current.id)
             log.debug("Sora motion prompt length={} excerpt={}", motionPrompt.length, motionPrompt.take(80))
             val videoBytes = coverVideoGeneration.generateVideoFromImage(imageBytes, motionPrompt)
@@ -156,22 +168,58 @@ class LibraryStoryIllustrationService(
         return "$styleGuide Story title: $title. Story excerpt: $description."
     }
 
-    private fun buildCoverVideoMotionPrompt(story: LibraryStory): String {
+    private fun normalizeCoverCustomPrompt(storyId: Long, customPrompt: String?): String? {
+        val raw = customPrompt?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        if (raw.length > COVER_CUSTOM_PROMPT_MAX_CHARS) {
+            log.warn(
+                "Cover customPrompt truncated for library story id={} from {} to {} chars",
+                storyId,
+                raw.length,
+                COVER_CUSTOM_PROMPT_MAX_CHARS
+            )
+        }
+        return raw.take(COVER_CUSTOM_PROMPT_MAX_CHARS)
+    }
+
+    private fun appendCoverEditorInstructions(base: String, editorCustom: String?): String {
+        val trimmed = editorCustom ?: return base
+        return buildString {
+            append(base)
+            append("\n\n")
+            append("## Additional instructions from the editor\n")
+            append(
+                "The following notes were added in the admin UI. Apply them to the cover illustration and, where relevant, to subtle motion, " +
+                    "while still honoring all child-safety rules, no text or letters in the image, and the Tamixa storybook style described above. " +
+                    "If anything conflicts, prefer child safety.\n\n"
+            )
+            append(trimmed)
+        }
+    }
+
+    private fun buildCoverVideoMotionPrompt(story: LibraryStory, editorCustom: String? = null): String {
         val (title, contentForPrompt) = resolveEnglishContent(story)
         val sceneHint = contentForPrompt
             .take(200)
             .replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
             .trim()
             .take(100)
-        return (
+        val motionCustom = editorCustom
+            ?.replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
+            ?.trim()
+            ?.take(220)
+            ?.takeIf { it.isNotBlank() }
+        val base = (
             "CRITICAL: Do not zoom in, zoom out, or pan. The camera must stay completely fixed. No Ken Burns effect. No movement of the frame or background. " +
-            "Only the characters, people, and animals inside the scene may move: natural eye blinks, hands and arms gesturing, legs when walking or running, lip sync. " +
-            "Ears twitch, tail sways. Horse or vehicle moves in place; do not move the camera. " +
-            "The image must never zoom or pan. Story: $title. $sceneHint. Child-friendly, seamless loop, no sound."
-        ).take(800)
+                "Only the characters, people, and animals inside the scene may move: natural eye blinks, hands and arms gesturing, legs when walking or running, lip sync. " +
+                "Ears twitch, tail sways. Horse or vehicle moves in place; do not move the camera. " +
+                "The image must never zoom or pan. Story: $title. $sceneHint." +
+                (if (motionCustom != null) " Editor motion notes: $motionCustom." else "") +
+                " Child-friendly, seamless loop, no sound."
+            )
+        return base.take(800)
     }
 
-    private fun buildPolicySafeFallbackPrompt(story: LibraryStory): String {
+    private fun buildPolicySafeFallbackPrompt(story: LibraryStory, editorCustom: String? = null): String {
         val safeTitle = (story.title?.takeIf { it.isNotBlank() } ?: story.theme)
             .take(100)
             .replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
@@ -180,14 +228,17 @@ class LibraryStoryIllustrationService(
             .take(80)
             .replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
             .trim()
-        return (
+        val base = (
             "Gentle children's storybook cover illustration, suitable for ages 3-12. " +
                 "Use a clean, emotionally safe scene based on the given title and theme; avoid generic defaults. " +
                 "No fear, danger, conflict, or violence. " +
                 "Use a balanced palette suitable for dark app UI with moderate contrast and soft accents; do not overuse gold tones unless the story explicitly suggests it. " +
                 "Single static scene, no text or letters, high-definition. " +
                 "Title inspiration: $safeTitle. Theme: $safeTheme."
-            ).take(700)
+            )
+        val merged = appendCoverEditorInstructions(base, editorCustom)
+        val maxLen = if (editorCustom.isNullOrBlank()) 700 else 3200
+        return merged.take(maxLen)
     }
 
     private fun resolveEnglishContent(story: LibraryStory): Pair<String, String> {
