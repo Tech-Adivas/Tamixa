@@ -110,9 +110,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.draw.shadow
 
 private val PlayerScreenInk = TamixaColors.cream
-private val PlayerScreenMuted = TamixaColors.cream.copy(alpha = 0.72f)
-private val PlayerTrackMuted = Color.White.copy(alpha = 0.22f)
-private val PlayerCardStroke = TamixaColors.cream.copy(alpha = 0.28f)
+private val PlayerScreenMuted = TamixaColors.grayText
+private val PlayerTrackMuted = Color.White.copy(alpha = 0.3f)
+private val PlayerCardStroke = TamixaColors.cream.copy(alpha = 0.34f)
 
 /** Circular hero chrome — uses [clickable] so taps work above video/cover layers. */
 @Composable
@@ -124,9 +124,14 @@ private fun PlayerHeroCircleButton(
     Box(
         modifier = modifier
             .size(48.dp)
-            .shadow(2.dp, CircleShape)
+            .shadow(
+                elevation = 3.dp,
+                shape = CircleShape,
+                ambientColor = Color(0xFF2C2520).copy(alpha = 0.14f),
+                spotColor = Color.White.copy(alpha = 0.1f),
+            )
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.94f))
+            .background(Color.White.copy(alpha = 0.97f))
             .clickable(onClick = onClick, role = Role.Button),
         contentAlignment = Alignment.Center
     ) {
@@ -233,7 +238,9 @@ fun AudioPlayerScreen(
     onBottomNavFunAndLearn: () -> Unit = {},
     onBottomNavProfile: () -> Unit = {},
     /** Optional: open story quiz (e.g. when story is linked to a child). */
-    onOpenQuiz: (() -> Unit)? = null
+    onOpenQuiz: (() -> Unit)? = null,
+    /** Optional line under the title (Learn cue or theme for generated). */
+    playbackSubtitle: String? = null
 ) {
     var showVoicePremiumDialog by remember { mutableStateOf(false) }
     var playMenuExpanded by remember { mutableStateOf(false) }
@@ -350,14 +357,14 @@ fun AudioPlayerScreen(
                                 onAddToList = onAddToList,
                                 onVolumeClick = onVolumeClick,
                                 onSleepTimer = onSleepTimer,
-                                onDownload = onDownload
+                                onDownload = onDownload,
+                                playbackSubtitle = playbackSubtitle
                             )
                         }
                     }
                 }
             }
             TamixaBottomBar(
-                modifier = Modifier.navigationBarsPadding(),
                 selectedTab = bottomNavSelectedTab,
                 onHome = onBottomNavHome,
                 onLibrary = onBottomNavLibrary,
@@ -696,7 +703,8 @@ private fun PlayerContent(
     onAddToList: (() -> Unit)? = null,
     onVolumeClick: (() -> Unit)? = null,
     onSleepTimer: () -> Unit = {},
-    onDownload: (() -> Unit)? = null
+    onDownload: (() -> Unit)? = null,
+    playbackSubtitle: String? = null
 ) {
     val totalSec = (durationSeconds?.takeIf { it > 0 }
         ?: (story.readingTimeMinutes * 60).toInt()).coerceAtLeast(1)
@@ -741,7 +749,7 @@ private fun PlayerContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .zIndex(0f)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(TamixaDesignTokens.storyIllustrationFrameRadius))
             ) {
                 StoryCoverImage(
                     story = story,
@@ -925,14 +933,93 @@ private fun PlayerContent(
             Spacer(Modifier.height(18.dp))
             Text(
                 text = story.title?.takeIf { it.isNotBlank() } ?: story.theme,
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.3).sp
-                ),
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                 color = PlayerScreenInk,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
+            playbackSubtitle?.takeIf { it.isNotBlank() }?.let { sub ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = sub,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = PlayerScreenMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            val hasParentExtras = story.parentId == 0L && (
+                !story.parentContentNote.isNullOrBlank() ||
+                    !story.speakAlongPrompt.isNullOrBlank() ||
+                    story.parentDiscussionPrompts?.any { it.isNotBlank() } == true
+                )
+            if (hasParentExtras) {
+                Spacer(Modifier.height(16.dp))
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = snippetSurface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, PlayerCardStroke),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            Strings.forParentsSectionTitle(),
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = PlayerScreenInk,
+                        )
+                        story.parentContentNote?.takeIf { it.isNotBlank() }?.let { note ->
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                Strings.parentContentNoteLabel(),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = PlayerScreenMuted,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                note,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = PlayerScreenInk.copy(alpha = 0.92f),
+                            )
+                        }
+                        story.speakAlongPrompt?.takeIf { it.isNotBlank() }?.let { prompt ->
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                Strings.speakAlongLabel(),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = PlayerScreenMuted,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                prompt,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = PlayerScreenInk.copy(alpha = 0.92f),
+                            )
+                        }
+                        val prompts = story.parentDiscussionPrompts?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+                        if (prompts.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                Strings.discussionPromptsLabel(),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = PlayerScreenMuted,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            prompts.forEach { p ->
+                                Text(
+                                    "• $p",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = PlayerScreenInk.copy(alpha = 0.92f),
+                                    modifier = Modifier.padding(vertical = 2.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.height(20.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -990,7 +1077,7 @@ private fun PlayerContent(
                         Box(modifier = Modifier.fillMaxWidth()) {
                             Text(
                                 text = if (snippetExpanded) story.content.ifBlank { snippetText } else snippetText,
-                                style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                                style = MaterialTheme.typography.bodyLarge,
                                 color = PlayerScreenInk.copy(alpha = 0.92f),
                                 maxLines = if (snippetExpanded) Int.MAX_VALUE else 5,
                                 overflow = TextOverflow.Ellipsis
@@ -1017,7 +1104,7 @@ private fun PlayerContent(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.White),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp, pressedElevation = 4.dp),
                     contentPadding = PaddingValues(vertical = 12.dp, horizontal = 16.dp)
                 ) {
                     Icon(
@@ -1089,7 +1176,12 @@ private fun PlayerContent(
                                 .align(Alignment.CenterStart)
                                 .offset(x = offsetX)
                                 .size(thumb)
-                                .shadow(3.dp, CircleShape)
+                                .shadow(
+                                    elevation = 4.dp,
+                                    shape = CircleShape,
+                                    ambientColor = Color(0xFF2C2520).copy(alpha = 0.2f),
+                                    spotColor = accent.copy(alpha = 0.35f),
+                                )
                                 .clip(CircleShape)
                                 .background(accent)
                         )
@@ -1130,8 +1222,15 @@ private fun PlayerContent(
                         onClick = { if (isPlayerReady) onPlayPause() },
                         shape = CircleShape,
                         color = accent,
-                        modifier = Modifier.size(58.dp),
-                        shadowElevation = 5.dp
+                        modifier = Modifier
+                            .size(58.dp)
+                            .shadow(
+                                elevation = 8.dp,
+                                shape = CircleShape,
+                                ambientColor = Color(0xFF2C2520).copy(alpha = 0.22f),
+                                spotColor = accent.copy(alpha = 0.28f),
+                            ),
+                        shadowElevation = 0.dp
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             if (isPlayerReady) {

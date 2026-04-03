@@ -635,7 +635,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Tamixa/Tamixa-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
-				TAMIXA_API_BASE_URL = "https://api.tamixa.com";
+				TAMIXA_API_BASE_URL = "https://api.tamixa.in";
 				TAMIXA_DISPLAY_NAME = "Tamixa";
 				TAMIXA_ENVIRONMENT = "prod";
 				TAMIXA_SUBSCRIPTION_WEB_URL = "https://app.tamixa.com/subscription";
@@ -737,7 +737,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Tamixa/Tamixa-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
-				TAMIXA_API_BASE_URL = "https://api.tamixa.com";
+				TAMIXA_API_BASE_URL = "https://api.tamixa.in";
 				TAMIXA_DISPLAY_NAME = "Tamixa";
 				TAMIXA_ENVIRONMENT = "prod";
 				TAMIXA_SUBSCRIPTION_WEB_URL = "https://app.tamixa.com/subscription";

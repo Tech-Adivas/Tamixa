@@ -99,7 +99,12 @@ fun ShortContentScreen(
     ) { padding ->
         val colorScheme = MaterialTheme.colorScheme
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
+            AppScreenBackground(
+                showStars = true,
+                showClouds = true,
+                animateStars = true,
+                ambientPresence = true
+            )
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -171,16 +176,27 @@ fun ShortContentScreen(
                         }
                     }
                     items.isEmpty() -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = TamixaDesignTokens.screenPadding),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
                             Text(
                                 text = Strings.noShortContentYet(),
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                                 ),
-                                color = TamixaColors.cream
+                                color = TamixaColors.cream,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                text = Strings.noShortContentHint(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TamixaColors.cream.copy(alpha = 0.88f),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
                         }
                     }

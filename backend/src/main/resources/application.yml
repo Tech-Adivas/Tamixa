@@ -262,7 +262,7 @@ app:
   audio:
     base-url: ${AUDIO_BASE_URL:/audio}
     simulated-tts-delay-ms: ${AUDIO_SIMULATED_TTS_DELAY_MS:500}
-    # When CDN disabled, used to build full URLs for stream-url fallback (e.g. http://localhost:8080 for dev, https://api.tamixa.com for prod)
+    # When CDN disabled, used to build full URLs for stream-url fallback (e.g. http://localhost:8080 for dev, https://api.tamixa.in for prod)
     public-base-url: ${AUDIO_PUBLIC_BASE_URL:http://localhost:8080}
     # Phase 4: optional MP4 URL (https or path under public-base-url); stream-url returns as hostStoryClipUrl (muted in app)
     host-story-clip-url: ${AUDIO_HOST_STORY_CLIP_URL:}

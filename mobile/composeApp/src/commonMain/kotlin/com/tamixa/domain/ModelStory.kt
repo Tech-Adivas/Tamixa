@@ -25,7 +25,11 @@ data class Story(
     val coverVideoUrl: String? = null,
     val createdAt: String,
     /** Curated story category from API; used for dashboard filter. */
-    val category: String? = null
+    val category: String? = null,
+    /** Library-only: parent discussion prompts from curated metadata. */
+    val parentDiscussionPrompts: List<String>? = null,
+    val parentContentNote: String? = null,
+    val speakAlongPrompt: String? = null,
 )
 
 /** Paginated response from GET /stories/library. */
@@ -57,7 +61,10 @@ data class LibraryStoryResponse(
     val audioFileUrl: String? = null,
     val coverImageUrl: String? = null,
     val coverVideoUrl: String? = null,
-    val createdAt: String
+    val createdAt: String,
+    val parentDiscussionPrompts: List<String>? = null,
+    val parentContentNote: String? = null,
+    val speakAlongPrompt: String? = null,
 )
 
 fun LibraryStoryResponse.toStory(): Story = Story(
@@ -78,7 +85,10 @@ fun LibraryStoryResponse.toStory(): Story = Story(
     coverImageUrl = coverImageUrl,
     coverVideoUrl = coverVideoUrl,
     createdAt = createdAt,
-    category = category?.trim()?.takeIf { it.isNotBlank() }
+    category = category?.trim()?.takeIf { it.isNotBlank() },
+    parentDiscussionPrompts = parentDiscussionPrompts?.map { it.trim() }?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() },
+    parentContentNote = parentContentNote?.trim()?.takeIf { it.isNotBlank() },
+    speakAlongPrompt = speakAlongPrompt?.trim()?.takeIf { it.isNotBlank() },
 )
 
 /** Response from GET /stories (parent's generated stories). */
@@ -132,11 +142,23 @@ fun StoryApiResponse.toStory(): Story = Story(
     createdAt = createdAt
 )
 
+/** Catalog entry from GET /stories/generation-topics. */
+@Serializable
+data class GenerationTopicResponse(
+    val id: String,
+    val theme: String,
+    val suggestedLearningFocus: String? = null,
+    val descriptionEn: String? = null,
+)
+
 @Serializable
 data class GenerateStoryRequest(
     val age: Int,
     val language: String = "ta",
-    val theme: String,
+    /** Free-text theme; optional when [generationTopicId] is set. */
+    val theme: String? = null,
+    /** Server-resolved curated topic; theme blocklist skipped for registry themes. */
+    val generationTopicId: String? = null,
     val childName: String = "Listener",
     val childId: Long? = null,
     /** Phase 2: CALM, SOOTHING, ADVENTUROUS, DEFAULT. Influences tone (e.g. bedtime). */

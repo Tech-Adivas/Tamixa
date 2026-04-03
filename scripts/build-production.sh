@@ -2,11 +2,11 @@
 # Build all production artifacts for Tamixa deployment.
 # Usage: ./scripts/build-production.sh [--backend-only | --web-only | --admin-only | --mobile-only]
 # Default: builds backend (Docker), web, admin, mobile release.
-# Set API_URL for web/admin builds: API_URL=https://api.tamixa.com
+# Set API_URL for web/admin builds: API_URL=https://api.tamixa.in
 set -e
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-API_URL="${API_URL:-https://api.tamixa.com}"
+API_URL="${API_URL:-https://api.tamixa.in}"
 BUILD_ALL=true
 BUILD_BACKEND=false
 BUILD_WEB=false

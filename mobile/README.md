@@ -96,7 +96,7 @@ The mobile app uses a single **composeApp** module (Kotlin Multiplatform + Compo
 |--------|----------------------------------|----------|
 | **dev** | `mobile/local.properties` → `TAMIXA_API_BASE_URL`, else `http://10.0.2.2:8080` | Same file: `TAMIXA_WEB_APP_URL` for subscription host |
 | **qa** | `https://api-qa.tamixa.com` | `-PTAMIXA_QA_API_BASE_URL=` / `-PTAMIXA_QA_WEB_APP_URL=` |
-| **prod** | `https://api.tamixa.com` | `-PTAMIXA_API_BASE_URL=` / `-PTAMIXA_WEB_APP_URL=` |
+| **prod** | `https://api.tamixa.in` | `-PTAMIXA_API_BASE_URL=` / `-PTAMIXA_WEB_APP_URL=` |
 
 `BuildConfig` also exposes `TAMIXA_ENVIRONMENT` (`dev` / `qa` / `prod`). Launcher label is **Tamixa (Dev)** / **Tamixa (QA)** for non-prod flavors.
 
@@ -115,7 +115,7 @@ cd mobile
   -PTAMIXA_QA_WEB_APP_URL=https://your-qa-app.example.com
 
 ./gradlew :composeApp:assembleProdRelease \
-  -PTAMIXA_API_BASE_URL=https://api.tamixa.com \
+  -PTAMIXA_API_BASE_URL=https://api.tamixa.in \
   -PTAMIXA_WEB_APP_URL=https://app.tamixa.com
 
 # All debug or all release variants (slower)
@@ -145,7 +145,7 @@ The repo includes **`mobile/iosApp/Tamixa.xcodeproj`**, which runs a script buil
 |---------------|-------------|----------------------------|------------------|
 | **DevDebug** / **DevRelease** | `http://127.0.0.1:8080` | `http://127.0.0.1:3000/subscription` | Tamixa (Dev) |
 | **QaDebug** / **QaRelease** | `https://api-qa.tamixa.com` | `https://app-qa.tamixa.com/subscription` | Tamixa (QA) |
-| **ProdDebug** / **ProdRelease** | `https://api.tamixa.com` | `https://app.tamixa.com/subscription` | Tamixa |
+| **ProdDebug** / **ProdRelease** | `https://api.tamixa.in` | `https://app.tamixa.com/subscription` | Tamixa |
 
 Values come from **target Build Settings** (`TAMIXA_API_BASE_URL`, `TAMIXA_SUBSCRIPTION_WEB_URL`, `TAMIXA_ENVIRONMENT`, `TAMIXA_DISPLAY_NAME`) and are merged into `Info.plist`. The shared **Tamixa** scheme uses **DevDebug** for Run and **ProdRelease** for Archive. Change the run configuration under **Product → Scheme → Edit Scheme… → Run → Build configuration** (e.g. **QaDebug**).
 

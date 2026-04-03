@@ -9,15 +9,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.tamixa.network.ChildVocabularyDto
 import com.tamixa.network.VocabularyProgressDto
 import com.tamixa.network.VocabularyWordDto
 import com.tamixa.ui.components.AppScreenBackground
 import com.tamixa.ui.components.TamixaScreenTopBar
+import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.*
 
-private val masteryLabels = mapOf(0 to "Learning", 1 to "Familiar", 2 to "Proficient", 3 to "Expert")
 private val masteryColors = @Composable { level: Int ->
     when (level) {
         3 -> TamixaColors.goldAccent
@@ -43,14 +44,14 @@ fun VocabularyScreen(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             TamixaScreenTopBar(
-                title = "Vocabulary",
+                title = Strings.vocabularyTitle(),
                 onBack = onBack,
                 useTransparentBackground = true
             )
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            AppScreenBackground(showClouds = false)
+            AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
             when {
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = TamixaColors.goldAccent)
@@ -60,9 +61,14 @@ fun VocabularyScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TamixaColors.cream.copy(alpha = 0.92f),
+                        textAlign = TextAlign.Center,
+                    )
                     Spacer(Modifier.height(16.dp))
-                    TextButton(onClick = onRetry) { Text("Retry", color = TamixaColors.goldAccent) }
+                    TextButton(onClick = onRetry) { Text(Strings.retry(), color = TamixaColors.goldAccent) }
                 }
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(TamixaDesignTokens.screenPadding),
@@ -79,7 +85,7 @@ fun VocabularyScreen(
                                 elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation)
                             ) {
                                 Column(Modifier.padding(TamixaDesignTokens.cardContentPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("Progress", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = TamixaContentColors.cardPrimary())
+                                    Text(Strings.vocabularyProgress(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = TamixaContentColors.cardPrimary())
                                     LinearProgressIndicator(
                                         progress = { p.progressPercentage / 100f },
                                         modifier = Modifier.fillMaxWidth(),
@@ -87,8 +93,8 @@ fun VocabularyScreen(
                                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                                     )
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text("${p.wordsLearned} learned", style = MaterialTheme.typography.bodySmall, color = TamixaContentColors.cardSecondary())
-                                        Text("${p.wordsMastered} mastered", style = MaterialTheme.typography.bodySmall, color = TamixaColors.goldAccent)
+                                        Text(Strings.vocabularyWordsLearned(p.wordsLearned), style = MaterialTheme.typography.bodySmall, color = TamixaContentColors.cardSecondary())
+                                        Text(Strings.vocabularyWordsMastered(p.wordsMastered), style = MaterialTheme.typography.bodySmall, color = TamixaColors.goldAccent)
                                     }
                                 }
                             }
@@ -98,7 +104,7 @@ fun VocabularyScreen(
                     // Learned words
                     if (learnedWords.isNotEmpty()) {
                         item {
-                            Text("My Words", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TamixaContentColors.cardSecondary())
+                            Text(Strings.vocabularyMyWords(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TamixaContentColors.cardSecondary())
                         }
                         items(learnedWords) { cv ->
                             Card(
@@ -121,7 +127,7 @@ fun VocabularyScreen(
                                         color = masteryColors(cv.masteryLevel).copy(alpha = 0.15f)
                                     ) {
                                         Text(
-                                            text = masteryLabels[cv.masteryLevel] ?: "Learning",
+                                            text = Strings.vocabularyMasteryLabel(cv.masteryLevel),
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = masteryColors(cv.masteryLevel)
@@ -136,7 +142,7 @@ fun VocabularyScreen(
                     if (suggestions.isNotEmpty()) {
                         item {
                             Spacer(Modifier.height(4.dp))
-                            Text("Suggested Words", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TamixaContentColors.cardSecondary())
+                            Text(Strings.vocabularySuggestedWords(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TamixaContentColors.cardSecondary())
                         }
                         items(suggestions) { word ->
                             Card(
@@ -155,7 +161,7 @@ fun VocabularyScreen(
                                         Text(word.definition, style = MaterialTheme.typography.bodySmall, color = TamixaContentColors.cardSecondary(), maxLines = 2)
                                     }
                                     TextButton(onClick = { onMarkLearned(word.id) }) {
-                                        Text("Learn", color = TamixaColors.goldAccent, style = MaterialTheme.typography.labelMedium)
+                                        Text(Strings.vocabularyLearnAction(), color = TamixaColors.goldAccent, style = MaterialTheme.typography.labelMedium)
                                     }
                                 }
                             }

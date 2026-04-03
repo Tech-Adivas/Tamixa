@@ -422,6 +422,11 @@ export default function EditLibraryStoryPage() {
         status: story.status ?? "DRAFT",
         coverImageUrl: story.coverImageUrl ?? "",
         emotionMode: story.emotionMode ?? "CALM",
+        parentDiscussionPrompts: story.parentDiscussionPrompts?.length
+          ? [...story.parentDiscussionPrompts]
+          : undefined,
+        parentContentNote: story.parentContentNote ?? null,
+        speakAlongPrompt: story.speakAlongPrompt ?? null,
       });
       setReviewerFeedback(story.reviewNotes?.trim() ? story.reviewNotes.trim() : null);
       setCoverVideoUrl(story.coverVideoUrl ?? null);
@@ -703,6 +708,18 @@ export default function EditLibraryStoryPage() {
         moral: effective.moral ?? form.moral,
         theme: (mergedTheme ?? form.theme) as string,
         status: inReviewQueue ? "DRAFT" : form.status,
+        ...(result.parentDiscussionPrompts !== undefined
+          ? {
+              parentDiscussionPrompts:
+                result.parentDiscussionPrompts.length > 0 ? [...result.parentDiscussionPrompts] : undefined,
+            }
+          : {}),
+        ...(result.parentContentNote !== undefined
+          ? { parentContentNote: result.parentContentNote?.trim() || null }
+          : {}),
+        ...(result.speakAlongPrompt !== undefined
+          ? { speakAlongPrompt: result.speakAlongPrompt?.trim() || null }
+          : {}),
       };
       const nextEntries = { ...translationContentEntries };
       if (result.translations && typeof result.translations === "object") {
@@ -835,6 +852,11 @@ export default function EditLibraryStoryPage() {
         coverVideoUrl: coverVideoUrl ?? null,
         regenerateNarration: false,
         translationContentEntries: translationPayload,
+        parentContentNote: form.parentContentNote?.trim() || null,
+        speakAlongPrompt: form.speakAlongPrompt?.trim() || null,
+        parentDiscussionPrompts: form.parentDiscussionPrompts?.length
+          ? form.parentDiscussionPrompts
+          : null,
       });
       if (publish) {
         showSuccess(
@@ -1153,6 +1175,57 @@ export default function EditLibraryStoryPage() {
                 <div>
                   <Label htmlFor="childName">Child name</Label>
                   <Input id="childName" value={form.childName ?? "Child"} onChange={(e) => setForm((f) => (f ? { ...f, childName: e.target.value } : f))} className="mt-1 rounded-lg" />
+                </div>
+              </div>
+              <div className="rounded-lg border border-border/80 bg-muted/10 p-4 space-y-3">
+                <p className="text-sm font-semibold">Parent resources (optional)</p>
+                <div>
+                  <Label htmlFor="parentContentNote">Content note for parents</Label>
+                  <textarea
+                    id="parentContentNote"
+                    value={form.parentContentNote ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, parentContentNote: e.target.value || null } : f))
+                    }
+                    className="mt-1 flex min-h-[72px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                    maxLength={4000}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="speakAlongPrompt">Speak-along prompt</Label>
+                  <Input
+                    id="speakAlongPrompt"
+                    value={form.speakAlongPrompt ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, speakAlongPrompt: e.target.value || null } : f))
+                    }
+                    className="mt-1 rounded-lg"
+                    maxLength={500}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="discussionPrompts">Discussion prompts (one per line, max 10)</Label>
+                  <textarea
+                    id="discussionPrompts"
+                    value={(form.parentDiscussionPrompts ?? []).join("\n")}
+                    onChange={(e) => {
+                      const lines = e.target.value
+                        .split("\n")
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                        .slice(0, 10)
+                        .map((s) => s.slice(0, 400));
+                      setForm((f) =>
+                        f
+                          ? {
+                              ...f,
+                              parentDiscussionPrompts: lines.length ? lines : undefined,
+                            }
+                          : f
+                      );
+                    }}
+                    className="mt-1 flex min-h-[100px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                  />
                 </div>
               </div>
             </CardContent>

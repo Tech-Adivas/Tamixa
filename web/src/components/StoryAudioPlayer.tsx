@@ -16,6 +16,8 @@ export interface StoryAudioPlayerProps {
   isPlaying: boolean;
   isLoading: boolean;
   title: string | null;
+  /** Optional line under the title (e.g. Learn focus or theme while listening). */
+  subtitle?: string | null;
   currentTime: number;
   duration: number;
   onPlayPause: () => void;
@@ -39,6 +41,7 @@ export default function StoryAudioPlayer({
   isPlaying,
   isLoading,
   title,
+  subtitle,
   currentTime,
   duration,
   onPlayPause,
@@ -140,6 +143,9 @@ export default function StoryAudioPlayer({
         </div>
       )}
       <p className="story-audio-player-title">{title ?? "Loading…"}</p>
+      {subtitle != null && subtitle !== "" ? (
+        <p className="story-audio-player-subtitle">{subtitle}</p>
+      ) : null}
       <div className="story-audio-player-controls">
         <button
           type="button"

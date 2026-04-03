@@ -6,6 +6,7 @@ import com.tamixa.domain.LibraryStoriesPageResponse
 import com.tamixa.domain.LibraryStoryResponse
 import com.tamixa.domain.toStory
 import com.tamixa.domain.GenerateStoryRequest
+import com.tamixa.domain.GenerationTopicResponse
 import com.tamixa.domain.StoriesPageResponse
 import com.tamixa.domain.Story
 import com.tamixa.domain.StoryStatus
@@ -50,6 +51,14 @@ internal data class LimitReachedResponseDto(
     val recommendedPlan: String = "PREMIUM"
 )
 
+/**
+ * HTTP 400 from POST /stories/generate with optional structured [apiCode] (matches backend `ApiErrorCodes`).
+ */
+class StoryGenerateBadRequestException(
+    val apiCode: String?,
+    message: String,
+) : RuntimeException(message)
+
 class StoryApi(private val client: HttpClient) {
     suspend fun generate(request: GenerateStoryRequest): Story {
         return try {
@@ -58,6 +67,16 @@ class StoryApi(private val client: HttpClient) {
             }.body()
         } catch (e: ResponseException) {
             when (e.response.status.value) {
+                400 -> {
+                    val body = try {
+                        e.response.body<ApiErrorResponse>()
+                    } catch (_: Exception) {
+                        null
+                    }
+                    val code = body?.code?.trim()?.takeIf { it.isNotEmpty() }
+                    val msg = body?.message?.trim()?.takeIf { it.isNotEmpty() } ?: ""
+                    throw StoryGenerateBadRequestException(apiCode = code, message = msg)
+                }
                 402 -> {
                     val body = try {
                         e.response.body<LimitReachedResponseDto>()
@@ -125,7 +144,8 @@ class StoryApi(private val client: HttpClient) {
      */
     suspend fun getLibraryStories(
         language: String = TamixaConstants.DEFAULT_LANGUAGE,
-        theme: String? = null
+        theme: String? = null,
+        learnHub: Boolean = false
     ): List<LibraryStoryResponse> =
         try {
             val all = mutableListOf<LibraryStoryResponse>()
@@ -137,6 +157,7 @@ class StoryApi(private val client: HttpClient) {
                     parameter("page", page)
                     parameter("size", size)
                     theme?.takeIf { it.isNotBlank() }?.let { parameter("theme", it) }
+                    if (learnHub) parameter("learnHub", "true")
                 }
                 if (resp.status.value !in 200..299) {
                     if (page == 0) {
@@ -152,6 +173,16 @@ class StoryApi(private val client: HttpClient) {
             all
         } catch (e: Exception) {
             TamixaLog.w("StoryApi", "getLibraryStories failed", e)
+            emptyList()
+        }
+
+    suspend fun getGenerationTopics(): List<GenerationTopicResponse> =
+        try {
+            val resp = client.get("${ApiConfig.API_VERSION}/stories/generation-topics")
+            if (resp.status.value in 200..299) resp.body()
+            else emptyList()
+        } catch (e: Exception) {
+            TamixaLog.w("StoryApi", "getGenerationTopics failed", e)
             emptyList()
         }
 

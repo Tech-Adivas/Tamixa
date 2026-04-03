@@ -4,6 +4,9 @@ package com.tamixa.application.storylibrary
  * Canonical story categories aligned with the mobile app (SampleData.categories minus "All").
  * Used for bulk generation defaults, normalization, and validation so saved stories
  * always use the exact strings the app expects for filtering and display.
+ *
+ * "Learn · …" entries are topic lanes for editorial use (theme/category may start with "Learn").
+ * "Fun stories" is the light / classic lane for tales curated mainly for laughs—move legacy rows here in admin.
  */
 object StoryCategories {
     val canonical: List<String> = listOf(
@@ -12,11 +15,16 @@ object StoryCategories {
         "Adventure",
         "Village Life",
         "Moral Stories",
+        "Fun stories",
         "Funny Stories",
         "Family Stories",
         "Fantasy",
         "Nature",
-        "Bravery"
+        "Bravery",
+        "Learn · History",
+        "Learn · Science & Nature",
+        "Learn · Culture & Heritage",
+        "Learn · Life Skills",
     )
 
     /**

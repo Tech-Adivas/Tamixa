@@ -166,7 +166,8 @@ async function proxy(
   const isLongRunningAdminOp =
     pathStr.includes("regenerate-with-prompt") ||
     pathStr.includes("rebuild-narration-pipeline") ||
-    pathStr.includes("bulk-generate");
+    pathStr.includes("bulk-generate") ||
+    pathStr.includes("regenerate-cover");
   const initWithTimeout = init as RequestInit & { signal?: AbortSignal };
   if (isLongRunningAdminOp) {
     initWithTimeout.signal = AbortSignal.timeout(LONG_RUNNING_ADMIN_OP_TIMEOUT_MS);

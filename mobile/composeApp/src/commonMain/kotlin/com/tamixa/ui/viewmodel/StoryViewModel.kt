@@ -3,6 +3,7 @@ package com.tamixa.ui.viewmodel
 import com.tamixa.analytics.StoryPlaybackTracker
 import com.tamixa.util.TamixaConstants
 import com.tamixa.domain.GenerateStoryRequest
+import com.tamixa.domain.GenerationTopicResponse
 import com.tamixa.domain.Story
 import com.tamixa.repository.RecentPlaybackHydrated
 import com.tamixa.repository.StoryRepository
@@ -32,6 +33,9 @@ class StoryViewModel(
 
     private val _libraryStories = MutableStateFlow<List<Story>>(emptyList())
     val libraryStories: StateFlow<List<Story>> = _libraryStories.asStateFlow()
+
+    private val _generationTopics = MutableStateFlow<List<GenerationTopicResponse>>(emptyList())
+    val generationTopics: StateFlow<List<GenerationTopicResponse>> = _generationTopics.asStateFlow()
 
     private val _myStories = MutableStateFlow<List<Story>>(emptyList())
     val myStories: StateFlow<List<Story>> = _myStories.asStateFlow()
@@ -78,13 +82,17 @@ class StoryViewModel(
 
     fun cachedStories(): List<Story> = storyRepository.getCachedStories()
 
+    /** First child id from the parent's generated stories (for education / reading-level routes). */
+    fun firstEducationChildId(): Long? =
+        _myStories.value.asSequence().mapNotNull { it.childId }.firstOrNull { it > 0L }
+
     /** Load library + my stories for Library screen; sets libraryLoading and libraryError. */
     fun loadLibraryScreen(language: String = TamixaConstants.DEFAULT_LANGUAGE) {
         scope.launch {
             _libraryLoading.value = true
             _libraryError.value = null
             try {
-                storyRepository.getLibraryStories(language).fold(
+                storyRepository.getLibraryStories(language, theme = null, learnHub = false).fold(
                     onSuccess = { _libraryStories.value = it },
                     onFailure = {
                         TamixaLog.w("StoryViewModel", "loadLibraryScreen getLibraryStories failed", it)
@@ -114,7 +122,7 @@ class StoryViewModel(
             try {
                 coroutineScope {
                     val lib = async {
-                        storyRepository.getLibraryStories(language).fold(
+                        storyRepository.getLibraryStories(language, theme = null, learnHub = false).fold(
                             onSuccess = { _libraryStories.value = it },
                             onFailure = {
                                 TamixaLog.w("StoryViewModel", "refreshDashboard getLibraryStories failed", it)
@@ -191,7 +199,7 @@ class StoryViewModel(
 
     fun loadLibraryStories(language: String = TamixaConstants.DEFAULT_LANGUAGE) {
         scope.launch {
-            storyRepository.getLibraryStories(language)
+            storyRepository.getLibraryStories(language, theme = null, learnHub = false)
                 .fold(
                     onSuccess = { _libraryStories.value = it },
                     onFailure = {
@@ -200,6 +208,18 @@ class StoryViewModel(
                         appMessageNotifier?.showError()
                     }
                 )
+        }
+    }
+
+    fun loadGenerationTopics() {
+        scope.launch {
+            storyRepository.getGenerationTopics().fold(
+                onSuccess = { _generationTopics.value = it },
+                onFailure = {
+                    TamixaLog.w("StoryViewModel", "loadGenerationTopics failed", it)
+                    _generationTopics.value = emptyList()
+                }
+            )
         }
     }
 

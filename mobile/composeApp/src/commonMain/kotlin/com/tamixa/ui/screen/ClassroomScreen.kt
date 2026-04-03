@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.tamixa.network.ClassroomDto
 import com.tamixa.ui.components.AppScreenBackground
 import com.tamixa.ui.components.TamixaScreenTopBar
+import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,14 +48,14 @@ fun ClassroomScreen(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             TamixaScreenTopBar(
-                title = "My Classrooms",
+                title = Strings.myClassrooms(),
                 onBack = onBack,
                 useTransparentBackground = true
             )
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            AppScreenBackground(showClouds = false)
+            AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(TamixaDesignTokens.screenPadding),
                 verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.cardSpacing),
@@ -72,12 +73,12 @@ fun ClassroomScreen(
                             modifier = Modifier.padding(TamixaDesignTokens.cardContentPadding),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Text("Join a Classroom", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = TamixaContentColors.cardPrimary())
+                            Text(Strings.classroomJoinCardTitle(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = TamixaContentColors.cardPrimary())
                             OutlinedTextField(
                                 value = codeInput,
                                 onValueChange = { codeInput = it.uppercase().take(6) },
-                                label = { Text("Classroom code") },
-                                placeholder = { Text("e.g. ABC123") },
+                                label = { Text(Strings.classroomCodeLabel()) },
+                                placeholder = { Text(Strings.classroomCodePlaceholder()) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                                 keyboardOptions = KeyboardOptions(
@@ -101,7 +102,7 @@ fun ClassroomScreen(
                                 if (joinLoading) {
                                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                                 } else {
-                                    Text("Join")
+                                    Text(Strings.classroomJoinButton())
                                 }
                             }
                         }
@@ -119,13 +120,13 @@ fun ClassroomScreen(
                     item {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                             Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                            TextButton(onClick = onRetry) { Text("Retry", color = TamixaColors.goldAccent) }
+                            TextButton(onClick = onRetry) { Text(Strings.retry(), color = TamixaColors.goldAccent) }
                         }
                     }
                 } else if (classrooms.isEmpty()) {
                     item {
                         Text(
-                            "No classrooms yet. Ask your teacher for a code!",
+                            Strings.classroomsEmptyMessage(),
                             style = MaterialTheme.typography.bodyMedium,
                             color = TamixaContentColors.cardSecondary(),
                             modifier = Modifier.padding(vertical = 8.dp)
@@ -133,7 +134,7 @@ fun ClassroomScreen(
                     }
                 } else {
                     item {
-                        Text("My Classrooms", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TamixaContentColors.cardSecondary())
+                        Text(Strings.myClassrooms(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = TamixaContentColors.cardSecondary())
                     }
                     items(classrooms) { classroom ->
                         Card(
@@ -146,9 +147,15 @@ fun ClassroomScreen(
                                 Text(classroom.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = TamixaContentColors.cardPrimary())
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     classroom.subject?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = TamixaContentColors.cardSecondary()) }
-                                    classroom.gradeLevel?.let { Text("• Grade $it", style = MaterialTheme.typography.bodySmall, color = TamixaContentColors.cardSecondary()) }
+                                    classroom.gradeLevel?.let {
+                                        Text(
+                                            "• ${Strings.classroomGradeLabel(it)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TamixaContentColors.cardSecondary(),
+                                        )
+                                    }
                                 }
-                                Text("Code: ${classroom.code}", style = MaterialTheme.typography.labelSmall, color = TamixaColors.goldAccent)
+                                Text(Strings.classroomCodeDisplay(classroom.code), style = MaterialTheme.typography.labelSmall, color = TamixaColors.goldAccent)
                             }
                         }
                     }

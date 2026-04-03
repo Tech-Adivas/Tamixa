@@ -353,6 +353,11 @@ export default function ApproveTabPage() {
           coverImageUrl: story.coverImageUrl ?? "",
           emotionMode: story.emotionMode ?? "CALM",
           narratedContent: story.narratedContent ?? "",
+          parentDiscussionPrompts: story.parentDiscussionPrompts?.length
+            ? [...story.parentDiscussionPrompts]
+            : undefined,
+          parentContentNote: story.parentContentNote ?? null,
+          speakAlongPrompt: story.speakAlongPrompt ?? null,
         });
         setEditCoverVideoUrl(story.coverVideoUrl ?? null);
       })
@@ -380,6 +385,11 @@ export default function ApproveTabPage() {
         coverImageUrl: editForm.coverImageUrl ?? null,
         coverVideoUrl: editCoverVideoUrl ?? null,
         narratedContent: editForm.narratedContent ?? "",
+        parentContentNote: editForm.parentContentNote?.trim() || null,
+        speakAlongPrompt: editForm.speakAlongPrompt?.trim() || null,
+        parentDiscussionPrompts: editForm.parentDiscussionPrompts?.length
+          ? editForm.parentDiscussionPrompts
+          : null,
       });
       await api.admin.approveLibraryStoryNarration(editStoryId);
       showSuccess(
@@ -900,6 +910,61 @@ export default function ApproveTabPage() {
                       setEditForm((f) => (f ? { ...f, childName: e.target.value } : f))
                     }
                     className="mt-1"
+                  />
+                </div>
+              </div>
+              <div className="rounded-md border border-border/80 bg-muted/10 p-3 space-y-3">
+                <p className="text-sm font-semibold">Parent resources (optional)</p>
+                <div>
+                  <Label htmlFor="edit-parent-note">Content note for parents</Label>
+                  <textarea
+                    id="edit-parent-note"
+                    value={editForm.parentContentNote ?? ""}
+                    onChange={(e) =>
+                      setEditForm((f) =>
+                        f ? { ...f, parentContentNote: e.target.value || null } : f
+                      )
+                    }
+                    className="mt-1 flex min-h-[64px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    maxLength={4000}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-speak-along">Speak-along prompt</Label>
+                  <Input
+                    id="edit-speak-along"
+                    value={editForm.speakAlongPrompt ?? ""}
+                    onChange={(e) =>
+                      setEditForm((f) =>
+                        f ? { ...f, speakAlongPrompt: e.target.value || null } : f
+                      )
+                    }
+                    maxLength={500}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-discussion">Discussion prompts (one per line, max 10)</Label>
+                  <textarea
+                    id="edit-discussion"
+                    value={(editForm.parentDiscussionPrompts ?? []).join("\n")}
+                    onChange={(e) => {
+                      const lines = e.target.value
+                        .split("\n")
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                        .slice(0, 10)
+                        .map((s) => s.slice(0, 400));
+                      setEditForm((f) =>
+                        f
+                          ? {
+                              ...f,
+                              parentDiscussionPrompts: lines.length ? lines : undefined,
+                            }
+                          : f
+                      );
+                    }}
+                    className="mt-1 flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   />
                 </div>
               </div>

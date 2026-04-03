@@ -18,7 +18,7 @@ class TamixaApplication : Application() {
                 module {
                     single<com.tamixa.security.TokenStorage> { AndroidTokenStorage(androidContext()) }
                 },
-                sharedModule(baseUrl),
+                sharedModule(baseUrl = baseUrl, buildEnvironment = "dev"),
                 viewModelModule()
             )
         }

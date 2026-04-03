@@ -16,7 +16,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,8 +27,6 @@ import com.tamixa.ui.components.TamixaSkipButton
 import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.OnboardingCardColors
 import com.tamixa.ui.theme.OnboardingCardDefaults
-import com.tamixa.ui.theme.TamixaColors
-import com.tamixa.ui.theme.TamixaDesignTokens
 
 /**
  * Optional onboarding step: introduce family voice cloning.
@@ -48,64 +45,82 @@ fun OnboardingVoiceInvitationScreen(
         totalSteps = 4,
         modifier = modifier,
         onSwipeToNext = onSwipeToNext,
-        onSwipeToPrevious = onSwipeToPrevious
+        onSwipeToPrevious = onSwipeToPrevious,
+        footer = {
+            val spec = LocalOnboardingLayoutSpec.current
+            TamixaPrimaryButton(
+                onClick = onRecordVoice,
+                text = Strings.continueLabel(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onboardingEntrance(delayMs = 280)
+            )
+            Spacer(Modifier.height(spec.footerButtonGap))
+            TamixaSkipButton(
+                onClick = onSkip,
+                text = Strings.skip(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onboardingEntrance(delayMs = 320)
+            )
+        }
     ) {
-        Text(
-            text = Strings.onboardingVoiceHeadline(),
-            style = MaterialTheme.typography.headlineSmall.copy(
-                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                letterSpacing = 0.2.sp
-            ),
-            color = OnboardingCardColors.onboardingHeadline,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            modifier = Modifier
-                .padding(horizontal = 8.dp)
-                .onboardingEntrance(delayMs = 80)
-        )
-        Spacer(Modifier.height(14.dp))
-        Text(
-            text = Strings.onboardingVoiceSubline(),
-            style = MaterialTheme.typography.bodyLarge.copy(
-                lineHeight = 26.sp,
-                letterSpacing = 0.2.sp
-            ),
-            color = OnboardingCardColors.onboardingSubline,
-            textAlign = TextAlign.Center,
-            maxLines = 3,
-            modifier = Modifier
-                .padding(horizontal = 8.dp)
-                .onboardingEntrance(delayMs = 140)
-        )
-        Spacer(Modifier.height(28.dp))
-        Box(modifier = Modifier.onboardingEntrance(delayMs = 200)) {
+        val spec = LocalOnboardingLayoutSpec.current
+        OnboardingHeroSpotlight(
+            kind = OnboardingHeroHaloKind.VoiceRipple,
+            haloHeight = 264.dp,
+            modifier = Modifier.onboardingEntrance(delayMs = 55)
+        ) {
             VoiceInvitationPreviewCard()
         }
-        Spacer(Modifier.height(16.dp))
-        OnboardingDailyQuote(step = 3, modifier = Modifier.onboardingEntrance(delayMs = 220))
-        Spacer(Modifier.height(28.dp))
-        Spacer(Modifier.weight(1f))
-        TamixaPrimaryButton(
-            onClick = onRecordVoice,
-            text = Strings.continueLabel(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .onboardingEntrance(delayMs = 280)
+        Spacer(Modifier.height(spec.gapLg))
+        OnboardingEditorialTextCard(
+            modifier = Modifier.onboardingEntrance(delayMs = 115)
+        ) {
+            OnboardingHeadline(
+                text = Strings.onboardingVoiceHeadline(),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OnboardingSubline(
+                text = Strings.onboardingVoiceSubline(),
+                modifier = Modifier.fillMaxWidth(),
+                lineHeight = 26.sp
+            )
+        }
+        Spacer(Modifier.height(spec.gapMd))
+        OnboardingValueStripTitle(
+            text = Strings.onboardingStripTitle(3),
+            modifier = Modifier.onboardingEntrance(delayMs = 150)
         )
-        Spacer(Modifier.height(12.dp))
-        TamixaSkipButton(
-            onClick = onSkip,
-            text = Strings.skip(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .onboardingEntrance(delayMs = 320)
-        )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(spec.gapSm))
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(spec.benefitRowSpacing)
+        ) {
+            OnboardingBenefitRow(
+                emoji = "🎙️",
+                text = Strings.onboardingVoiceBenefitKeepsake(),
+                modifier = Modifier.onboardingEntrance(delayMs = 185)
+            )
+            OnboardingBenefitRow(
+                emoji = "✨",
+                text = Strings.onboardingVoiceBenefitQuick(),
+                modifier = Modifier.onboardingEntrance(delayMs = 235)
+            )
+            OnboardingBenefitRow(
+                emoji = "🛏️",
+                text = Strings.onboardingVoiceBenefitRoutine(),
+                modifier = Modifier.onboardingEntrance(delayMs = 285)
+            )
+        }
     }
 }
 
 @Composable
 private fun VoiceInvitationPreviewCard() {
+    val spec = LocalOnboardingLayoutSpec.current
+    val imgH = spec.scaledImageHeight(200.dp)
+    val imgCorner = spec.scaledCorner(22.dp)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -120,20 +135,21 @@ private fun VoiceInvitationPreviewCard() {
         border = BorderStroke(1.dp, OnboardingCardColors.cardBorder)
     ) {
         Column(
-            modifier = Modifier.padding(TamixaDesignTokens.cardSpacing),
-            verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
+            modifier = Modifier.padding(spec.cardContentPadding),
+            verticalArrangement = Arrangement.spacedBy(spec.cardInnerSpacing)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(176.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .height(imgH)
+                    .clip(RoundedCornerShape(imgCorner))
             ) {
                 OnboardingImageBanner(
                     image = Res.drawable.onboarding_voice_hero,
                     animatedGif = Res.drawable.onboarding_voice_hero_animated,
                     contentDescription = "Voice recording",
-                    height = 176.dp
+                    height = imgH,
+                    cornerRadius = imgCorner
                 )
             }
             Text(

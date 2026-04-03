@@ -73,7 +73,10 @@ class StoryLibraryRepositoryAdapter(
             regeneratePromptLocked = story.regeneratePromptLocked,
             regeneratePromptLockApproved = story.regeneratePromptLockApproved,
             regeneratePromptUnlockRequestedAt = story.regeneratePromptUnlockRequestedAt,
-            deletedAt = null
+            deletedAt = null,
+            parentDiscussionPrompts = story.parentDiscussionPrompts,
+            parentContentNote = story.parentContentNote,
+            speakAlongPrompt = story.speakAlongPrompt,
         )
         val saved = jpaRepository.save(entity)
         return saved.toDomain()
@@ -117,6 +120,9 @@ class StoryLibraryRepositoryAdapter(
 
     override fun findByLanguageAndNarrationApprovedAndTheme(language: String, theme: String, pageable: Pageable): Page<LibraryStory> =
         jpaRepository.findByLanguageAndNarrationApprovedAtNotNullAndTheme(language, theme, pageable).map { it.toDomain() }
+
+    override fun findByLanguageAndNarrationApprovedLearnPrefix(language: String, prefix: String, pageable: Pageable): Page<LibraryStory> =
+        jpaRepository.findByLanguageAndNarrationApprovedLearnPrefix(language, prefix, pageable).map { it.toDomain() }
 
     override fun findByStatus(status: String, pageable: Pageable): Page<LibraryStory> =
         jpaRepository.findByStatus(status, pageable).map { it.toDomain() }
@@ -258,7 +264,10 @@ class StoryLibraryRepositoryAdapter(
             regeneratePromptLocked = story.regeneratePromptLocked,
             regeneratePromptLockApproved = story.regeneratePromptLockApproved,
             regeneratePromptUnlockRequestedAt = story.regeneratePromptUnlockRequestedAt,
-            deletedAt = existing.deletedAt
+            deletedAt = existing.deletedAt,
+            parentDiscussionPrompts = story.parentDiscussionPrompts,
+            parentContentNote = story.parentContentNote,
+            speakAlongPrompt = story.speakAlongPrompt,
         )
         val saved = jpaRepository.save(entity)
         return saved.toDomain()
@@ -337,5 +346,8 @@ private fun LibraryStoryEntity.toDomain() = LibraryStory(
     regeneratePromptLocked = regeneratePromptLocked,
     regeneratePromptLockApproved = regeneratePromptLockApproved,
     regeneratePromptUnlockRequestedAt = regeneratePromptUnlockRequestedAt,
-    deletedAt = deletedAt
+    deletedAt = deletedAt,
+    parentDiscussionPrompts = parentDiscussionPrompts,
+    parentContentNote = parentContentNote,
+    speakAlongPrompt = speakAlongPrompt,
 )

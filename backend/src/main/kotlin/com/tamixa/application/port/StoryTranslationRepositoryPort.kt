@@ -38,6 +38,14 @@ interface StoryTranslationRepositoryPort {
         pageable: Pageable
     ): Page<StoryTranslation>
 
+    fun findByLanguageAndMasterNarrationApprovedAndLearnPrefix(language: String, prefix: String, pageable: Pageable): Page<StoryTranslation>
+
+    fun findByLanguageAndMasterNarrationApprovedWithMasterAudioAndLearnPrefix(
+        language: String,
+        prefix: String,
+        pageable: Pageable
+    ): Page<StoryTranslation>
+
     fun findByMasterStoryId(masterStoryId: Long): List<StoryTranslation>
 
     fun findByStatusIn(statuses: List<TranslationPipelineStatus>): List<StoryTranslation>

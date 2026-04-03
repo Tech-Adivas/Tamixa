@@ -66,7 +66,11 @@ class AdminTtsPreviewService(
         val title: String?,
         val moral: String?,
         val category: String? = null,
-        val theme: String? = null
+        val theme: String? = null,
+        /** Up to 10 prompts, max 400 chars each; shown in apps for library playback. */
+        val parentDiscussionPrompts: List<String>? = null,
+        val parentContentNote: String? = null,
+        val speakAlongPrompt: String? = null,
     )
 
     /**
@@ -101,7 +105,10 @@ class AdminTtsPreviewService(
             null,
             null,
             null,
-            null
+            null,
+            null,
+            null,
+            null,
         )
     }
 
@@ -130,11 +137,51 @@ class AdminTtsPreviewService(
             val rawCategory = tree.path("category").asText("").trim().takeIf { it.isNotBlank() }
             val category = rawCategory?.let { StoryCategories.toCanonical(it) }
             val theme = tree.path("theme").asText("").trim().takeIf { it.isNotBlank() }
-            TransformResult(storyText, title, moral, category, theme)
+            val parentDiscussionPrompts = extractParentDiscussionPrompts(tree)
+            val parentContentNote = extractParentContentNote(tree)
+            val speakAlongPrompt = extractSpeakAlongPrompt(tree)
+            TransformResult(
+                storyText,
+                title,
+                moral,
+                category,
+                theme,
+                parentDiscussionPrompts,
+                parentContentNote,
+                speakAlongPrompt,
+            )
         } catch (e: Exception) {
             log.debug("JSON story parsing failed: {}", e.message)
             null
         }
+    }
+
+    private fun extractParentDiscussionPrompts(tree: JsonNode): List<String>? {
+        val node = tree.get("parent_discussion_prompts") ?: tree.get("parentDiscussionPrompts")
+        if (node == null || node.isNull || !node.isArray) return null
+        return node.mapNotNull { el ->
+            if (el.isNull) null
+            else el.asText("").trim().takeIf { it.isNotBlank() }?.take(PARENT_DISCUSSION_PROMPT_MAX_LEN)
+        }.take(PARENT_DISCUSSION_PROMPTS_MAX_COUNT)
+    }
+
+    private fun extractParentContentNote(tree: JsonNode): String? {
+        val node = tree.get("parent_content_note") ?: tree.get("parentContentNote") ?: return null
+        if (node.isNull) return null
+        return node.asText("").trim().take(PARENT_CONTENT_NOTE_MAX_LEN).takeIf { it.isNotBlank() }
+    }
+
+    private fun extractSpeakAlongPrompt(tree: JsonNode): String? {
+        val node = tree.get("speak_along_prompt") ?: tree.get("speakAlongPrompt") ?: return null
+        if (node.isNull) return null
+        return node.asText("").trim().take(SPEAK_ALONG_PROMPT_MAX_LEN).takeIf { it.isNotBlank() }
+    }
+
+    companion object {
+        private const val PARENT_DISCUSSION_PROMPTS_MAX_COUNT = 10
+        private const val PARENT_DISCUSSION_PROMPT_MAX_LEN = 400
+        private const val PARENT_CONTENT_NOTE_MAX_LEN = 4000
+        private const val SPEAK_ALONG_PROMPT_MAX_LEN = 500
     }
 
     /**

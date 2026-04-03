@@ -142,6 +142,37 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
 
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+            "AND (LOWER(COALESCE(c.category, '')) LIKE LOWER(CONCAT(:prefix, '%')) OR LOWER(c.theme) LIKE LOWER(CONCAT(:prefix, '%'))) " +
+            "AND EXISTS (" +
+            "SELECT 1 FROM StoryNarrationAudioEntity a WHERE a.translationId = t.id " +
+            "AND a.voiceProfile = 'default' AND a.status = 'READY' AND LENGTH(a.audioUrl) > 0)"
+    )
+    fun findByLanguageAndMasterNarrationApprovedAndLearnPrefix(
+        @Param("language") language: String,
+        @Param("prefix") prefix: String,
+        pageable: Pageable
+    ): Page<StoryTranslationEntity>
+
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+            "AND (LOWER(COALESCE(c.category, '')) LIKE LOWER(CONCAT(:prefix, '%')) OR LOWER(c.theme) LIKE LOWER(CONCAT(:prefix, '%'))) " +
+            "AND (" +
+            "EXISTS (" +
+            "SELECT 1 FROM StoryTranslationEntity tm, StoryNarrationAudioEntity a " +
+            "WHERE tm.masterStoryId = c.id AND LOWER(tm.language) = LOWER(c.language) " +
+            "AND a.translationId = tm.id AND a.voiceProfile = 'default' AND a.status = 'READY' AND LENGTH(a.audioUrl) > 0" +
+            ") OR (c.audioFileUrl IS NOT NULL AND LENGTH(c.audioFileUrl) > 0))"
+    )
+    fun findByLanguageAndMasterNarrationApprovedWithMasterAudioAndLearnPrefix(
+        @Param("language") language: String,
+        @Param("prefix") prefix: String,
+        pageable: Pageable
+    ): Page<StoryTranslationEntity>
+
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
             "AND c.deletedAt IS NULL AND t.language = :language"
     )
     fun findListingByLanguage(

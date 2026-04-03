@@ -27,12 +27,25 @@ import com.tamixa.ui.AppMessageNotifier
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
-fun sharedModule(baseUrl: String = ApiConfig.DEFAULT_BASE_URL) = module {
+fun sharedModule(
+    baseUrl: String = ApiConfig.DEFAULT_BASE_URL,
+    /** dev | qa | prod — matches Android BuildConfig / iOS scheme; sent as X-Tamixa-Client-Env for support. */
+    buildEnvironment: String = "unknown"
+) = module {
     single(named("apiBaseUrl")) { baseUrl }
+    single(named("tamixaBuildEnvironment")) { buildEnvironment.trim().ifEmpty { "unknown" } }
     // Default dispatcher: avoid Dispatchers.Main at Koin init (on iOS Main may not be set yet).
     single(named("appScope")) { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
     single { SessionExpiredNotifier() }
-    single { createKtorClient(baseUrl, get(), get<SessionExpiredNotifier>()::notifySessionExpired, enableLogging = true) }
+    single {
+        createKtorClient(
+            baseUrl = baseUrl,
+            tokenStorage = get(),
+            onSessionExpired = get<SessionExpiredNotifier>()::notifySessionExpired,
+            enableLogging = true,
+            buildEnvironment = get(named("tamixaBuildEnvironment"))
+        )
+    }
     single { AuthApi(get()) }
     single { StoryApi(get()) }
     single { AnalyticsApi(get()) }

@@ -150,12 +150,13 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         learningFocus: String? = null
     ): String {
         val safeLang = normalizeLanguage(language)
-        val maxWords = maxWordsOverride ?: maxWordsByAge[age.coerceIn(1, 12)] ?: TARGET_WORDS_FULL_LENGTH
+        val maxWords = maxWordsOverride ?: maxWordsForAge(age)
         val vocab = vocabularyHint(age)
         val culture = culturalHint(safeLang)
         val tonePhrase = emotionMode?.let { emotionHint(it) } ?: "Warm, positive, and age-appropriate."
 
         val opener = buildUserRequest(safeLang, childName, age, theme, tonePhrase)
+        val audience = audienceLine(age)
         val clarityHint = "Use clear sentences in every language: one idea per sentence, clear subject and action, short to medium length, easy to narrate. English is the reference for structure and clarity; when writing in another language, apply the same clarity then express in that language. Use varied, precise vocabulary; avoid repeating the same word in close succession; prefer everyday and native terms that sound natural when spoken. Keep one continuous storyline: no missing scenes, no jumps in time or logic without a bridging line—spoken, conversational style in the output language, not stiff book prose."
         val learningLine = learningFocusHint(learningFocus)
         val extras = buildConversationalExtras(
@@ -165,15 +166,23 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         val durationHint = if (maxWords >= 850) "Aim for about 7–8 minutes of narration (estimated_duration_seconds around ${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MIN}–${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MAX}). " else ""
         val constraints = "${durationHint}Keep to at most $maxWords words. Return only valid JSON: title, category, theme, moral, story_text, estimated_duration_seconds (number, in seconds). No markdown, no code block."
 
-        return listOf(opener, vocab, clarityHint, learningLine, culture, extras, voiceSplitAndSsml, constraints)
+        return listOf(opener, audience, vocab, clarityHint, learningLine, culture, extras, voiceSplitAndSsml, constraints)
             .filter { it.isNotBlank() }
             .joinToString("\n\n")
     }
 
     private fun buildUserRequest(lang: String, childName: String, age: Int, theme: String, tonePhrase: String): String {
+        val who = if (age <= 12) "for my child $childName (age $age)" else "for listener $childName (age $age)"
         return """
-Generate a story in $lang based on this request: for my child $childName (age $age), about $theme. $tonePhrase Use short paragraphs (1–3 sentences), warm and narration-friendly. Make the story intellectually rich—thought-provoking and meaningful, with a moral that feels earned and depth that appeals to both children and adults.
+Generate a story in $lang based on this request: $who, about $theme. $tonePhrase Use short paragraphs (1–3 sentences), warm and narration-friendly. Make the story intellectually rich—thought-provoking and meaningful, with a moral or takeaway that feels earned and depth that suits the listener's age.
         """.trimIndent()
+    }
+
+    private fun audienceLine(age: Int): String = when {
+        age <= 12 -> ""
+        age <= 17 -> "Audience: teen listener—slightly richer social and emotional situations; remain uplifting, non-explicit, and non-partisan (no political campaigning or ideology)."
+        age <= 59 -> "Audience: adult listener—grounded tone where it fits the theme; family-safe; no explicit romance or erotic content; no partisan politics or hate."
+        else -> "Audience: older adult—clear, dignified, warm pacing; never condescending; family-appropriate."
     }
 
     private fun buildConversationalExtras(
@@ -209,24 +218,34 @@ Generate a story in $lang based on this request: for my child $childName (age $a
         learningFocus: String? = null
     ): String {
         val safeLang = normalizeLanguage(language)
-        val maxWords = maxWordsOverride ?: maxWordsByAge[age.coerceIn(1, 12)] ?: TARGET_WORDS_FULL_LENGTH
+        val maxWords = maxWordsOverride ?: maxWordsForAge(age)
         val vocab = vocabularyHint(age)
         val culture = culturalHint(safeLang)
         val tonePhrase = emotionMode?.let { emotionHint(it) } ?: "Warm, positive, and age-appropriate."
         val opener = buildUserRequest(safeLang, childName, age, theme, tonePhrase)
+        val audience = audienceLine(age)
         val clarityHint = "Use clear sentences: one idea per sentence, clear subject and action, short to medium length. English is the reference for clarity; when writing in another language, apply the same clarity then express in that language. Use varied, precise vocabulary; avoid repetition; prefer everyday and native terms. One continuous storyline with clear transitions—no unexplained gaps; conversational spoken style in the output language."
         val learningLine = learningFocusHint(learningFocus)
         val customLine = customPrompt?.takeIf { it.isNotBlank() }?.let { "Specific request: $it" } ?: ""
         val voiceSplitAndSsml = voiceSplitAndSsmlRequirements()
         val durationHint = if (maxWords >= 850) "Aim for about 7–8 minutes of narration (estimated_duration_seconds around ${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MIN}–${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MAX}). " else ""
         val constraints = "${durationHint}Keep to at most $maxWords words. Return only valid JSON: title, category, theme, moral, story_text, estimated_duration_seconds (number, in seconds). No markdown, no code block."
-        return listOf(opener, vocab, clarityHint, learningLine, culture, customLine, voiceSplitAndSsml, constraints)
+        return listOf(opener, audience, vocab, clarityHint, learningLine, culture, customLine, voiceSplitAndSsml, constraints)
             .filter { it.isNotBlank() }
             .joinToString("\n\n")
     }
 
-    /** Effective max words for age (capped). */
-    fun maxWordsForAge(age: Int): Int = maxWordsByAge[age.coerceIn(1, 12)] ?: TARGET_WORDS_FULL_LENGTH
+    /** Effective max words for age (1–99). */
+    fun maxWordsForAge(age: Int): Int {
+        val a = age.coerceIn(1, 99)
+        maxWordsByAge[a]?.let { return it }
+        return when {
+            a in 13..15 -> 850
+            a in 16..17 -> 900
+            a in 18..59 -> StoryPromptTemplates.FULL_LENGTH_WORDS_MAX
+            else -> 900
+        }
+    }
 
     private fun normalizeLanguage(lang: String): String =
         lang.trim().lowercase().take(10).let { if (it in allowedLanguages) it else "en" }
@@ -234,7 +253,10 @@ Generate a story in $lang based on this request: for my child $childName (age $a
     private fun vocabularyHint(age: Int): String = when {
         age <= 4 -> "Use very simple words and short sentences. No complex ideas."
         age <= 7 -> "Use clear, everyday words. Short to medium sentences."
-        else -> "You may use a richer vocabulary; still suitable for children."
+        age <= 12 -> "You may use a richer vocabulary; still suitable for children."
+        age <= 17 -> "Teen-appropriate vocabulary and situations; PG family tone; no graphic violence or explicit themes."
+        age <= 59 -> "Adult listener: natural everyday vocabulary; grounded where helpful; still family-safe and non-explicit."
+        else -> "Older adult listener: clear, respectful wording; steady pacing; avoid talking down."
     }
 
     private fun culturalHint(language: String): String = when (language) {
@@ -275,6 +297,12 @@ SSML CONVERSION REQUIREMENTS
 - Use <voice> tags for different roles
 - Ensure compatibility with Azure / Polly / Google TTS
     """.trimIndent()
+
+    /**
+     * Optional learning-focus clause for admin bulk library generation.
+     * Same allowlist as parent [com.tamixa.api.story.dto.GenerateStoryRequest.learningFocus]; invalid values yield blank.
+     */
+    fun learningFocusLineForBulk(learningFocus: String?): String = learningFocusHint(learningFocus)
 
     /**
      * Returns a one-line hint when [learningFocus] is non-null and allowed; otherwise blank.
@@ -377,13 +405,22 @@ SSML CONVERSION REQUIREMENTS
 ## Cultural context (Indian)
 Where it fits, use Indian folklore or festive context in the output language—native terms; family-friendly and respectful.
 
+## Parent / caregiver resources (mandatory keys; use same language as story_text)
+These ship to the parent apps with library playback—write for adults, concrete and warm.
+- parent_discussion_prompts: JSON array of 3–8 strings. Each string is ONE discussion starter for caregivers (max 400 characters each; max 10 items). Open-ended, specific to this story, no yes/no only.
+- parent_content_note: single string (max 2000 characters). Optional cultural context, what to emphasize, or a gentle content advisory—never alarming; omit fluff if nothing useful (use empty string only if truly nothing).
+- speak_along_prompt: single short line (max 500 characters) for a child to repeat aloud after listening—playful, simple, same language as story_text.
+
 ## Security & compliance (mandatory)
 Suitable for minors; Indian family standards. No violence, weapons, politics, religious conflict, drugs, alcohol, self-harm, adult themes. Peaceful resolution; positive values.
 
 ## Output (strict)
-Return only one valid JSON object. Keys exactly: title, category, theme, moral, story_text, estimated_duration_seconds.
+Return only one valid JSON object. Keys exactly: title, category, theme, moral, story_text, estimated_duration_seconds, parent_discussion_prompts, parent_content_note, speak_along_prompt.
 - estimated_duration_seconds: integer, typically ${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MIN}–${StoryPromptTemplates.FULL_LENGTH_ESTIMATED_DURATION_SECONDS_MAX} for ~7–8 minutes of natural TTS pacing.
 - story_text: single JSON string; escape characters so JSON is valid.
+- parent_discussion_prompts: JSON array of strings (may be empty array only if the story truly offers no sensible prompts—prefer 3–8 good prompts).
+- parent_content_note: string (may be empty).
+- speak_along_prompt: string (may be empty).
 No markdown, no code fence, no commentary before or after the JSON.
 """.trimIndent()
     }

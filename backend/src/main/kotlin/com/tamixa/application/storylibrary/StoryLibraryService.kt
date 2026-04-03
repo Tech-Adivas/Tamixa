@@ -333,7 +333,10 @@ class StoryLibraryService(
         storyOwner: String? = null,
         convertPromptUsed: String? = null,
         /** When set (e.g. from bulk JSON estimated_duration), used instead of word-count-derived reading time. */
-        estimatedReadingMinutes: Double? = null
+        estimatedReadingMinutes: Double? = null,
+        parentDiscussionPrompts: List<String>? = null,
+        parentContentNote: String? = null,
+        speakAlongPrompt: String? = null,
     ): LibraryStory {
         // Validation: category/theme required (enforced by @NotBlank on theme)
         // Min word count
@@ -354,6 +357,10 @@ class StoryLibraryService(
         val effectiveStatus = status?.take(20)?.uppercase()?.let { if (it in listOf("DRAFT", "PUBLISHED")) it else "DRAFT" } ?: "DRAFT"
         val effectiveEmotion = emotionMode?.trim()?.uppercase()?.take(20)
             ?.let { if (it in listOf("CALM", "SOOTHING", "ADVENTUROUS")) it else "CALM" } ?: "CALM"
+        val prompts = parentDiscussionPrompts
+            ?.mapNotNull { it.trim().takeIf { s -> s.isNotBlank() }?.take(400) }
+            ?.take(10)
+            ?.takeIf { it.isNotEmpty() }
         val story = LibraryStory(
             id = 0,
             title = title,
@@ -361,7 +368,7 @@ class StoryLibraryService(
             theme = theme,
             category = category?.trim()?.take(100) ?: theme,
             language = language.trim().lowercase().take(10).ifEmpty { "ta" },
-            age = age.coerceIn(1, 12),
+            age = age.coerceIn(1, 99),
             childName = childName.ifBlank { "Child" }.take(255),
             wordCount = wordCount,
             readingTimeMinutes = readingTimeMinutes,
@@ -375,7 +382,10 @@ class StoryLibraryService(
             convertPromptUsed = convertPromptUsed?.trim()?.takeIf { it.isNotBlank() }?.take(8000),
             emotionMode = effectiveEmotion,
             narrationApprovedAt = null,
-            deletedAt = null
+            deletedAt = null,
+            parentDiscussionPrompts = prompts,
+            parentContentNote = parentContentNote?.trim()?.takeIf { it.isNotBlank() }?.take(4000),
+            speakAlongPrompt = speakAlongPrompt?.trim()?.takeIf { it.isNotBlank() }?.take(500),
         )
         val saved = repository.save(story)
         // Create initial story_translation row for the story's language so content is visible in admin (all languages) and pipeline has a row to update
@@ -528,6 +538,8 @@ class StoryLibraryService(
         totalStories: Int,
         publish: Boolean,
         storyOwner: String?,
+        /** Optional; same allowlist as parent generate; woven into bulk template via [StoryPromptBuilder.learningFocusLineForBulk]. */
+        learningFocus: String? = null,
         progressCallback: ((currentIndex: Int, total: Int, createdCount: Int, failedCount: Int, created: List<Map<String, Any?>>, failed: List<Map<String, Any?>>) -> Unit)? = null
     ): Map<String, Any> {
         // Always Tamil masters (pipeline source). Request `languages` is ignored; all other app languages are filled via translation seed below.
@@ -554,7 +566,7 @@ class StoryLibraryService(
             totalRequested++
             val (language, category) = combinations[idx % combinations.size]
             log.info("Bulk story generation {}/{} lang={} category={}", idx + 1, requestedTotal, language, category)
-            val prompt = buildBulkGenerationPrompt(language, category, idx)
+            val prompt = buildBulkGenerationPrompt(language, category, idx, learningFocus)
             try {
                 val raw = openAI.generateStory(prompt, 2048)
                 val json = objectMapper.readTree(raw)
@@ -701,10 +713,22 @@ class StoryLibraryService(
         return if (isSeconds) (value / 60.0).coerceIn(0.5, 30.0) else value.coerceIn(0.5, 30.0)
     }
 
-    private fun buildBulkGenerationPrompt(language: String, category: String, index: Int): String {
+    private fun bulkLearningFocusSection(learningFocus: String?): String {
+        val line = storyPromptBuilder.learningFocusLineForBulk(learningFocus)
+        if (line.isBlank()) return ""
+        return """
+## Editor-selected learning focus (apply to every story in this request)
+$line
+Integrate this emphasis clearly in plot and dialogue in addition to the general educational guidelines above; do not contradict safety, cultural, or tone rules.
+
+""".trimIndent()
+    }
+
+    private fun buildBulkGenerationPrompt(language: String, category: String, index: Int, learningFocus: String? = null): String {
         val combinedSituation = combinedSituations[index % combinedSituations.size]
         val languageInstruction = bulkPromptLanguageInstruction(language)
         val langReminder = "Remember: write the entire story and all JSON string fields in the output language specified at the top—no mixing of languages."
+        val focusSection = bulkLearningFocusSection(learningFocus)
         val basePrompt = """
 $languageInstruction
 
@@ -745,6 +769,7 @@ Combined Situation: {combinedSituation}
 • One clear problem, one satisfying resolution: one main challenge per story. Resolution must be earned (character effort, help from others, or a lesson learned). Supports comprehension and gives a clear takeaway.
 • NEP / life skills alignment: support critical thinking (characters weighing options), collaboration (helping each other), cultural awareness (respect, diversity), and values (honesty, sharing, courage) implicitly in the plot, not preachy.
 
+{bulkLearningFocusSection}
 ## Storytelling Script format (story_text)
 • Narrator + dialogue. Use "Character: dialogue text" or clear attribution. MUST include inline markers throughout: [Pause 500ms], [Pause 1s], [Happy tone], [Soft voice], [Warm tone], [Calm], [Whisper], [Excited]. Use them at natural break points, before/after dialogue, and at emotional beats. SSML/OpenAI TTS ready. Same requirement for every language.
 
@@ -783,6 +808,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
 }
 """.trimIndent()
         return basePrompt
+            .replace("{bulkLearningFocusSection}", focusSection)
             .replace("{category}", category)
             .replace("{combinedSituation}", combinedSituation)
     }
@@ -876,6 +902,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         title = rejectIfTamilWhenNotTa(translation.title, effectiveLang) ?: "",
                         content = contentToServe,
                         theme = master.theme,
+                        category = master.category,
                         language = effectiveLang,
                         age = master.age,
                         childName = master.childName,
@@ -897,7 +924,10 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         preferNarratedContentForEditor = preferNarrated,
                         regeneratePromptLocked = master.regeneratePromptLocked,
                         regeneratePromptLockApproved = master.regeneratePromptLockApproved,
-                        regeneratePromptUnlockRequestedAt = master.regeneratePromptUnlockRequestedAt
+                        regeneratePromptUnlockRequestedAt = master.regeneratePromptUnlockRequestedAt,
+                        parentDiscussionPrompts = master.parentDiscussionPrompts,
+                        parentContentNote = master.parentContentNote,
+                        speakAlongPrompt = master.speakAlongPrompt,
                     )
                 }
                 // No row or blank text: still surface script-only rows so admin sees pipeline output
@@ -1045,13 +1075,17 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
      */
     fun getCategories(language: String): List<String> {
         val effectiveLang = effectiveLanguage(language)
-        return if (isPrimaryCatalogLanguage(effectiveLang)) {
+        val base = if (isPrimaryCatalogLanguage(effectiveLang)) {
             repository.findDistinctThemesByNarrationApproved(effectiveLang)
         } else if (appProperties.translationPipeline.masterOnlyNarration) {
             repository.findDistinctThemesByNarrationApprovedAndTranslationLanguageWithMasterAudio(effectiveLang)
         } else {
             repository.findDistinctThemesByNarrationApprovedAndTranslationLanguage(effectiveLang)
         }
+        val funLaneFirst = listOf("Fun stories", "Funny Stories")
+        val presentFun = funLaneFirst.filter { want -> base.any { it.equals(want, ignoreCase = true) } }
+        val rest = base.filter { b -> funLaneFirst.none { it.equals(b, ignoreCase = true) } }
+        return presentFun + rest
     }
 
     /**
@@ -1059,17 +1093,26 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
      * **and** with ready default-voice narration audio for the requested language (or legacy master `audioFileUrl` on primary-catalog masters).
      * Used by the parent app library API so titles in review or awaiting new TTS after a re-edit do not appear until audio exists.
      */
-    fun findByLanguageApprovedOnly(language: String, page: Int, size: Int, theme: String? = null): Page<LibraryStoryResponse> {
+    fun findByLanguageApprovedOnly(
+        language: String,
+        page: Int,
+        size: Int,
+        theme: String? = null,
+        /** When true, lists stories whose category or theme starts with "Learn" (educational hub). */
+        learnHub: Boolean = false,
+    ): Page<LibraryStoryResponse> {
         val effectiveLang = effectiveLanguage(language)
         val pageable = PageRequest.of(page.coerceAtLeast(0), size.coerceIn(1, 100))
         val effectiveTheme = theme?.trim()?.takeIf { it.isNotBlank() }
+        val learnPrefix = "Learn"
 
         return when {
             isPrimaryCatalogLanguage(effectiveLang) -> {
-                val pageResult = if (effectiveTheme != null)
-                    repository.findByLanguageAndNarrationApprovedAndTheme(effectiveLang, effectiveTheme, pageable)
-                else
-                    repository.findByLanguageAndNarrationApproved(effectiveLang, pageable)
+                val pageResult = when {
+                    learnHub -> repository.findByLanguageAndNarrationApprovedLearnPrefix(effectiveLang, learnPrefix, pageable)
+                    effectiveTheme != null -> repository.findByLanguageAndNarrationApprovedAndTheme(effectiveLang, effectiveTheme, pageable)
+                    else -> repository.findByLanguageAndNarrationApproved(effectiveLang, pageable)
+                }
                 pageResult.map {
                     val canonicalAudio = resolvePlayableAudioUrl(it.id, effectiveLang)
                         ?: (it.audioFileUrl?.takeIf { u -> u.isNotBlank() }
@@ -1084,6 +1127,14 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             }
             else -> {
                 val translations = when {
+                    learnHub && appProperties.translationPipeline.masterOnlyNarration ->
+                        storyTranslationRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudioAndLearnPrefix(
+                            effectiveLang, learnPrefix, pageable
+                        )
+                    learnHub ->
+                        storyTranslationRepository.findByLanguageAndMasterNarrationApprovedAndLearnPrefix(
+                            effectiveLang, learnPrefix, pageable
+                        )
                     appProperties.translationPipeline.masterOnlyNarration && effectiveTheme != null ->
                         storyTranslationRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudioAndTheme(
                             effectiveLang, effectiveTheme, pageable
@@ -1102,6 +1153,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         title = rejectIfTamilWhenNotTa(t.title, effectiveLang) ?: "",
                         content = t.content,
                         theme = master.theme,
+                        category = master.category,
                         language = effectiveLang,
                         age = master.age,
                         childName = master.childName,
@@ -1118,7 +1170,10 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         convertPromptUsed = master.convertPromptUsed,
                         emotionMode = master.emotionMode,
                         narrationApprovedAt = master.narrationApprovedAt,
-                        sourceContent = t.content
+                        sourceContent = t.content,
+                        parentDiscussionPrompts = master.parentDiscussionPrompts,
+                        parentContentNote = master.parentContentNote,
+                        speakAlongPrompt = master.speakAlongPrompt,
                     )
                 }
                 PageImpl(content, translations.pageable, translations.totalElements)
@@ -2049,7 +2104,13 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         translationContentEntries: Map<String, TranslationContentEntryDto>? = null,
         convertPromptUsed: String? = null,
         /** When non-null (JSON property present), updates narration script for [language] after save. */
-        narratedContentPatch: String? = null
+        narratedContentPatch: String? = null,
+        /** When null, keep existing master row; when non-null (including empty list), replace normalized prompts. */
+        parentDiscussionPrompts: List<String>? = null,
+        /** When null, keep existing; when non-null (including blank), replace or clear. */
+        parentContentNote: String? = null,
+        /** When null, keep existing; when non-null (including blank), replace or clear. */
+        speakAlongPrompt: String? = null,
     ): LibraryStory? {
         val startedNs = System.nanoTime()
         fun elapsedMs(): Long = (System.nanoTime() - startedNs) / 1_000_000
@@ -2096,6 +2157,27 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         val titleSame = normalizeForCompare(existing.title) == normalizeForCompare(title)
         val moralSame = normalizeForCompare(existing.moral) == normalizeForCompare(moral)
         val sourceContentChanged = !(contentSame && titleSame && moralSame)
+        val resolvedParentPrompts = when {
+            parentDiscussionPrompts == null -> existing.parentDiscussionPrompts
+            parentDiscussionPrompts.isEmpty() -> null
+            else ->
+                parentDiscussionPrompts
+                    .mapNotNull { it.trim().takeIf { s -> s.isNotBlank() }?.take(400) }
+                    .take(10)
+                    .takeIf { it.isNotEmpty() }
+        }
+        val resolvedParentNote =
+            if (parentContentNote == null) {
+                existing.parentContentNote
+            } else {
+                parentContentNote.trim().take(4000).takeIf { it.isNotBlank() }
+            }
+        val resolvedSpeakAlong =
+            if (speakAlongPrompt == null) {
+                existing.speakAlongPrompt
+            } else {
+                speakAlongPrompt.trim().take(500).takeIf { it.isNotBlank() }
+            }
         val updated = LibraryStory(
             id = existing.id,
             title = title?.takeIf { it.isNotBlank() },
@@ -2123,7 +2205,10 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             regeneratePromptLocked = existing.regeneratePromptLocked,
             regeneratePromptLockApproved = existing.regeneratePromptLockApproved,
             regeneratePromptUnlockRequestedAt = existing.regeneratePromptUnlockRequestedAt,
-            deletedAt = existing.deletedAt
+            deletedAt = existing.deletedAt,
+            parentDiscussionPrompts = resolvedParentPrompts,
+            parentContentNote = resolvedParentNote,
+            speakAlongPrompt = resolvedSpeakAlong,
         )
         val metadataChanged =
             normalizeForCompare(existing.theme) != normalizeForCompare(updated.theme) ||
@@ -2132,7 +2217,10 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                 normalizeForCompare(existing.coverVideoUrl) != normalizeForCompare(updated.coverVideoUrl) ||
                 normalizeForCompare(existing.emotionMode) != normalizeForCompare(updated.emotionMode) ||
                 existing.age != updated.age ||
-                normalizeForCompare(existing.childName) != normalizeForCompare(updated.childName)
+                normalizeForCompare(existing.childName) != normalizeForCompare(updated.childName) ||
+                existing.parentDiscussionPrompts != updated.parentDiscussionPrompts ||
+                normalizeForCompare(existing.parentContentNote) != normalizeForCompare(updated.parentContentNote) ||
+                normalizeForCompare(existing.speakAlongPrompt) != normalizeForCompare(updated.speakAlongPrompt)
         // Persist `library_stories` last: updating the master row first used to hold that row lock through
         // translation sync, S3 cleanup (submit-for-review), and LLM/TTS windows — blocking other writers and
         // matching admin client timeouts (Generate translations saves draft before rebuild).

@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -71,8 +72,8 @@ fun TamixaPrimaryButton(
             .shadow(
                 elevation = TamixaDesignTokens.buttonShadowElevation * shadowMul,
                 shape = shape,
-                ambientColor = com.tamixa.ui.theme.TamixaColors.goldAccent.copy(alpha = 0.32f * shadowMul),
-                spotColor = com.tamixa.ui.theme.TamixaColors.goldAccent.copy(alpha = 0.22f * shadowMul)
+                ambientColor = Color(0xFF2C2520).copy(alpha = 0.22f * shadowMul),
+                spotColor = com.tamixa.ui.theme.TamixaColors.goldAccent.copy(alpha = 0.18f * shadowMul)
             )
             .clip(shape)
             .background(

@@ -13,23 +13,23 @@ Gap analysis and implementation tasks for aligning the mobile app with the [Tami
 | **1. Splash** | `SplashScreen` | ✅ Implemented (logo, tagline, animation) |
 | **2. Hook** | `OnboardingHookScreen` | ✅ Implemented (headline, Start Story Magic, Skip) |
 | **3. Demo Story** | `OnboardingDemoScreen` | ⚠️ Partial – static placeholder, no playable 20‑sec demo |
-| **4. Story Preferences** | `OnboardingInterestsScreen` | ✅ Implemented (theme selection) |
-| **5. Voice Recording** | `VoiceUploadScreen` | ✅ Implemented – not in onboarding flow |
-| **6. Avatar Upload** | `AvatarUploadScreen` | ✅ Implemented – not in onboarding flow |
+| **4. Story Preferences** | — | ❌ Not in onboarding (removed `OnboardingInterestsScreen`). Themes/preferences: `StoryGenerationScreen`, child profile / recommendations as applicable |
+| **5. Voice Recording** | `VoiceUploadScreen` | ✅ Implemented – optional onboarding invite → `OnboardingVoiceInvitationScreen` → full flow post-login |
+| **6. Avatar Upload** | `AvatarUploadScreen` | ✅ Implemented – optional onboarding invite → `OnboardingAvatarInvitationScreen` → full flow post-login |
 | **7. Home** | `DashboardScreen` | ✅ Implemented (greeting, continue, recommended, categories) |
 | **8. Story Library** | `StorySelectionScreen`, `SearchScreen` | ✅ Exists – no dedicated tab |
 | **9. Story Player** | `AudioPlayerScreen` | ✅ Implemented (character, subtitle, controls) |
 | **10. Voice Selection** | In `AudioPlayerScreen` | ✅ Voice dropdown in player |
 | **11. Talking Avatar Video** | In `AudioPlayerScreen` | ✅ Avatar video when backend provides URL |
 | **12. Create Story** | `StoryGenerationScreen` | ✅ Implemented |
-| **13. Profile** | `MyVoiceAndAvatarScreen`, `SettingsScreen` | ⚠️ Split across two screens; no unified Profile hub |
+| **13. Profile** | `ProfileScreen` (+ `MyVoiceAndAvatarScreen`, `SettingsScreen` via nav) | ✅ Unified Profile hub with links to voice, settings, etc. |
 | **14. Share Story** | In `AudioPlayerScreen` | ✅ Share action in player |
 
 ### Navigation & Bottom Bar
 
 | Blueprint | Current |
 |-----------|---------|
-| Home \| Library \| Create \| Profile | Home \| My voice & Avatar \| Settings |
+| Home \| Library \| Create \| Profile | Home \| Library \| Fun & learn \| Profile *(Create via dashboard/library; voice/avatar & settings under Profile)* |
 
 ---
 
@@ -37,9 +37,9 @@ Gap analysis and implementation tasks for aligning the mobile app with the [Tami
 
 1. **Demo Story** – Onboarding demo is static; blueprint expects a playable ~20‑sec story with talking character and subtitles.
 2. **Story Library tab** – No bottom‑bar tab for Library; access is via Search / categories.
-3. **Profile hub** – Blueprint expects one Profile screen with My Voices, My Avatars, Favorites, Listening History, Subscription, Settings. Currently split between MyVoiceAndAvatar and Settings.
-4. **Optional onboarding flow** – Blueprint: Demo → [Preferences] → [Voice] → [Avatar] → Home. Current: Demo → Interests → HomePreview → BedtimeReminder → Login. Optional voice/avatar steps before login are not modeled.
-5. **Bottom bar** – Blueprint: Home \| Library \| Create \| Profile. Current: Home \| My voice & Avatar \| Settings.
+3. **Profile hub** – Largely addressed via `ProfileScreen`; remaining polish is tab ordering vs blueprint.
+4. **Optional onboarding flow** – Blueprint: Demo → [Preferences] → [Voice] → [Avatar] → Home. **Current:** Hook → Demo → Voice invitation → Avatar invitation → **Login** (`OnboardingInterestsScreen` and `OnboardingBedtimeReminderScreen` removed; home preview step not used). Theme/child interests are not collected in onboarding; bedtime reminder prefs + `OnboardingReminderPort` remain for future Settings or notifications.
+5. **Bottom bar** – Blueprint: Home \| Library \| Create \| Profile. **Current:** Home \| Library \| Fun & learn \| Profile (Create lives inside flows; My voice & avatar and Settings open from Profile).
 
 ---
 
@@ -77,7 +77,7 @@ Gap analysis and implementation tasks for aligning the mobile app with the [Tami
 
 - [x] **TASK-007** – Add optional Voice invitation after Demo
   - After Demo, show “Want stories in your family voice?” with Record / Skip
-  - Skip → continues to Preferences or Login
+  - Skip → continues to Avatar invitation or Login (per NavHost)
 
 - [x] **TASK-008** – Add optional Avatar invitation after Voice (or after Demo if Voice skipped)
   - “Who should tell the story?” with Upload Photo / Skip

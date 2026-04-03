@@ -30,8 +30,8 @@ class TwilioSmsSender(
 
     override fun sendOtp(toPhone: String, code: String): Boolean {
         if (fromNumber.isBlank()) {
-            log.info("Twilio from-number not configured; OTP not sent (dev). To={}", PiiMask.maskPhone(toPhone))
-            return true
+            log.warn("Twilio from-number not configured; OTP not sent. To={}", PiiMask.maskPhone(toPhone))
+            return false
         }
         return try {
             val body = LinkedMultiValueMap<String, String>().apply {

@@ -154,6 +154,7 @@ android {
     productFlavors {
         create("dev") {
             dimension = "environment"
+            isDefault = true
             versionNameSuffix = "-dev"
             resValue("string", "app_name", "Tamixa (Dev)")
             val api = tamixaDevApiBase()
@@ -176,9 +177,8 @@ android {
         }
         create("prod") {
             dimension = "environment"
-            isDefault = true
             val api = (project.findProperty("TAMIXA_API_BASE_URL") as? String)?.trim()?.takeIf { it.isNotEmpty() }
-                ?: "https://api.tamixa.com"
+                ?: "https://api.tamixa.in"
             val webRoot = (project.findProperty("TAMIXA_WEB_APP_URL") as? String)?.trim()?.takeIf { it.isNotEmpty() }
                 ?: "https://app.tamixa.com"
             buildConfigField("String", "BASE_URL", "\"$api\"")

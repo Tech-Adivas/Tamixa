@@ -14,6 +14,7 @@ import com.tamixa.di.viewModelModule
 import com.tamixa.platform.DataStorePreferences
 import com.tamixa.platform.setPlatformAppContext
 import com.tamixa.runtime.ServerEnvironmentCache
+import com.tamixa.util.TamixaLog
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.runBlocking
@@ -32,11 +33,18 @@ class TamixaApplication : Application() {
         val subOverride = runBlocking { prefsBootstrap.getSubscriptionWebUrlOverride().trim() }
         ServerEnvironmentCache.subscriptionWebUrlOverride = subOverride
         val baseUrl = apiOverride.ifBlank { BuildConfig.BASE_URL ?: "http://10.0.2.2:8080" }
+        val env = BuildConfig.TAMIXA_ENVIRONMENT.trim().ifEmpty { "unknown" }
+        FirebaseCrashlytics.getInstance().setCustomKey("tamixa_environment", env)
+        FirebaseCrashlytics.getInstance().setCustomKey("api_base_redacted", redactBaseUrlForLog(baseUrl))
+        TamixaLog.i(
+            "TamixaApp",
+            "Build environment=$env apiBase=${redactBaseUrlForLog(baseUrl)} (override=${apiOverride.isNotBlank()})"
+        )
         startKoin {
             androidContext(this@TamixaApplication)
             modules(
                 androidPlatformModule(this@TamixaApplication),
-                sharedModule(baseUrl),
+                sharedModule(baseUrl = baseUrl, buildEnvironment = env),
                 viewModelModule()
             )
         }
@@ -55,5 +63,11 @@ class TamixaApplication : Application() {
                 .crossfade(100)
                 .build()
         }
+    }
+
+    private companion object {
+        /** Log / Crashlytics only: strips user:password@ from postgres-style URLs. */
+        private fun redactBaseUrlForLog(url: String): String =
+            url.trim().replace(Regex("//[^/@:]+:[^@/]+@"), "//***@")
     }
 }

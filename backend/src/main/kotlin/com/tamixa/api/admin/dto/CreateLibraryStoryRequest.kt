@@ -24,8 +24,8 @@ data class CreateLibraryStoryRequest(
     @field:Size(max = 10)
     val language: String = "ta",
 
-    @field:Min(1, message = "Age must be between 1 and 12")
-    @field:Max(12, message = "Age must be between 1 and 12")
+    @field:Min(1, message = "Age must be between 1 and 99")
+    @field:Max(99, message = "Age must be between 1 and 99")
     val age: Int,
 
     @field:Size(max = 255)
@@ -64,5 +64,14 @@ data class CreateLibraryStoryRequest(
      * (after save). Omit the property to leave the script unchanged. Empty string removes the script row.
      */
     @field:Size(max = 50_000)
-    val narratedContent: String? = null
+    val narratedContent: String? = null,
+
+    /** Up to 10 short strings; stored as JSON. */
+    val parentDiscussionPrompts: List<String>? = null,
+
+    @field:Size(max = 4000)
+    val parentContentNote: String? = null,
+
+    @field:Size(max = 500)
+    val speakAlongPrompt: String? = null,
 )

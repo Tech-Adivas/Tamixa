@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.tamixa.network.QuizDto
 import com.tamixa.network.QuizResultDto
@@ -36,14 +37,14 @@ fun QuizScreen(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             TamixaScreenTopBar(
-                title = "Story Quiz",
+                title = Strings.storyQuiz(),
                 onBack = onBack,
                 useTransparentBackground = true
             )
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            AppScreenBackground(showClouds = false)
+            AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
             when {
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = TamixaColors.goldAccent)
@@ -53,9 +54,14 @@ fun QuizScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TamixaColors.cream.copy(alpha = 0.92f),
+                        textAlign = TextAlign.Center,
+                    )
                     Spacer(Modifier.height(16.dp))
-                    TextButton(onClick = onBack) { Text("Go back", color = TamixaColors.goldAccent) }
+                    TextButton(onClick = onBack) { Text(Strings.back(), color = TamixaColors.goldAccent) }
                 }
                 quiz != null && quizChildId <= 0L -> Column(
                     Modifier.fillMaxSize().padding(TamixaDesignTokens.screenPadding),
@@ -77,7 +83,13 @@ fun QuizScreen(
                     onSubmit = { onSubmit(answers.toMap()) }
                 )
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No quiz available for this story.", color = TamixaContentColors.cardSecondary())
+                    Text(
+                        Strings.storyQuizNoQuizAvailable(),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TamixaColors.cream.copy(alpha = 0.88f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(TamixaDesignTokens.screenPadding),
+                    )
                 }
             }
         }
@@ -99,7 +111,7 @@ private fun QuizQuestionsView(
         verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.cardSpacing)
     ) {
         Text(
-            text = "${quiz.questions.size} questions",
+            text = Strings.storyQuizQuestionCount(quiz.questions.size),
             style = MaterialTheme.typography.bodySmall,
             color = TamixaContentColors.cardSecondary()
         )
@@ -149,7 +161,7 @@ private fun QuizQuestionsView(
                             value = answers[question.id] ?: "",
                             onValueChange = { answers[question.id] = it },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("Your answer") },
+                            placeholder = { Text(Strings.storyQuizYourAnswerPlaceholder()) },
                             singleLine = true
                         )
                     }
@@ -164,7 +176,7 @@ private fun QuizQuestionsView(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius)
         ) {
-            Text("Submit Quiz")
+            Text(Strings.storyQuizSubmit())
         }
     }
 }
@@ -193,7 +205,7 @@ private fun QuizResultView(result: QuizResultDto, onDone: () -> Unit) {
             color = TamixaColors.goldAccent
         )
         Text(
-            text = "${result.score} / ${result.maxScore} correct",
+            text = Strings.storyQuizScoreLine(result.score, result.maxScore),
             style = MaterialTheme.typography.titleMedium,
             color = TamixaContentColors.cardSecondary()
         )
@@ -202,7 +214,7 @@ private fun QuizResultView(result: QuizResultDto, onDone: () -> Unit) {
             onClick = onDone,
             shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius)
         ) {
-            Text("Done")
+            Text(Strings.storyQuizDone())
         }
     }
 }

@@ -12,6 +12,7 @@ Errors returned by the backend (including `GlobalExceptionHandler` and filters) 
   "status": 400,
   "traceId": "optional-request-trace-id",
   "timestamp": "2025-03-15T12:00:00Z",
+  "code": "OPTIONAL_STABLE_CODE",
   "errors": { "fieldName": "Validation message" }
 }
 ```
@@ -21,6 +22,7 @@ Errors returned by the backend (including `GlobalExceptionHandler` and filters) 
 - **traceId** (string, optional) — Request trace ID for support/debugging.
 - **timestamp** (string) — ISO-8601 time when the error was generated.
 - **errors** (object, optional) — Present for validation failures (`400`); map of field name → validation message.
+- **code** (string, optional) — Stable machine-readable identifier for selected endpoints (e.g. parent story generation). See **[api/PARENT_STORY_API_ERRORS.md](api/PARENT_STORY_API_ERRORS.md)**.
 
 ## HTTP status codes
 

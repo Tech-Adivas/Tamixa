@@ -187,7 +187,8 @@ class AuthViewModel(
                             _otpSentToPhone.value = phone
                             _otpDevCode.value = result.devCode
                         } else {
-                            _loginState.value = UiState.Error("Invalid phone number", null)
+                            _loginState.value = UiState.Error(Strings.otpSendFailed(), null)
+                            appMessageNotifier.showError()
                         }
                     },
                     onFailure = {

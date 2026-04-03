@@ -1,6 +1,8 @@
 package com.tamixa.api.story
 
 import com.tamixa.api.story.dto.GenerateStoryRequest
+import com.tamixa.api.story.dto.GenerationTopicResponse
+import com.tamixa.application.story.StoryGenerationTopicRegistry
 import com.tamixa.api.story.dto.RemixRequest
 import com.tamixa.api.story.dto.SearchStoriesResponse
 import com.tamixa.api.story.dto.SearchStoryItem
@@ -25,6 +27,8 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import com.tamixa.api.ApiVersion
+import com.tamixa.api.exception.ApiBadRequestException
+import com.tamixa.api.exception.ApiErrorCodes
 
 @RestController
 @RequestMapping("${ApiVersion.V1}/stories")
@@ -116,27 +120,55 @@ class StoryController(
         return ResponseEntity.ok(story.toResponse(coverImageUrlResolver))
     }
 
+    @GetMapping("/generation-topics")
+    fun listGenerationTopics(): ResponseEntity<List<GenerationTopicResponse>> {
+        val body = StoryGenerationTopicRegistry.all().map {
+            GenerationTopicResponse(
+                id = it.id,
+                theme = it.theme,
+                suggestedLearningFocus = it.suggestedLearningFocus,
+                descriptionEn = it.descriptionEn,
+            )
+        }
+        return ResponseEntity.ok(body)
+    }
+
     @PostMapping("/generate")
     fun generate(@Valid @RequestBody request: GenerateStoryRequest): ResponseEntity<StoryResponse> {
         val parentEmail = currentParentEmail()
-        log.info("Story generate request theme={} age={}", request.theme, request.age)
+        val topicId = request.generationTopicId?.trim()?.takeIf { it.isNotBlank() }
+        val topic = topicId?.let { StoryGenerationTopicRegistry.resolve(it) }
+        if (topicId != null && topic == null) {
+            throw ApiBadRequestException(ApiErrorCodes.UNKNOWN_GENERATION_TOPIC, "Unknown generationTopicId")
+        }
+        if (topic == null && request.theme.isNullOrBlank()) {
+            throw ApiBadRequestException(ApiErrorCodes.THEME_OR_TOPIC_REQUIRED, "Provide theme or generationTopicId")
+        }
+        val effectiveTheme = topic?.theme ?: request.theme!!.trim()
+        val trustedCatalog = topic != null
+        val effectiveLearning = request.learningFocus?.takeIf { it.isNotBlank() } ?: topic?.suggestedLearningFocus
+        log.info("Story generate request themeResolved={} age={} topicId={}", effectiveTheme, request.age, request.generationTopicId)
         val language = request.language.trim().lowercase()
         if (language != "ta" && language != "tamil") {
             log.warn("Story generate rejected: unsupported language={}", language)
-            throw IllegalArgumentException("AI story generation is currently Tamil only")
+            throw ApiBadRequestException(
+                ApiErrorCodes.GENERATION_LANGUAGE_NOT_SUPPORTED,
+                "AI story generation is currently Tamil only",
+            )
         }
         val effectiveChildName = request.childName?.takeIf { it.isNotBlank() } ?: "Listener"
         val story = storyService.generate(
             parentEmail = parentEmail,
             age = request.age,
             language = "ta",
-            theme = request.theme,
+            theme = effectiveTheme,
             childName = effectiveChildName,
             childId = request.childId,
             emotionMode = request.emotionMode,
             parentCustomPrompt = request.parentCustomPrompt,
             conversationMessages = request.conversationMessages,
-            learningFocus = request.learningFocus
+            learningFocus = effectiveLearning,
+            trustedCatalogTheme = trustedCatalog,
         )
         log.info("Story generate success storyId={}", story.id)
         return ResponseEntity.status(HttpStatus.CREATED).body(story.toResponse(coverImageUrlResolver))

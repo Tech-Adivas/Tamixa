@@ -111,6 +111,47 @@ export function getStoredTokenExpiresAt(): number | null {
   return v ? Number(v) : null;
 }
 
+/** Backend JSON error body from GlobalExceptionHandler and security filters. */
+export interface ApiErrorBody {
+  message?: string;
+  code?: string;
+  status?: number;
+}
+
+/**
+ * Failed API response with optional stable `code` (e.g. UNKNOWN_GENERATION_TOPIC).
+ */
+export class ApiClientError extends Error {
+  readonly code?: string;
+  readonly httpStatus: number;
+
+  constructor(message: string, httpStatus: number, code?: string) {
+    super(message);
+    this.name = "ApiClientError";
+    this.httpStatus = httpStatus;
+    this.code = code;
+  }
+}
+
+/**
+ * Aligns with backend `com.tamixa.api.exception.ApiErrorCodes` for `POST /stories/generate`.
+ * Error JSON may include `code` plus `message` (see `docs/api/PARENT_STORY_API_ERRORS.md`).
+ */
+export const STORY_GENERATE_ERROR_CODES = {
+  UNKNOWN_GENERATION_TOPIC: "UNKNOWN_GENERATION_TOPIC",
+  THEME_OR_TOPIC_REQUIRED: "THEME_OR_TOPIC_REQUIRED",
+  GENERATION_LANGUAGE_NOT_SUPPORTED: "GENERATION_LANGUAGE_NOT_SUPPORTED",
+} as const;
+
+export async function parseApiClientError(res: Response, fallbackMessage: string): Promise<ApiClientError> {
+  const raw = (await res.json().catch(() => ({}))) as ApiErrorBody;
+  const msg =
+    typeof raw.message === "string" && raw.message.trim() ? raw.message.trim() : fallbackMessage;
+  const code =
+    typeof raw.code === "string" && raw.code.trim() ? raw.code.trim() : undefined;
+  return new ApiClientError(msg, res.status, code);
+}
+
 export interface AuthResponse {
   accessToken: string;
   refreshToken: string;
@@ -144,6 +185,9 @@ export interface LibraryStory {
   /** Animated cover (GIF or video) from Sora; played muted. */
   coverVideoUrl?: string | null;
   createdAt: string;
+  parentDiscussionPrompts?: string[] | null;
+  parentContentNote?: string | null;
+  speakAlongPrompt?: string | null;
 }
 
 export interface Story {
@@ -185,10 +229,20 @@ export interface LibraryStoriesPage {
   last: boolean;
 }
 
+export interface GenerationTopic {
+  id: string;
+  theme: string;
+  suggestedLearningFocus?: string | null;
+  descriptionEn?: string | null;
+}
+
 export interface GenerateStoryRequest {
   age: number;
   language?: string;
-  theme: string;
+  /** Required unless generationTopicId is set. */
+  theme?: string | null;
+  /** Server-defined topic id (Tamil theme resolved server-side). */
+  generationTopicId?: string | null;
   /** Optional; when blank or omitted, backend uses "Listener". */
   childName?: string;
   childId?: number | null;
@@ -384,8 +438,7 @@ export async function searchStories(
     `/stories/search?q=${encodeURIComponent(query)}&language=${encodeURIComponent(language)}&page=${page}&size=${size}`
   );
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { message?: string };
-    throw new Error(err?.message ?? "Search failed");
+    throw await parseApiClientError(res, "Search failed");
   }
   return res.json();
 }
@@ -399,23 +452,31 @@ export async function getLibraryCategories(language = "ta"): Promise<string[]> {
 }
 
 // Curated stories (browse library) — API returns PagedResponse<LibraryStoryResponse>, not a bare array.
+export async function getGenerationTopics(): Promise<GenerationTopic[]> {
+  const res = await fetchWithAuth("/stories/generation-topics");
+  if (!res.ok) return [];
+  const data = (await res.json()) as GenerationTopic[];
+  return Array.isArray(data) ? data : [];
+}
+
 export async function getLibraryStories(
   language = "ta",
   page = 0,
   size = 50,
-  theme?: string | null
+  theme?: string | null,
+  learnHub = false
 ): Promise<LibraryStory[]> {
   const params = new URLSearchParams({
     language,
     page: String(page),
     size: String(size),
   });
+  if (learnHub) params.set("learnHub", "true");
   const t = theme?.trim();
   if (t) params.set("theme", t);
   const res = await fetchWithAuth(`/stories/library?${params}`);
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { message?: string };
-    throw new Error(err?.message ?? "Failed to load stories");
+    throw await parseApiClientError(res, "Failed to load stories");
   }
   const data = (await res.json()) as LibraryStory[] | LibraryStoriesPage;
   if (Array.isArray(data)) {
@@ -431,8 +492,7 @@ export async function getLibraryStories(
 export async function getMyStories(page = 0, size = 20): Promise<StoriesPage> {
   const res = await fetchWithAuth(`/stories?page=${page}&size=${size}`);
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { message?: string };
-    throw new Error(err?.message ?? "Failed to load stories");
+    throw await parseApiClientError(res, "Failed to load your stories");
   }
   return res.json();
 }
@@ -443,8 +503,7 @@ export async function generateStory(request: GenerateStoryRequest): Promise<Stor
     body: JSON.stringify({ ...request, language: request.language ?? "ta" }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { message?: string };
-    throw new Error(err?.message ?? "Story generation failed");
+    throw await parseApiClientError(res, "Story generation failed");
   }
   return res.json();
 }
@@ -486,8 +545,7 @@ export async function getStreamUrl(
         : `${base}/${storyId}/stream-url${suffix}`;
   const res = await fetchWithAuth(path);
   if (res.status === 402) {
-    const err = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(err?.message ?? "Premium voice requires subscription upgrade");
+    throw await parseApiClientError(res, "Premium voice requires subscription upgrade");
   }
   if (!res.ok) {
     logger.warn("api", "getStreamUrl failed", { storyId, storySource, status: res.status });
@@ -520,8 +578,7 @@ export async function getTimeline(
 export async function regenerateStoryCover(storyId: number): Promise<Story> {
   const res = await fetchWithAuth(`/stories/${storyId}/regenerate-cover`, { method: "POST" });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { message?: string };
-    throw new Error(err?.message ?? "Regenerate cover failed");
+    throw await parseApiClientError(res, "Regenerate cover failed");
   }
   return res.json();
 }
@@ -532,8 +589,7 @@ export async function remixStory(storyId: number, remixInstruction: string): Pro
     body: JSON.stringify({ remixInstruction }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { message?: string };
-    throw new Error(err?.message ?? "Remix failed");
+    throw await parseApiClientError(res, "Remix failed");
   }
   return res.json();
 }
@@ -630,19 +686,25 @@ export interface FavoriteStory {
 
 export async function getFavorites(): Promise<FavoriteStory[]> {
   const res = await fetchWithAuth("/favorites");
-  if (!res.ok) throw new Error("Failed to load favorites");
+  if (!res.ok) {
+    throw await parseApiClientError(res, "Failed to load favorites");
+  }
   return res.json();
 }
 
 export async function addFavorite(storyId: number, storySource = "generated"): Promise<FavoriteStory> {
   const res = await fetchWithAuth(`/favorites/${storyId}?storySource=${encodeURIComponent(storySource)}`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to add favorite");
+  if (!res.ok) {
+    throw await parseApiClientError(res, "Failed to add favorite");
+  }
   return res.json();
 }
 
 export async function removeFavorite(storyId: number): Promise<void> {
   const res = await fetchWithAuth(`/favorites/${storyId}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("Failed to remove favorite");
+  if (!res.ok) {
+    throw await parseApiClientError(res, "Failed to remove favorite");
+  }
 }
 
 export async function checkFavorite(storyId: number): Promise<{ storyId: number; isFavorite: boolean }> {

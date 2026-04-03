@@ -57,6 +57,9 @@ interface StoryLibraryRepositoryPort {
 
     fun findByLanguageAndNarrationApprovedAndTheme(language: String, theme: String, pageable: Pageable): Page<LibraryStory>
 
+    /** Approved stories whose category or theme starts with prefix (e.g. Learn). */
+    fun findByLanguageAndNarrationApprovedLearnPrefix(language: String, prefix: String, pageable: Pageable): Page<LibraryStory>
+
     fun findByStatus(status: String, pageable: Pageable): Page<LibraryStory>
 
     fun findByStatusAndNarrationApprovedAtNotNull(status: String, pageable: Pageable): Page<LibraryStory>

@@ -44,6 +44,9 @@ object LibraryStoryMapper {
         regeneratePromptLockApproved = regeneratePromptLockApproved,
         regeneratePromptUnlockRequestedAt = regeneratePromptUnlockRequestedAt,
         deletedAt = deletedAt,
+        parentDiscussionPrompts = parentDiscussionPrompts,
+        parentContentNote = parentContentNote,
+        speakAlongPrompt = speakAlongPrompt,
         sourceContent = content
     )
 }

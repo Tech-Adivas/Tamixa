@@ -5,6 +5,7 @@ import com.tamixa.application.account.AccountDeletionException
 import com.tamixa.application.auth.AccountSuspendedException
 import com.tamixa.application.auth.ConsentRequiredException
 import com.tamixa.application.auth.InvalidCredentialsException
+import com.tamixa.application.auth.InvalidOtpException
 import com.tamixa.application.guardrail.ExternalGuardrailUnavailableException
 import com.tamixa.application.story.ContentModerationException
 import com.tamixa.application.story.FreeStoryLimitReachedException
@@ -54,6 +55,13 @@ class GlobalExceptionHandler {
     fun handleInvalidCredentials(e: InvalidCredentialsException): ResponseEntity<Map<String, Any>> {
         log.debug("Login failed: invalid credentials")
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorBody(e.message ?: "Invalid email or password", HttpStatus.UNAUTHORIZED))
+    }
+
+    @ExceptionHandler(InvalidOtpException::class)
+    fun handleInvalidOtp(e: InvalidOtpException): ResponseEntity<Map<String, Any>> {
+        log.debug("OTP verify failed: {}", e.message)
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+            .body(errorBody(e.message ?: "Invalid or expired OTP", HttpStatus.UNAUTHORIZED))
     }
 
     @ExceptionHandler(AccountSuspendedException::class)
@@ -158,6 +166,22 @@ class GlobalExceptionHandler {
     fun handleAiControlPlaneConflict(e: AiControlPlaneConflictException): ResponseEntity<Map<String, Any>> {
         log.debug("AI control plane conflict: {}", e.message)
         return ResponseEntity.status(HttpStatus.CONFLICT).body(errorBody(e.message ?: "Conflict", HttpStatus.CONFLICT))
+    }
+
+    /** Structured 400 with stable JSON [code] for clients (e.g. story generation validation). */
+    @ExceptionHandler(ApiBadRequestException::class)
+    fun handleApiBadRequest(e: ApiBadRequestException): ResponseEntity<Map<String, Any>> {
+        log.debug("Invalid request: code={} message={}", e.code, e.message)
+        val traceId = MDC.get(RequestTracingFilter.TRACE_ID_MDC_KEY).orEmpty()
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+            ErrorResponse.body(
+                e.message ?: "Invalid request",
+                HttpStatus.BAD_REQUEST.value(),
+                traceId.ifBlank { null },
+                null,
+                e.code,
+            )
+        )
     }
 
     /** Business rule violations (duplicate title, etc.). */

@@ -6,10 +6,14 @@ import {
   getRecommendedStories,
   getRecentPlayback,
   getListeningProgress,
+  getLibraryStories,
+  resolveCoverUrl,
   type RecommendedStory,
   type PlaybackPosition,
   type ListeningProgress,
+  type LibraryStory,
 } from "../lib/api";
+import { isFunStory, funCornerBadgeLabel } from "../lib/storyListenerUi";
 
 function formatResumeMeta(positionSeconds: number): string {
   if (positionSeconds < 60) {
@@ -43,6 +47,21 @@ export default function Dashboard() {
   const [recent, setRecent] = useState<PlaybackPosition[]>([]);
   const [progress, setProgress] = useState<ListeningProgress | null>(null);
   const [loading, setLoading] = useState(true);
+  const [libraryPicks, setLibraryPicks] = useState<LibraryStory[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getLibraryStories("ta", 0, 12, null, false)
+      .then((rows) => {
+        if (!cancelled) setLibraryPicks(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setLibraryPicks([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,36 +168,46 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <nav className="dash-quick" aria-label="Shortcuts">
-            <Link to="/stories" className="dash-quick-card">
-              <span className="dash-quick-icon" aria-hidden>
-                📚
-              </span>
-              <span className="dash-quick-title">Stories</span>
-              <span className="dash-quick-desc muted">Library, favorites &amp; new tales</span>
-            </Link>
-            <Link to="/subscription" className="dash-quick-card">
-              <span className="dash-quick-icon" aria-hidden>
-                ✨
-              </span>
-              <span className="dash-quick-title">Tamixa Pass</span>
-              <span className="dash-quick-desc muted">Plan &amp; listening perks</span>
-            </Link>
-            <Link to="/voice" className="dash-quick-card">
-              <span className="dash-quick-icon" aria-hidden>
-                🎙️
-              </span>
-              <span className="dash-quick-title">Voices</span>
-              <span className="dash-quick-desc muted">Narration that feels like you</span>
-            </Link>
-            <Link to="/settings" className="dash-quick-card">
-              <span className="dash-quick-icon" aria-hidden>
-                🛡️
-              </span>
-              <span className="dash-quick-title">Family & privacy</span>
-              <span className="dash-quick-desc muted">Account & safety</span>
-            </Link>
-          </nav>
+          {libraryPicks.length > 0 ? (
+            <section className="dash-section dash-section--stories" aria-labelledby="dash-spotlight-heading">
+              <div className="dash-section-head">
+                <h2 id="dash-spotlight-heading" className="dash-section-title dash-section-title--spotlight">
+                  Grow with every listen
+                </h2>
+                <Link to="/stories?tab=library" className="dash-section-link">
+                  See all
+                </Link>
+              </div>
+              <p className="dash-learn-subtitle muted">
+                Heart, vocabulary, and curiosity are woven into every Tamixa tale—tap to play. Pure laughs live under{" "}
+                <strong>Fun stories</strong> in the library filters.
+              </p>
+              <div className="dash-poster-row">
+                {libraryPicks.slice(0, 8).map((s) => {
+                  const img = resolveCoverUrl(s.coverImageUrl);
+                  return (
+                    <Link
+                      key={s.id}
+                      to="/stories?tab=library"
+                      state={{ playStoryId: s.id, playStorySource: "library" }}
+                      className="poster-card dash-poster-card"
+                    >
+                      <div className="poster-card-cover poster-card-placeholder--default-cover" aria-hidden>
+                        {img ? (
+                          <img src={img} alt="" className="dash-poster-card-img" />
+                        ) : null}
+                      </div>
+                      {isFunStory(s.theme, s.category) ? (
+                        <span className="stories-fun-badge">{funCornerBadgeLabel()}</span>
+                      ) : null}
+                      <p className="poster-card-title">{s.title || s.theme}</p>
+                      <p className="poster-card-meta">{s.theme}</p>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
 
           <section className="dash-section dash-section--stories" aria-labelledby="dash-continue-heading">
             <div className="dash-section-head">

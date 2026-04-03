@@ -5,7 +5,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +27,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -33,22 +36,24 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,13 +61,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tamixa.domain.Story
 import com.tamixa.domain.StoryStatus
+import com.tamixa.platform.currentTimeMillis
 import com.tamixa.ui.components.TamixaBottomBar
 import com.tamixa.ui.components.AppScreenBackground
 import com.tamixa.ui.components.StoryCoverImage
 import com.tamixa.ui.components.TamixaHeroBanner
 import com.tamixa.ui.components.TamixaMascot
 import com.tamixa.ui.components.TamixaPrimaryButton
+import com.tamixa.ui.components.TamixaStarfieldSection
 import com.tamixa.ui.components.TamixaLanguageLogo
+import com.tamixa.ui.isFunStory
 import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.TamixaColors
 import com.tamixa.ui.theme.TamixaDesignTokens
@@ -70,21 +78,39 @@ import com.tamixa.ui.theme.TamixaGradients
 
 /** Dark streaming-style home: poster grid over Storybook Dusk animated sky (see [AppScreenBackground]). */
 private val DashboardGridGutter = 10.dp
-private val DashboardPosterRadius = 18.dp
+private val DashboardPosterRadius = 20.dp
 private val DashboardBottomPadding = TamixaDesignTokens.screenPaddingBottomWithNav
 private val DashboardCarouselPosterWidth = 118.dp
 
 @Composable
 private fun DashboardCinemaSectionTitle(title: String, modifier: Modifier = Modifier) {
-    Text(
-        text = title,
+    Row(
         modifier = modifier.fillMaxWidth(),
-        style = MaterialTheme.typography.titleLarge.copy(
-            fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.2).sp
-        ),
-        color = Color.White.copy(alpha = 0.92f)
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(5.dp)
+                .height(28.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            TamixaColors.terracotta,
+                            TamixaColors.deepTeal,
+                        ),
+                    ),
+                )
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            color = Color(0xFFFFF4EC),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 /**
@@ -97,17 +123,25 @@ private fun DashboardPosterCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     apiBaseUrl: String? = null,
-    progress: Float? = null
+    progress: Float? = null,
+    showFunCornerChip: Boolean = false
 ) {
     val shape = RoundedCornerShape(DashboardPosterRadius)
     val ready = story.status == StoryStatus.READY
     Card(
         onClick = { if (ready) onClick() },
         enabled = ready,
-        modifier = modifier.clip(shape),
+        modifier = modifier
+            .shadow(
+                elevation = 10.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.28f),
+                spotColor = Color.Black.copy(alpha = 0.12f),
+            )
+            .clip(shape),
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             StoryCoverImage(
@@ -137,6 +171,34 @@ private fun DashboardPosterCard(
                         )
                     )
             )
+            if (showFunCornerChip) {
+                Text(
+                    text = Strings.storyFunCornerBadge(),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .zIndex(2f)
+                        .shadow(
+                            4.dp,
+                            RoundedCornerShape(10.dp),
+                            ambientColor = Color.Black.copy(alpha = 0.12f),
+                            spotColor = Color.Black.copy(alpha = 0.08f),
+                        )
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    TamixaColors.terracotta,
+                                    TamixaColors.deepTeal.copy(alpha = 0.9f),
+                                ),
+                            ),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                    color = Color.White,
+                )
+            }
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -172,6 +234,7 @@ private fun DashboardPosterCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DashboardCinemaHeader(
     greetingText: String,
@@ -201,34 +264,54 @@ private fun DashboardCinemaHeader(
             ) {
                 Text(
                     text = greetingText,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = (-0.25).sp,
-                        lineHeight = 28.sp
-                    ),
-                    color = Color.White
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color(0xFFFFF4EC),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (usageStoriesLimit != null || usageStoriesUsed > 0) {
                     Text(
                         text = Strings.usageStoriesSummary(usageStoriesUsed, usageStoriesLimit),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.85f)
+                        color = Color.White.copy(alpha = 0.88f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
-            IconButton(onClick = onRefresh, enabled = !isRefreshing) {
-                Icon(
-                    Icons.Default.Refresh,
-                    contentDescription = Strings.refresh(),
-                    tint = if (isRefreshing) Color.White.copy(alpha = 0.55f) else Color.White
-                )
+            Surface(
+                onClick = onRefresh,
+                enabled = !isRefreshing,
+                shape = CircleShape,
+                color = Color.White.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = Strings.refresh(),
+                        tint = if (isRefreshing) Color.White.copy(alpha = 0.55f) else Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
-            IconButton(onClick = onNavigateToSearch) {
-                Icon(
-                    Icons.Outlined.Search,
-                    contentDescription = Strings.search(),
-                    tint = Color.White
-                )
+            Spacer(Modifier.width(8.dp))
+            Surface(
+                onClick = onNavigateToSearch,
+                shape = CircleShape,
+                color = Color.White.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.Search,
+                        contentDescription = Strings.search(),
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
         }
         when {
@@ -242,6 +325,15 @@ private fun DashboardCinemaHeader(
                     modifier = Modifier.padding(top = 10.dp)
                 )
         }
+        val dayBucket = (currentTimeMillis() / 86_400_000L).toInt()
+        val dailySpark = remember(dayBucket) { Strings.dashboardDailySparkAtIndex(dayBucket) }
+        Text(
+            text = dailySpark,
+            style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+            color = Color.White.copy(alpha = 0.66f),
+            modifier = Modifier.padding(top = 10.dp),
+            lineHeight = 18.sp,
+        )
     }
 }
 
@@ -305,6 +397,7 @@ data class RecommendedItem(
     val storySource: String
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     greeting: String,
@@ -321,6 +414,8 @@ fun DashboardScreen(
     onNavigateToSettings: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
+    /** Opens Library with Fun corner filter (library?hub=fun). */
+    onNavigateToLibraryFunCorner: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onNavigateToShortContent: () -> Unit = {},
     recentPlayback: List<RecentPlaybackItem> = emptyList(),
@@ -332,7 +427,12 @@ fun DashboardScreen(
     onRecommendedStoryClick: (Long, String) -> Unit = { _, _ -> },
     usageStoriesUsed: Int = 0,
     usageStoriesLimit: Int? = null,
-    listeningStreakDays: Int? = null
+    listeningStreakDays: Int? = null,
+    /** Featured library listens (first slice of the full catalog—every story is learning-forward). */
+    spotlightPreview: List<Story> = emptyList(),
+    /** True while library list is loading and spotlight is still empty. */
+    spotlightSectionLoading: Boolean = false,
+    onSpotlightStoryClick: (Story) -> Unit = {},
 ) {
     val baseStories = if (stories.isEmpty()) com.tamixa.ui.data.SampleData.sampleStories() else stories
     val displayStories = baseStories
@@ -342,7 +442,7 @@ fun DashboardScreen(
     val gridStories = displayStories.sortedByDescending { it.createdAt }
 
     Scaffold(
-        containerColor = TamixaColors.nightSkyBg,
+        containerColor = Color.Transparent,
         bottomBar = {
             TamixaBottomBar(
                 selectedTab = com.tamixa.ui.components.TamixaTab.Home,
@@ -399,7 +499,6 @@ fun DashboardScreen(
                     }
                 }
                 else -> {
-                    @OptIn(ExperimentalMaterial3Api::class)
                     PullToRefreshBox(
                         isRefreshing = isRefreshing,
                         onRefresh = onRefresh,
@@ -465,42 +564,133 @@ fun DashboardScreen(
                             }
                             if (recentPlayback.isNotEmpty()) {
                                 item(span = { GridItemSpan(3) }) {
-                                    Column(
-                                        modifier = Modifier.padding(top = 8.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        DashboardCinemaSectionTitle(Strings.continueListening())
-                                        Text(
-                                            text = Strings.latestListeningSubtitle(),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = Color.White.copy(alpha = 0.72f),
-                                            modifier = Modifier.padding(top = 2.dp)
-                                        )
-                                        LazyRow(
-                                            horizontalArrangement = Arrangement.spacedBy(DashboardGridGutter),
-                                            contentPadding = PaddingValues(end = 4.dp)
+                                    Column(modifier = Modifier.padding(top = 6.dp)) {
+                                        TamixaStarfieldSection {
+                                            DashboardCinemaSectionTitle(Strings.continueListening())
+                                            Text(
+                                                text = Strings.latestListeningSubtitle(),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = Color.White.copy(alpha = 0.76f),
+                                                modifier = Modifier.padding(top = 2.dp),
+                                            )
+                                            LazyRow(
+                                                horizontalArrangement = Arrangement.spacedBy(DashboardGridGutter),
+                                                contentPadding = PaddingValues(end = 4.dp),
+                                            ) {
+                                                items(
+                                                    recentPlayback,
+                                                    key = { "${it.story.id}-${it.storySource}" },
+                                                ) { item ->
+                                                    val progress = item.progressFraction?.takeIf { it in 0f..1f }
+                                                        ?: if (item.story.readingTimeMinutes > 0) {
+                                                            (item.positionSeconds / 60.0 / item.story.readingTimeMinutes)
+                                                                .toFloat()
+                                                                .coerceIn(0f, 1f)
+                                                        } else {
+                                                            null
+                                                        }
+                                                    DashboardPosterCard(
+                                                        story = item.story,
+                                                        onClick = { onStoryClick(item.story) },
+                                                        modifier = Modifier
+                                                            .width(DashboardCarouselPosterWidth)
+                                                            .aspectRatio(3f / 4f),
+                                                        apiBaseUrl = apiBaseUrl,
+                                                        progress = progress,
+                                                        showFunCornerChip = isFunStory(item.story),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            item(span = { GridItemSpan(3) }) {
+                                Column(modifier = Modifier.padding(top = 6.dp)) {
+                                    TamixaStarfieldSection {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.Top,
                                         ) {
-                                            items(
-                                                recentPlayback,
-                                                key = { "${it.story.id}-${it.storySource}" }
-                                            ) { item ->
-                                                val progress = item.progressFraction?.takeIf { it in 0f..1f }
-                                                    ?: if (item.story.readingTimeMinutes > 0) {
-                                                        (item.positionSeconds / 60.0 / item.story.readingTimeMinutes)
-                                                            .toFloat()
-                                                            .coerceIn(0f, 1f)
-                                                    } else {
-                                                        null
-                                                    }
-                                                DashboardPosterCard(
-                                                    story = item.story,
-                                                    onClick = { onStoryClick(item.story) },
-                                                    modifier = Modifier
-                                                        .width(DashboardCarouselPosterWidth)
-                                                        .aspectRatio(3f / 4f),
-                                                    apiBaseUrl = apiBaseUrl,
-                                                    progress = progress
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                DashboardCinemaSectionTitle(Strings.dashboardSpotlightTitle())
+                                                Text(
+                                                    text = Strings.dashboardSpotlightSubtitle(),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color.White.copy(alpha = 0.76f),
+                                                    modifier = Modifier.padding(top = 4.dp),
                                                 )
+                                            }
+                                            Column(
+                                                horizontalAlignment = Alignment.End,
+                                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                                modifier = Modifier.padding(start = 8.dp),
+                                            ) {
+                                                Surface(
+                                                    onClick = onNavigateToLibrary,
+                                                    shape = RoundedCornerShape(20.dp),
+                                                    color = TamixaColors.goldAccent.copy(alpha = 0.22f),
+                                                    border = BorderStroke(1.dp, TamixaColors.goldAccent.copy(alpha = 0.45f)),
+                                                ) {
+                                                    Text(
+                                                        text = Strings.openLibraryForMore(),
+                                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                        color = Color.White,
+                                                    )
+                                                }
+                                                Surface(
+                                                    onClick = onNavigateToLibraryFunCorner,
+                                                    shape = RoundedCornerShape(20.dp),
+                                                    color = TamixaColors.skyBlue.copy(alpha = 0.18f),
+                                                    border = BorderStroke(1.dp, TamixaColors.skyBlue.copy(alpha = 0.48f)),
+                                                ) {
+                                                    Text(
+                                                        text = Strings.openFunCorner(),
+                                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                        color = Color.White,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        when {
+                                            spotlightSectionLoading -> {
+                                                LinearProgressIndicator(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(5.dp)
+                                                        .clip(RoundedCornerShape(4.dp)),
+                                                    color = TamixaColors.goldAccent,
+                                                    trackColor = Color.White.copy(alpha = 0.12f),
+                                                )
+                                            }
+                                            spotlightPreview.isEmpty() -> {
+                                                Text(
+                                                    text = Strings.spotlightEmptyHint(),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color.White.copy(alpha = 0.68f),
+                                                    modifier = Modifier.padding(end = 8.dp),
+                                                )
+                                            }
+                                            else -> {
+                                                LazyRow(
+                                                    horizontalArrangement = Arrangement.spacedBy(DashboardGridGutter),
+                                                    contentPadding = PaddingValues(end = 4.dp),
+                                                ) {
+                                                    items(spotlightPreview, key = { it.id }) { s ->
+                                                        DashboardPosterCard(
+                                                            story = s,
+                                                            onClick = { onSpotlightStoryClick(s) },
+                                                            modifier = Modifier
+                                                                .width(DashboardCarouselPosterWidth)
+                                                                .aspectRatio(3f / 4f),
+                                                            apiBaseUrl = apiBaseUrl,
+                                                            showFunCornerChip = isFunStory(s),
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -508,45 +698,45 @@ fun DashboardScreen(
                             }
                             if (dedupedRecommended.isNotEmpty()) {
                                 item(span = { GridItemSpan(3) }) {
-                                    Column(
-                                        modifier = Modifier.padding(top = 4.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        DashboardCinemaSectionTitle(Strings.recommendedForYou())
-                                        LazyRow(
-                                            horizontalArrangement = Arrangement.spacedBy(DashboardGridGutter),
-                                            contentPadding = PaddingValues(end = 4.dp)
-                                        ) {
-                                            items(dedupedRecommended, key = { it.storyId }) { item ->
-                                                val story = item.story
-                                                val displayStory = story ?: Story(
-                                                    id = item.storyId,
-                                                    parentId = 0L,
-                                                    childId = 0L,
-                                                    content = "",
-                                                    theme = item.theme,
-                                                    title = item.title,
-                                                    language = languageCode,
-                                                    age = 5,
-                                                    childName = "",
-                                                    wordCount = 0,
-                                                    readingTimeMinutes = 0.0,
-                                                    status = StoryStatus.READY,
-                                                    moral = null,
-                                                    audioFileUrl = null,
-                                                    coverImageUrl = null,
-                                                    createdAt = ""
-                                                )
-                                                DashboardPosterCard(
-                                                    story = displayStory,
-                                                    onClick = {
-                                                        onRecommendedStoryClick(item.storyId, item.storySource)
-                                                    },
-                                                    modifier = Modifier
-                                                        .width(DashboardCarouselPosterWidth)
-                                                        .aspectRatio(3f / 4f),
-                                                    apiBaseUrl = apiBaseUrl
-                                                )
+                                    Column(modifier = Modifier.padding(top = 6.dp)) {
+                                        TamixaStarfieldSection {
+                                            DashboardCinemaSectionTitle(Strings.recommendedForYou())
+                                            LazyRow(
+                                                horizontalArrangement = Arrangement.spacedBy(DashboardGridGutter),
+                                                contentPadding = PaddingValues(end = 4.dp),
+                                            ) {
+                                                items(dedupedRecommended, key = { it.storyId }) { item ->
+                                                    val story = item.story
+                                                    val displayStory = story ?: Story(
+                                                        id = item.storyId,
+                                                        parentId = 0L,
+                                                        childId = 0L,
+                                                        content = "",
+                                                        theme = item.theme,
+                                                        title = item.title,
+                                                        language = languageCode,
+                                                        age = 5,
+                                                        childName = "",
+                                                        wordCount = 0,
+                                                        readingTimeMinutes = 0.0,
+                                                        status = StoryStatus.READY,
+                                                        moral = null,
+                                                        audioFileUrl = null,
+                                                        coverImageUrl = null,
+                                                        createdAt = "",
+                                                    )
+                                                    DashboardPosterCard(
+                                                        story = displayStory,
+                                                        onClick = {
+                                                            onRecommendedStoryClick(item.storyId, item.storySource)
+                                                        },
+                                                        modifier = Modifier
+                                                            .width(DashboardCarouselPosterWidth)
+                                                            .aspectRatio(3f / 4f),
+                                                        apiBaseUrl = apiBaseUrl,
+                                                        showFunCornerChip = isFunStory(displayStory),
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -565,7 +755,8 @@ fun DashboardScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .aspectRatio(3f / 4f),
-                                    apiBaseUrl = apiBaseUrl
+                                    apiBaseUrl = apiBaseUrl,
+                                    showFunCornerChip = isFunStory(story)
                                 )
                             }
                         }

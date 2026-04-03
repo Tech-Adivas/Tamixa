@@ -13,14 +13,17 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.TamixaChrome
+import com.tamixa.ui.theme.TamixaColors
+import com.tamixa.ui.theme.luminance
 
 /**
  * Common app bar for all screens.
- * - [useTransparentBackground] = true: cream title/icons on [TamixaChrome] bar (theme surface tier)
- * - [useTransparentBackground] = false: uses surface container with theme colors
+ * - [useTransparentBackground] = true: glassy bar over starfield; **cream** chrome on dark theme
+ *   so titles read like a modern streaming / wellness app (not default M3 onSurface).
+ * - [useTransparentBackground] = false: solid surface + theme onSurface.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,7 +36,10 @@ fun TamixaScreenTopBar(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val containerColor = if (useTransparentBackground) Color.Transparent else colorScheme.surface
-    val titleColor = colorScheme.onSurface
+    val onDarkStarfield = colorScheme.background.luminance() < 0.5f
+    val titleColor =
+        if (useTransparentBackground && onDarkStarfield) TamixaColors.cream
+        else colorScheme.onSurface
     val navigationIconColor = titleColor
 
     if (useTransparentBackground) {
@@ -42,10 +48,10 @@ fun TamixaScreenTopBar(
                 title = {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        color = titleColor
+                        style = MaterialTheme.typography.titleMedium,
+                        color = titleColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
@@ -84,10 +90,10 @@ fun TamixaScreenTopBar(
             title = {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = titleColor
+                    style = MaterialTheme.typography.titleMedium,
+                    color = titleColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             },
             navigationIcon = {

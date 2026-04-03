@@ -4,19 +4,29 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
-import { STORY_CATEGORIES } from "@/types/api";
+import { BULK_LEARNING_FOCUS_OPTIONS, STORY_CATEGORIES } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useActionResult } from "@/contexts/action-result-context";
 import { getApiErrorMessage } from "@/lib/utils";
+
+const NO_LEARNING_FOCUS = "__none__";
 
 export default function BulkGenerateStoriesPage() {
   const { showSuccess, showError } = useActionResult();
   const [selectedCategories, setSelectedCategories] = useState<string[]>(["Friendship"]);
   const [totalStories, setTotalStories] = useState<number>(25);
   const [publish, setPublish] = useState<boolean>(false);
+  const [learningFocus, setLearningFocus] = useState<string>(NO_LEARNING_FOCUS);
 
   const isAllCategories = selectedCategories.length === STORY_CATEGORIES.length && STORY_CATEGORIES.every((c) => selectedCategories.includes(c));
   const [submitting, setSubmitting] = useState(false);
@@ -65,6 +75,9 @@ export default function BulkGenerateStoriesPage() {
         categories: selectedCategories,
         totalStories: totalRequested,
         publish,
+        ...(learningFocus !== NO_LEARNING_FOCUS && learningFocus.trim()
+          ? { learningFocus: learningFocus.trim() }
+          : {}),
       });
       const pollIntervalMs = 2000;
       const poll = async (): Promise<void> => {
@@ -197,6 +210,26 @@ export default function BulkGenerateStoriesPage() {
                 Submit for review after generation
               </label>
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="bulk-learning-focus">Learning focus (optional)</Label>
+            <p className="text-xs text-muted-foreground mt-1 mb-2">
+              Same options as parent story generation. Applies to every story in this bulk run; unknown values are ignored by the server.
+            </p>
+            <Select value={learningFocus} onValueChange={setLearningFocus}>
+              <SelectTrigger id="bulk-learning-focus" className="mt-1 w-full sm:max-w-md">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_LEARNING_FOCUS}>None</SelectItem>
+                {BULK_LEARNING_FOCUS_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="rounded-md border bg-muted/20 p-3 text-sm">

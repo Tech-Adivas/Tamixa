@@ -10,20 +10,17 @@ Install
 Hook Screen
     "Stories told by voices you love"
     ↓
-Demo Story (20 sec)
+Demo Story (~20 sec)
     talking character, subtitles, narration
     ↓
-Choose Story Interests
-    animals / friendship / adventure (select 2–3)
+Voice invitation (optional)
+    "Stories in your family voice?" — continue or skip
     ↓
-Home Screen Preview
-    what they'll see: Continue, Recommended, Popular, Categories
+Avatar invitation (optional)
+    "Who should tell the story?" — upload photo or skip
     ↓
-"Remind me at bedtime"
-    optional notification for Day-1 retention
-    ↓
-Login Prompt (soft)
-    Save progress • Clone voice • Upload avatar
+Login (soft gate)
+    Save progress • Clone voice • Upload avatar (post-auth)
 ```
 
 ## Screen Details
@@ -31,19 +28,19 @@ Login Prompt (soft)
 | Step | Screen | Purpose |
 |------|--------|---------|
 | 1 | **Hook** | Emotional hook — communicate Tamixa's unique value immediately |
-| 2 | **Demo** | Magic moment — 20s story with talking character, subtitles, narration |
-| 3 | **Interests** | Personalization — build recommendation profile (Animals, Adventure, Friendship, Village Life, Funny) |
-| 4 | **Home Preview** | Set expectations — show Continue, Recommended, Popular, Categories |
-| 5 | **Bedtime Reminder** | Day-1 retention — "Remind me at bedtime" notification option |
-| 6 | **Login** | Soft gate — save progress, clone voice, upload avatar |
+| 2 | **Demo** | Magic moment — short story with talking character, subtitles, narration |
+| 3 | **Voice invitation** | Optional — value prop for family voice; skip completes onboarding and goes to Login |
+| 4 | **Avatar invitation** | Optional — value prop for talking avatar; skip/continue completes onboarding → Login |
+| 5 | **Login** | Soft gate — auth before Dashboard; voice/avatar flows continue in-app |
+
+**Removed from onboarding (no longer in NavHost):** story interests picker, home preview card, bedtime reminder screen. Child interests and themes are handled outside this flow (e.g. child profile, story generation). Bedtime notification infrastructure (`OnboardingReminderPort`, preferences) may be reused from Settings later.
 
 ## Implementation Notes
 
 - **Onboarding state**: `hasCompletedOnboarding` stored in PreferencesPort; runs once per install.
-- **Preferred themes**: Stored as comma-separated list; used for home screen recommendations.
-- **Bedtime reminder**: Platform-specific (OnboardingReminderPort); default 8:00 PM.
 - **Auth**: Login required to reach Dashboard; "soft" = friendly copy, not punitive.
-- **Skip**: Hook has "Skip"; other steps use "Continue" to keep momentum.
+- **Skip**: Hook can skip to Login (complete onboarding); Voice/Avatar steps offer Skip → Login with onboarding completed.
+- **Bedtime reminder**: Not shown during onboarding. `OnboardingReminderPort` + preference keys remain on Android/iOS for a future Settings entry or push-based reminder.
 
 ## Related
 

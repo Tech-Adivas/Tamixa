@@ -3,7 +3,6 @@ package com.tamixa.ui.screen
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -12,9 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -195,15 +197,15 @@ fun SplashScreen(
                     val delay = i * 160L
                     val pr = ((elapsed - 520L - delay).coerceAtLeast(0L) / 980f).coerceIn(0f, 1f)
                     val radius = size.minDimension * 0.12f + pr * size.minDimension * 0.42f
-                    val alpha = (1f - pr) * 0.32f
+                    val alpha = (1f - pr) * 0.22f
                     drawCircle(
                         color = Color.White.copy(alpha = alpha),
                         radius = radius,
                         center = Offset(cx, cy),
-                        style = Stroke(width = 2.5.dp.toPx())
+                        style = Stroke(width = 2.dp.toPx())
                     )
                     drawCircle(
-                        color = TamixaColors.goldAccent.copy(alpha = alpha * 0.55f),
+                        color = TamixaColors.goldAccent.copy(alpha = alpha * 0.5f),
                         radius = radius * 0.92f,
                         center = Offset(cx, cy),
                         style = Stroke(width = 1.5.dp.toPx())
@@ -214,18 +216,14 @@ fun SplashScreen(
 
         val particlePhase = elapsed / 1100f * 2 * PI.toFloat()
         listOf(
-            Triple(0.12f, 0.18f, 0f),
-            Triple(0.22f, 0.85f, -1.5f),
-            Triple(0.72f, 0.28f, -3f),
-            Triple(0.82f, 0.78f, -0.5f),
-            Triple(0.08f, 0.48f, -2f),
-            Triple(0.92f, 0.55f, -4f),
-            Triple(0.28f, 0.72f, -1f),
-            Triple(0.55f, 0.12f, -2.5f)
+            Triple(0.18f, 0.22f, 0f),
+            Triple(0.78f, 0.32f, -2f),
+            Triple(0.12f, 0.62f, -1.2f),
+            Triple(0.88f, 0.72f, -3f),
         ).forEachIndexed { index, (xFrac, yFrac, phaseOff) ->
-            val driftX = sin(particlePhase + phaseOff) * 10f + sin(particlePhase * 0.65f + index) * 7f
-            val driftY = sin(particlePhase * 0.82f + phaseOff * 1.1f) * 12f
-            val alphaP = (0.38f + 0.22f * sin(particlePhase * 0.48f + index)).coerceIn(0.22f, 0.65f)
+            val driftX = sin(particlePhase + phaseOff) * 8f + sin(particlePhase * 0.65f + index) * 5f
+            val driftY = sin(particlePhase * 0.82f + phaseOff * 1.1f) * 10f
+            val alphaP = (0.28f + 0.14f * sin(particlePhase * 0.48f + index)).coerceIn(0.16f, 0.48f)
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -299,14 +297,10 @@ fun SplashScreen(
         }
 
         listOf(
-            Pair(0.5f - 0.22f, 0.5f - 0.28f),
-            Pair(0.5f - 0.22f, 0.5f + 0.22f),
-            Pair(0.5f + 0.22f, 0.5f - 0.24f),
-            Pair(0.5f + 0.22f, 0.5f + 0.22f),
-            Pair(0.5f - 0.30f, 0.5f - 0.05f),
-            Pair(0.5f + 0.28f, 0.5f + 0.18f),
-            Pair(0.5f + 0.20f, 0.5f - 0.32f),
-            Pair(0.5f - 0.26f, 0.5f + 0.28f)
+            Pair(0.5f - 0.2f, 0.5f - 0.26f),
+            Pair(0.5f + 0.22f, 0.5f + 0.2f),
+            Pair(0.5f - 0.28f, 0.5f + 0.08f),
+            Pair(0.5f + 0.24f, 0.5f - 0.3f),
         ).forEachIndexed { index, (yFrac, xFrac) ->
             val sparkleAlphaVal = sparkleAlpha(index)
             val scale = sparkleScale(index)
@@ -342,19 +336,20 @@ fun SplashScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .offset(y = (-84).dp),
+                .offset(y = (-88).dp)
+                .padding(horizontal = TamixaDesignTokens.screenPadding),
             contentAlignment = Alignment.Center
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Strings.appTagline().split(" · ").flatMapIndexed { i, w ->
                     if (i > 0) listOf(" · ", w) else listOf(w)
                 }.forEachIndexed { index, word ->
                     val progress = taglineItemProgress(index)
-                    val offsetY = 18f * (1f - progress)
-                    val wordScale = 0.88f + 0.12f * progress
+                    val offsetY = 12f * (1f - progress)
+                    val wordScale = 0.94f + 0.06f * progress
                     Text(
                         text = word,
                         modifier = Modifier.graphicsLayer {
@@ -363,30 +358,37 @@ fun SplashScreen(
                             scaleX = wordScale
                             scaleY = wordScale
                         },
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = if (word.startsWith(" ")) 0.sp else 1.4.sp,
-                            lineHeight = 28.sp
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = if (word.startsWith(" ")) 0.35.sp else 1.25.sp,
+                            lineHeight = 24.sp
                         ),
-                        color = Color.White.copy(alpha = 0.96f)
+                        color = TamixaColors.cream.copy(alpha = 0.94f),
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
         }
 
         if (!isLoggedIn) {
-            Box(
+            Surface(
+                onClick = { skipRequested = true },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(TamixaDesignTokens.screenPadding)
-                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                    .clickable { skipRequested = true },
-                contentAlignment = Alignment.Center
+                    .padding(TamixaDesignTokens.screenPadding),
+                shape = RoundedCornerShape(999.dp),
+                color = Color.White.copy(alpha = 0.1f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                shadowElevation = 0.dp,
             ) {
                 Text(
                     text = Strings.skip(),
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = Color.White.copy(alpha = 0.92f)
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.4.sp,
+                    ),
+                    color = TamixaColors.cream.copy(alpha = 0.95f),
                 )
             }
         }

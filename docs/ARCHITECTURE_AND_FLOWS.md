@@ -29,7 +29,8 @@
 | Route | Screen | Main data source | Backend integration |
 |-------|--------|------------------|---------------------|
 | `splash` | SplashScreen | AuthViewModel, SettingsViewModel | None (local flags) |
-| `onboarding/hook` … `onboarding/bedtime-reminder` | Onboarding* | SettingsViewModel (completeOnboarding, reminder) | Optional reminder port (platform) |
+| `onboarding/hook`, `onboarding/demo`, `onboarding/voice-invitation`, `onboarding/avatar-invitation` | OnboardingHook/Demo/Voice/Avatar | SettingsViewModel (`completeOnboarding`) | — |
+| `onboarding/home-preview` | *(route only in `Screen.kt`)* | — | Not registered in `TamixaNavHost`; composable exists but unused |
 | `login` | LoginScreen | AuthViewModel (loginState, OTP, passwordless) | AuthApi: passwordless, OTP send/verify, refresh |
 | `register` | RegisterScreen | AuthViewModel (registerState) | AuthApi: register |
 | `language` | LanguageSelectionScreen | SettingsViewModel | Persisted locally |
@@ -84,7 +85,7 @@
 - **ListeningHistoryScreen:** `recentPlaybackLoading`, `recentPlaybackError`; loading indicator, error + Retry.
 - **FavoritesScreen:** `favoritesLoading`, `favoritesError`; loading, error + Retry.
 - **Dashboard childName:** From `currentUser` (email prefix) when available.
-- **Onboarding:** Interests and HomePreview added to composeApp NavHost; flow Avatar → Interests → HomePreview → Login.
+- **Onboarding:** Flow is Hook → Demo → Voice invitation → Avatar invitation → Login. **Removed:** `OnboardingInterestsScreen`, `OnboardingBedtimeReminderScreen` (and their routes). Bedtime reminder scheduling APIs (`OnboardingReminderPort`, prefs) remain for optional future use (e.g. Settings).
 - **Backend:** Parent-facing `POST /api/v1/stories/{id}/regenerate-cover` and `POST /api/v1/stories/{id}/remix` in StoryController (remix returns 501 until implemented).
 - **Ktor:** Authorization/Bearer redacted in logging.
 - **Tests:** `AuthValidationTest` for `isEmailValid` / `isOtpCodeValid`.
@@ -104,7 +105,7 @@
 
 | Gap | Recommendation |
 |-----|----------------|
-| **OnboardingInterests / OnboardingHomePreview** | Defined in Screen but not in composeApp NavHost; androidApp NavHost includes them. Unify onboarding routes across targets or document platform difference. |
+| **OnboardingHomePreview** | **Resolved:** route and screen removed; onboarding docs match the shorter flow. |
 | **Deep links** | No NavDeepLink or deep-link handling. Add if marketing or notifications should open specific screens (e.g. story, subscription). |
 | **childName on Dashboard** | Passed as `null`; wire from backend/settings when child context exists. |
 

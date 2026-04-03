@@ -17,15 +17,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Abc
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Card
@@ -46,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.tamixa.ui.components.AppScreenBackground
@@ -83,6 +87,12 @@ fun ProfileScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToHome: () -> Unit,
     onNavigateToLibrary: () -> Unit,
+    /** From a generated story linked to a child; enables reading level, streak, vocabulary, classroom. */
+    educationChildId: Long? = null,
+    onNavigateToReadingLevel: () -> Unit = {},
+    onNavigateToReadingStreak: () -> Unit = {},
+    onNavigateToVocabulary: () -> Unit = {},
+    onNavigateToClassroom: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val user = userState.dataOrNull()
@@ -120,11 +130,9 @@ fun ProfileScreen(
                     )
                     .verticalScroll(rememberScrollState())
                     .padding(bottom = TamixaDesignTokens.screenPaddingBottomWithNav),
-                verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.cardSpacing),
+                verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                val colorScheme = MaterialTheme.colorScheme
-                Spacer(Modifier.height(8.dp))
                 when (userState) {
                     is UiState.Loading -> {
                         Box(
@@ -157,9 +165,7 @@ fun ProfileScreen(
                         )
                     }
                 }
-                Spacer(Modifier.height(TamixaDesignTokens.sectionSpacing))
                 user?.let { ProfileDetailsCard(user = it, onUpdateProfile = onUpdateProfile) }
-                if (user != null) Spacer(Modifier.height(TamixaDesignTokens.cardSpacing))
                 ProfileMenuItem(
                     icon = Icons.Filled.Mic,
                     label = Strings.tabMyVoiceAndAvatar(),
@@ -180,6 +186,45 @@ fun ProfileScreen(
                     label = Strings.listeningHistory(),
                     onClick = onNavigateToListeningHistory
                 )
+                Text(
+                    text = Strings.profileLearningProgressSection(),
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = TamixaColors.cream.copy(alpha = 0.9f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 4.dp)
+                )
+                if (educationChildId != null && educationChildId > 0L) {
+                    ProfileMenuItem(
+                        icon = Icons.AutoMirrored.Filled.MenuBook,
+                        label = Strings.readingLevelTitle(),
+                        onClick = onNavigateToReadingLevel
+                    )
+                    ProfileMenuItem(
+                        icon = Icons.Filled.LocalFireDepartment,
+                        label = Strings.readingStreakTitle(),
+                        onClick = onNavigateToReadingStreak
+                    )
+                    ProfileMenuItem(
+                        icon = Icons.Filled.Abc,
+                        label = Strings.vocabularyTitle(),
+                        onClick = onNavigateToVocabulary
+                    )
+                    ProfileMenuItem(
+                        icon = Icons.Filled.Groups,
+                        label = Strings.myClassrooms(),
+                        onClick = onNavigateToClassroom
+                    )
+                } else {
+                    Text(
+                        text = Strings.addChildToCreateStories(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TamixaColors.cream.copy(alpha = 0.72f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp)
+                    )
+                }
                 ProfileMenuItem(
                     icon = Icons.Filled.School,
                     label = Strings.funAndLearn(),
@@ -200,6 +245,7 @@ fun ProfileScreen(
                     label = Strings.settings(),
                     onClick = onNavigateToSettings
                 )
+                Spacer(Modifier.height(TamixaDesignTokens.cardSpacing))
             }
         }
     }
@@ -225,8 +271,11 @@ private fun ProfileDetailsCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(TamixaDesignTokens.cardContentPadding),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(
+                    horizontal = TamixaDesignTokens.contentPaddingHorizontal,
+                    vertical = TamixaDesignTokens.smallSpacing,
+                ),
+            verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -348,9 +397,12 @@ private fun ProfileMenuItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(TamixaDesignTokens.cardContentPadding),
+                .padding(
+                    horizontal = TamixaDesignTokens.contentPaddingHorizontal,
+                    vertical = 14.dp,
+                ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
         ) {
             Box(
                 modifier = Modifier

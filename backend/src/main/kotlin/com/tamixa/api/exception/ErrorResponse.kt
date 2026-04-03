@@ -18,7 +18,8 @@ data class ErrorResponse(
             message: String,
             status: Int,
             traceId: String? = null,
-            errors: Map<String, String>? = null
+            errors: Map<String, String>? = null,
+            code: String? = null,
         ): Map<String, Any> {
             val map = mutableMapOf<String, Any>(
                 "message" to message,
@@ -27,6 +28,7 @@ data class ErrorResponse(
                 "timestamp" to Instant.now().toString()
             )
             if (!errors.isNullOrEmpty()) map["errors"] = errors
+            if (!code.isNullOrBlank()) map["code"] = code
             return map
         }
     }

@@ -202,6 +202,10 @@ export interface LibraryStorySummary {
   regeneratePromptUnlockRequestedAt?: string | null;
   /** ISO timestamp when soft-deleted (trash). */
   deletedAt?: string | null;
+  /** Parent-facing discussion prompts (library metadata). */
+  parentDiscussionPrompts?: string[] | null;
+  parentContentNote?: string | null;
+  speakAlongPrompt?: string | null;
 }
 
 export const EMOTION_MODES = ["CALM", "SOOTHING", "ADVENTUROUS"] as const;
@@ -232,6 +236,10 @@ export interface CreateLibraryStoryRequest {
    * Omit on create or when leaving the script unchanged; send "" to clear the script.
    */
   narratedContent?: string | null;
+  /** Up to 10 short strings; stored as JSON on the library row. */
+  parentDiscussionPrompts?: string[] | null;
+  parentContentNote?: string | null;
+  speakAlongPrompt?: string | null;
 }
 
 export interface BulkGenerateStoriesRequest {
@@ -239,7 +247,27 @@ export interface BulkGenerateStoriesRequest {
   categories: string[];
   totalStories: number;
   publish?: boolean;
+  /** Same backend allowlist as parent generate; invalid values are ignored server-side. */
+  learningFocus?: string | null;
 }
+
+/** Mirrors backend StoryPromptBuilder allowed learning-focus keys (labels for admin UI). */
+export const BULK_LEARNING_FOCUS_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "empathy", label: "Empathy" },
+  { value: "problem_solving", label: "Problem solving" },
+  { value: "vocabulary", label: "Vocabulary" },
+  { value: "curiosity", label: "Curiosity" },
+  { value: "perseverance", label: "Perseverance" },
+  { value: "sharing", label: "Sharing" },
+  { value: "honesty", label: "Honesty" },
+  { value: "courage", label: "Courage" },
+  { value: "kindness", label: "Kindness" },
+  { value: "friendship", label: "Friendship" },
+  { value: "responsibility", label: "Responsibility" },
+  { value: "public_speaking", label: "Public speaking" },
+  { value: "money_literacy", label: "Money literacy" },
+  { value: "research_skills", label: "Research & facts" },
+] as const;
 
 export interface BulkGeneratedStoryItem {
   id: number;
@@ -341,6 +369,9 @@ export interface LibraryStoryStreamUrlResponse {
  * Story categories for admin (bulk generate, filters, edit). Must stay aligned with:
  * - Mobile: composeApp/src/commonMain/kotlin/.../SampleData.kt categories (excluding "All")
  * - Backend: StoryCategories.canonical in application/storylibrary/StoryCategories.kt
+ *
+ * "Fun stories" / "Funny Stories" are the light-classics lane in the parent app (Fun corner filter).
+ * "Learn · …" rows remain valid editorial categories; there is no separate Learn-only hub in the app.
  */
 export const STORY_CATEGORIES = [
   "Animals",
@@ -348,11 +379,16 @@ export const STORY_CATEGORIES = [
   "Adventure",
   "Village Life",
   "Moral Stories",
+  "Fun stories",
   "Funny Stories",
   "Family Stories",
   "Fantasy",
   "Nature",
   "Bravery",
+  "Learn · History",
+  "Learn · Science & Nature",
+  "Learn · Culture & Heritage",
+  "Learn · Life Skills",
 ] as const;
 
 export const AGE_GROUPS = [
@@ -362,6 +398,12 @@ export const AGE_GROUPS = [
   { value: 7, label: "7-8 years" },
   { value: 9, label: "9-10 years" },
   { value: 11, label: "11-12 years" },
+  { value: 13, label: "13-15 years" },
+  { value: 16, label: "16-17 years" },
+  { value: 18, label: "18-24 years" },
+  { value: 30, label: "25-40 years" },
+  { value: 50, label: "41-60 years" },
+  { value: 70, label: "61-99 years" },
 ] as const;
 
 export const MIN_WORD_COUNT = 50;

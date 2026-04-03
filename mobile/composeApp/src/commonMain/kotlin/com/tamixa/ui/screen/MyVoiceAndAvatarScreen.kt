@@ -86,10 +86,9 @@ fun MyVoiceAndAvatarScreen(
                     .fillMaxSize()
                     .padding(TamixaDesignTokens.screenPadding)
                     .padding(bottom = TamixaDesignTokens.screenPaddingBottomWithNav),
-                verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.cardSpacing),
+                verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(24.dp))
                 Text(
                     text = Strings.voiceScreenHeadline(),
                     style = MaterialTheme.typography.titleLarge.copy(
@@ -102,7 +101,6 @@ fun MyVoiceAndAvatarScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = TamixaColors.cream.copy(alpha = 0.9f)
                 )
-                Spacer(Modifier.height(16.dp))
                 Card(
                     onClick = if (isPremiumForVoice) onNavigateToVoice else onNavigateToSubscription,
                     modifier = Modifier.fillMaxWidth(),
@@ -111,7 +109,10 @@ fun MyVoiceAndAvatarScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation)
                 ) {
                     Column(
-                        modifier = Modifier.padding(TamixaDesignTokens.cardContentPadding),
+                        modifier = Modifier.padding(
+                            horizontal = TamixaDesignTokens.contentPaddingHorizontal,
+                            vertical = TamixaDesignTokens.smallSpacing,
+                        ),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(
@@ -120,7 +121,7 @@ fun MyVoiceAndAvatarScreen(
                             tint = TamixaColors.goldAccent,
                             modifier = Modifier.size(48.dp)
                         )
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(TamixaDesignTokens.smallSpacing))
                         Text(
                             Strings.voiceCtaCloneYourVoice(),
                             style = MaterialTheme.typography.titleLarge,
@@ -143,7 +144,10 @@ fun MyVoiceAndAvatarScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation)
                 ) {
                     Column(
-                        modifier = Modifier.padding(TamixaDesignTokens.cardContentPadding),
+                        modifier = Modifier.padding(
+                            horizontal = TamixaDesignTokens.contentPaddingHorizontal,
+                            vertical = TamixaDesignTokens.smallSpacing,
+                        ),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Box(
@@ -155,7 +159,7 @@ fun MyVoiceAndAvatarScreen(
                                 fontSize = 48.sp
                             )
                         }
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(TamixaDesignTokens.smallSpacing))
                         Text(
                             Strings.avatarScreenHeadline(),
                             style = MaterialTheme.typography.titleLarge,

@@ -10,6 +10,8 @@ vi.mock("../contexts/AuthContext", () => ({
 vi.mock("../lib/api", () => ({
   getRecommendedStories: vi.fn().mockResolvedValue([]),
   getRecentPlayback: vi.fn().mockResolvedValue([]),
+  getLibraryStories: vi.fn().mockResolvedValue([]),
+  resolveCoverUrl: (u: string | null | undefined) => u ?? null,
   getListeningProgress: vi.fn().mockResolvedValue({
     periodDays: 30,
     storiesStarted: 2,

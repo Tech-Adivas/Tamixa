@@ -47,5 +47,11 @@ data class LibraryStoryResponse(
     val regeneratePromptLockApproved: Boolean = false,
     val regeneratePromptUnlockRequestedAt: Instant? = null,
     /** When set, story is in trash (soft-deleted) until retention expires or restored. */
-    val deletedAt: Instant? = null
+    val deletedAt: Instant? = null,
+    /** Dinner-table style prompts for parents (curated library). */
+    val parentDiscussionPrompts: List<String>? = null,
+    /** Note on simplification or dramatization for listeners. */
+    val parentContentNote: String? = null,
+    /** Short invitation to try speaking aloud after the story. */
+    val speakAlongPrompt: String? = null,
 )

@@ -39,13 +39,18 @@ class OtpService(
     /** Send OTP to phone. When dev code is set, returns it for UI auto-fill (no real SMS). */
     @Transactional
     fun sendOtp(phone: String): OtpSendResult {
-        val normalized = normalizePhone(phone) ?: return OtpSendResult(sent = false, devCode = null)
+        val normalized = OtpPhoneFormats.normalize(phone) ?: return OtpSendResult(sent = false, devCode = null)
         val code = devCode ?: generateCode()
         val expiresAt = Instant.now().plusSeconds(otpExpiryMinutes * 60)
         if (devCode == null) {
             val entity = OtpVerificationEntity(phone = normalized, code = code, expiresAt = expiresAt)
-            otpRepository.save(entity)
-            smsSender.sendOtp(normalized, code)
+            val saved = otpRepository.save(entity)
+            val delivered = smsSender.sendOtp(normalized, code)
+            if (!delivered) {
+                otpRepository.delete(saved)
+                log.warn("OTP send failed; rolled back stored code for phone={}", PiiMask.maskPhone(normalized))
+                return OtpSendResult(sent = false, devCode = null)
+            }
         } else {
             log.info("OTP (dev bypass): phone={} (no SMS sent)", PiiMask.maskPhone(normalized))
         }
@@ -55,7 +60,7 @@ class OtpService(
     /** Verify OTP and return tokens. Accepts dev code when configured. */
     @Transactional
     fun verifyOtp(phone: String, code: String): AuthTokens {
-        val normalized = normalizePhone(phone) ?: throw InvalidOtpException("Invalid phone number")
+        val normalized = OtpPhoneFormats.normalize(phone) ?: throw InvalidOtpException("Invalid phone number")
         val trimmedCode = code.trim()
         val maskedPhone = PiiMask.maskPhone(normalized)
         if (trimmedCode.isBlank()) {
@@ -125,34 +130,14 @@ class OtpService(
      * E.g. +919876543210 and 9876543210 refer to the same Indian number.
      */
     private fun findExistingParentByPhone(phone: String): Parent? {
-        val formats = phoneFormatsToTry(phone) ?: return null
+        val formats = OtpPhoneFormats.variantsForStoredPhoneLookup(phone)
         for (fmt in formats) {
             parentRepository.findByPhone(fmt)?.let { return it }
         }
         return null
     }
 
-    private fun phoneFormatsToTry(phone: String): List<String>? {
-        val digits = phone.filter { it.isDigit() }
-        if (digits.length !in 10..15) return null
-        val formats = mutableListOf<String>()
-        formats += "+$digits"
-        if (digits.length == 10 && digits[0] in '6'..'9') {
-            formats += "+91$digits"
-            formats += digits
-        }
-        if (digits.length == 11 && digits.startsWith("91")) {
-            formats += digits.drop(2)
-        }
-        return formats.distinct()
-    }
-
     private fun generateCode(): String = ThreadLocalRandom.current().nextInt(100_000, 1_000_000).toString()
-    private fun normalizePhone(phone: String): String? {
-        val digits = phone.filter { it.isDigit() }
-        if (digits.length !in 10..15) return null
-        return if (digits.length == 10 && digits[0] in '6'..'9') "+91$digits" else "+$digits"
-    }
 
     private fun issueTokens(email: String, role: String): AuthTokens = AuthTokens(
         accessToken = jwt.generateAccessToken(email, role),

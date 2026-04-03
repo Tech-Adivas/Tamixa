@@ -37,6 +37,7 @@ import com.tamixa.ui.components.AppScreenBackground
 import com.tamixa.ui.components.StoryThumbnailPlaceholder
 import com.tamixa.ui.components.TamixaChildrenListeningIllustration
 import com.tamixa.ui.strings.Strings
+import com.tamixa.ui.theme.TamixaContentColors
 import com.tamixa.ui.theme.TamixaCardColors
 import com.tamixa.ui.theme.TamixaDesignTokens
 import com.tamixa.ui.theme.TamixaColors
@@ -80,9 +81,13 @@ fun ListeningHistoryScreen(
             )
         }
     ) { padding ->
-        val colorScheme = MaterialTheme.colorScheme
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
+            AppScreenBackground(
+                showStars = true,
+                showClouds = true,
+                animateStars = true,
+                ambientPresence = true
+            )
             when {
                 recentPlaybackLoading -> {
                     Box(
@@ -103,7 +108,7 @@ fun ListeningHistoryScreen(
                         Text(
                             text = recentPlaybackError!!,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = TamixaColors.cream.copy(alpha = 0.92f)
                         )
                         Spacer(Modifier.height(16.dp))
                         TextButton(onClick = { storyViewModel.loadRecentPlayback(TamixaConstants.RECENT_PLAYBACK_LIMIT, languageCode) }) {
@@ -173,7 +178,7 @@ fun ListeningHistoryScreen(
                                         Text(
                                             item.story.theme,
                                             style = MaterialTheme.typography.titleMedium,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            color = TamixaContentColors.cardPrimary()
                                         )
                                         Spacer(Modifier.height(2.dp))
                                         val min = item.positionSeconds / 60
@@ -181,13 +186,13 @@ fun ListeningHistoryScreen(
                                         Text(
                                             Strings.continueFrom(min, sec),
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = TamixaContentColors.cardSecondary()
                                         )
                                     }
                                     Icon(
                                         Icons.Default.PlayArrow,
                                         contentDescription = Strings.play(),
-                                        tint = MaterialTheme.colorScheme.primary,
+                                        tint = TamixaColors.goldAccent,
                                         modifier = Modifier.size(24.dp)
                                     )
                                 }

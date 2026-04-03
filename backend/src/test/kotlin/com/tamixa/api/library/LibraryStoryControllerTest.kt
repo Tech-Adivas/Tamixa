@@ -13,7 +13,10 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.PageRequest
 
 /**
  * Integration test for LibraryStoryController (categories, list with theme).
@@ -78,8 +81,8 @@ class LibraryStoryControllerTest : IntegrationTestBase() {
             emotionMode = null,
             narrationApprovedAt = java.time.Instant.now()
         )
-        whenever(storyLibraryService.findByLanguageApprovedOnly("ta", 0, 50, "Adventure"))
-            .thenReturn(org.springframework.data.domain.PageImpl(listOf(story), org.springframework.data.domain.PageRequest.of(0, 50), 1))
+        whenever(storyLibraryService.findByLanguageApprovedOnly("ta", 0, 50, "Adventure", false))
+            .thenReturn(PageImpl(listOf(story), PageRequest.of(0, 50), 1))
 
         mockMvc.perform(
             get("${ApiVersion.V1}/stories/library")
@@ -91,5 +94,61 @@ class LibraryStoryControllerTest : IntegrationTestBase() {
             .andExpect(jsonPath("$.content.length()").value(1))
             .andExpect(jsonPath("$.totalElements").value(1))
             .andExpect(jsonPath("$.page").value(0))
+    }
+
+    @Test
+    @WithMockUser(username = "parent@test.com", roles = ["PARENT"])
+    fun `list with learnHub true passes learnHub flag to service`() {
+        val story = LibraryStoryResponse(
+            id = 2L,
+            title = "Learn sample",
+            content = "",
+            theme = "Learn · History",
+            category = "Learn · History",
+            language = "ta",
+            age = 10,
+            childName = "Listener",
+            wordCount = 80,
+            readingTimeMinutes = 0.8,
+            moral = null,
+            audioFileUrl = null,
+            status = "PUBLISHED",
+            coverImageUrl = null,
+            coverVideoUrl = null,
+            createdAt = java.time.Instant.now(),
+            modifiedAt = java.time.Instant.now(),
+            emotionMode = null,
+            narrationApprovedAt = java.time.Instant.now()
+        )
+        whenever(storyLibraryService.findByLanguageApprovedOnly("ta", 0, 50, null, true))
+            .thenReturn(PageImpl(listOf(story), PageRequest.of(0, 50), 1))
+
+        mockMvc.perform(
+            get("${ApiVersion.V1}/stories/library")
+                .param("language", "ta")
+                .param("learnHub", "true")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.content.length()").value(1))
+            .andExpect(jsonPath("$.content[0].theme").value("Learn · History"))
+
+        verify(storyLibraryService).findByLanguageApprovedOnly("ta", 0, 50, null, true)
+    }
+
+    @Test
+    @WithMockUser(username = "parent@test.com", roles = ["PARENT"])
+    fun `list without learnHub param defaults learnHub false`() {
+        whenever(storyLibraryService.findByLanguageApprovedOnly("ta", 0, 20, null, false))
+            .thenReturn(PageImpl(emptyList(), PageRequest.of(0, 20), 0))
+
+        mockMvc.perform(
+            get("${ApiVersion.V1}/stories/library")
+                .param("language", "ta")
+                .param("size", "20")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.content.length()").value(0))
+
+        verify(storyLibraryService).findByLanguageApprovedOnly("ta", 0, 20, null, false)
     }
 }

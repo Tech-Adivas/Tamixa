@@ -127,6 +127,21 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
         pageable: Pageable
     ): Page<LibraryStoryEntity>
 
+    @Query(
+        "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+            "AND c.deletedAt IS NULL " +
+            "AND (LOWER(COALESCE(c.category, '')) LIKE LOWER(CONCAT(:prefix, '%')) OR LOWER(c.theme) LIKE LOWER(CONCAT(:prefix, '%'))) " +
+            "AND ((c.audioFileUrl IS NOT NULL AND LENGTH(c.audioFileUrl) > 0) OR EXISTS (" +
+            "SELECT 1 FROM StoryNarrationAudioEntity a, StoryTranslationEntity t " +
+            "WHERE a.translationId = t.id AND t.masterStoryId = c.id AND t.language = :language " +
+            "AND a.voiceProfile = 'default' AND a.status = 'READY' AND LENGTH(a.audioUrl) > 0))"
+    )
+    fun findByLanguageAndNarrationApprovedLearnPrefix(
+        @Param("language") language: String,
+        @Param("prefix") prefix: String,
+        pageable: Pageable
+    ): Page<LibraryStoryEntity>
+
     @Query("SELECT c FROM LibraryStoryEntity c WHERE c.id IN :ids AND c.deletedAt IS NULL")
     fun findListingByIdIn(@Param("ids") ids: List<Long>): List<LibraryStoryListingProjection>
 

@@ -1,18 +1,136 @@
 package com.tamixa.ui.screen
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tamixa.domain.Story
 import com.tamixa.ui.components.TamixaBottomBar
 import com.tamixa.ui.components.TamixaTab
+import com.tamixa.ui.isFunStory
 import com.tamixa.ui.strings.Strings
+import com.tamixa.ui.theme.TamixaColors
 
-/**
- * Story Library screen per MVP blueprint: browse all stories with bottom nav.
- */
+private enum class LibraryHubTab { Browse, FunCorner }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun LibraryHubSegmentedRow(
+    browseSelected: Boolean,
+    onBrowse: () -> Unit,
+    onFunCorner: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        LibraryHubSegment(
+            label = Strings.libraryBrowseTab(),
+            selected = browseSelected,
+            onClick = onBrowse,
+            modifier = Modifier.weight(1f),
+        )
+        LibraryHubSegment(
+            label = Strings.libraryFunCornerTab(),
+            selected = !browseSelected,
+            onClick = onFunCorner,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LibraryHubSegment(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(18.dp)
+    val hubSpot = Color(0xFFE8E4DC).copy(alpha = if (selected) 0.14f else 0.09f)
+    Surface(
+        onClick = onClick,
+        shape = shape,
+        color = Color.Transparent,
+        border = BorderStroke(
+            1.dp,
+            if (selected) Color.White.copy(alpha = 0.38f) else Color.White.copy(alpha = 0.22f),
+        ),
+        modifier = modifier.shadow(
+            elevation = if (selected) 8.dp else 3.dp,
+            shape = shape,
+            ambientColor = Color.Black.copy(alpha = if (selected) 0.2f else 0.12f),
+            spotColor = hubSpot,
+        ),
+    ) {
+        val brush = if (selected) {
+            Brush.horizontalGradient(
+                colors = listOf(
+                    TamixaColors.deepTeal.copy(alpha = 0.92f),
+                    TamixaColors.terracotta.copy(alpha = 0.78f),
+                ),
+            )
+        } else {
+            Brush.horizontalGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.14f),
+                    Color.White.copy(alpha = 0.07f),
+                ),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .background(brush)
+                .fillMaxWidth()
+                .padding(vertical = 12.dp, horizontal = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+            )
+        }
+    }
+}
+
+/**
+ * Story Library: full catalog by default; optional **Fun corner** filters to
+ * "Fun stories" / "Funny Stories" categories (lighter classics—no separate “learn” silo).
+ */
+@Composable
 fun LibraryScreen(
+    /** When true (e.g. deep link), start on the Fun corner tab. */
+    openFunCornerFirst: Boolean = false,
     cachedStories: List<Story>,
     loading: Boolean = false,
     loadError: String? = null,
@@ -22,25 +140,59 @@ fun LibraryScreen(
     onNavigateToHome: () -> Unit,
     onNavigateToLibrary: () -> Unit,
     onNavigateToShortContent: () -> Unit,
-    onNavigateToProfile: () -> Unit
+    onNavigateToProfile: () -> Unit,
+    /** API origin for cover URLs in the poster grid. */
+    apiBaseUrl: String? = null,
 ) {
+    var hubTab by rememberSaveable(openFunCornerFirst) {
+        mutableStateOf(
+            if (openFunCornerFirst) LibraryHubTab.FunCorner else LibraryHubTab.Browse,
+        )
+    }
+    val displayStories = when (hubTab) {
+        LibraryHubTab.Browse -> cachedStories
+        LibraryHubTab.FunCorner -> cachedStories.filter { isFunStory(it) }
+    }
     StorySelectionScreen(
-        cachedStories = cachedStories,
+        cachedStories = displayStories,
         onGenerateStory = onGenerateStory,
         onStoryClick = onStoryClick,
         onBack = onNavigateToHome,
         title = Strings.storyLibrary(),
         loading = loading,
         loadError = loadError,
-        onRetry = if (loadError != null) onRetry else null,
+        onRetry = if (loadError != null) ({ onRetry() }) else null,
+        emptyStateSubtitle = when (hubTab) {
+            LibraryHubTab.Browse -> Strings.generateFirstStoryPrompt()
+            LibraryHubTab.FunCorner -> Strings.funCornerEmptyHint()
+        },
+        listLayout = StorySelectionListLayout.LibraryPosterGrid,
+        apiBaseUrl = apiBaseUrl,
+        filterRow = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                LibraryHubSegmentedRow(
+                    browseSelected = hubTab == LibraryHubTab.Browse,
+                    onBrowse = { hubTab = LibraryHubTab.Browse },
+                    onFunCorner = { hubTab = LibraryHubTab.FunCorner },
+                )
+                Text(
+                    text = Strings.dashboardSpotlightSubtitle(),
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                    color = Color.White.copy(alpha = 0.82f),
+                )
+            }
+        },
         bottomBar = {
             TamixaBottomBar(
                 selectedTab = TamixaTab.Library,
                 onHome = onNavigateToHome,
                 onLibrary = onNavigateToLibrary,
                 onFunAndLearn = onNavigateToShortContent,
-                onProfile = onNavigateToProfile
+                onProfile = onNavigateToProfile,
             )
-        }
+        },
     )
 }

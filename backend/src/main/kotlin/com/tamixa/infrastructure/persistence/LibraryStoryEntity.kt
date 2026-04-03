@@ -6,6 +6,8 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 import java.time.Instant
 
 @Entity
@@ -93,5 +95,15 @@ class LibraryStoryEntity(
 
     /** When set, row is excluded from listings; purge job deletes permanently after retention. */
     @Column(name = "deleted_at")
-    var deletedAt: Instant? = null
+    var deletedAt: Instant? = null,
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "parent_discussion_prompts", columnDefinition = "jsonb")
+    var parentDiscussionPrompts: List<String>? = null,
+
+    @Column(name = "parent_content_note", columnDefinition = "TEXT")
+    var parentContentNote: String? = null,
+
+    @Column(name = "speak_along_prompt", length = 500)
+    var speakAlongPrompt: String? = null,
 )

@@ -39,10 +39,17 @@ class LibraryStoryController(
         @RequestParam(defaultValue = "ta") language: String,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "50") size: Int,
-        @RequestParam(required = false) theme: String?
+        @RequestParam(required = false) theme: String?,
+        @RequestParam(defaultValue = "false") learnHub: Boolean,
     ): ResponseEntity<PagedResponse<LibraryStoryResponse>> {
-        log.debug("Library story list (approved only) language={} page={} size={} theme={}", language, page, size, theme)
-        val result = storyLibraryService.findByLanguageApprovedOnly(language.trim().lowercase(), page, size, theme)
+        log.debug("Library story list (approved only) language={} page={} size={} theme={} learnHub={}", language, page, size, theme, learnHub)
+        val result = storyLibraryService.findByLanguageApprovedOnly(
+            language.trim().lowercase(),
+            page,
+            size,
+            theme,
+            learnHub = learnHub,
+        )
         val response = PagedResponse(
             content = result.content,
             page = result.number,

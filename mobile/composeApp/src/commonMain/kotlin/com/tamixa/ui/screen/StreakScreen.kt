@@ -11,10 +11,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.tamixa.network.ReadingStreakDto
 import com.tamixa.ui.components.AppScreenBackground
 import com.tamixa.ui.components.TamixaScreenTopBar
+import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,14 +32,14 @@ fun StreakScreen(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             TamixaScreenTopBar(
-                title = "Reading Streak",
+                title = Strings.readingStreakTitle(),
                 onBack = onBack,
                 useTransparentBackground = true
             )
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            AppScreenBackground(showClouds = false)
+            AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
             when {
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = TamixaColors.goldAccent)
@@ -47,9 +49,14 @@ fun StreakScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TamixaColors.cream.copy(alpha = 0.92f),
+                        textAlign = TextAlign.Center,
+                    )
                     Spacer(Modifier.height(16.dp))
-                    TextButton(onClick = onRetry) { Text("Retry", color = TamixaColors.goldAccent) }
+                    TextButton(onClick = onRetry) { Text(Strings.retry(), color = TamixaColors.goldAccent) }
                 }
                 streak != null -> Column(
                     modifier = Modifier
@@ -73,7 +80,7 @@ fun StreakScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.LocalFireDepartment,
-                                contentDescription = null,
+                                contentDescription = Strings.readingStreakTitle(),
                                 tint = if (streak.isActive) TamixaColors.goldAccent else MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.size(56.dp)
                             )
@@ -84,7 +91,7 @@ fun StreakScreen(
                                 color = TamixaContentColors.cardPrimary()
                             )
                             Text(
-                                text = if (streak.currentStreak == 1) "day streak" else "day streak",
+                                text = Strings.streakLengthSubtitle(streak.currentStreak),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = TamixaContentColors.cardSecondary()
                             )
@@ -94,7 +101,7 @@ fun StreakScreen(
                                     color = TamixaColors.goldAccent.copy(alpha = 0.15f)
                                 ) {
                                     Text(
-                                        text = "🔥 Active",
+                                        text = Strings.streakStatusActive(),
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = TamixaColors.goldAccent
@@ -117,12 +124,12 @@ fun StreakScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Best streak",
+                                text = Strings.streakBestLabel(),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = TamixaContentColors.cardSecondary()
                             )
                             Text(
-                                text = "${streak.longestStreak} days",
+                                text = Strings.streakBestDays(streak.longestStreak),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = TamixaContentColors.cardPrimary()
@@ -143,7 +150,7 @@ fun StreakScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Last read",
+                                    text = Strings.streakLastReadLabel(),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = TamixaContentColors.cardSecondary()
                                 )
@@ -157,7 +164,13 @@ fun StreakScreen(
                     }
                 }
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No streak data yet. Start reading!", color = TamixaContentColors.cardSecondary())
+                    Text(
+                        Strings.streakNoDataYet(),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TamixaColors.cream.copy(alpha = 0.88f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(TamixaDesignTokens.screenPadding),
+                    )
                 }
             }
         }

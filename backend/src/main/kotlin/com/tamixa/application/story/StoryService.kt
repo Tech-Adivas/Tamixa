@@ -102,7 +102,9 @@ class StoryService(
         emotionMode: String? = null,
         parentCustomPrompt: String? = null,
         conversationMessages: List<String>? = null,
-        learningFocus: String? = null
+        learningFocus: String? = null,
+        /** When true, [theme] came from [StoryGenerationTopicRegistry] (skip theme blocklist). */
+        trustedCatalogTheme: Boolean = false,
     ): Story {
         val parent = parentRepository.findByEmail(parentEmail)
             ?: throw ParentNotFoundException(parentEmail)
@@ -124,7 +126,7 @@ class StoryService(
 
         // Cost protection: enforce token limits before OpenAI call
         tokenLimitGuard.checkBeforeGeneration(parent.id)
-        val sanitized = safetyMiddleware.sanitizeAndValidateInput(theme, childName)
+        val sanitized = safetyMiddleware.sanitizeAndValidateInput(theme, childName, trustedCatalogTheme = trustedCatalogTheme)
         moderateInput(sanitized.theme, sanitized.childName)
 
         val promptId = UUID.randomUUID().toString()
@@ -493,7 +495,7 @@ class StoryService(
     }
 
     private fun validateAge(age: Int) {
-        if (age < 1 || age > 12) throw InvalidStoryRequestException("Age must be between 1 and 12")
+        if (age < 1 || age > 99) throw InvalidStoryRequestException("Age must be between 1 and 99")
     }
 
     private fun moderateInput(theme: String, childName: String) {

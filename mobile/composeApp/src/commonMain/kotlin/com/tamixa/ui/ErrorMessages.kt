@@ -1,6 +1,7 @@
 package com.tamixa.ui
 
 import com.tamixa.network.ContentModerationFailureException
+import com.tamixa.network.StoryGenerateBadRequestException
 import com.tamixa.network.StoryValidationServiceUnavailableException
 import com.tamixa.ui.strings.Strings
 import io.ktor.client.plugins.HttpRequestTimeoutException
@@ -16,6 +17,15 @@ import io.ktor.client.plugins.ResponseException
 fun errorMessageForUser(throwable: Throwable): String {
     val cause = throwable.cause ?: throwable
     return when {
+        cause is StoryGenerateBadRequestException -> {
+            val ex = cause as StoryGenerateBadRequestException
+            when (ex.apiCode) {
+                "UNKNOWN_GENERATION_TOPIC" -> Strings.storyGenerateUnknownTopic()
+                "THEME_OR_TOPIC_REQUIRED" -> Strings.storyGenerateThemeOrTopicRequired()
+                "GENERATION_LANGUAGE_NOT_SUPPORTED" -> Strings.storyGenerateTamilOnly()
+                else -> ex.message?.takeIf { it.isNotBlank() } ?: Strings.somethingWentWrong()
+            }
+        }
         cause is ContentModerationFailureException ->
             cause.message?.takeIf { it.isNotBlank() } ?: Strings.storyContentNotAllowed()
         cause is StoryValidationServiceUnavailableException ->

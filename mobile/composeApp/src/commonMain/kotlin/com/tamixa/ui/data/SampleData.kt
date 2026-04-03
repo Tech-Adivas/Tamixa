@@ -18,11 +18,16 @@ object SampleData {
         "Adventure",
         "Village Life",
         "Moral Stories",
+        "Fun stories",
         "Funny Stories",
         "Family Stories",
         "Fantasy",
         "Nature",
-        "Bravery"
+        "Bravery",
+        "Learn · History",
+        "Learn · Science & Nature",
+        "Learn · Culture & Heritage",
+        "Learn · Life Skills",
     )
 
     /** English fallback for TTS when Tamil/other language packs are not installed. */

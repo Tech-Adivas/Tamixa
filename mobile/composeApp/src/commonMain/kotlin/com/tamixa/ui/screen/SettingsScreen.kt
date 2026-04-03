@@ -157,7 +157,7 @@ fun SettingsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 4.dp),
                 contentAlignment = Alignment.Center
             ) {
                 TamixaLanguageLogo(
@@ -173,14 +173,14 @@ fun SettingsScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation + 2.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(TamixaDesignTokens.cardContentPadding + 4.dp)
+                    modifier = Modifier.padding(TamixaDesignTokens.cardContentPadding)
                 ) {
                     Text(
                         Strings.selectLanguage(),
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(TamixaDesignTokens.smallSpacing))
                     Column(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {

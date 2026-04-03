@@ -2,20 +2,23 @@ package com.tamixa.api.story.dto
 
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
-import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 
 data class GenerateStoryRequest(
-    @field:Min(1, message = "Age must be between 1 and 12")
-    @field:Max(12, message = "Age must be between 1 and 12")
+    @field:Min(1, message = "Age must be between 1 and 99")
+    @field:Max(99, message = "Age must be between 1 and 99")
     val age: Int,
 
     @field:Size(max = 10, message = "Language code must be at most 10 characters")
     val language: String = "ta",
 
-    @field:NotBlank(message = "Theme is required")
+    /** Free-text theme; optional when [generationTopicId] is set (server resolves theme). */
     @field:Size(max = 100)
-    val theme: String,
+    val theme: String? = null,
+
+    /** When set, server uses a curated topic (Tamil theme string); skips free-text blocklist on theme. */
+    @field:Size(max = 64)
+    val generationTopicId: String? = null,
 
     /** Optional; when blank or null, a default listener name is used. */
     @field:Size(max = 255)

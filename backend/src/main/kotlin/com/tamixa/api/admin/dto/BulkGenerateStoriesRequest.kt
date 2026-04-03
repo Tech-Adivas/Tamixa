@@ -12,5 +12,8 @@ data class BulkGenerateStoriesRequest(
     val categories: List<String>? = null,
     @field:Min(1) @field:Max(25)
     val totalStories: Int? = null,
-    val publish: Boolean? = null
+    val publish: Boolean? = null,
+    /** Optional; same allowlist as parent generate (e.g. empathy, vocabulary, public_speaking). Ignored if not allowlisted. */
+    @field:Size(max = 30)
+    val learningFocus: String? = null
 )

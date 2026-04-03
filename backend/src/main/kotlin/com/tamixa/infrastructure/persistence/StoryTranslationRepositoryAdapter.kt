@@ -73,6 +73,20 @@ class StoryTranslationRepositoryAdapter(
     ): Page<StoryTranslation> =
         jpaRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudioAndTheme(language, theme, pageable).map { it.toDomain() }
 
+    override fun findByLanguageAndMasterNarrationApprovedAndLearnPrefix(
+        language: String,
+        prefix: String,
+        pageable: Pageable
+    ): Page<StoryTranslation> =
+        jpaRepository.findByLanguageAndMasterNarrationApprovedAndLearnPrefix(language, prefix, pageable).map { it.toDomain() }
+
+    override fun findByLanguageAndMasterNarrationApprovedWithMasterAudioAndLearnPrefix(
+        language: String,
+        prefix: String,
+        pageable: Pageable
+    ): Page<StoryTranslation> =
+        jpaRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudioAndLearnPrefix(language, prefix, pageable).map { it.toDomain() }
+
     override fun findByMasterStoryId(masterStoryId: Long): List<StoryTranslation> =
         jpaRepository.findByMasterStoryId(masterStoryId).map { it.toDomain() }
 

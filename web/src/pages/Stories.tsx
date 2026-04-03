@@ -4,6 +4,7 @@ import StoryAudioPlayer from "../components/StoryAudioPlayer";
 import {
   getLibraryStories,
   getLibraryCategories,
+  getGenerationTopics,
   getMyStories,
   generateStory,
   regenerateStoryCover,
@@ -19,13 +20,31 @@ import {
   getPlaybackPosition,
   savePlaybackPosition,
   searchStories,
+  ApiClientError,
+  STORY_GENERATE_ERROR_CODES,
   type LibraryStory,
   type Story,
   type SearchStoryItem,
+  type GenerationTopic,
 } from "../lib/api";
 import type { StreamUrlResponse } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { EmptyState } from "../components/EmptyState";
+import {
+  isFunStory,
+  funCornerBadgeLabel,
+  listenerPlaybackSubtitle,
+} from "../lib/storyListenerUi";
+
+type Tab = "library" | "mine" | "favorites";
+
+function readTabFromSearch(): Tab {
+  if (typeof window === "undefined") return "library";
+  const t = new URLSearchParams(window.location.search).get("tab");
+  if (t === "learn") return "library";
+  if (t === "library" || t === "mine" || t === "favorites") return t;
+  return "library";
+}
 
 /** Renders story cover: animated GIF/video when coverVideoUrl is set, else static image or placeholder.
  * Dynamically shows generated cover when coverImageUrl/coverVideoUrl are present; falls back to default illustration.
@@ -75,8 +94,6 @@ function StoryCover({
   );
 }
 
-type Tab = "library" | "mine" | "favorites";
-
 export default function Stories() {
   useAuth();
   const location = useLocation();
@@ -85,13 +102,25 @@ export default function Stories() {
   const resumeId = searchParams.get("resume");
   const resumeSource = searchParams.get("source");
   const playFromState = (location.state as { playStoryId?: number; playStorySource?: string } | null) ?? {};
-  const [tab, setTab] = useState<Tab>("library");
+  const [tab, setTab] = useState<Tab>(readTabFromSearch);
   const [library, setLibrary] = useState<LibraryStory[]>([]);
+  const [generationTopics, setGenerationTopics] = useState<GenerationTopic[]>([]);
+  const [genGenerationTopicId, setGenGenerationTopicId] = useState("");
+  const [parentPanelStory, setParentPanelStory] = useState<LibraryStory | null>(null);
   const [mine, setMine] = useState<Story[]>([]);
   const [, setMinePage] = useState({ page: 0, totalPages: 0, last: true });
   const [favorites, setFavorites] = useState<{ storyId: number; storySource: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  /** Library browse fetch (theme filter). */
+  const [libraryListError, setLibraryListError] = useState("");
+  const [libraryRetryKey, setLibraryRetryKey] = useState(0);
+  /** My stories list fetch. */
+  const [mineListError, setMineListError] = useState("");
+  const [mineRetryKey, setMineRetryKey] = useState(0);
+  /** Favorites list (also drives tab count). */
+  const [favoritesListError, setFavoritesListError] = useState("");
+  const [favoritesRetryKey, setFavoritesRetryKey] = useState(0);
   const [genTheme, setGenTheme] = useState("");
   const [genAge, setGenAge] = useState(5);
   /** Empty string = omit learningFocus in API request. */
@@ -109,6 +138,7 @@ export default function Stories() {
   const [playingStoryId, setPlayingStoryId] = useState<number | null>(null);
   const [loadingStreamId, setLoadingStreamId] = useState<number | null>(null);
   const [playingTitle, setPlayingTitle] = useState<string | null>(null);
+  const [playingSubtitle, setPlayingSubtitle] = useState<string | null>(null);
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const [selectedVoice, setSelectedVoice] = useState<string>("default");
@@ -124,6 +154,35 @@ export default function Stories() {
   const playingStoryRef = useRef<{ id: number; source: string } | null>(null);
   const playIntentRef = useRef<number | null>(null);
   const blobUrlRef = useRef<string | null>(null);
+
+  /** Keep `?tab=` in sync when the user picks a tab (shareable / back button). */
+  const setTabAndUrl = useCallback(
+    (next: Tab) => {
+      setTab(next);
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.set("tab", next);
+          return p;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+
+  /** After resume playback, drop only resume handoff params — preserve `tab` and other queries. */
+  const clearResumeQueryParams = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.delete("resume");
+        p.delete("source");
+        return p;
+      },
+      { replace: true }
+    );
+  }, [setSearchParams]);
 
   useEffect(() => {
     if (searchQuery.trim().length < 2) {
@@ -141,22 +200,42 @@ export default function Stories() {
   }, [searchQuery]);
 
   useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t === "learn") {
+      setTabAndUrl("library");
+      return;
+    }
+    if (t === "library" || t === "mine" || t === "favorites") {
+      setTab(t);
+    }
+  }, [searchParams, setTabAndUrl]);
+
+  useEffect(() => {
     getLibraryCategories("ta")
       .then(setLibraryCategories)
       .catch(() => setLibraryCategories([]));
+    getGenerationTopics()
+      .then(setGenerationTopics)
+      .catch(() => setGenerationTopics([]));
   }, []);
 
   useEffect(() => {
     if (tab !== "library") return;
     let cancelled = false;
     setLoading(true);
-    setError("");
-    getLibraryStories("ta", 0, 50, libraryThemeFilter)
+    setLibraryListError("");
+    getLibraryStories("ta", 0, 50, libraryThemeFilter, false)
       .then((rows) => {
-        if (!cancelled) setLibrary(rows);
+        if (!cancelled) {
+          setLibrary(rows);
+          setLibraryListError("");
+        }
       })
       .catch((e) => {
-        if (!cancelled) setError(e.message);
+        if (!cancelled) {
+          setLibrary([]);
+          setLibraryListError(e instanceof Error ? e.message : "Failed to load library");
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -164,27 +243,46 @@ export default function Stories() {
     return () => {
       cancelled = true;
     };
-  }, [tab, libraryThemeFilter]);
+  }, [tab, libraryThemeFilter, libraryRetryKey]);
 
   useEffect(() => {
     if (tab === "mine") {
       setLoading(true);
-      setError("");
+      setMineListError("");
       getMyStories(0, 20)
         .then((p) => {
           setMine(p.content);
           setMinePage({ page: 0, totalPages: p.totalPages, last: p.last });
+          setMineListError("");
         })
-        .catch((e) => setError(e.message))
+        .catch((e) => {
+          setMine([]);
+          setMineListError(e instanceof Error ? e.message : "Failed to load your stories");
+        })
         .finally(() => setLoading(false));
     }
-  }, [tab]);
+  }, [tab, mineRetryKey]);
 
   useEffect(() => {
+    let cancelled = false;
+    setFavoritesListError("");
     getFavorites()
-      .then(setFavorites)
-      .catch(() => setFavorites([]));
-  }, []);
+      .then((rows) => {
+        if (!cancelled) {
+          setFavorites(rows);
+          setFavoritesListError("");
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setFavorites([]);
+          setFavoritesListError(e instanceof Error ? e.message : "Failed to load favorites");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [favoritesRetryKey]);
 
   // Handle "Continue listening" from Dashboard: ?resume=ID&source=library|generated
   const resumeHandled = useRef(false);
@@ -193,8 +291,8 @@ export default function Stories() {
     const id = Number(resumeId);
     if (Number.isNaN(id)) return;
     const sourceTab: Tab = resumeSource === "library" ? "library" : resumeSource === "favorites" ? "favorites" : "mine";
-    setTab(sourceTab);
-  }, [resumeId, resumeSource]);
+    setTabAndUrl(sourceTab);
+  }, [resumeId, resumeSource, setTabAndUrl]);
 
   useEffect(() => {
     if (!resumeId || !resumeSource || resumeHandled.current) return;
@@ -215,28 +313,57 @@ export default function Stories() {
         startPos = undefined;
       }
       playStory(id, resumeSource, startPos);
-      setSearchParams({});
+      clearResumeQueryParams();
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- resume handshake: omit playStory/setSearchParams to avoid loops
-  }, [resumeId, resumeSource, tab, loading, library.length, mine.length, favorites.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resume handshake: omit playStory/clearResumeQueryParams to avoid loops
+  }, [
+    resumeId,
+    resumeSource,
+    tab,
+    loading,
+    library.length,
+    mine.length,
+    favorites.length,
+    clearResumeQueryParams,
+  ]);
 
   // Handle "Play from Dashboard" recommended: navigate with state { playStoryId, playStorySource } → auto-play
   const playFromStateHandled = useRef(false);
   useEffect(() => {
     const { playStoryId: sid, playStorySource: ssrc } = playFromState;
     if (sid == null || !ssrc || playFromStateHandled.current) return;
-    const sourceTab: Tab = ssrc === "library" ? "library" : ssrc === "favorites" ? "favorites" : "mine";
-    setTab(sourceTab);
+    const urlTab = searchParams.get("tab");
+    const normalizedTab: Tab =
+      urlTab === "learn" || urlTab === "library"
+        ? "library"
+        : urlTab === "mine" || urlTab === "favorites"
+          ? urlTab
+          : ssrc === "library"
+            ? "library"
+            : ssrc === "favorites"
+              ? "favorites"
+              : "mine";
+    setTabAndUrl(normalizedTab);
     const listReady =
-      (sourceTab === "library" && library.length > 0) ||
-      (sourceTab === "mine" && mine.length >= 0 && !loading) ||
-      (sourceTab === "favorites" && favorites.length >= 0);
+      (normalizedTab === "library" && library.length > 0) ||
+      (normalizedTab === "mine" && mine.length >= 0 && !loading) ||
+      (normalizedTab === "favorites" && favorites.length >= 0);
     if (!listReady) return;
     playFromStateHandled.current = true;
     playStory(sid, ssrc);
-    navigate(location.pathname, { replace: true, state: {} });
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: {} });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- dashboard play intent: omit navigate/playStory to avoid loops
-  }, [playFromState.playStoryId, playFromState.playStorySource, library.length, mine.length, favorites.length, loading]);
+  }, [
+    playFromState.playStoryId,
+    playFromState.playStorySource,
+    library.length,
+    mine.length,
+    favorites.length,
+    loading,
+    tab,
+    searchParams,
+    setTabAndUrl,
+  ]);
 
   const isFav = (storyId: number) => favorites.some((f) => f.storyId === storyId);
 
@@ -260,6 +387,26 @@ export default function Stories() {
     [library, mine, favorites]
   );
 
+  const getPlaybackFields = useCallback(
+    (id: number, source: string, titleOverride?: string) => {
+      const title = titleOverride ?? getTitleForStory(id, source);
+      const fromLib = library.find((c) => c.id === id);
+      if (fromLib && (source === "library" || source === "favorites")) {
+        return { theme: fromLib.theme, category: fromLib.category ?? null, title };
+      }
+      const fromMine = mine.find((m) => m.id === id);
+      if (fromMine && (source === "generated" || source === "mine" || source === "favorites")) {
+        return { theme: fromMine.theme, category: null as string | null, title };
+      }
+      const fromSearch = searchResults.find((s) => s.storyId === id && s.storySource === source);
+      if (fromSearch) {
+        return { theme: fromSearch.theme, category: null as string | null, title };
+      }
+      return { theme: "", category: null as string | null, title };
+    },
+    [library, mine, searchResults, getTitleForStory]
+  );
+
   const playStory = async (
     storyId: number,
     storySource: string,
@@ -277,6 +424,8 @@ export default function Stories() {
       }
       setPlayingStoryId(null);
       setPlayingTitle(null);
+      setPlayingSubtitle(null);
+      setParentPanelStory(null);
       return;
     }
     audioRef.current?.pause();
@@ -300,6 +449,15 @@ export default function Stories() {
       if (playIntentRef.current !== storyId) return;
       playingStoryRef.current = { id: storyId, source: storySource };
       setPlayingTitle(titleOverride ?? getTitleForStory(storyId, storySource));
+      const subSrc =
+        storySource === "mine" ? "generated" : storySource === "favorites" ? "favorites" : storySource;
+      const pf = getPlaybackFields(storyId, storySource, titleOverride);
+      setPlayingSubtitle(listenerPlaybackSubtitle(subSrc, pf.theme, pf.category, pf.title));
+      if (storySource === "library") {
+        setParentPanelStory(library.find((c) => c.id === storyId) ?? null);
+      } else {
+        setParentPanelStory(null);
+      }
 
       if (data.avatarVideoUrl) {
         const resolvedVideoUrl = resolveCoverUrl(data.avatarVideoUrl) ?? data.avatarVideoUrl;
@@ -402,11 +560,17 @@ export default function Stories() {
         videoRef.current?.play().then(() => {
           setPlayingStoryId(p.id);
           setPlayingTitle(getTitleForStory(p.id, p.source));
+          const subSrc = p.source === "mine" ? "generated" : p.source === "favorites" ? "favorites" : p.source;
+          const pf = getPlaybackFields(p.id, p.source);
+          setPlayingSubtitle(listenerPlaybackSubtitle(subSrc, pf.theme, pf.category, pf.title));
         }).catch(() => {});
       } else {
         audioRef.current!.play().then(() => {
           setPlayingStoryId(p.id);
           setPlayingTitle(getTitleForStory(p.id, p.source));
+          const subSrc = p.source === "mine" ? "generated" : p.source === "favorites" ? "favorites" : p.source;
+          const pf = getPlaybackFields(p.id, p.source);
+          setPlayingSubtitle(listenerPlaybackSubtitle(subSrc, pf.theme, pf.category, pf.title));
         }).catch((e) => {
           const isInterrupted =
             (e instanceof DOMException && e.name === "AbortError") ||
@@ -415,7 +579,7 @@ export default function Stories() {
         });
       }
     }
-  }, [playingStoryId, playingAvatarVideoUrl, getTitleForStory]);
+  }, [playingStoryId, playingAvatarVideoUrl, getTitleForStory, getPlaybackFields]);
 
   const handleSeek = useCallback((seconds: number) => {
     if (!Number.isFinite(seconds)) return;
@@ -439,6 +603,8 @@ export default function Stories() {
       setPlayingHostClipUrl(null);
       setPlayingStoryId(null);
       setPlayingTitle(null);
+      setPlayingSubtitle(null);
+      setParentPanelStory(null);
       playingStoryRef.current = null;
     };
     const handlePause = () => {
@@ -484,27 +650,50 @@ export default function Stories() {
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
+    const topicId = genGenerationTopicId.trim();
     const theme = genTheme.trim();
-    if (!theme) {
-      setError("Theme is required");
+    if (!topicId && !theme) {
+      setError("Choose a curated topic or enter a theme");
       return;
     }
     setGenerating(true);
     setError("");
     try {
       await generateStory({
-        theme,
         childName: "Listener",
         age: genAge,
         language: "ta",
+        ...(topicId
+          ? {
+              generationTopicId: topicId,
+              ...(theme ? { theme } : {}),
+            }
+          : { theme }),
         ...(genLearningFocus.trim() ? { learningFocus: genLearningFocus.trim() } : {}),
       });
-      setTab("mine");
-      const p = await getMyStories(0, 20);
-      setMine(p.content);
-      setMinePage({ page: 0, totalPages: p.totalPages, last: p.last });
+      setTabAndUrl("mine");
+      try {
+        const p = await getMyStories(0, 20);
+        setMine(p.content);
+        setMinePage({ page: 0, totalPages: p.totalPages, last: p.last });
+        setMineListError("");
+      } catch {
+        setMineListError("Your story was created, but we couldn’t refresh the list. Tap Try again below.");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Generation failed");
+      if (err instanceof ApiClientError) {
+        if (err.code === STORY_GENERATE_ERROR_CODES.UNKNOWN_GENERATION_TOPIC) {
+          setError("That curated topic isn’t available. Pick another topic or enter a theme.");
+        } else if (err.code === STORY_GENERATE_ERROR_CODES.GENERATION_LANGUAGE_NOT_SUPPORTED) {
+          setError("Story generation is available in Tamil only for now.");
+        } else if (err.code === STORY_GENERATE_ERROR_CODES.THEME_OR_TOPIC_REQUIRED) {
+          setError("Choose a curated topic or enter a theme.");
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError(err instanceof Error ? err.message : "Generation failed");
+      }
     } finally {
       setGenerating(false);
     }
@@ -522,6 +711,7 @@ export default function Stories() {
         isPlaying={playingStoryId != null}
         isLoading={loadingStreamId != null}
         title={playingTitle ?? (loadingStreamId != null ? "Loading…" : null)}
+        subtitle={playingSubtitle}
         currentTime={audioCurrentTime}
         duration={audioDuration}
         onPlayPause={handleAudioPlayPause}
@@ -529,6 +719,47 @@ export default function Stories() {
         onDurationChange={setAudioDuration}
         onSeek={handleSeek}
       />
+      {parentPanelStory &&
+      (parentPanelStory.parentContentNote?.trim() ||
+        (parentPanelStory.parentDiscussionPrompts?.filter(Boolean).length ?? 0) > 0 ||
+        parentPanelStory.speakAlongPrompt?.trim()) ? (
+        <section className="stories-section stories-parent-panel" aria-label="Parent resources">
+          <div className="stories-section-head">
+            <h2 className="stories-section-title">For parents</h2>
+            <p className="stories-section-desc muted">Discussion ideas and context for this library story.</p>
+          </div>
+          <div className="stories-generate-card" style={{ textAlign: "left" }}>
+            {parentPanelStory.parentContentNote?.trim() ? (
+              <div className="field" style={{ marginBottom: 12 }}>
+                <strong>Content note</strong>
+                <p className="muted" style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>
+                  {parentPanelStory.parentContentNote.trim()}
+                </p>
+              </div>
+            ) : null}
+            {parentPanelStory.speakAlongPrompt?.trim() ? (
+              <div className="field" style={{ marginBottom: 12 }}>
+                <strong>Speak-along</strong>
+                <p className="muted" style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>
+                  {parentPanelStory.speakAlongPrompt.trim()}
+                </p>
+              </div>
+            ) : null}
+            {(parentPanelStory.parentDiscussionPrompts?.filter(Boolean).length ?? 0) > 0 ? (
+              <div className="field">
+                <strong>Discussion prompts</strong>
+                <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+                  {parentPanelStory.parentDiscussionPrompts!.filter(Boolean).map((p, i) => (
+                    <li key={i} className="muted" style={{ marginBottom: 6 }}>
+                      {p}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
       <header className="stories-page-top">
         <h1 className="stories-page-top__title">Stories</h1>
         <div className="stories-page-top__row">
@@ -593,6 +824,9 @@ export default function Stories() {
                       coverRefreshKey={coverRefreshKeys[s.storyId]}
                     />
                   </div>
+                  {isFunStory(s.theme, null) ? (
+                    <span className="stories-fun-badge">{funCornerBadgeLabel()}</span>
+                  ) : null}
                   <p className="poster-card-title">{s.title || s.theme}</p>
                   <p className="poster-card-meta">{s.theme} · {s.wordCount} words</p>
                   <div className="poster-card-actions" onClick={(e) => e.stopPropagation()}>
@@ -622,7 +856,10 @@ export default function Stories() {
         </section>
       )}
 
-      <section className="stories-main-panel stories-main-panel--compact" aria-labelledby="stories-collections-heading">
+      <section
+        className={`stories-main-panel stories-main-panel--compact${tab === "library" ? " stories-main-panel--library" : ""}`}
+        aria-labelledby="stories-collections-heading"
+      >
         <h2 id="stories-collections-heading" className="visually-hidden">
           Library, your stories, and favorites
         </h2>
@@ -635,7 +872,7 @@ export default function Stories() {
               aria-controls="stories-collections-panel"
               id="tab-library"
               className={tab === "library" ? "stories-tab stories-tab--active" : "stories-tab"}
-              onClick={() => setTab("library")}
+              onClick={() => setTabAndUrl("library")}
             >
               Library
             </button>
@@ -646,7 +883,7 @@ export default function Stories() {
               aria-controls="stories-collections-panel"
               id="tab-mine"
               className={tab === "mine" ? "stories-tab stories-tab--active" : "stories-tab"}
-              onClick={() => setTab("mine")}
+              onClick={() => setTabAndUrl("mine")}
             >
               My stories
             </button>
@@ -657,7 +894,7 @@ export default function Stories() {
               aria-controls="stories-collections-panel"
               id="tab-favorites"
               className={tab === "favorites" ? "stories-tab stories-tab--active" : "stories-tab"}
-              onClick={() => setTab("favorites")}
+              onClick={() => setTabAndUrl("favorites")}
             >
               Favorites
               <span className="stories-tab-count">{favorites.length}</span>
@@ -684,25 +921,47 @@ export default function Stories() {
           </div>
         </div>
 
-        {tab === "library" && libraryCategories.length > 0 ? (
-          <div className="stories-chips stories-chips--compact" role="group" aria-label="Filter by theme">
-            <button
-              type="button"
-              className={libraryThemeFilter == null ? "stories-chip stories-chip--active" : "stories-chip"}
-              onClick={() => setLibraryThemeFilter(null)}
-            >
-              All
-            </button>
-            {libraryCategories.slice(0, 28).map((c) => (
-              <button
-                key={c}
-                type="button"
-                className={libraryThemeFilter === c ? "stories-chip stories-chip--active" : "stories-chip"}
-                onClick={() => setLibraryThemeFilter(c)}
-              >
-                {c}
-              </button>
-            ))}
+        {tab === "library" ? (
+          <div className="stories-library-toolbar">
+            <div className="stories-library-toolbar__head">
+              <h3 className="stories-library-toolbar__title">Story library</h3>
+              {!libraryListError ? (
+                <span className="stories-library-toolbar__count muted" aria-live="polite">
+                  {loading ? "Loading…" : `${library.length} ${library.length === 1 ? "tale" : "tales"}`}
+                </span>
+              ) : null}
+            </div>
+            {libraryCategories.length > 0 ? (
+              <div className="stories-library-chips-shell">
+                <div className="stories-chips stories-chips--compact stories-chips--library" role="group" aria-label="Filter by theme">
+                  <button
+                    type="button"
+                    className={libraryThemeFilter == null ? "stories-chip stories-chip--active" : "stories-chip"}
+                    onClick={() => setLibraryThemeFilter(null)}
+                  >
+                    All
+                  </button>
+                  {libraryCategories.slice(0, 28).map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      className={libraryThemeFilter === c ? "stories-chip stories-chip--active" : "stories-chip"}
+                      onClick={() => setLibraryThemeFilter(c)}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div className="stories-library-ethos" role="note">
+              <p className="stories-library-ethos__title">Every listen is a little lesson</p>
+              <p className="stories-library-ethos__body muted">
+                Tamixa tales are written for growing minds—language, heart, and curiosity in every plot. For pure laughs and
+                older classics, editors tag stories as <strong>Fun stories</strong> or <strong>Funny Stories</strong>; use those
+                chips above to jump straight there.
+              </p>
+            </div>
           </div>
         ) : null}
 
@@ -724,12 +983,14 @@ export default function Stories() {
         className="stories-tab-panel"
         id="stories-collections-panel"
         role="tabpanel"
-        aria-labelledby={tab === "library" ? "tab-library" : tab === "mine" ? "tab-mine" : "tab-favorites"}
+        aria-labelledby={
+          tab === "library" ? "tab-library" : tab === "mine" ? "tab-mine" : "tab-favorites"
+        }
       >
       {tab === "library" && (
         <>
           {loading ? (
-            <div className="stories-grid">
+            <div className="stories-grid stories-library-grid">
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                 <div key={i} className="poster-card story-card-tile story-card-tile--skeleton" style={{ pointerEvents: "none" }}>
                   <div className="poster-card-cover"><div className="poster-card-placeholder skeleton" style={{ margin: 0 }} /></div>
@@ -738,15 +999,24 @@ export default function Stories() {
                 </div>
               ))}
             </div>
+          ) : libraryListError ? (
+            <div className="stories-generate-card" style={{ textAlign: "center", padding: "24px 16px" }}>
+              <p className="error" style={{ marginBottom: 16 }}>
+                {libraryListError}
+              </p>
+              <button type="button" className="btn btn-primary" onClick={() => setLibraryRetryKey((k) => k + 1)}>
+                Try again
+              </button>
+            </div>
           ) : library.length === 0 ? (
             <EmptyState
               emoji="📚"
               title="No stories in library"
               description="Story library is being updated. Check back soon or try generating your own."
-              action={{ label: "Generate Story", onClick: () => setTab("mine") }}
+              action={{ label: "Generate Story", onClick: () => setTabAndUrl("mine") }}
             />
           ) : (
-            <div className="stories-grid">
+            <div className="stories-grid stories-library-grid">
               {library.map((s) => (
                 <div
                   key={s.id}
@@ -764,6 +1034,9 @@ export default function Stories() {
                       coverRefreshKey={coverRefreshKeys[s.id]}
                     />
                   </div>
+                  {isFunStory(s.theme, s.category) ? (
+                    <span className="stories-fun-badge">{funCornerBadgeLabel()}</span>
+                  ) : null}
                   <p className="poster-card-title">{s.title || s.theme}</p>
                   <p className="poster-card-meta">{s.theme} · {s.wordCount} words · {Number(s.readingTimeMinutes ?? 0).toFixed(1)} min</p>
                   <div className="poster-card-actions" onClick={(e) => e.stopPropagation()}>
@@ -805,6 +1078,15 @@ export default function Stories() {
                 </div>
               ))}
             </div>
+          ) : mineListError ? (
+            <div className="stories-generate-card" style={{ textAlign: "center", padding: "24px 16px" }}>
+              <p className="error" style={{ marginBottom: 16 }}>
+                {mineListError}
+              </p>
+              <button type="button" className="btn btn-primary" onClick={() => setMineRetryKey((k) => k + 1)}>
+                Try again
+              </button>
+            </div>
           ) : mine.length === 0 ? (
             <EmptyState
               emoji="✨"
@@ -832,6 +1114,9 @@ export default function Stories() {
                       coverRefreshKey={coverRefreshKeys[s.id]}
                     />
                   </div>
+                  {isFunStory(s.theme, null) ? (
+                    <span className="stories-fun-badge">{funCornerBadgeLabel()}</span>
+                  ) : null}
                   <p className="poster-card-title">{s.title || s.theme}</p>
                   <p className="poster-card-meta">{s.theme} · {s.childName} · {s.status}</p>
                   <div className="poster-card-actions" onClick={(e) => e.stopPropagation()}>
@@ -925,20 +1210,32 @@ export default function Stories() {
 
       {tab === "favorites" && (
         <>
-          {favorites.length === 0 ? (
+          {favoritesListError ? (
+            <div className="stories-generate-card" style={{ textAlign: "center", padding: "24px 16px" }}>
+              <p className="error" style={{ marginBottom: 16 }}>
+                {favoritesListError}
+              </p>
+              <button type="button" className="btn btn-primary" onClick={() => setFavoritesRetryKey((k) => k + 1)}>
+                Try again
+              </button>
+            </div>
+          ) : favorites.length === 0 ? (
             <EmptyState
               emoji="♥"
               title="No favorites yet"
               description="Add stories from Library or My stories to find them here."
-              action={{ label: "Browse Library", onClick: () => setTab("library") }}
+              action={{ label: "Browse Library", onClick: () => setTabAndUrl("library") }}
             />
           ) : (
             <div className="stories-grid">
               {favorites.map((f) => {
-                const s = library.find((c) => c.id === f.storyId) || mine.find((m) => m.id === f.storyId);
+                const s =
+                  library.find((c) => c.id === f.storyId) ||
+                  mine.find((m) => m.id === f.storyId);
                 const coverImageUrl = s && "coverImageUrl" in s ? s.coverImageUrl : null;
                 const coverVideoUrl = s && "coverVideoUrl" in s ? (s as { coverVideoUrl?: string | null }).coverVideoUrl : null;
                 const title = s ? (`title` in s && s.title ? s.title : s.theme) : `Story #${f.storyId}`;
+                const favCategory = s && "category" in s ? (s as LibraryStory).category : null;
                 return (
                   <div
                     key={`${f.storyId}-${f.storySource}`}
@@ -956,6 +1253,9 @@ export default function Stories() {
                         coverRefreshKey={s ? coverRefreshKeys[s.id] : undefined}
                       />
                     </div>
+                    {s && isFunStory(s.theme, favCategory) ? (
+                      <span className="stories-fun-badge">{funCornerBadgeLabel()}</span>
+                    ) : null}
                     <p className="poster-card-title">{title}</p>
                     <p className="poster-card-meta">{s ? s.theme : "\u00A0"}</p>
                     <div className="poster-card-actions" onClick={(e) => e.stopPropagation()}>
@@ -1027,29 +1327,57 @@ export default function Stories() {
       <section id="generate-story-section" className="stories-section stories-section--generate">
         <div className="stories-section-head">
           <h2 className="stories-section-title">Create a new tale</h2>
-          <p className="stories-section-desc muted">AI writes in Tamil from your theme, age, and optional learning focus (speaking, money, research).</p>
+          <p className="stories-section-desc muted">
+            Pick a curated topic or write your own theme. Age 1–99; optional learning focus (speaking, money, research).
+          </p>
         </div>
         <div className="stories-generate-card">
         <form onSubmit={handleGenerate} className="form">
           <div className="field">
-            <label htmlFor="theme">Theme</label>
+            <label htmlFor="gen-topic">Curated topic (optional)</label>
+            <select
+              id="gen-topic"
+              value={genGenerationTopicId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setGenGenerationTopicId(id);
+                const t = generationTopics.find((x) => x.id === id);
+                if (t?.suggestedLearningFocus) {
+                  setGenLearningFocus(t.suggestedLearningFocus);
+                }
+              }}
+              aria-label="Curated generation topic"
+            >
+              <option value="">None — use custom theme only</option>
+              {generationTopics.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.descriptionEn?.trim() ? `${t.descriptionEn} (${t.theme})` : t.theme}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="theme">Custom theme {genGenerationTopicId.trim() ? "(optional)" : ""}</label>
             <input
               id="theme"
               value={genTheme}
               onChange={(e) => setGenTheme(e.target.value)}
-              placeholder="e.g. Animals, Bedtime"
-              required
+              placeholder={genGenerationTopicId.trim() ? "Override or add detail…" : "e.g. Animals, Bedtime, Pongal"}
             />
           </div>
           <div className="field">
-            <label htmlFor="age">Age (1–12)</label>
+            <label htmlFor="age">Age (1–99)</label>
             <input
               id="age"
               type="number"
               min={1}
-              max={12}
+              max={99}
               value={genAge}
-              onChange={(e) => setGenAge(parseInt(e.target.value, 10) || 5)}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10);
+                if (Number.isNaN(n)) setGenAge(5);
+                else setGenAge(Math.min(99, Math.max(1, n)));
+              }}
             />
           </div>
           <div className="field">

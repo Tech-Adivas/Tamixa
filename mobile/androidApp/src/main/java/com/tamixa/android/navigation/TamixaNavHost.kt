@@ -14,6 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.tamixa.ui.data.SampleData
+import com.tamixa.util.TamixaConstants
 import com.tamixa.ui.state.UiState
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -31,8 +32,8 @@ import com.tamixa.ui.viewmodel.StoryViewModel
 import com.tamixa.ui.viewmodel.SubscriptionViewModel
 import com.tamixa.ui.viewmodel.AvatarViewModel
 import com.tamixa.ui.viewmodel.VoiceViewModel
-import com.tamixa.application.port.OnboardingReminderPort
 import org.koin.compose.koinInject
+import org.koin.core.qualifier.named
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -230,28 +231,6 @@ fun TamixaNavHost(
                 }
             )
         }
-        composable(Screen.OnboardingBedtimeReminder.route) {
-            val scope = rememberCoroutineScope()
-            val reminderPort: OnboardingReminderPort = koinInject()
-            OnboardingBedtimeReminderScreen(
-                onContinue = { enabled, hour, minute ->
-                    scope.launch {
-                        settingsViewModel.setBedtimeReminder(enabled, hour, minute)
-                        if (enabled) {
-                            reminderPort.scheduleBedtimeReminder(hour, minute)
-                        } else {
-                            reminderPort.cancelBedtimeReminder()
-                        }
-                        withContext(Dispatchers.Default) {
-                            settingsViewModel.completeOnboarding()
-                        }
-                        navController.navigate(Screen.Login.route) {
-                            popUpTo(Screen.OnboardingHook.route) { inclusive = true }
-                        }
-                    }
-                }
-            )
-        }
         composable(Screen.Register.route) {
             LaunchedEffect(registerState, settingsState.settingsLoaded, currentRoute) {
                 if (currentRoute == Screen.Register.route && authViewModel.isLoggedIn() && registerState is UiState.Success<*> && settingsState.settingsLoaded && postLoginDestination != null) {
@@ -288,15 +267,19 @@ fun TamixaNavHost(
         composable(Screen.Dashboard.route) {
             var selectedCategory by remember { mutableStateOf(SampleData.categories.first()) }
             val curated by storyViewModel.libraryStories.collectAsState()
-            val myStories by storyViewModel.myStories.collectAsState()
+            val libraryLoading by storyViewModel.libraryLoading.collectAsState()
             val prefLang = settingsState.languageCode.ifEmpty { "ta" }
-            LaunchedEffect(prefLang) { storyViewModel.loadLibraryStories(prefLang) }
+            LaunchedEffect(prefLang) {
+                storyViewModel.loadLibraryStories(prefLang)
+            }
             LaunchedEffect(Unit) { storyViewModel.loadMyStories() }
             LaunchedEffect(Screen.Dashboard.route) {
                 subscriptionViewModel.loadSubscription()
                 settingsViewModel.loadListeningStreak()
             }
             val stories = storyViewModel.allStories().ifEmpty { SampleData.sampleStories() }
+            val spotlightPreviewRows = remember(curated) { curated.take(8) }
+            val spotlightSectionLoading = libraryLoading && curated.isEmpty()
             DashboardScreen(
                 greeting = Strings.goodEvening(),
                 childName = null,
@@ -304,13 +287,24 @@ fun TamixaNavHost(
                 selectedCategory = selectedCategory,
                 categories = SampleData.categories,
                 onCategorySelect = { selectedCategory = it },
-                onStoryClick = { story -> navController.navigate(Screen.AudioPlayer.withId(story.id)) },
+                onStoryClick = { story ->
+                    val source =
+                        if (story.parentId == 0L) TamixaConstants.STORY_SOURCE_LIBRARY else TamixaConstants.STORY_SOURCE_GENERATED
+                    navController.navigate(Screen.AudioPlayer.withId(story.id, source))
+                },
                 onNewStory = { navController.navigate(Screen.StoryGeneration.route) },
                 onNavigateToMyVoiceAndAvatar = { navController.navigate(Screen.MyVoiceAndAvatar.route) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
-                onNavigateToLibrary = { navController.navigate(Screen.Library.route) },
+                onNavigateToSearch = { navController.navigate(Screen.Search.route) },
+                onNavigateToLibrary = { navController.navigate(Screen.Library.withHub()) },
+                onNavigateToLibraryFunCorner = { navController.navigate(Screen.Library.withHub(Screen.Library.HUB_FUN)) },
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                spotlightPreview = spotlightPreviewRows,
+                spotlightSectionLoading = spotlightSectionLoading,
+                onSpotlightStoryClick = { s ->
+                    navController.navigate(Screen.AudioPlayer.withId(s.id, TamixaConstants.STORY_SOURCE_LIBRARY))
+                },
                 onRefresh = {
                     storyViewModel.loadLibraryStories(prefLang)
                     storyViewModel.loadMyStories()
@@ -323,18 +317,36 @@ fun TamixaNavHost(
                 listeningStreakDays = settingsState.listeningStreakDays
             )
         }
-        composable(Screen.Library.route) {
+        composable(
+            route = Screen.Library.route,
+            arguments = listOf(
+                navArgument("hub") {
+                    type = NavType.StringType
+                    defaultValue = Screen.Library.HUB_BROWSE
+                }
+            )
+        ) { libEntry ->
+            val apiBaseUrl: String = koinInject(named("apiBaseUrl"))
+            val hubArg = libEntry.arguments?.getString("hub") ?: Screen.Library.HUB_BROWSE
+            val openFunCornerFirst =
+                hubArg == Screen.Library.HUB_FUN || hubArg == Screen.Library.HUB_LEARN
             val prefLangLib = settingsState.languageCode.ifEmpty { "ta" }
-            LaunchedEffect(prefLangLib) { storyViewModel.loadLibraryStories(prefLangLib) }
-            LaunchedEffect(Unit) { storyViewModel.loadMyStories() }
+            LaunchedEffect(prefLangLib) { storyViewModel.loadLibraryScreen(prefLangLib) }
+            val libraryLoading by storyViewModel.libraryLoading.collectAsState()
+            val libraryError by storyViewModel.libraryError.collectAsState()
             LibraryScreen(
+                openFunCornerFirst = openFunCornerFirst,
                 cachedStories = storyViewModel.allStories(),
+                loading = libraryLoading,
+                loadError = libraryError,
+                onRetry = { storyViewModel.loadLibraryScreen(prefLangLib) },
                 onGenerateStory = { navController.navigate(Screen.StoryGeneration.route) },
                 onStoryClick = { story -> navController.navigate(Screen.AudioPlayer.withId(story.id)) },
                 onNavigateToHome = { navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
                 onNavigateToLibrary = { },
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
-                onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                apiBaseUrl = apiBaseUrl,
             )
         }
         composable(Screen.Profile.route) {
@@ -354,11 +366,12 @@ fun TamixaNavHost(
                 onNavigateToSubscription = { navController.navigate(Screen.Subscription.route) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                 onNavigateToHome = { navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
-                onNavigateToLibrary = { navController.navigate(Screen.Library.route) },
+                onNavigateToLibrary = { navController.navigate(Screen.Library.withHub()) },
                 onBack = { navController.popBackStack() }
             )
         }
         composable(Screen.StorySelection.route) {
+            val apiBaseUrl: String = koinInject(named("apiBaseUrl"))
             val curated by storyViewModel.libraryStories.collectAsState()
             val myStories by storyViewModel.myStories.collectAsState()
             val prefLang = settingsState.languageCode.ifEmpty { "ta" }
@@ -367,22 +380,31 @@ fun TamixaNavHost(
             StorySelectionScreen(
                 cachedStories = storyViewModel.allStories(),
                 onGenerateStory = { navController.navigate(Screen.StoryGeneration.route) },
-                onStoryClick = { story -> navController.navigate(Screen.AudioPlayer.withId(story.id)) }
+                onStoryClick = { story -> navController.navigate(Screen.AudioPlayer.withId(story.id)) },
+                listLayout = StorySelectionListLayout.LibraryPosterGrid,
+                apiBaseUrl = apiBaseUrl,
             )
         }
         composable(Screen.StoryGeneration.route) {
             val generateState by storyViewModel.generateState.collectAsState()
+            val generationTopics by storyViewModel.generationTopics.collectAsState()
             LaunchedEffect(generateState) {
                 if (generateState is UiState.Success<*>) storyViewModel.loadMyStories()
             }
-            LaunchedEffect(Unit) { subscriptionViewModel.loadSubscription() }
+            LaunchedEffect(Unit) {
+                storyViewModel.clearGenerateState()
+                subscriptionViewModel.loadSubscription()
+                storyViewModel.loadGenerationTopics()
+            }
             StoryGenerationScreen(
                 generateState = generateState,
+                generationTopics = generationTopics,
                 storiesUsed = usage?.storiesUsed ?: 0,
                 storiesLimit = usage?.storiesLimit,
                 onGenerate = { storyViewModel.generateStory(it) },
                 onBack = { navController.popBackStack() },
-                onStoryGenerated = { navController.navigate(Screen.Dashboard.route) }
+                onStoryGenerated = { navController.navigate(Screen.Dashboard.route) },
+                onClearGenerateError = { storyViewModel.clearGenerateState() },
             )
         }
         composable(
@@ -417,8 +439,17 @@ fun TamixaNavHost(
                     onStoppedEarly = { s, pos -> tracker.onStoppedEarly(s, pos) }
                 )
             }
+            val playbackSubtitle = remember(story?.id, story?.theme, story?.category, story?.title) {
+                story?.let { s ->
+                    val src =
+                        if (s.parentId == 0L) com.tamixa.util.TamixaConstants.STORY_SOURCE_LIBRARY
+                        else com.tamixa.util.TamixaConstants.STORY_SOURCE_GENERATED
+                    com.tamixa.ui.listenerPlaybackSubtitle(s, src)
+                }
+            }
             AudioPlayerScreen(
                 story = story,
+                playbackSubtitle = playbackSubtitle,
                 isPlaying = false,
                 onPlayPause = { /* ExoPlayer in app */ },
                 onBack = {
@@ -473,7 +504,7 @@ fun TamixaNavHost(
                             com.tamixa.util.TamixaConstants.RECENT_PLAYBACK_LIMIT,
                             prefLang
                         )
-                        navController.navigate(Screen.Library.route) {
+                        navController.navigate(Screen.Library.withHub()) {
                             popUpTo(Screen.Dashboard.route) { inclusive = false }
                         }
                     }
@@ -547,7 +578,7 @@ fun TamixaNavHost(
                 onNavigateToAvatar = { navController.navigate(Screen.AvatarUpload.route) { popUpTo(Screen.MyVoiceAndAvatar.route) { inclusive = true } } },
                 onNavigateToHome = { navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
-                onNavigateToLibrary = { navController.navigate(Screen.Library.route) },
+                onNavigateToLibrary = { navController.navigate(Screen.Library.withHub()) },
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                 onBack = { navController.popBackStack() },
@@ -586,7 +617,7 @@ fun TamixaNavHost(
                 onNavigateToVoice = { },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
                 onNavigateToMyVoiceAndAvatarHub = { navController.navigate(Screen.MyVoiceAndAvatar.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
-                onNavigateToLibrary = { navController.navigate(Screen.Library.route) },
+                onNavigateToLibrary = { navController.navigate(Screen.Library.withHub()) },
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
             )
@@ -620,7 +651,7 @@ fun TamixaNavHost(
                 onNavigateToVoice = { navController.navigate(Screen.VoiceUpload.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
                 onNavigateToMyVoiceAndAvatarHub = { navController.navigate(Screen.MyVoiceAndAvatar.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
-                onNavigateToLibrary = { navController.navigate(Screen.Library.route) },
+                onNavigateToLibrary = { navController.navigate(Screen.Library.withHub()) },
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
             )
@@ -683,7 +714,7 @@ fun TamixaNavHost(
                 onBack = { navController.popBackStack() },
                 languageCode = prefLang,
                 onNavigateToHome = { navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
-                onNavigateToLibrary = { navController.navigate(Screen.Library.route) },
+                onNavigateToLibrary = { navController.navigate(Screen.Library.withHub()) },
                 onNavigateToShortContent = { },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
             )
@@ -779,7 +810,7 @@ fun TamixaNavHost(
                 onNavigateToVoice = { navController.navigate(Screen.VoiceUpload.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
                 onNavigateToSettings = { },
                 onNavigateToMyVoiceAndAvatar = { navController.navigate(Screen.MyVoiceAndAvatar.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
-                onNavigateToLibrary = { navController.navigate(Screen.Library.route) },
+                onNavigateToLibrary = { navController.navigate(Screen.Library.withHub()) },
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
             )

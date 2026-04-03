@@ -89,6 +89,9 @@ export default function NewLibraryStoryPage() {
     moral: "",
     status: "DRAFT",
     emotionMode: "CALM",
+    parentDiscussionPrompts: undefined,
+    parentContentNote: null,
+    speakAlongPrompt: null,
   });
   const [submitting, setSubmitting] = useState(false);
   const [coverGenerating, setCoverGenerating] = useState(false);
@@ -174,6 +177,11 @@ export default function NewLibraryStoryPage() {
         title: form.title?.trim() || null,
         moral: form.moral?.trim() || null,
         status: publish ? "PUBLISHED" : "DRAFT",
+        parentContentNote: form.parentContentNote?.trim() || null,
+        speakAlongPrompt: form.speakAlongPrompt?.trim() || null,
+        parentDiscussionPrompts: form.parentDiscussionPrompts?.length
+          ? form.parentDiscussionPrompts
+          : null,
       });
       localStorage.removeItem(AUTOSAVE_KEY);
 
@@ -332,6 +340,60 @@ export default function NewLibraryStoryPage() {
                     placeholder="e.g. Sharing brings joy"
                     className="mt-1 rounded-xl"
                   />
+                </div>
+                <div className="rounded-xl border border-border/80 bg-muted/10 p-4 space-y-3">
+                  <p className="text-sm font-semibold">Parent resources (optional)</p>
+                  <p className="text-xs text-muted-foreground">
+                    Shown in apps for library playback: context for caregivers and discussion ideas (up to 10 prompts,
+                    max 400 chars each).
+                  </p>
+                  <div>
+                    <Label htmlFor="parentContentNote">Content note for parents</Label>
+                    <textarea
+                      id="parentContentNote"
+                      value={form.parentContentNote ?? ""}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, parentContentNote: e.target.value || null }))
+                      }
+                      placeholder="Cultural context, content advisory, etc."
+                      className="mt-1 flex min-h-[72px] w-full rounded-xl border-2 border-input bg-background px-3 py-2 text-sm"
+                      maxLength={4000}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="speakAlongPrompt">Speak-along prompt</Label>
+                    <Input
+                      id="speakAlongPrompt"
+                      value={form.speakAlongPrompt ?? ""}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, speakAlongPrompt: e.target.value || null }))
+                      }
+                      placeholder="Short line for kids to repeat"
+                      className="mt-1 rounded-xl"
+                      maxLength={500}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="discussionPrompts">Discussion prompts (one per line, max 10)</Label>
+                    <textarea
+                      id="discussionPrompts"
+                      value={(form.parentDiscussionPrompts ?? []).join("\n")}
+                      onChange={(e) => {
+                        const lines = e.target.value
+                          .split("\n")
+                          .map((s) => s.trim())
+                          .filter(Boolean)
+                          .slice(0, 10)
+                          .map((s) => s.slice(0, 400));
+                        setForm((f) => ({
+                          ...f,
+                          parentDiscussionPrompts: lines.length ? lines : undefined,
+                        }));
+                      }}
+                      placeholder={"What surprised you?\nHow would you help the character?"}
+                      className="mt-1 flex min-h-[100px] w-full rounded-xl border-2 border-input bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>

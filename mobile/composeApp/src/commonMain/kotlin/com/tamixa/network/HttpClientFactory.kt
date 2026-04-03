@@ -24,7 +24,8 @@ fun createKtorClient(
     baseUrl: String,
     tokenStorage: TokenStorage,
     onSessionExpired: (() -> Unit)? = null,
-    enableLogging: Boolean = true
+    enableLogging: Boolean = true,
+    buildEnvironment: String = "unknown"
 ): HttpClient = HttpClient(ktorEngine) {
     install(ContentNegotiation) {
         json(Json {
@@ -37,6 +38,7 @@ fun createKtorClient(
         url(baseUrl)
         contentType(ContentType.Application.Json)
         accept(ContentType.Application.Json)
+        header("X-Tamixa-Client-Env", buildEnvironment.trim().ifEmpty { "unknown" })
     }
     install(HttpTimeout) {
         connectTimeoutMillis = ApiConfig.CONNECT_TIMEOUT_MS
@@ -62,6 +64,7 @@ fun createKtorClient(
                     defaultRequest {
                         url(baseUrl)
                         contentType(ContentType.Application.Json)
+                        header("X-Tamixa-Client-Env", buildEnvironment.trim().ifEmpty { "unknown" })
                     }
                 }
                 try {

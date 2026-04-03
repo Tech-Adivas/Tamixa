@@ -1361,7 +1361,10 @@ class AdminController(
                     title = story.title,
                     moral = story.moral,
                     category = story.category,
-                    theme = story.theme
+                    theme = story.theme,
+                    parentDiscussionPrompts = story.parentDiscussionPrompts,
+                    parentContentNote = story.parentContentNote,
+                    speakAlongPrompt = story.speakAlongPrompt,
                 )
             }
             val paraphraseBefore = mapOf(
@@ -1378,6 +1381,11 @@ class AdminController(
             response["paraphraseBefore"] = paraphraseBefore
             transformed.category?.let { response["category"] = it }
             transformed.theme?.let { response["theme"] = it }
+            if (transformed.parentDiscussionPrompts != null) {
+                response["parentDiscussionPrompts"] = transformed.parentDiscussionPrompts
+            }
+            transformed.parentContentNote?.let { response["parentContentNote"] = it }
+            transformed.speakAlongPrompt?.let { response["speakAlongPrompt"] = it }
             if (generateForAllLanguages) {
                 // Translate from the language we just asked the model to write in, not the global pipeline default
                 // (avoids treating Hindi rewrite output as Tamil source or vice versa).
@@ -2345,7 +2353,10 @@ class AdminController(
                 translationContents = request.translationContents?.takeIf { it.isNotEmpty() },
                 translationContentEntries = request.translationContentEntries?.takeIf { it.isNotEmpty() },
                 convertPromptUsed = null,
-                narratedContentPatch = request.narratedContent
+                narratedContentPatch = request.narratedContent,
+                parentDiscussionPrompts = request.parentDiscussionPrompts,
+                parentContentNote = request.parentContentNote,
+                speakAlongPrompt = request.speakAlongPrompt,
             )
             if (story != null) {
             if (story.status == LibraryStoryStatus.PUBLISHED && runPipelineOnUpdate) {
@@ -2720,7 +2731,10 @@ class AdminController(
             coverImageUrl = coverImageUrlResolver.normalizeForStorage(request.coverImageUrl) ?: request.coverImageUrl,
             emotionMode = request.emotionMode,
             storyOwner = adminEmail,
-            convertPromptUsed = null
+            convertPromptUsed = null,
+            parentDiscussionPrompts = request.parentDiscussionPrompts,
+            parentContentNote = request.parentContentNote,
+            speakAlongPrompt = request.speakAlongPrompt,
         )
         if (story.status == LibraryStoryStatus.PUBLISHED && appProperties.translationPipeline.pipelineOnSubmitOnly) {
             log.info("PIPELINE >>> Create publish: triggering pipeline for storyId={} (content will be generated for all languages)", story.id)
@@ -2762,6 +2776,7 @@ class AdminController(
         val categories = request.categories?.mapNotNull { it.trim().takeIf { it.isNotBlank() } }?.distinct() ?: emptyList()
         val totalStories = (request.totalStories?.coerceIn(1, 25)) ?: 25
         val publish = request.publish ?: false
+        val learningFocus = request.learningFocus?.trim()?.takeIf { it.isNotBlank() }
         val syncJobId = "sync-${System.currentTimeMillis()}"
         if (!bulkJobStore.tryAcquire(syncJobId)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf(
@@ -2774,7 +2789,8 @@ class AdminController(
                 categories = categories,
                 totalStories = totalStories,
                 publish = publish,
-                storyOwner = adminEmail
+                storyOwner = adminEmail,
+                learningFocus = learningFocus
             )
             val createdIds = (result["created"] as? List<*>)?.mapNotNull {
                 (it as? Map<*, *>)?.get("id") as? Number
@@ -2821,6 +2837,7 @@ class AdminController(
         val categories = request.categories?.mapNotNull { it.trim().takeIf { it.isNotBlank() } }?.distinct() ?: emptyList()
         val totalStories = (request.totalStories?.coerceIn(1, 25)) ?: 25
         val publish = request.publish ?: false
+        val learningFocus = request.learningFocus?.trim()?.takeIf { it.isNotBlank() }
         val jobId = bulkJobStore.create(totalStories, publish)
         if (!bulkJobStore.tryAcquire(jobId)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf(
@@ -2837,6 +2854,7 @@ class AdminController(
                     totalStories = totalStories,
                     publish = publish,
                     storyOwner = adminEmail,
+                    learningFocus = learningFocus,
                     progressCallback = { current, total, createdCount, failedCount, created, failed ->
                         bulkJobStore.updateProgress(jobId, current, createdCount, failedCount, created, failed)
                     }

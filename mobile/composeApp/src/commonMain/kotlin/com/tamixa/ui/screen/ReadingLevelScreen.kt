@@ -9,10 +9,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.tamixa.network.ReadingLevelDto
 import com.tamixa.ui.components.AppScreenBackground
 import com.tamixa.ui.components.TamixaScreenTopBar
+import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -28,14 +30,14 @@ fun ReadingLevelScreen(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             TamixaScreenTopBar(
-                title = "Reading Level",
+                title = Strings.readingLevelTitle(),
                 onBack = onBack,
                 useTransparentBackground = true
             )
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            AppScreenBackground(showClouds = false)
+            AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
             when {
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = TamixaColors.goldAccent)
@@ -45,9 +47,14 @@ fun ReadingLevelScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TamixaColors.cream.copy(alpha = 0.92f),
+                        textAlign = TextAlign.Center,
+                    )
                     Spacer(Modifier.height(16.dp))
-                    TextButton(onClick = onRetry) { Text("Retry", color = TamixaColors.goldAccent) }
+                    TextButton(onClick = onRetry) { Text(Strings.retry(), color = TamixaColors.goldAccent) }
                 }
                 readingLevel != null -> Column(
                     modifier = Modifier
@@ -74,13 +81,13 @@ fun ReadingLevelScreen(
                                 style = MaterialTheme.typography.displayMedium
                             )
                             Text(
-                                text = "Level ${readingLevel.level}",
+                                text = Strings.readingLevelNumber(readingLevel.level),
                                 style = MaterialTheme.typography.displayMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = TamixaColors.goldAccent
                             )
                             Text(
-                                text = "out of 10",
+                                text = Strings.readingLevelOutOf(10),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TamixaContentColors.cardSecondary()
                             )
@@ -104,13 +111,19 @@ fun ReadingLevelScreen(
                             modifier = Modifier.fillMaxWidth().padding(TamixaDesignTokens.cardContentPadding),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Last updated", style = MaterialTheme.typography.bodyMedium, color = TamixaContentColors.cardSecondary())
+                            Text(Strings.readingLevelLastUpdated(), style = MaterialTheme.typography.bodyMedium, color = TamixaContentColors.cardSecondary())
                             Text(readingLevel.updatedAt.take(10), style = MaterialTheme.typography.bodyMedium, color = TamixaContentColors.cardPrimary())
                         }
                     }
                 }
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No reading level data yet.", color = TamixaContentColors.cardSecondary())
+                    Text(
+                        Strings.readingLevelNoDataYet(),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TamixaColors.cream.copy(alpha = 0.88f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(TamixaDesignTokens.screenPadding),
+                    )
                 }
             }
         }

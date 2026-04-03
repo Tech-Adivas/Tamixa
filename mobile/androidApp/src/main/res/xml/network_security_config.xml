@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Production: pin api.tamixa.com certificates -->
+    <!-- Production: pin api.tamixa.in certificates -->
     <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">api.tamixa.com</domain>
-        <domain includeSubdomains="true">tamixa.com</domain>
+        <domain includeSubdomains="true">api.tamixa.in</domain>
+        <domain includeSubdomains="true">tamixa.in</domain>
         <pin-set expiration="2026-12-31">
             <!-- Primary certificate SHA-256 pin (replace with actual cert fingerprint) -->
-            <!-- Get fingerprint: openssl s_client -connect api.tamixa.com:443 | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64 -->
+            <!-- Get fingerprint: openssl s_client -connect api.tamixa.in:443 | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64 -->
             <pin digest="SHA-256">AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</pin>
             <!-- Backup certificate pin (use a different CA or backup cert) -->
             <pin digest="SHA-256">BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=</pin>

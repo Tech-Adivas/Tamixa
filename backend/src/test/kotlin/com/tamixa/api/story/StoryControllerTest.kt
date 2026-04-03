@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.isNull
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.boot.test.mock.mockito.MockBean
@@ -102,7 +104,8 @@ class StoryControllerTest : IntegrationTestBase() {
                 anyOrNull(),
                 anyOrNull(),
                 anyOrNull(),
-                anyOrNull()
+                anyOrNull(),
+                eq(false),
             )
         ).thenReturn(savedStory)
 
@@ -127,7 +130,8 @@ class StoryControllerTest : IntegrationTestBase() {
             anyOrNull(),
             anyOrNull(),
             anyOrNull(),
-            anyOrNull()
+            anyOrNull(),
+            eq(false),
         )
     }
 
@@ -146,5 +150,135 @@ class StoryControllerTest : IntegrationTestBase() {
                 .content(objectMapper.writeValueAsString(request))
         )
             .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    @WithMockUser(username = "parent@test.com", roles = ["PARENT"])
+    fun `generation topics returns 200 with catalog entries`() {
+        mockMvc.perform(get("${ApiVersion.V1}/stories/generation-topics"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$").isArray)
+            .andExpect(jsonPath("$[0].id").exists())
+            .andExpect(jsonPath("$[0].theme").exists())
+    }
+
+    @Test
+    @WithMockUser(username = "parent@test.com", roles = ["PARENT"])
+    fun `generate with generationTopicId only returns 201 and uses trusted catalog theme`() {
+        val pongalTheme = "பொங்கல் — நன்றியுணர்வும் புதிய தொடக்கமும்"
+        val body = mapOf(
+            "age" to 8,
+            "language" to "ta",
+            "generationTopicId" to "pongal_gratitude",
+        )
+        val savedStory = Story(
+            id = 2L,
+            parentId = 100L,
+            childId = null,
+            content = "…",
+            theme = pongalTheme,
+            language = "ta",
+            age = 8,
+            childName = "Listener",
+            wordCount = 40,
+            readingTimeMinutes = 0.25,
+            title = "Pongal",
+            moral = null,
+            status = StoryStatus.PENDING,
+            audioFileUrl = null,
+            createdAt = Instant.now(),
+            safetyScore = 90
+        )
+        whenever(
+            storyService.generate(
+                any(),
+                eq(8),
+                eq("ta"),
+                eq(pongalTheme),
+                eq("Listener"),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq("curiosity"),
+                eq(true),
+            )
+        ).thenReturn(savedStory)
+
+        mockMvc.perform(
+            post("${ApiVersion.V1}/stories/generate")
+                .with(SecurityMockMvcRequestPostProcessors.csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body))
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.id").value(2))
+
+        verify(storyService).generate(
+            any(),
+            eq(8),
+            eq("ta"),
+            eq(pongalTheme),
+            eq("Listener"),
+            isNull(),
+            isNull(),
+            isNull(),
+            isNull(),
+            eq("curiosity"),
+            eq(true),
+        )
+    }
+
+    @Test
+    @WithMockUser(username = "parent@test.com", roles = ["PARENT"])
+    fun `generate with unknown generationTopicId returns 400`() {
+        val body = mapOf(
+            "age" to 8,
+            "language" to "ta",
+            "generationTopicId" to "not_a_real_topic_id",
+        )
+        mockMvc.perform(
+            post("${ApiVersion.V1}/stories/generate")
+                .with(SecurityMockMvcRequestPostProcessors.csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body))
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("UNKNOWN_GENERATION_TOPIC"))
+    }
+
+    @Test
+    @WithMockUser(username = "parent@test.com", roles = ["PARENT"])
+    fun `generate without theme or topic returns 400`() {
+        val body = mapOf(
+            "age" to 8,
+            "language" to "ta",
+        )
+        mockMvc.perform(
+            post("${ApiVersion.V1}/stories/generate")
+                .with(SecurityMockMvcRequestPostProcessors.csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body))
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("THEME_OR_TOPIC_REQUIRED"))
+    }
+
+    @Test
+    @WithMockUser(username = "parent@test.com", roles = ["PARENT"])
+    fun `generate with unsupported language returns 400 with structured code`() {
+        val body = mapOf(
+            "age" to 8,
+            "language" to "en",
+            "theme" to "forest",
+        )
+        mockMvc.perform(
+            post("${ApiVersion.V1}/stories/generate")
+                .with(SecurityMockMvcRequestPostProcessors.csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body))
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("GENERATION_LANGUAGE_NOT_SUPPORTED"))
     }
 }

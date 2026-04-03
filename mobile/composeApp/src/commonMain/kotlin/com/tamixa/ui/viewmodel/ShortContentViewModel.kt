@@ -2,6 +2,7 @@ package com.tamixa.ui.viewmodel
 
 import com.tamixa.network.ShortContentApi
 import com.tamixa.network.ShortContentResponseDto
+import com.tamixa.ui.errorMessageForUser
 import com.tamixa.util.TamixaConstants
 import com.tamixa.util.TamixaLog
 import kotlinx.coroutines.CoroutineScope
@@ -50,7 +51,7 @@ class ShortContentViewModel(
             } catch (e: Exception) {
                 TamixaLog.w("ShortContentViewModel", "loadList type=$type failed", e)
                 _items.value = emptyList()
-                _error.value = e.message ?: "Failed to load"
+                _error.value = errorMessageForUser(e)
             } finally {
                 _loading.value = false
             }

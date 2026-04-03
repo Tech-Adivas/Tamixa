@@ -14,6 +14,10 @@ plugins {
     id("org.flywaydb.flyway") version "10.8.1"
 }
 
+import java.net.URI
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
+
 java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
@@ -89,9 +93,144 @@ fun loadEnv(): Map<String, String> {
 }
 
 val envMap = loadEnv()
-val flywayUrl = envMap["DATABASE_URL"] ?: "jdbc:postgresql://${envMap["POSTGRES_HOST"] ?: "localhost"}:${envMap["POSTGRES_PORT"] ?: "5432"}/${envMap["POSTGRES_DB"] ?: "araro_kids"}"
-val flywayUser = envMap["POSTGRES_USER"] ?: envMap["DATABASE_USERNAME"] ?: "postgres"
-val flywayPassword = envMap["POSTGRES_PASSWORD"] ?: envMap["DATABASE_PASSWORD"] ?: "postgres"
+
+/** Staging/prod use DATABASE_PUBLIC_URL / DATABASE_URL in the environment; CI does not write `.env`. Prefer OS env, then repo `.env`. */
+fun pickEnv(vararg keys: String): String? {
+    for (k in keys) {
+        System.getenv(k)?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        envMap[k]?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+    }
+    return null
+}
+
+/**
+ * Same URL choice as [com.tamixa.TamixaApplication.applyDatabaseUrlCompatibility]:
+ * on Railway prefer private DATABASE_URL (what the backend service usually uses); off Railway prefer DATABASE_PUBLIC_URL
+ * so laptops are not forced to use internal hostnames. Mismatches here cause "migrate succeeded" but empty tables on the app DB.
+ */
+fun pickPrimaryDatabaseUrlForFlyway(): String? =
+    if (System.getenv().entries.any { (k, v) -> k.startsWith("RAILWAY_") && v.isNotBlank() }) {
+        pickEnv("DATABASE_URL", "DATABASE_PUBLIC_URL")
+    } else {
+        pickEnv("DATABASE_PUBLIC_URL", "DATABASE_URL")
+    }
+
+fun normalizeFlywayJdbcUrl(raw: String): String {
+    val u = raw.trim()
+    if (u.startsWith("jdbc:")) return u
+    if (u.startsWith("postgres://")) return "jdbc:postgresql://" + u.removePrefix("postgres://")
+    if (u.startsWith("postgresql://")) return "jdbc:postgresql://" + u.removePrefix("postgresql://")
+    return u
+}
+
+private fun decodeUserInfoPart(value: String): String =
+    URLDecoder.decode(value, StandardCharsets.UTF_8)
+
+/**
+ * JDBC URLs must not embed user:password@ before the host — the PostgreSQL JDBC driver often fails to connect
+ * (08001) even with sslmode=require. Align with [com.tamixa.TamixaApplication] libpq-style handling.
+ */
+fun stripJdbcPostgresqlUserInfo(jdbcUrl: String): Triple<String, String?, String?> {
+    val schemeMarker = "://"
+    val idx = jdbcUrl.indexOf(schemeMarker)
+    if (idx < 0) return Triple(jdbcUrl, null, null)
+    val schemePart = jdbcUrl.substring(0, idx).lowercase()
+    if (!schemePart.startsWith("jdbc:postgresql") && !schemePart.startsWith("jdbc:postgres")) {
+        return Triple(jdbcUrl, null, null)
+    }
+    val afterScheme = idx + schemeMarker.length
+    val schemePrefix = jdbcUrl.substring(0, afterScheme)
+    val rest = jdbcUrl.substring(afterScheme)
+    val atIdx = rest.indexOf('@')
+    if (atIdx < 0) return Triple(jdbcUrl, null, null)
+    if (rest.substring(0, atIdx).contains('/')) {
+        return Triple(jdbcUrl, null, null)
+    }
+    val userInfo = rest.substring(0, atIdx)
+    val afterAt = rest.substring(atIdx + 1)
+    val user = userInfo.substringBefore(':').takeIf { it.isNotBlank() }
+    val pass = userInfo.substringAfter(':', "").takeIf { it.isNotEmpty() }
+    return Triple(schemePrefix + afterAt, user, pass)
+}
+
+/** Match [com.tamixa.TamixaApplication] startup: Railway public proxy requires TLS for JDBC. */
+fun ensureRailwayPublicJdbcUrlHasSsl(jdbcUrl: String): String {
+    if (!jdbcUrl.startsWith("jdbc:postgresql:", ignoreCase = true) &&
+        !jdbcUrl.startsWith("jdbc:postgres:", ignoreCase = true)
+    ) {
+        return jdbcUrl
+    }
+    if (jdbcUrl.contains("sslmode=", ignoreCase = true)) {
+        return jdbcUrl
+    }
+    val schemeSep = jdbcUrl.indexOf("://")
+    if (schemeSep < 0) {
+        return jdbcUrl
+    }
+    val afterScheme = jdbcUrl.substring(schemeSep + 3)
+    val hostPart = afterScheme.substringBefore("/").substringBefore("?")
+    if (hostPart.isBlank()) {
+        return jdbcUrl
+    }
+    val needsSsl =
+        hostPart.contains("proxy.rlwy.net", ignoreCase = true) ||
+            (hostPart.endsWith(".rlwy.net", ignoreCase = true) && !hostPart.contains("railway.internal", ignoreCase = true))
+    if (!needsSsl) {
+        return jdbcUrl
+    }
+    return if (jdbcUrl.contains("?")) "$jdbcUrl&sslmode=require" else "$jdbcUrl?sslmode=require"
+}
+
+fun resolveFlywayJdbcAndCredentials(): Triple<String, String?, String?> {
+    val fromVars = pickPrimaryDatabaseUrlForFlyway()
+    if (fromVars == null) {
+        val host = pickEnv("POSTGRES_HOST") ?: "localhost"
+        val port = pickEnv("POSTGRES_PORT") ?: "5432"
+        val db = pickEnv("POSTGRES_DB") ?: "araro_kids"
+        val base = "jdbc:postgresql://$host:$port/$db"
+        return Triple(ensureRailwayPublicJdbcUrlHasSsl(base), null, null)
+    }
+    val trimmed = fromVars.trim()
+    if (trimmed.startsWith("postgresql://", ignoreCase = true) ||
+        trimmed.startsWith("postgres://", ignoreCase = true)
+    ) {
+        val uri = URI(trimmed)
+        val databaseName =
+            uri.path?.removePrefix("/")?.takeIf { it.isNotBlank() }
+                ?: error("flyway: postgres:// DATABASE_URL must include a database name in the path")
+        val host = uri.host ?: error("flyway: postgres:// DATABASE_URL must include a host")
+        val port = if (uri.port == -1) 5432 else uri.port
+        val query = uri.rawQuery
+        val userFromUrl = uri.userInfo?.substringBefore(':')?.takeIf { it.isNotBlank() }?.let(::decodeUserInfoPart)
+        val passFromUrl =
+            uri.userInfo
+                ?.substringAfter(':', "")
+                ?.takeIf { it.isNotBlank() }
+                ?.let(::decodeUserInfoPart)
+        val jdbcBase = buildString {
+            append("jdbc:postgresql://")
+            append(host)
+            append(':')
+            append(port)
+            append('/')
+            append(databaseName)
+            if (!query.isNullOrBlank()) {
+                append('?')
+                append(query)
+            }
+        }
+        return Triple(ensureRailwayPublicJdbcUrlHasSsl(jdbcBase), userFromUrl, passFromUrl)
+    }
+    val jdbcRaw = normalizeFlywayJdbcUrl(trimmed)
+    val (jdbcWithoutUser, u, p) = stripJdbcPostgresqlUserInfo(jdbcRaw)
+    return Triple(ensureRailwayPublicJdbcUrlHasSsl(jdbcWithoutUser), u, p)
+}
+
+val flywayResolved = resolveFlywayJdbcAndCredentials()
+val flywayUrl = flywayResolved.first
+val flywayUser = pickEnv("DATABASE_USERNAME", "POSTGRES_USER", "PGUSER") ?: flywayResolved.second ?: "postgres"
+val flywayPassword =
+    pickEnv("DATABASE_PASSWORD", "POSTGRES_PASSWORD", "PGPASSWORD") ?: flywayResolved.third ?: "postgres"
 
 flyway {
     url = flywayUrl
@@ -99,6 +238,27 @@ flyway {
     password = flywayPassword
     locations = arrayOf("classpath:db/migration")
     baselineOnMigrate = true
+    schemas = arrayOf("public")
+    createSchemas = true
+}
+
+tasks.register("flywayShowTarget") {
+    group = "flyway"
+    description =
+        "Print JDBC URL and user Flyway will use (no password). Run before migrate to confirm you hit the same DB as staging."
+    doLast {
+        println("Flyway URL: $flywayUrl")
+        println("Flyway user: $flywayUser")
+        val onRailway = System.getenv().entries.any { (k, v) -> k.startsWith("RAILWAY_") && v.isNotBlank() }
+        println(
+            "URL source order: " +
+                if (onRailway) {
+                    "RAILWAY_* detected → DATABASE_URL, then DATABASE_PUBLIC_URL (matches TamixaApplication)."
+                } else {
+                    "no RAILWAY_* → DATABASE_PUBLIC_URL, then DATABASE_URL (matches TamixaApplication off Railway)."
+                }
+        )
+    }
 }
 
 // Load .env from project root into bootRun so AWS_*, S3_*, etc. are available when running locally

@@ -1,13 +1,8 @@
 package com.tamixa.ui.screen
 
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -18,13 +13,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -32,11 +29,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -58,7 +55,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
@@ -66,7 +65,6 @@ import com.tamixa.composeapp.generated.resources.Res
 import com.tamixa.composeapp.generated.resources.onboarding_hook_hero
 import com.tamixa.composeapp.generated.resources.onboarding_hook_hero_animated
 import com.tamixa.ui.components.AppScreenBackground
-import com.tamixa.ui.components.TamixaMascot
 import com.tamixa.ui.components.platformIsReduceMotionEnabled
 import com.tamixa.ui.components.TamixaPrimaryButton
 import com.tamixa.ui.components.TamixaSkipButton
@@ -82,6 +80,14 @@ import org.jetbrains.compose.resources.getDrawableResourceBytes
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.rememberResourceEnvironment
 
+/** Persona-tinted halos so each step feels distinct on the same starfield. */
+enum class OnboardingHeroHaloKind {
+    HookWarmth,
+    LanternGlow,
+    VoiceRipple,
+    AvatarShimmer
+}
+
 @Composable
 fun OnboardingHookScreen(
     onStartStoryMagic: () -> Unit,
@@ -95,75 +101,272 @@ fun OnboardingHookScreen(
         totalSteps = 4,
         modifier = modifier,
         onSwipeToNext = onSwipeToNext,
-        onSwipeToPrevious = onSwipeToPrevious
+        onSwipeToPrevious = onSwipeToPrevious,
+        footer = {
+            val spec = LocalOnboardingLayoutSpec.current
+            TamixaPrimaryButton(
+                onClick = onStartStoryMagic,
+                text = Strings.startStoryMagic(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onboardingEntrance(delayMs = 280)
+            )
+            Spacer(Modifier.height(spec.footerButtonGap))
+            TamixaSkipButton(
+                onClick = onSkip,
+                text = Strings.skip(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onboardingEntrance(delayMs = 320)
+            )
+        }
     ) {
-        Text(
-            text = Strings.onboardingHookHeadline(),
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = (-0.2).sp,
-                lineHeight = 34.sp
-            ),
-            color = OnboardingCardColors.onboardingHeadline,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            modifier = Modifier
-                .padding(horizontal = 8.dp)
-                .onboardingEntrance(delayMs = 80)
-        )
-        Spacer(Modifier.height(14.dp))
-        Text(
-            text = Strings.onboardingHookSubline(),
-            style = MaterialTheme.typography.bodyLarge.copy(
-                lineHeight = 26.sp,
-                letterSpacing = 0.2.sp
-            ),
-            color = OnboardingCardColors.onboardingSubline,
-            textAlign = TextAlign.Center,
-            maxLines = 3,
-            modifier = Modifier
-                .padding(horizontal = 8.dp)
-                .onboardingEntrance(delayMs = 140)
-        )
-        Spacer(Modifier.height(28.dp))
-        Box(modifier = Modifier.onboardingEntrance(delayMs = 200)) {
+        val spec = LocalOnboardingLayoutSpec.current
+        // Store-quality hero first — halo tint unique to this step.
+        OnboardingHeroSpotlight(
+            kind = OnboardingHeroHaloKind.HookWarmth,
+            haloHeight = 252.dp,
+            modifier = Modifier.onboardingEntrance(delayMs = 70)
+        ) {
             HookVisualPreviewCard()
         }
-        Spacer(Modifier.height(16.dp))
-        OnboardingDailyQuote(step = 1, modifier = Modifier.onboardingEntrance(delayMs = 220))
-        Spacer(Modifier.height(28.dp))
-        Spacer(Modifier.weight(1f))
-        TamixaPrimaryButton(
-            onClick = onStartStoryMagic,
-            text = Strings.startStoryMagic(),
+        Spacer(Modifier.height(spec.gapLg))
+        OnboardingEditorialTextCard(
+            modifier = Modifier.onboardingEntrance(delayMs = 130)
+        ) {
+            OnboardingHeadline(
+                text = Strings.onboardingHookHeadline(),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OnboardingSubline(
+                text = Strings.onboardingHookSubline(),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Spacer(Modifier.height(spec.gapMd))
+        OnboardingValueStripTitle(
+            text = Strings.onboardingStripTitle(1),
+            modifier = Modifier.onboardingEntrance(delayMs = 165)
+        )
+        Spacer(Modifier.height(spec.gapSm))
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(spec.benefitRowSpacing)
+        ) {
+            OnboardingBenefitRow(
+                emoji = "🎧",
+                text = Strings.onboardingHookBenefitVoice(),
+                modifier = Modifier.onboardingEntrance(delayMs = 190)
+            )
+            OnboardingBenefitRow(
+                emoji = "📖",
+                text = Strings.onboardingHookBenefitPersonal(),
+                modifier = Modifier.onboardingEntrance(delayMs = 240)
+            )
+            OnboardingBenefitRow(
+                emoji = "🌙",
+                text = Strings.onboardingHookBenefitCalm(),
+                modifier = Modifier.onboardingEntrance(delayMs = 290)
+            )
+        }
+    }
+}
+
+/** Soft radial halo — color story shifts per [OnboardingHeroHaloKind]. */
+@Composable
+internal fun OnboardingHeroSpotlight(
+    kind: OnboardingHeroHaloKind,
+    modifier: Modifier = Modifier,
+    haloHeight: Dp = 260.dp,
+    content: @Composable () -> Unit
+) {
+    val spec = LocalOnboardingLayoutSpec.current
+    val haloH = spec.scaledHaloHeight(haloHeight)
+    val density = LocalDensity.current
+    val (inner, outer) = when (kind) {
+        OnboardingHeroHaloKind.HookWarmth ->
+            TamixaColors.goldAccent to TamixaColors.deepTeal
+        OnboardingHeroHaloKind.LanternGlow ->
+            TamixaColors.goldAccent to TamixaColors.mintGreen
+        OnboardingHeroHaloKind.VoiceRipple ->
+            TamixaColors.deepTeal to TamixaColors.goldAccent
+        OnboardingHeroHaloKind.AvatarShimmer ->
+            TamixaColors.softPurple to TamixaColors.deepTeal
+    }
+    val centerX = with(density) { 198.dp.toPx() }
+    val centerY = with(density) {
+        when (kind) {
+            OnboardingHeroHaloKind.HookWarmth -> 102.dp.toPx()
+            OnboardingHeroHaloKind.LanternGlow -> 118.dp.toPx()
+            OnboardingHeroHaloKind.VoiceRipple -> 96.dp.toPx()
+            OnboardingHeroHaloKind.AvatarShimmer -> 108.dp.toPx()
+        }
+    }
+    val radius = with(density) {
+        when (kind) {
+            OnboardingHeroHaloKind.LanternGlow -> 258.dp.toPx()
+            OnboardingHeroHaloKind.VoiceRipple -> 248.dp.toPx()
+            OnboardingHeroHaloKind.AvatarShimmer -> 252.dp.toPx()
+            OnboardingHeroHaloKind.HookWarmth -> 238.dp.toPx()
+        }
+    }
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .onboardingEntrance(delayMs = 280)
+                .height(haloH)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            inner.copy(alpha = if (kind == OnboardingHeroHaloKind.VoiceRipple) 0.22f else 0.2f),
+                            outer.copy(alpha = 0.1f),
+                            Color.Transparent
+                        ),
+                        center = Offset(centerX, centerY),
+                        radius = radius
+                    )
+                )
         )
-        Spacer(Modifier.height(12.dp))
-        TamixaSkipButton(
-            onClick = onSkip,
-            text = Strings.skip(),
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .onboardingEntrance(delayMs = 320)
+                .padding(top = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+internal fun OnboardingValueStripTitle(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    val spec = LocalOnboardingLayoutSpec.current
+    val gemPad = spec.gapSm
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "✦",
+            style = MaterialTheme.typography.titleMedium,
+            color = TamixaColors.goldAccent.copy(alpha = 0.55f),
+            modifier = Modifier.padding(end = gemPad)
         )
-        Spacer(Modifier.height(24.dp))
+        Text(
+            text = text.uppercase(),
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = spec.valueStripLetterSpacing.sp
+            ),
+            color = OnboardingCardColors.onboardingSubline.copy(alpha = 0.92f)
+        )
+        Text(
+            text = "✦",
+            style = MaterialTheme.typography.titleMedium,
+            color = TamixaColors.goldAccent.copy(alpha = 0.55f),
+            modifier = Modifier.padding(start = gemPad)
+        )
+    }
+}
+
+/**
+ * Headline + subline in a terracotta→teal rimmed panel — unique to Tamixa (not flat Material cards).
+ */
+@Composable
+internal fun OnboardingEditorialTextCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val spec = LocalOnboardingLayoutSpec.current
+    val outerR = spec.scaledCorner(26.dp)
+    val innerR = (outerR - 2.dp).coerceAtLeast(12.dp)
+    val outer = RoundedCornerShape(outerR)
+    val inner = RoundedCornerShape(innerR)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 10.dp,
+                shape = outer,
+                ambientColor = OnboardingCardDefaults.cardShadowAmbient,
+                spotColor = OnboardingCardDefaults.cardShadowSpot
+            )
+            .clip(outer)
+            .background(TamixaGradients.storybookShelfFrameBrush())
+            .padding(2.dp)
+            .clip(inner)
+            .background(Color.White.copy(alpha = 0.11f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = spec.editorialHPadding, vertical = spec.editorialVPadding),
+            verticalArrangement = Arrangement.spacedBy(spec.editorialSectionGap)
+        ) {
+            content()
+        }
+    }
+}
+
+/** Single-line value prop row — scannable like Play listing bullets, glass on starfield. */
+@Composable
+internal fun OnboardingBenefitRow(
+    emoji: String,
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    val spec = LocalOnboardingLayoutSpec.current
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(spec.scaledCorner(18.dp)),
+        color = Color.White.copy(alpha = 0.09f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(
+                    horizontal = (spec.cardContentPadding - 2.dp).coerceAtLeast(10.dp),
+                    vertical = spec.benefitRowVerticalPadding
+                )
+                .semantics(mergeDescendants = true) {
+                    contentDescription = text
+                },
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(spec.gapMd)
+        ) {
+            Text(
+                text = emoji,
+                style = MaterialTheme.typography.headlineMedium.copy(lineHeight = spec.benefitEmojiLineHeight),
+                modifier = Modifier.padding(top = 2.dp)
+            )
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = spec.sublineLineHeight,
+                    letterSpacing = 0.12.sp
+                ),
+                color = OnboardingCardColors.onboardingHeadline.copy(alpha = 0.96f),
+                maxLines = 5,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 }
 
 @Composable
 private fun HookVisualPreviewCard() {
-    val transition = rememberInfiniteTransition(label = "hookCardPulse")
-    val pulse by transition.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "hookCardPulseValue"
-    )
+    val spec = LocalOnboardingLayoutSpec.current
+    val imgH = spec.scaledImageHeight(200.dp)
+    val imgCorner = spec.scaledCorner(22.dp)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -172,27 +375,27 @@ private fun HookVisualPreviewCard() {
                 shape = OnboardingCardDefaults.cardShape,
                 ambientColor = OnboardingCardDefaults.cardShadowAmbient,
                 spotColor = OnboardingCardDefaults.cardShadowSpot
-            )
-            .graphicsLayer(scaleX = pulse, scaleY = pulse),
+            ),
         shape = OnboardingCardDefaults.cardShape,
         color = OnboardingCardColors.cardBackground,
         border = BorderStroke(1.dp, OnboardingCardColors.cardBorder)
     ) {
         Column(
-            modifier = Modifier.padding(TamixaDesignTokens.cardSpacing),
-            verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
+            modifier = Modifier.padding(spec.cardContentPadding),
+            verticalArrangement = Arrangement.spacedBy(spec.cardInnerSpacing)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(176.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .height(imgH)
+                    .clip(RoundedCornerShape(imgCorner))
             ) {
                 OnboardingImageBanner(
                     image = Res.drawable.onboarding_hook_hero,
                     animatedGif = Res.drawable.onboarding_hook_hero_animated,
                     contentDescription = "Story preview",
-                    height = 176.dp
+                    height = imgH,
+                    cornerRadius = imgCorner
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -290,6 +493,53 @@ internal fun Modifier.onboardingSwipeNavigation(
     }
 }
 
+/** Shared onboarding title — pair with [Modifier.onboardingEntrance] per step. */
+@Composable
+fun OnboardingHeadline(
+    text: String,
+    modifier: Modifier = Modifier,
+    textAlign: TextAlign = TextAlign.Center,
+    maxLines: Int? = null
+) {
+    val spec = LocalOnboardingLayoutSpec.current
+    Text(
+        text = text,
+        style = MaterialTheme.typography.headlineLarge.copy(
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.5).sp,
+            lineHeight = spec.headlineLineHeight
+        ),
+        color = OnboardingCardColors.onboardingHeadline,
+        textAlign = textAlign,
+        maxLines = maxLines ?: spec.headlineMaxLines,
+        modifier = modifier
+    )
+}
+
+/** Shared onboarding supporting copy under the title. */
+@Composable
+fun OnboardingSubline(
+    text: String,
+    modifier: Modifier = Modifier,
+    textAlign: TextAlign = TextAlign.Center,
+    maxLines: Int? = null,
+    lineHeight: TextUnit? = null
+) {
+    val spec = LocalOnboardingLayoutSpec.current
+    val lh = lineHeight ?: spec.sublineLineHeight
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyLarge.copy(
+            lineHeight = lh,
+            letterSpacing = 0.15.sp
+        ),
+        color = OnboardingCardColors.onboardingSubline,
+        textAlign = textAlign,
+        maxLines = maxLines ?: spec.sublineMaxLines,
+        modifier = modifier
+    )
+}
+
 @Composable
 fun OnboardingShell(
     step: Int,
@@ -305,7 +555,8 @@ fun OnboardingShell(
             ambientPresence = true
         )
     },
-    content: @Composable ColumnScope.() -> Unit
+    footer: @Composable ColumnScope.() -> Unit = {},
+    body: @Composable ColumnScope.() -> Unit
 ) {
     Box(
         modifier = modifier
@@ -313,36 +564,73 @@ fun OnboardingShell(
             .onboardingSwipeNavigation(onSwipeToNext, onSwipeToPrevious)
     ) {
         background()
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Top atmosphere — soft brand wash (matches modern splash language, no flat strip)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(132.dp)
-                    .background(TamixaGradients.onboardingTopAtmosphereBrush())
-            )
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = TamixaDesignTokens.screenPadding)
-                    .padding(top = TamixaDesignTokens.screenPadding, bottom = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Top
-            ) {
-                OnboardingProgressHeader(
-                    step = step,
-                    totalSteps = totalSteps,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onboardingEntrance(delayMs = 40)
-                )
-                Spacer(Modifier.height(20.dp))
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    content()
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val spec = remember(maxHeight, maxWidth) {
+                onboardingLayoutSpecForScreen(maxHeight, maxWidth)
+            }
+            CompositionLocalProvider(LocalOnboardingLayoutSpec provides spec) {
+                val bodyScroll = rememberScrollState()
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(spec.topAtmosphereHeight)
+                            .align(Alignment.TopCenter)
+                            .background(TamixaGradients.onboardingTopAtmosphereBrush())
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = TamixaDesignTokens.screenPadding)
+                                .padding(
+                                    top = spec.progressPaddingTop,
+                                    bottom = spec.progressPaddingBottom
+                                ),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            OnboardingProgressHeader(
+                                step = step,
+                                totalSteps = totalSteps,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onboardingEntrance(delayMs = 40)
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(bodyScroll)
+                                    .padding(horizontal = TamixaDesignTokens.screenPadding)
+                                    .padding(
+                                        bottom = spec.bodyColumnBottomPadding + 12.dp
+                                    ),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Top
+                            ) {
+                                body()
+                            }
+                        }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(horizontal = TamixaDesignTokens.screenPadding)
+                                .padding(bottom = spec.footerBottomPadding),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            footer()
+                        }
+                    }
                 }
             }
         }
@@ -459,150 +747,6 @@ fun OnboardingImageBanner(
     }
 }
 
-/** Step-specific accent for quote cards: Thought=gold, Proverb=teal, Tongue twister=purple, Quote=mint */
-private fun quoteStepAccent(step: Int): Color {
-    val idx = when (step) {
-        1 -> 0
-        2 -> 1
-        3 -> 2
-        4 -> 3
-        else -> (step - 1) % 4
-    }
-    return when (idx) {
-        0 -> TamixaColors.goldAccent
-        1 -> TamixaColors.deepTeal
-        2 -> TamixaColors.softPurple
-        else -> OnboardingCardColors.pillMint
-    }
-}
-
-/** 1st screen: Thought for the day. 2nd: Proverb. 3rd: Tongue twister. 4th: Quote. */
-@Composable
-fun OnboardingDailyQuote(
-    step: Int,
-    modifier: Modifier = Modifier
-) {
-    val (label, content) = when (step) {
-        1 -> Strings.thoughtForTheDay() to Strings.onboardingQuoteThought()
-        2 -> Strings.shortContentTypeLabel("PROVERB") to Strings.onboardingQuoteProverb()
-        3 -> Strings.shortContentTypeLabel("TONGUE_TWISTER") to Strings.onboardingQuoteTongueTwister()
-        4 -> Strings.shortContentTypeLabel("QUOTE") to Strings.onboardingQuoteQuote()
-        else -> {
-            val idx = (step - 1) % 4
-            when (idx) {
-                0 -> Strings.thoughtForTheDay() to Strings.onboardingQuoteThought()
-                1 -> Strings.shortContentTypeLabel("PROVERB") to Strings.onboardingQuoteProverb()
-                2 -> Strings.shortContentTypeLabel("TONGUE_TWISTER") to Strings.onboardingQuoteTongueTwister()
-                else -> Strings.shortContentTypeLabel("QUOTE") to Strings.onboardingQuoteQuote()
-            }
-        }
-    }
-    val accent = quoteStepAccent(step)
-    val outerShape = RoundedCornerShape(26.dp)
-    val innerShape = RoundedCornerShape(22.dp)
-    val paperColor = Color(0xFFFFFBF7)
-    val quoteInk = Color(0xFF1A1628)
-    val density = LocalDensity.current
-    val frameGradientEnd = with(density) { Offset(220.dp.toPx(), 200.dp.toPx()) }
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(
-                elevation = OnboardingCardDefaults.cardShadowElevation,
-                shape = outerShape,
-                ambientColor = OnboardingCardDefaults.cardShadowAmbient,
-                spotColor = OnboardingCardDefaults.cardShadowSpot
-            )
-            .clip(outerShape)
-            .background(
-                brush = Brush.linearGradient(
-                    colorStops = arrayOf(
-                        0f to accent.copy(alpha = 0.92f),
-                        0.45f to TamixaColors.goldAccent.copy(alpha = 0.78f),
-                        1f to accent.copy(alpha = 0.65f)
-                    ),
-                    start = Offset.Zero,
-                    end = frameGradientEnd
-                ),
-                shape = outerShape
-            )
-            .padding(3.dp)
-            .clip(innerShape)
-            .background(paperColor, innerShape)
-    ) {
-        Text(
-            text = "\u201C",
-            style = MaterialTheme.typography.displaySmall.copy(
-                fontWeight = FontWeight.Bold,
-                fontSize = 44.sp,
-                lineHeight = 44.sp
-            ),
-            color = accent.copy(alpha = 0.07f),
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(end = 10.dp, top = 4.dp)
-        )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                TamixaMascot(size = 52.dp, emoji = "🧸")
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = Strings.appName(),
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp,
-                            letterSpacing = 0.1.sp
-                        ),
-                        color = quoteInk
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = accent.copy(alpha = 0.14f),
-                        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f))
-                    ) {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 11.sp,
-                                letterSpacing = 0.4.sp
-                            ),
-                            color = accent.copy(alpha = 0.95f),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
-                    }
-                }
-            }
-            HorizontalDivider(
-                thickness = 1.dp,
-                color = accent.copy(alpha = 0.18f)
-            )
-            Text(
-                text = content,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 17.sp,
-                    lineHeight = 26.sp,
-                    letterSpacing = 0.2.sp
-                ),
-                color = quoteInk
-            )
-        }
-    }
-}
-
 @Composable
 fun OnboardingProgressHeader(
     step: Int,
@@ -617,71 +761,74 @@ fun OnboardingProgressHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .semantics { contentDescription = "Step $step of $totalSteps" },
+            .semantics {
+                contentDescription =
+                    "${Strings.onboardingProgressShort(step, totalSteps)}. Step $step of $totalSteps"
+            },
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        repeat(totalSteps) { index ->
-            val stepIndex = index + 1
-            val isPast = stepIndex < step
-            val isCurrent = stepIndex == step
-            if (index > 0) {
-                val segmentComplete = step > index
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 2.dp)
-                ) {
-                    repeat(4) { d ->
-                        if (d > 0) Spacer(Modifier.width(3.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(2.5.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (segmentComplete) {
-                                        TamixaColors.goldAccent.copy(alpha = 0.5f)
-                                    } else {
-                                        Color.White.copy(alpha = 0.16f)
-                                    }
-                                )
-                        )
+            repeat(totalSteps) { index ->
+                val stepIndex = index + 1
+                val isPast = stepIndex < step
+                val isCurrent = stepIndex == step
+                if (index > 0) {
+                    val segmentComplete = step > index
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 2.dp)
+                    ) {
+                        repeat(4) { d ->
+                            if (d > 0) Spacer(Modifier.width(3.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(2.5.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (segmentComplete) {
+                                            TamixaColors.goldAccent.copy(alpha = 0.5f)
+                                        } else {
+                                            Color.White.copy(alpha = 0.16f)
+                                        }
+                                    )
+                            ) {}
+                        }
                     }
+                    Spacer(Modifier.width(6.dp))
                 }
-                Spacer(Modifier.width(6.dp))
-            }
-            val dotSize = when {
-                isCurrent -> 9.dp
-                isPast -> 8.dp
-                else -> 7.dp
-            }
-            Box(
-                modifier = Modifier
-                    .size(if (isCurrent) 13.dp else dotSize)
-                    .then(
-                        if (isCurrent) Modifier.border(2.dp, currentRing, CircleShape) else Modifier
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
+                val dotSize = when {
+                    isCurrent -> 9.dp
+                    isPast -> 8.dp
+                    else -> 7.dp
+                }
                 Box(
                     modifier = Modifier
-                        .size(dotSize)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                isPast -> completedFill
-                                isCurrent -> currentFill
-                                else -> inactiveFill
-                            }
-                        )
+                        .size(if (isCurrent) 13.dp else dotSize)
                         .then(
-                            if (!isPast && !isCurrent) {
-                                Modifier.border(1.dp, inactiveRing, CircleShape)
-                            } else {
-                                Modifier
-                            }
-                        )
-                )
+                            if (isCurrent) Modifier.border(2.dp, currentRing, CircleShape) else Modifier
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(dotSize)
+                            .clip(CircleShape)
+                            .background(
+                                when {
+                                    isPast -> completedFill
+                                    isCurrent -> currentFill
+                                    else -> inactiveFill
+                                }
+                            )
+                            .then(
+                                if (!isPast && !isCurrent) {
+                                    Modifier.border(1.dp, inactiveRing, CircleShape)
+                                } else {
+                                    Modifier
+                                }
+                            )
+                    ) {}
+                }
             }
-        }
     }
 }

@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,12 +42,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tamixa.ui.components.TamixaLanguageLogo
 import com.tamixa.ui.components.TamixaPrimaryButton
 import com.tamixa.ui.components.AppScreenBackground
 import com.tamixa.ui.theme.TamixaColors
 import com.tamixa.ui.theme.TamixaDesignTokens
+import com.tamixa.ui.theme.TamixaGradients
 import com.tamixa.ui.strings.Strings
 
 data class LanguageOption(val code: String, val label: String, val flag: String)
@@ -67,81 +72,102 @@ fun LanguageSelectionScreen(
     var selectedCode by remember { mutableStateOf<String?>(com.tamixa.util.TamixaConstants.DEFAULT_LANGUAGE) }
     val effectiveCode = selectedCode ?: com.tamixa.util.TamixaConstants.DEFAULT_LANGUAGE
     Box(modifier = Modifier.fillMaxSize()) {
-        AppScreenBackground(showClouds = false)
+        AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(TamixaGradients.splashStorybookVignetteBrush())
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .padding(TamixaDesignTokens.screenPadding)
         ) {
-            Spacer(Modifier.height(8.dp))
-            // Header strip: title + tagline
+            // Glass header — clean editorial panel (Vocal-style chrome on starfield)
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(TamixaDesignTokens.dialogRadius),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
+                color = Color.White.copy(alpha = 0.07f),
                 border = BorderStroke(
                     1.dp,
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                )
+                    Color.White.copy(alpha = 0.2f),
+                ),
+                shadowElevation = 0.dp,
+                tonalElevation = 0.dp,
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+                    modifier = Modifier.padding(
+                        horizontal = TamixaDesignTokens.contentPaddingHorizontal,
+                        vertical = TamixaDesignTokens.smallSpacing + 2.dp,
+                    )
                 ) {
                     Text(
                         text = Strings.chooseLanguage(),
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = TamixaColors.cream
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = (-0.35).sp,
+                            lineHeight = 30.sp,
+                        ),
+                        color = TamixaColors.cream,
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(TamixaDesignTokens.smallSpacing - 4.dp))
                     Text(
                         text = Strings.storiesInPreferredLanguage(),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = TamixaColors.lavenderGlow.copy(alpha = 0.95f)
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            lineHeight = 22.sp,
+                            letterSpacing = 0.1.sp,
+                        ),
+                        color = TamixaColors.cream.copy(alpha = 0.82f),
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
                         text = Strings.appTagline(),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = TamixaColors.goldAccent.copy(alpha = 0.9f)
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 1.6.sp,
+                        ),
+                        color = TamixaColors.goldAccent.copy(alpha = 0.88f),
                     )
                 }
             }
-            Spacer(Modifier.height(TamixaDesignTokens.sectionSpacing))
-            // Logo in soft container
+            Spacer(Modifier.height(TamixaDesignTokens.smallSpacing + 4.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 4.dp),
                 contentAlignment = Alignment.Center
             ) {
+                val haloShape = RoundedCornerShape(100.dp)
                 Box(
                     modifier = Modifier
-                        .size(160.dp)
+                        .size(148.dp)
                         .shadow(
-                            elevation = TamixaDesignTokens.cardElevationHover,
-                            shape = RoundedCornerShape(80.dp),
-                            ambientColor = TamixaColors.purple.copy(alpha = 0.2f),
-                            spotColor = TamixaColors.purple.copy(alpha = 0.15f)
+                            elevation = TamixaDesignTokens.cardElevation,
+                            shape = haloShape,
+                            ambientColor = Color.Black.copy(alpha = 0.2f),
+                            spotColor = TamixaColors.goldAccent.copy(alpha = 0.12f),
                         )
-                        .clip(RoundedCornerShape(80.dp))
+                        .clip(haloShape)
                         .background(
                             Brush.radialGradient(
                                 colors = listOf(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
-                                )
-                            )
+                                    Color.White.copy(alpha = 0.11f),
+                                    Color.White.copy(alpha = 0.03f),
+                                ),
+                            ),
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     TamixaLanguageLogo(
                         languageCode = effectiveCode,
-                        modifier = Modifier.size(140.dp),
-                        size = 140.dp
+                        modifier = Modifier.size(124.dp),
+                        size = 124.dp
                     )
                 }
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(TamixaDesignTokens.smallSpacing))
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.cardSpacing)
@@ -154,14 +180,14 @@ fun LanguageSelectionScreen(
                     )
                 }
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(TamixaDesignTokens.smallSpacing))
             TamixaPrimaryButton(
                 onClick = { selectedCode?.let { onLanguageSelected(it) } },
                 text = Strings.confirmLanguage(),
                 modifier = Modifier.fillMaxWidth(),
                 enabled = selectedCode != null
             )
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(TamixaDesignTokens.sectionSpacing))
         }
     }
 }
@@ -176,16 +202,20 @@ private fun LanguageRow(
         targetValue = if (isSelected) 0.98f else 1f,
         animationSpec = tween(120), label = "scale"
     )
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
             .shadow(
-                elevation = if (isSelected) TamixaDesignTokens.cardElevationHover else TamixaDesignTokens.cardElevation,
+                elevation = if (isSelected) TamixaDesignTokens.cardElevationHover else TamixaDesignTokens.listCardShadowElevation,
                 shape = shape,
-                ambientColor = if (isSelected) TamixaColors.purple.copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.12f),
-                spotColor = if (isSelected) TamixaColors.purple.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.08f)
+                ambientColor = TamixaDesignTokens.listCardShadowAmbient,
+                spotColor = if (isSelected) {
+                    TamixaColors.goldAccent.copy(alpha = 0.18f)
+                } else {
+                    TamixaDesignTokens.listCardShadowSpot
+                },
             )
             .scale(scale)
             .clip(shape)
@@ -193,29 +223,37 @@ private fun LanguageRow(
             .semantics { contentDescription = "Select ${option.label}" },
         shape = shape,
         color = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+            TamixaColors.goldAccent.copy(alpha = 0.14f)
         } else {
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+            Color.White.copy(alpha = 0.06f)
         },
         border = if (isSelected) {
-            BorderStroke(2.dp, TamixaColors.purple.copy(alpha = 0.7f))
+            BorderStroke(1.5.dp, TamixaColors.goldAccent.copy(alpha = 0.55f))
         } else {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-        }
+            BorderStroke(1.dp, Color.White.copy(alpha = 0.14f))
+        },
+        shadowElevation = 0.dp,
+        tonalElevation = 0.dp,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
+                .padding(
+                    horizontal = TamixaDesignTokens.contentPaddingHorizontal,
+                    vertical = 14.dp,
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
                     .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(TamixaDesignTokens.inputRadius))
                     .background(
-                        if (isSelected) TamixaColors.purple.copy(alpha = 0.2f)
-                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        if (isSelected) {
+                            TamixaColors.deepTeal.copy(alpha = 0.22f)
+                        } else {
+                            Color.White.copy(alpha = 0.08f)
+                        },
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -224,14 +262,17 @@ private fun LanguageRow(
                     style = MaterialTheme.typography.titleLarge,
                 )
             }
-            Spacer(Modifier.size(16.dp))
+            Spacer(Modifier.size(TamixaDesignTokens.smallSpacing))
             Text(
                 text = option.label,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                    letterSpacing = (-0.15).sp,
+                ),
                 color = if (isSelected) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
+                    TamixaColors.cream
                 } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                    TamixaColors.cream.copy(alpha = 0.78f)
                 },
                 modifier = Modifier.weight(1f)
             )
@@ -240,14 +281,14 @@ private fun LanguageRow(
                     Icons.Default.Check,
                     contentDescription = Strings.selected(),
                     tint = TamixaColors.goldAccent,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(26.dp)
                 )
             } else {
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = Strings.select(),
-                    tint = TamixaColors.lavenderGlow.copy(alpha = 0.75f),
-                    modifier = Modifier.size(24.dp)
+                    tint = TamixaColors.cream.copy(alpha = 0.42f),
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }

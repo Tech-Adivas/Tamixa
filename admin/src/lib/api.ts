@@ -1468,6 +1468,10 @@ const admin = {
     moral: string;
     category?: string;
     theme?: string;
+    /** Present when the model returned caregiver resources (may be an empty array to clear discussion prompts). */
+    parentDiscussionPrompts?: string[];
+    parentContentNote?: string | null;
+    speakAlongPrompt?: string | null;
     translations?: Record<string, { content: string; title: string; moral: string }>;
     /** Optional snapshot of converted content before the source-language paraphrase step (for UI diff). */
     paraphraseBefore?: { content: string; title: string; moral: string };
@@ -1543,6 +1547,9 @@ const admin = {
       moral?: string;
       category?: string;
       theme?: string;
+      parentDiscussionPrompts?: string[] | null;
+      parentContentNote?: string | null;
+      speakAlongPrompt?: string | null;
       translations?: Record<string, { content?: string; title?: string; moral?: string }>;
       paraphraseBefore?: { content?: string; title?: string; moral?: string };
       translationsParaphraseBefore?: Record<string, { content?: string; title?: string; moral?: string }>;
@@ -1569,12 +1576,28 @@ const admin = {
           };
       }
     }
+    const parentDiscussionPrompts =
+      Array.isArray(data.parentDiscussionPrompts) && data.parentDiscussionPrompts !== null
+        ? data.parentDiscussionPrompts
+            .map((p) => (typeof p === "string" ? p.trim().slice(0, 400) : ""))
+            .filter((p) => p.length > 0)
+            .slice(0, 10)
+        : undefined;
     return {
       content: data.content ?? "",
       title: data.title ?? "",
       moral: data.moral ?? "",
       ...(data.category != null ? { category: data.category } : {}),
       ...(data.theme != null ? { theme: data.theme } : {}),
+      ...(data.parentDiscussionPrompts !== undefined && data.parentDiscussionPrompts !== null
+        ? { parentDiscussionPrompts }
+        : {}),
+      ...(data.parentContentNote !== undefined
+        ? { parentContentNote: (data.parentContentNote ?? "").trim() || null }
+        : {}),
+      ...(data.speakAlongPrompt !== undefined
+        ? { speakAlongPrompt: (data.speakAlongPrompt ?? "").trim().slice(0, 500) || null }
+        : {}),
       ...(Object.keys(translations).length > 0 ? { translations } : {}),
       ...(data.paraphraseBefore
         ? {

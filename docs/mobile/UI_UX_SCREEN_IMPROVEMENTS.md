@@ -21,7 +21,7 @@
 - **P2:** Replace hardcoded `padding(20.dp)`, `size(120.dp)`, `size(240.dp)` with `TamixaDesignTokens.screenPadding` and named sizes where it improves consistency.
 - **P3:** Optional subtle scale/fade on logo (already has delay).
 
-### Onboarding (Hook, Demo, Voice, Avatar, Interests, HomePreview, Bedtime)
+### Onboarding (Hook, Demo, Voice invitation, Avatar invitation)
 - **P1:** Ensure every tappable control (Skip, Continue, chips) has at least 48dp touch target; FilterChip/Button are usually OK—verify custom taps.
 - **P2:** Unify card padding: use `TamixaDesignTokens.cardContentPadding` (20.dp) instead of mixed 16.dp/14.dp/12.dp on cards.
 - **P3:** Entrance animations already present; consider respecting “reduce motion” later.

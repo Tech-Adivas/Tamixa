@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tamixa.domain.Story
@@ -43,6 +44,8 @@ import com.tamixa.ui.strings.Strings
 import androidx.compose.material3.MaterialTheme
 import com.tamixa.ui.theme.TamixaColors
 import com.tamixa.ui.theme.TamixaDesignTokens
+
+private const val MIN_SEARCH_QUERY_CHARS = 2
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,9 +75,13 @@ fun SearchScreen(
             )
         }
     ) { padding ->
-        val colorScheme = MaterialTheme.colorScheme
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
+            AppScreenBackground(
+                showStars = true,
+                showClouds = true,
+                animateStars = true,
+                ambientPresence = true
+            )
             Column(modifier = Modifier.fillMaxSize()) {
                 OutlinedTextField(
                     value = searchQuery,
@@ -126,7 +133,7 @@ fun SearchScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(TamixaDesignTokens.screenPadding)
-                                    .semantics { contentDescription = "Error" },
+                                    .semantics { contentDescription = Strings.accessibilityErrorState() },
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center
                             ) {
@@ -143,7 +150,9 @@ fun SearchScreen(
                                 }
                             }
                         }
-                        searchResults.isEmpty() && searchQuery.isNotBlank() -> {
+                        searchResults.isEmpty() &&
+                            searchQuery.isNotBlank() &&
+                            searchQuery.length >= MIN_SEARCH_QUERY_CHARS -> {
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -164,6 +173,32 @@ fun SearchScreen(
                                     text = Strings.noSearchResultsHint(),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = TamixaColors.cream.copy(alpha = 0.9f)
+                                )
+                            }
+                        }
+                        searchQuery.isBlank() || searchQuery.length < MIN_SEARCH_QUERY_CHARS -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(TamixaDesignTokens.screenPadding)
+                                    .semantics { contentDescription = Strings.searchMinCharactersHint() },
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                TamixaEmojiDisplay(emoji = "✨", fontSize = 72.sp)
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = Strings.searchMinCharactersHint(),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = TamixaColors.cream.copy(alpha = 0.95f),
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = Strings.searchWhatYouCanFindHint(),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TamixaColors.cream.copy(alpha = 0.8f),
+                                    textAlign = TextAlign.Center
                                 )
                             }
                         }

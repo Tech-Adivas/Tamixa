@@ -13,12 +13,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -67,9 +65,13 @@ fun FavoritesScreen(
             )
         }
     ) { padding ->
-        val colorScheme = MaterialTheme.colorScheme
         Box(modifier = Modifier.fillMaxSize()) {
-            AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
+            AppScreenBackground(
+                showStars = true,
+                showClouds = true,
+                animateStars = true,
+                ambientPresence = true
+            )
             when {
                 favoritesLoading -> {
                     Box(
@@ -163,7 +165,7 @@ fun FavoritesScreen(
                                 ) {
                                     Icon(
                                         Icons.Filled.Favorite,
-                                        contentDescription = Strings.favorites(),
+                                        contentDescription = Strings.removeFromFavorites(),
                                         tint = TamixaColors.goldAccent
                                     )
                                 }

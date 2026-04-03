@@ -52,8 +52,16 @@ class StoryRepository(
         )
     }
 
-    suspend fun getLibraryStories(language: String = TamixaConstants.DEFAULT_LANGUAGE): Result<List<Story>> = runCatching {
-        api.getLibraryStories(language).map(LibraryStoryResponse::toStory)
+    suspend fun getLibraryStories(
+        language: String = TamixaConstants.DEFAULT_LANGUAGE,
+        theme: String? = null,
+        learnHub: Boolean = false
+    ): Result<List<Story>> = runCatching {
+        api.getLibraryStories(language, theme, learnHub).map(LibraryStoryResponse::toStory)
+    }
+
+    suspend fun getGenerationTopics(): Result<List<com.tamixa.domain.GenerationTopicResponse>> = runCatching {
+        api.getGenerationTopics()
     }
 
     suspend fun getRecommended(childId: Long? = null, language: String = TamixaConstants.DEFAULT_LANGUAGE, limit: Int = TamixaConstants.RECOMMENDED_LIMIT): Result<List<com.tamixa.network.RecommendedStoryDto>> = runCatching {

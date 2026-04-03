@@ -35,7 +35,7 @@ import kotlin.math.sin
 import kotlin.random.Random
 import org.jetbrains.compose.resources.painterResource
 
-private val FallbackNightBg = Color(0xFF1A1812)
+private val FallbackNightBg = Color(0xFF141210)
 
 /**
  * Ultra HD starry night background with soft gradient, golden stars, and ethereal glow.
@@ -159,6 +159,20 @@ fun StarryNightBackground(
                     }
                 }
             }
+
+            // Bottom vignette — depth for floating nav + richer “modern” atmosphere
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colorStops = arrayOf(
+                        0f to Color.Transparent,
+                        0.5f to Color.Transparent,
+                        0.82f to Color(0xFF0A0908).copy(alpha = 0.25f),
+                        1f to Color(0xFF050504).copy(alpha = 0.52f)
+                    ),
+                    startY = 0f,
+                    endY = size.height
+                )
+            )
         }
 
         if (showClouds) {

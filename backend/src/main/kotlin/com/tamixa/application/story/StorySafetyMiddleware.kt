@@ -69,7 +69,7 @@ class StorySafetyMiddleware(
      * - Rejects prompt injection patterns.
      * - Rejects blocklisted vocabulary.
      */
-    fun sanitizeAndValidateInput(theme: String, childName: String): SanitizedInput {
+    fun sanitizeAndValidateInput(theme: String, childName: String, trustedCatalogTheme: Boolean = false): SanitizedInput {
         // 1. Strip control characters (prevents control-token injection)
         val sanitizedTheme = stripControlTokens(theme.trim().take(maxThemeLength))
         val sanitizedChildName = stripControlTokens(childName.trim().take(maxChildNameLength))
@@ -77,15 +77,17 @@ class StorySafetyMiddleware(
         if (sanitizedTheme.isBlank()) throw InvalidStoryRequestException("Theme is required")
         if (sanitizedChildName.isBlank()) throw InvalidStoryRequestException("Child name is required")
 
-        // 2. Theme allowlist: if configured, theme must match an allowed value
-        val allowlist = allowedThemes()
-        if (allowlist.isNotEmpty()) {
-            val themeLower = sanitizedTheme.lowercase()
-            val matched = allowlist.any { allowed ->
-                themeLower == allowed || themeLower.contains(allowed) || allowed.contains(themeLower)
-            }
-            if (!matched) {
-                throw InvalidStoryRequestException("Theme not allowed. Please choose a child-friendly theme.")
+        // 2. Theme allowlist: if configured, theme must match an allowed value (skip for server catalog themes)
+        if (!trustedCatalogTheme) {
+            val allowlist = allowedThemes()
+            if (allowlist.isNotEmpty()) {
+                val themeLower = sanitizedTheme.lowercase()
+                val matched = allowlist.any { allowed ->
+                    themeLower == allowed || themeLower.contains(allowed) || allowed.contains(themeLower)
+                }
+                if (!matched) {
+                    throw InvalidStoryRequestException("Theme not allowed. Please choose a child-friendly theme.")
+                }
             }
         }
 
@@ -97,10 +99,17 @@ class StorySafetyMiddleware(
             }
         }
 
-        // 4. Block child-unsafe vocabulary in user input
-        val lower = combined.lowercase()
-        childUnsafeBlocklist.find { lower.contains(it) }?.let {
-            throw ContentModerationException("Request rejected: content not allowed for children")
+        // 4. Block child-unsafe vocabulary in user input (theme exempt when from approved catalog)
+        if (!trustedCatalogTheme) {
+            val lower = combined.lowercase()
+            childUnsafeBlocklist.find { lower.contains(it) }?.let {
+                throw ContentModerationException("Request rejected: content not allowed for children")
+            }
+        } else {
+            val lowerName = sanitizedChildName.lowercase()
+            childUnsafeBlocklist.find { lowerName.contains(it) }?.let {
+                throw ContentModerationException("Request rejected: content not allowed for children")
+            }
         }
 
         return SanitizedInput(sanitizedTheme, sanitizedChildName)

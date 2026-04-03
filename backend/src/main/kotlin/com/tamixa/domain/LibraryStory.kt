@@ -38,5 +38,11 @@ data class LibraryStory(
     /** When a content manager requested unlock for admin review. */
     val regeneratePromptUnlockRequestedAt: Instant? = null,
     /** Soft-delete timestamp; null = active. */
-    val deletedAt: Instant? = null
+    val deletedAt: Instant? = null,
+    /** Curated prompts for parents after listening (from library_stories.parent_discussion_prompts). */
+    val parentDiscussionPrompts: List<String>? = null,
+    /** Optional transparency note for adults (simplified / dramatized). */
+    val parentContentNote: String? = null,
+    /** Optional one-line speak-along invitation. */
+    val speakAlongPrompt: String? = null,
 )

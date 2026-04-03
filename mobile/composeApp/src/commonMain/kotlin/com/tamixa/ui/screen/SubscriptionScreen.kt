@@ -357,7 +357,7 @@ fun SubscriptionScreen(
                                 androidx.compose.material3.OutlinedTextField(
                                     value = referralCodeInput,
                                     onValueChange = { referralCodeInput = it.uppercase().take(32) },
-                                    placeholder = { Text("AMAZ5", style = MaterialTheme.typography.bodyMedium) },
+                                    placeholder = { Text(Strings.referralCodeShortHint(), style = MaterialTheme.typography.bodyMedium) },
                                     modifier = Modifier.weight(1f),
                                     singleLine = true,
                                     shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius)

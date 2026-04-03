@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { generateStory } from "./api";
+import { ApiClientError, generateStory } from "./api";
 
 function mockStoryJson() {
   return {
@@ -63,5 +63,45 @@ describe("generateStory", () => {
     const call = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     const body = JSON.parse((call[1] as RequestInit).body as string);
     expect(body).not.toHaveProperty("learningFocus");
+  });
+
+  it("POST JSON body can send generationTopicId without theme", async () => {
+    await generateStory({
+      age: 14,
+      language: "ta",
+      generationTopicId: "pongal_gratitude",
+      childName: "Listener",
+    });
+    const call = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse((call[1] as RequestInit).body as string);
+    expect(body.generationTopicId).toBe("pongal_gratitude");
+    expect(body).not.toHaveProperty("theme");
+    expect(body.age).toBe(14);
+  });
+
+  it("throws ApiClientError with stable code when backend returns 400 JSON", async () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: () =>
+          Promise.resolve({
+            message: "Unknown generationTopicId",
+            code: "UNKNOWN_GENERATION_TOPIC",
+          }),
+      } as Response),
+    );
+    const rejected = await generateStory({
+      age: 8,
+      language: "ta",
+      generationTopicId: "not_real",
+    }).catch((e) => e);
+    expect(rejected).toBeInstanceOf(ApiClientError);
+    const err = rejected as ApiClientError;
+    expect(err.httpStatus).toBe(400);
+    expect(err.code).toBe("UNKNOWN_GENERATION_TOPIC");
+    expect(err.message).toBe("Unknown generationTopicId");
   });
 });

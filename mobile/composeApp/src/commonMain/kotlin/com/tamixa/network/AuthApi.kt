@@ -14,10 +14,12 @@ import kotlinx.serialization.Serializable
 /** Matches backend ErrorResponse for proper 4xx/5xx error message extraction. */
 @Serializable
 internal data class ApiErrorResponse(
-    val message: String,
-    val status: Int,
+    val message: String = "",
+    val status: Int = 0,
     val traceId: String? = null,
-    val timestamp: String? = null
+    val timestamp: String? = null,
+    /** Stable code from e.g. [ApiBadRequestException] on POST /stories/generate. */
+    val code: String? = null,
 )
 
 class AuthApiException(val statusCode: Int, message: String) : RuntimeException(message)

@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.tamixa.domain.GenerateStoryRequest
+import com.tamixa.domain.GenerationTopicResponse
 import com.tamixa.network.LimitReachedException
 import com.tamixa.ui.state.UiState
 import com.tamixa.ui.strings.Strings
@@ -55,6 +56,7 @@ private val STORY_THEMES = listOf(
 @Composable
 fun StoryGenerationScreen(
     generateState: UiState<*>,
+    generationTopics: List<GenerationTopicResponse> = emptyList(),
     storiesUsed: Int = 0,
     storiesLimit: Int? = null,
     onGenerate: (GenerateStoryRequest) -> Unit,
@@ -62,9 +64,13 @@ fun StoryGenerationScreen(
     onStoryGenerated: () -> Unit,
     showSuccessModal: Boolean = false,
     onDismissSuccess: () -> Unit = {},
-    onUpgradeRequired: () -> Unit = {}
+    onUpgradeRequired: () -> Unit = {},
+    onClearGenerateError: () -> Unit = {},
 ) {
     var theme by remember { mutableStateOf("Adventure") }
+    /** When non-null, server uses catalog topic; [theme] chips become optional override text. */
+    var selectedTopicId by remember { mutableStateOf<String?>(null) }
+    var topicThemeOverride by remember { mutableStateOf("") }
     var listenerName by remember { mutableStateOf("") }
     var age by remember { mutableStateOf(com.tamixa.util.TamixaConstants.DEFAULT_CHILD_AGE.toString()) }
     var parentCustomPrompt by remember { mutableStateOf("") }
@@ -177,6 +183,58 @@ fun StoryGenerationScreen(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
+                        if (generationTopics.isNotEmpty()) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                text = Strings.curatedTopicsLabel(),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = selectedTopicId == null,
+                                    onClick = {
+                                        selectedTopicId = null
+                                        topicThemeOverride = ""
+                                    },
+                                    label = { Text(Strings.curatedTopicCustom(), style = MaterialTheme.typography.labelMedium) }
+                                )
+                                generationTopics.forEach { topic ->
+                                    val label = topic.descriptionEn?.takeIf { it.isNotBlank() } ?: topic.theme
+                                    FilterChip(
+                                        selected = selectedTopicId == topic.id,
+                                        onClick = {
+                                            selectedTopicId = topic.id
+                                            topic.suggestedLearningFocus?.takeIf { it.isNotBlank() }?.let {
+                                                learningFocusSelection = it
+                                            }
+                                        },
+                                        label = { Text(label, style = MaterialTheme.typography.labelMedium) }
+                                    )
+                                }
+                            }
+                            if (selectedTopicId != null) {
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    text = Strings.themeOverrideHint(),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = topicThemeOverride,
+                                    onValueChange = { topicThemeOverride = it.take(100) },
+                                    placeholder = { Text(Strings.storyTextPlaceholder()) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
                         Spacer(Modifier.height(12.dp))
                         Text(
                             text = Strings.selectStoryTheme(),
@@ -192,7 +250,12 @@ fun StoryGenerationScreen(
                             STORY_THEMES.forEach { t ->
                                 FilterChip(
                                     selected = theme == t,
-                                    onClick = { theme = t },
+                                    onClick = {
+                                        theme = t
+                                        selectedTopicId = null
+                                        topicThemeOverride = ""
+                                    },
+                                    enabled = selectedTopicId == null,
                                     label = { Text(t, style = MaterialTheme.typography.labelMedium) }
                                 )
                             }
@@ -235,6 +298,26 @@ fun StoryGenerationScreen(
                                 onClick = { learningFocusSelection = "research_skills" },
                                 label = { Text(Strings.learningFocusResearchSkills(), style = MaterialTheme.typography.labelMedium) }
                             )
+                            FilterChip(
+                                selected = learningFocusSelection == "empathy",
+                                onClick = { learningFocusSelection = "empathy" },
+                                label = { Text(Strings.learningFocusEmpathy(), style = MaterialTheme.typography.labelMedium) }
+                            )
+                            FilterChip(
+                                selected = learningFocusSelection == "problem_solving",
+                                onClick = { learningFocusSelection = "problem_solving" },
+                                label = { Text(Strings.learningFocusProblemSolving(), style = MaterialTheme.typography.labelMedium) }
+                            )
+                            FilterChip(
+                                selected = learningFocusSelection == "vocabulary",
+                                onClick = { learningFocusSelection = "vocabulary" },
+                                label = { Text(Strings.learningFocusVocabulary(), style = MaterialTheme.typography.labelMedium) }
+                            )
+                            FilterChip(
+                                selected = learningFocusSelection == "curiosity",
+                                onClick = { learningFocusSelection = "curiosity" },
+                                label = { Text(Strings.learningFocusCuriosity(), style = MaterialTheme.typography.labelMedium) }
+                            )
                         }
                         Spacer(Modifier.height(24.dp))
                         when (generateState) {
@@ -255,7 +338,7 @@ fun StoryGenerationScreen(
                                 val isLimitReached = err.throwable is LimitReachedException
                                 if (isLimitReached) {
                                     AlertDialog(
-                                        onDismissRequest = { },
+                                        onDismissRequest = onClearGenerateError,
                                         shape = TamixaDialogDefaults.shape,
                                         title = { Text(Strings.upgrade()) },
                                         text = {
@@ -266,10 +349,15 @@ fun StoryGenerationScreen(
                                             }
                                         },
                                         confirmButton = {
-                                            Button(onClick = onUpgradeRequired) { Text(Strings.upgrade()) }
+                                            Button(
+                                                onClick = {
+                                                    onClearGenerateError()
+                                                    onUpgradeRequired()
+                                                }
+                                            ) { Text(Strings.upgrade()) }
                                         },
                                         dismissButton = {
-                                            TextButton(onClick = { }) { Text(Strings.cancel()) }
+                                            TextButton(onClick = onClearGenerateError) { Text(Strings.cancel()) }
                                         }
                                     )
                                 } else {
@@ -285,17 +373,36 @@ fun StoryGenerationScreen(
                         }
                         TamixaPrimaryButton(
                             onClick = {
+                                val ageInt = age.toIntOrNull()?.coerceIn(1, 99)
+                                    ?: com.tamixa.util.TamixaConstants.DEFAULT_CHILD_AGE
+                                val topicId = selectedTopicId?.trim()?.takeIf { it.isNotBlank() }
+                                val overrideTheme = topicThemeOverride.trim().takeIf { it.isNotBlank() }
                                 onGenerate(
-                                    GenerateStoryRequest(
-                                        age = age.toIntOrNull() ?: com.tamixa.util.TamixaConstants.DEFAULT_CHILD_AGE,
-                                        language = language,
-                                        theme = theme.lowercase(),
-                                        childName = effectiveListenerName,
-                                        childId = null,
-                                        emotionMode = if (bedtimeMode) "CALM" else null,
-                                        parentCustomPrompt = parentCustomPrompt.trim().takeIf { it.isNotBlank() },
-                                        learningFocus = learningFocusSelection,
-                                    )
+                                    if (topicId != null) {
+                                        GenerateStoryRequest(
+                                            age = ageInt,
+                                            language = language,
+                                            theme = overrideTheme,
+                                            generationTopicId = topicId,
+                                            childName = effectiveListenerName,
+                                            childId = null,
+                                            emotionMode = if (bedtimeMode) "CALM" else null,
+                                            parentCustomPrompt = parentCustomPrompt.trim().takeIf { it.isNotBlank() },
+                                            learningFocus = learningFocusSelection,
+                                        )
+                                    } else {
+                                        GenerateStoryRequest(
+                                            age = ageInt,
+                                            language = language,
+                                            theme = theme.lowercase(),
+                                            generationTopicId = null,
+                                            childName = effectiveListenerName,
+                                            childId = null,
+                                            emotionMode = if (bedtimeMode) "CALM" else null,
+                                            parentCustomPrompt = parentCustomPrompt.trim().takeIf { it.isNotBlank() },
+                                            learningFocus = learningFocusSelection,
+                                        )
+                                    }
                                 )
                             },
                             text = Strings.sendStory(),

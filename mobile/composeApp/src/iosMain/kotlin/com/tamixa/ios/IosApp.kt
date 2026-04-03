@@ -58,7 +58,7 @@ fun doInitKoin(baseUrl: String = "http://127.0.0.1:8080") {
     ServerEnvironmentCache.subscriptionWebUrlOverride = subOverride
     val resolvedBase = apiOverride.ifBlank { baseUrl.trim().ifBlank { "http://127.0.0.1:8080" } }
     koinInitialized = true
-    initKoin(resolvedBase, iosPlatformModule())
+    initKoin(resolvedBase, iosPlatformModule(), IosBuildTimeEnvironment.label.trim().ifEmpty { "unknown" })
 }
 
 /**

@@ -20,7 +20,7 @@ Central place for architecture, deployment, security, and feature documentation.
 | **Security & compliance** | [SECURITY.md](SECURITY.md), [COMPLIANCE.md](COMPLIANCE.md), [PCI_SCOPE.md](PCI_SCOPE.md), [INCIDENT_RESPONSE.md](INCIDENT_RESPONSE.md) |
 | **Deployment** | [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md), [DEPLOYMENT_PLAN_3_DAYS.md](DEPLOYMENT_PLAN_3_DAYS.md), [PRODUCTION_UPGRADE.md](PRODUCTION_UPGRADE.md) |
 | **Backend** | [backend/LOGGING.md](backend/LOGGING.md), [backend/NARRATION_ARCHITECTURE.md](backend/NARRATION_ARCHITECTURE.md), [backend/SECURITY_CHECKLIST.md](backend/SECURITY_CHECKLIST.md), [backend/StoryPromptExamples.md](backend/StoryPromptExamples.md) |
-| **API & runbooks** | [API_ERROR_RESPONSES.md](API_ERROR_RESPONSES.md), [ENV_REFERENCE.md](ENV_REFERENCE.md), [runbooks/README.md](runbooks/README.md) |
+| **API & runbooks** | [API_ERROR_RESPONSES.md](API_ERROR_RESPONSES.md), [api/PARENT_STORY_API_ERRORS.md](api/PARENT_STORY_API_ERRORS.md), [ENV_REFERENCE.md](ENV_REFERENCE.md), [runbooks/README.md](runbooks/README.md) |
 | **Voice & narration** | [ELEVENLABS_INTEGRATION.md](ELEVENLABS_INTEGRATION.md), [VOICE_CLONING_ARCHITECTURE.md](VOICE_CLONING_ARCHITECTURE.md), [AVATAR_VIDEO.md](AVATAR_VIDEO.md), [INDIAN_LANGUAGE_TTS_OPTIONS.md](INDIAN_LANGUAGE_TTS_OPTIONS.md) |
 | **Mobile** | [mobile/](mobile/) — FOLDER_STRUCTURE, IOS_TESTING, FIREBASE_SETUP, etc. |
 | **Admin** | [admin/](admin/) — DESIGN_SYSTEM, DEPLOYMENT |

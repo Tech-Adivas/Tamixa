@@ -1,8 +1,11 @@
 package com.tamixa.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -49,4 +52,22 @@ fun AppScreenLayout(
             content()
         }
     }
+}
+
+/**
+ * Vertical stack for hub UI on [AppScreenBackground] / starfield — same spacing as dashboard library sections
+ * (no frosted glass card wrapper).
+ */
+@Composable
+fun TamixaStarfieldSection(
+    modifier: Modifier = Modifier,
+    verticalArrangement: Arrangement.Vertical =
+        Arrangement.spacedBy(TamixaDesignTokens.starfieldHubItemSpacing),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = verticalArrangement,
+        content = content,
+    )
 }

@@ -53,6 +53,266 @@ object Strings {
         else -> "A child profile is needed for the quiz. This story is not linked to a child."
     }
 
+    fun storyQuizNoQuizAvailable(): String = when (languageCode) {
+        "ta" -> "இந்தக் கதைக்கு இன்னும் வினாடி வினா இல்லை."
+        "hi" -> "इस कहानी के लिए अभी कोई क्विज़ नहीं है."
+        else -> "No quiz is available for this story yet."
+    }
+
+    fun storyQuizYourAnswerPlaceholder(): String = when (languageCode) {
+        "ta" -> "உங்கள் பதில்"
+        "hi" -> "आपका उत्तर"
+        else -> "Your answer"
+    }
+
+    fun storyQuizQuestionCount(count: Int): String = when (languageCode) {
+        "ta" -> if (count == 1) "1 கேள்வி" else "$count கேள்விகள்"
+        "hi" -> if (count == 1) "1 प्रश्न" else "$count प्रश्न"
+        else -> if (count == 1) "1 question" else "$count questions"
+    }
+
+    fun storyQuizSubmit(): String = when (languageCode) {
+        "ta" -> "சமர்ப்பி"
+        "hi" -> "सबमिट करें"
+        else -> "Submit quiz"
+    }
+
+    fun storyQuizDone(): String = when (languageCode) {
+        "ta" -> "முடிந்தது"
+        "hi" -> "हो गया"
+        else -> "Done"
+    }
+
+    fun storyQuizScoreLine(score: Int, max: Int): String = when (languageCode) {
+        "ta" -> "$score / $max சரியானவை"
+        "hi" -> "$score / $max सही"
+        else -> "$score / $max correct"
+    }
+
+    fun myClassrooms(): String = when (languageCode) {
+        "ta" -> "எனது வகுப்பறைகள்"
+        "hi" -> "मेरी कक्षाएँ"
+        else -> "My classrooms"
+    }
+
+    fun classroomJoinCardTitle(): String = when (languageCode) {
+        "ta" -> "வகுப்பறையில் சேரவும்"
+        "hi" -> "कक्षा में शामिल हों"
+        else -> "Join a classroom"
+    }
+
+    fun classroomCodeLabel(): String = when (languageCode) {
+        "ta" -> "வகுப்பு குறியீடு"
+        "hi" -> "कक्षा कोड"
+        else -> "Classroom code"
+    }
+
+    fun classroomCodePlaceholder(): String = when (languageCode) {
+        "ta" -> "எ.கா. ABC123"
+        "hi" -> "जैसे ABC123"
+        else -> "e.g. ABC123"
+    }
+
+    fun classroomJoinButton(): String = when (languageCode) {
+        "ta" -> "சேர்"
+        "hi" -> "जोड़ें"
+        else -> "Join"
+    }
+
+    fun classroomsEmptyMessage(): String = when (languageCode) {
+        "ta" -> "இன்னும் வகுப்பறைகள் இல்லை. ஆசிரியரிடம் குறியீட்டைக் கேளுங்கள்!"
+        "hi" -> "अभी कोई कक्षा नहीं। अपने शिक्षक से कोड माँगें!"
+        else -> "No classrooms yet. Ask your teacher for a code!"
+    }
+
+    fun classroomCodeDisplay(code: String): String = when (languageCode) {
+        "ta" -> "குறியீடு: $code"
+        "hi" -> "कोड: $code"
+        else -> "Code: $code"
+    }
+
+    fun classroomGradeLabel(grade: String): String = when (languageCode) {
+        "ta" -> "வகுப்பு $grade"
+        "hi" -> "कक्षा $grade"
+        else -> "Grade $grade"
+    }
+
+    fun dashboardDailySparkAtIndex(dayBucket: Int): String {
+        val tips = dashboardDailySparkTips()
+        if (tips.isEmpty()) return ""
+        val n = tips.size
+        val idx = ((dayBucket % n) + n) % n
+        return tips[idx]
+    }
+
+    private fun dashboardDailySparkTips(): List<String> = when (languageCode) {
+        "ta" -> listOf(
+            "இன்றிரவு ஒரு புதிய குரலில் கேட்க முயலுங்கள் — சிறு மாற்றம் பெரிய நினைவுகள்.",
+            "கதைக்குப் பிறகு: உங்களுக்குப் பிடித்த கதாபாத்திரம் யார் எனக் கேளுங்கள்.",
+            "நாளைய கதையை யார் தேர்வு செய்வது — நீங்கள், குழந்தை, அல்லது ஆச்சரியம்?",
+            "பிளே அழுத்தும் முன் தலைப்பை உரக்கப் படியுங்கள் — ஆர்வம் இங்கே தொடங்குகிறது.",
+            "கதாநாயகனின் பெயரை ஒன்றாக மெதுவாகச் சொல்லுங்கள் — நண்பர்கள் போல் உணர்வார்கள்.",
+            "தொடங்குவதற்கு இரண்டு நிமிடங்கள் முன் விளக்குகளை மங்கலாக்குங்கள் — இது அமைதி நேரம் என்று மூளைக்குத் தெரியும்.",
+        )
+        "hi" -> listOf(
+            "आज रात नई आवाज़ में सुनने की कोशिश करें — छोटे बदलाव, बड़ी यादें।",
+            "कहानी के बाद पूछें: आपको कौन सा पात्र सबसे अच्छा लगा?",
+            "कल की कहानी कौन चुनेगा — आप, बच्चा, या सरप्राइज़?",
+            "प्ले दबाने से पहले शीर्षक ज़ोर से पढ़ें — जिज्ञासा यहीं शुरू होती है।",
+            "नायक का नाम साथ में धीरे से बोलें — पात्र दोस्त जैसे लगेंगे।",
+            "शुरू करने से दो मिनट पहले लाइट कम करें — दिमाग को पता चले कि यह आराम का समय है।",
+        )
+        else -> listOf(
+            "Tonight, try a story in a new voice — tiny rituals make big memories.",
+            "After listening, ask which character they’d invite to dinner.",
+            "Take turns picking tomorrow’s tale: parent, child, or surprise pick.",
+            "Read the title out loud before you press play — curiosity starts there.",
+            "Say the hero’s name together softly — characters feel like friends.",
+            "Dim the lights two minutes early — brains learn it’s cozy time.",
+        )
+    }
+
+    fun readingStreakTitle(): String = when (languageCode) {
+        "ta" -> "படிப்புத் தொடர்"
+        "hi" -> "पढ़ने की लकीर"
+        else -> "Reading streak"
+    }
+
+    fun profileLearningProgressSection(): String = when (languageCode) {
+        "ta" -> "கற்றல் மற்றும் முன்னேற்றம்"
+        "hi" -> "सीखने और प्रगति"
+        else -> "Learning & progress"
+    }
+
+    fun streakLengthSubtitle(days: Int): String = when (languageCode) {
+        "ta" -> if (days == 1) "நாள் தொடர்" else "நாட்கள் தொடர்"
+        "hi" -> if (days == 1) "दिन की लकीर" else "दिनों की लकीर"
+        else -> if (days == 1) "day streak" else "days streak"
+    }
+
+    fun streakStatusActive(): String = when (languageCode) {
+        "ta" -> "🔥 செயலில்"
+        "hi" -> "🔥 सक्रिय"
+        else -> "🔥 Active"
+    }
+
+    fun streakBestLabel(): String = when (languageCode) {
+        "ta" -> "சிறந்த தொடர்"
+        "hi" -> "सबसे लंबी लकीर"
+        else -> "Best streak"
+    }
+
+    fun streakBestDays(count: Int): String = when (languageCode) {
+        "ta" -> "$count நாட்கள்"
+        "hi" -> "$count दिन"
+        else -> if (count == 1) "1 day" else "$count days"
+    }
+
+    fun streakLastReadLabel(): String = when (languageCode) {
+        "ta" -> "கடைசியாகக் கேட்டது"
+        "hi" -> "आख़िरी बार सुना"
+        else -> "Last listened"
+    }
+
+    fun streakNoDataYet(): String = when (languageCode) {
+        "ta" -> "இன்னும் தொடர் தரவு இல்லை. கதை கேட்டுத் தொடங்குங்கள்!"
+        "hi" -> "अभी कोई स्ट्रीक डेटा नहीं। सुनना शुरू करें!"
+        else -> "No streak data yet. Start listening to build one!"
+    }
+
+    fun readingLevelTitle(): String = when (languageCode) {
+        "ta" -> "படிப்பு நிலை"
+        "hi" -> "पढ़ने का स्तर"
+        else -> "Reading level"
+    }
+
+    fun readingLevelNumber(level: Int): String = when (languageCode) {
+        "ta" -> "நிலை $level"
+        "hi" -> "स्तर $level"
+        else -> "Level $level"
+    }
+
+    fun readingLevelOutOf(max: Int): String = when (languageCode) {
+        "ta" -> "$max இல்"
+        "hi" -> "$max में से"
+        else -> "out of $max"
+    }
+
+    fun readingLevelLastUpdated(): String = when (languageCode) {
+        "ta" -> "கடைசி புதுப்பிப்பு"
+        "hi" -> "आख़री अपडेट"
+        else -> "Last updated"
+    }
+
+    fun readingLevelNoDataYet(): String = when (languageCode) {
+        "ta" -> "இன்னும் படிப்பு நிலை தரவு இல்லை."
+        "hi" -> "अभी पढ़ने के स्तर का डेटा नहीं है।"
+        else -> "No reading level data yet."
+    }
+
+    fun vocabularyTitle(): String = when (languageCode) {
+        "ta" -> "சொற்களஞ்சியம்"
+        "hi" -> "शब्दावली"
+        else -> "Vocabulary"
+    }
+
+    fun vocabularyProgress(): String = when (languageCode) {
+        "ta" -> "முன்னேற்றம்"
+        "hi" -> "प्रगति"
+        else -> "Progress"
+    }
+
+    fun vocabularyWordsLearned(count: Int): String = when (languageCode) {
+        "ta" -> "$count கற்றுக்கொண்டவை"
+        "hi" -> "$count सीखे"
+        else -> "$count learned"
+    }
+
+    fun vocabularyWordsMastered(count: Int): String = when (languageCode) {
+        "ta" -> "$count தேர்ச்சி"
+        "hi" -> "$count में निपुण"
+        else -> "$count mastered"
+    }
+
+    fun vocabularyMyWords(): String = when (languageCode) {
+        "ta" -> "என் சொற்கள்"
+        "hi" -> "मेरे शब्द"
+        else -> "My words"
+    }
+
+    fun vocabularySuggestedWords(): String = when (languageCode) {
+        "ta" -> "பரிந்துரை சொற்கள்"
+        "hi" -> "सुझाए गए शब्द"
+        else -> "Suggested words"
+    }
+
+    fun vocabularyLearnAction(): String = when (languageCode) {
+        "ta" -> "கற்க"
+        "hi" -> "सीखें"
+        else -> "Learn"
+    }
+
+    fun vocabularyMasteryLabel(level: Int): String = when (languageCode) {
+        "ta" -> when (level) {
+            3 -> "நிபுணர்"
+            2 -> "தேர்ச்சி"
+            1 -> "பழக்கம்"
+            else -> "கற்றல்"
+        }
+        "hi" -> when (level) {
+            3 -> "विशेषज्ञ"
+            2 -> "निपुण"
+            1 -> "परिचित"
+            else -> "सीख रहे"
+        }
+        else -> when (level) {
+            3 -> "Expert"
+            2 -> "Proficient"
+            1 -> "Familiar"
+            else -> "Learning"
+        }
+    }
+
     fun email(): String = when (languageCode) {
         "ta" -> "மின்னஞ்சல்"
         "hi" -> "ईमेल"
@@ -1175,6 +1435,9 @@ object Strings {
         else -> "Referral code (e.g. AMAZ5)"
     }
 
+    /** Short hint inside the referral code field (codes are typically Latin). */
+    fun referralCodeShortHint(): String = "AMAZ5"
+
     fun applyCode(): String = when (languageCode) {
         "ta" -> "பயன்படுத்து"
         "hi" -> "लागू करें"
@@ -1233,6 +1496,16 @@ object Strings {
         "ta" -> "குறியீடு வரவில்லையா?"
         "hi" -> "कोड नहीं मिला?"
         else -> "Haven't received the code?"
+    }
+
+    /**
+     * OTP send returned success=false (invalid number, SMS provider failure, or server could not deliver).
+     * Prefer this over implying the phone format is always wrong.
+     */
+    fun otpSendFailed(): String = when (languageCode) {
+        "ta" -> "உள்நுழைவு குறியீட்டை அனுப்ப முடியவில்லை. மொபைல் எண்ணைச் சரிபார்த்து மீண்டும் முயலவும்."
+        "hi" -> "लॉगिन कोड नहीं भेजा जा सका। अपना मोबाइल नंबर जाँचें और फिर कोशिश करें।"
+        else -> "We couldn't send your login code. Check your mobile number and try again."
     }
 
     fun termsAndPrivacyDisclaimer(): String = when (languageCode) {
@@ -1436,9 +1709,9 @@ object Strings {
     }
 
     fun ageForStory(): String = when (languageCode) {
-        "ta" -> "வயது (1–12)"
-        "hi" -> "उम्र (1–12)"
-        else -> "Age (1–12)"
+        "ta" -> "வயது (1–99)"
+        "hi" -> "उम्र (1–99)"
+        else -> "Age (1–99)"
     }
 
     fun bedtimeStory(): String = when (languageCode) {
@@ -1475,6 +1748,129 @@ object Strings {
         "ta" -> "ஆராய்ச்சி & உண்மைகள்"
         "hi" -> "जाँच और सच्चाई"
         else -> "Research & facts"
+    }
+
+    fun learningFocusEmpathy(): String = when (languageCode) {
+        "ta" -> "புரிதல்"
+        "hi" -> "सहानुभूति"
+        else -> "Empathy"
+    }
+
+    fun learningFocusProblemSolving(): String = when (languageCode) {
+        "ta" -> "சிக்கல் தீர்ப்பு"
+        "hi" -> "समस्या सुलझाना"
+        else -> "Problem solving"
+    }
+
+    fun learningFocusVocabulary(): String = when (languageCode) {
+        "ta" -> "சொற்கள்"
+        "hi" -> "शब्दावली"
+        else -> "Vocabulary"
+    }
+
+    fun learningFocusCuriosity(): String = when (languageCode) {
+        "ta" -> "ஆர்வம்"
+        "hi" -> "जिज्ञासा"
+        else -> "Curiosity"
+    }
+
+    fun libraryBrowseTab(): String = when (languageCode) {
+        "ta" -> "நூலகம்"
+        "hi" -> "लाइब्रेरी"
+        else -> "Browse"
+    }
+
+    /** Library second lane: lighter classics (category Fun stories / Funny Stories). */
+    fun libraryFunCornerTab(): String = when (languageCode) {
+        "ta" -> "சிரிப்பு மூலை"
+        "hi" -> "मज़ेदार कोना"
+        else -> "Fun corner"
+    }
+
+    fun spotlightEmptyHint(): String = when (languageCode) {
+        "ta" -> "நூலகக் கதைகள் தயாரானதும் இங்கே தோன்றும் — இழுத்து புதுப்பிக்கவும்."
+        "hi" -> "लाइब्रेरी की कहानियाँ तैयार होते ही यहाँ दिखेंगी—खींचकर रीफ़्रेश करें।"
+        else -> "Approved library tales will show up here—pull to refresh."
+    }
+
+    fun funCornerEmptyHint(): String = when (languageCode) {
+        "ta" -> "இங்கே 'Fun stories' அல்லது 'Funny Stories' வகையில் கதைகள் தோன்றும் — பழைய, இலகுவான கதைகளை நிர்வாகத்தில் அந்த வகைக்கு நகர்த்தலாம்."
+        "hi" -> "यहाँ 'Fun stories' या 'Funny Stories' श्रेणी वाली कहानियाँ दिखेंगी—हल्की पुरानी कहानियों को एडमिन में उस श्रेणी में ले जाएँ।"
+        else -> "Stories tagged Fun stories or Funny Stories show up here—move lighter classics to those categories in admin."
+    }
+
+    /** Small chip on poster tiles in the fun lane. */
+    fun storyFunCornerBadge(): String = when (languageCode) {
+        "ta" -> "சிரிப்பு"
+        "hi" -> "मज़ा"
+        else -> "Just for fun"
+    }
+
+    /** Home dashboard: featured library listens (every tale is built for growth). */
+    fun dashboardSpotlightTitle(): String = when (languageCode) {
+        "ta" -> "கேட்டு வளருங்கள்"
+        "hi" -> "सुनकर बढ़ें"
+        else -> "Grow with every listen"
+    }
+
+    fun dashboardSpotlightSubtitle(): String = when (languageCode) {
+        "ta" -> "ஒவ்வொரு கதையிலும் மொழி, உணர்வு, ஆர்வம் — எதையும் தட்டி கேட்கத் தொடங்குங்கள்."
+        "hi" -> "हर कहानी में भाषा, भावना, जिज्ञासा—किसी भी कवर को टैप कर शुरू करें।"
+        else -> "Heart, vocabulary, and curiosity are woven into every Tamixa tale—tap any cover to start."
+    }
+
+    fun openLibraryForMore(): String = when (languageCode) {
+        "ta" -> "நூலகத்தில் மேலும்"
+        "hi" -> "लाइब्रेरी में और"
+        else -> "More in Library"
+    }
+
+    fun openFunCorner(): String = when (languageCode) {
+        "ta" -> "சிரிப்பு மூலை"
+        "hi" -> "मज़ेदार कोना"
+        else -> "Open fun corner"
+    }
+
+    fun curatedTopicsLabel(): String = when (languageCode) {
+        "ta" -> "தேர்ந்தெடுக்கப்பட்ட தலைப்புகள்"
+        "hi" -> "चुने हुए विषय"
+        else -> "Curated topics"
+    }
+
+    fun curatedTopicCustom(): String = when (languageCode) {
+        "ta" -> "தனிப்பயன் தீம்"
+        "hi" -> "अपनी थीम"
+        else -> "Custom theme"
+    }
+
+    fun themeOverrideHint(): String = when (languageCode) {
+        "ta" -> "தலைப்புக்கு கூடுதல் விவரம் (விரும்பினால்)"
+        "hi" -> "विषय पर अतिरिक्त विवरण (वैकल्पिक)"
+        else -> "Extra detail for the topic (optional)"
+    }
+
+    fun forParentsSectionTitle(): String = when (languageCode) {
+        "ta" -> "பெற்றோருக்கு"
+        "hi" -> "अभिभावकों के लिए"
+        else -> "For parents"
+    }
+
+    fun parentContentNoteLabel(): String = when (languageCode) {
+        "ta" -> "உள்ளடக்கக் குறிப்பு"
+        "hi" -> "सामग्री नोट"
+        else -> "Content note"
+    }
+
+    fun speakAlongLabel(): String = when (languageCode) {
+        "ta" -> "ஒன்றாகப் பேசுங்கள்"
+        "hi" -> "साथ में बोलें"
+        else -> "Speak-along"
+    }
+
+    fun discussionPromptsLabel(): String = when (languageCode) {
+        "ta" -> "உரையாடல் கேள்விகள்"
+        "hi" -> "चर्चा के प्रश्न"
+        else -> "Discussion prompts"
     }
 
     fun storyFromOurFamilyHint(): String = when (languageCode) {
@@ -1636,15 +2032,15 @@ object Strings {
     }
 
     fun listeningStreak(days: Int): String = when (languageCode) {
-        "ta" -> "$days நாள் தொடர்!"
-        "hi" -> "$days दिन का सिलसिला!"
-        else -> "$days day streak!"
+        "ta" -> "$days நாள் கேட்டல் தொடர்!"
+        "hi" -> "$days दिन की सुनने की लकीर!"
+        else -> "$days day listening streak!"
     }
 
     fun buildYourStreak(): String = when (languageCode) {
-        "ta" -> "தினமும் கேட்டு தொடரை உருவாக்குங்கள்"
-        "hi" -> "रोज़ सुनकर सिलसिला बनाएं"
-        else -> "Listen daily to build your streak"
+        "ta" -> "தினமும் கேட்டு கேட்டல் தொடரை உருவாக்குங்கள்"
+        "hi" -> "रोज़ सुनकर सुनने की लकीर बनाएं"
+        else -> "Listen daily to build your listening streak"
     }
 
     fun noFavoritesYet(): String = when (languageCode) {
@@ -1687,6 +2083,27 @@ object Strings {
         "ta" -> "வேறு சொற்களை முயற்சிக்கவும்"
         "hi" -> "दूसरे शब्द आज़माएं"
         else -> "Try different keywords"
+    }
+
+    /** Before the user has typed enough characters for search (see NavHost / repository). */
+    fun searchMinCharactersHint(): String = when (languageCode) {
+        "ta" -> "கதைகளைத் தேட இரண்டு எழுத்துகள் அல்லது அதற்கு மேல் தட்டச்சு செய்யவும்"
+        "hi" -> "कहानियाँ खोजने के लिए कम से दो अक्षर टाइप करें"
+        else -> "Type at least 2 characters to search stories"
+    }
+
+    /** Shown under [searchMinCharactersHint] on the search screen. */
+    fun searchWhatYouCanFindHint(): String = when (languageCode) {
+        "ta" -> "தலைப்பு, தீம் அல்லது விசைச்சொல்லாக தேடலாம்"
+        "hi" -> "नाम, थीम या कीवर्ड से खोजें"
+        else -> "You can search by title, theme, or keyword"
+    }
+
+    /** TalkBack when a full-screen error state is shown. */
+    fun accessibilityErrorState(): String = when (languageCode) {
+        "ta" -> "பிழை"
+        "hi" -> "त्रुटि"
+        else -> "Error"
     }
 
     fun upgradeToCreateMore(): String = when (languageCode) {
@@ -1783,6 +2200,12 @@ object Strings {
         "ta" -> "கதைகளை இயக்கி இதயத்தில் தட்டுங்கள்"
         "hi" -> "कहानियाँ सुनकर दिल पर टैप करें"
         else -> "Play stories and tap the heart to add to favorites"
+    }
+
+    fun removeFromFavorites(): String = when (languageCode) {
+        "ta" -> "பிடித்தவைகளிலிருந்து நீக்கு"
+        "hi" -> "पसंदीदा से हटाएं"
+        else -> "Remove from favorites"
     }
 
     fun favorites(): String = when (languageCode) {
@@ -1962,6 +2385,95 @@ object Strings {
         else -> "Let's start your first story"
     }
 
+    fun onboardingDemoSubline(): String = when (languageCode) {
+        "ta" -> "இயக்கு — இது கதை நேரத்தின் சிறு சுவை"
+        "hi" -> "प्ले दबाएँ — यह कहानी के समय की एक झलक है"
+        else -> "Tap play — a bite-sized taste of story night"
+    }
+
+    fun onboardingDemoBenefitHear(): String = when (languageCode) {
+        "ta" -> "கதை உயிர்பெறுவதை முன்பே கேளுங்கள்"
+        "hi" -> "कहानी जीवंत होते सुनें — साइन-इन से पहले"
+        else -> "Hear the story bloom before you sign in"
+    }
+
+    fun onboardingDemoBenefitControl(): String = when (languageCode) {
+        "ta" -> "இடைநிறுத்தம், மீண்டும் — உங்கள் நேரத்தில்"
+        "hi" -> "रोकें, फिर से चलाएँ — आपकी गति पर"
+        else -> "Pause & replay — you set the rhythm"
+    }
+
+    fun onboardingDemoBenefitYoung(): String = when (languageCode) {
+        "ta" -> "சிறுவர்களுக்கு ஏற்ற மென்மையான கதைசொல்லல்"
+        "hi" -> "छोटे बच्चों के लिए कोमल, साफ़ कहानी"
+        else -> "Gentle pacing made for little listeners"
+    }
+
+    fun onboardingVoiceBenefitKeepsake(): String = when (languageCode) {
+        "ta" -> "பாட்டி / அப்பாவின் தொனி ஒவ்வொரு அத்தியாயத்திலும்"
+        "hi" -> "दादी या पापा की आवाज़ हर अध्याय में"
+        else -> "Keeps a grandparent or parent’s tone in every chapter"
+    }
+
+    fun onboardingVoiceBenefitQuick(): String = when (languageCode) {
+        "ta" -> "குறுகிய மாதிரி — நாங்கள் தொழில்நுட்பத்தை கவனிக்கிறோம்"
+        "hi" -> "छोटा सैंपल — तकनीक हम संभालते हैं"
+        else -> "One short sample — we handle the techy bits"
+    }
+
+    fun onboardingVoiceBenefitRoutine(): String = when (languageCode) {
+        "ta" -> "படுக்கை நேர வழக்கத்துடன் நன்கு பொருந்தும்"
+        "hi" -> "सोने से पहले की दिनचर्या से मेल खाता है"
+        else -> "Slides into cozy bedtime routines"
+    }
+
+    fun onboardingAvatarBenefitFace(): String = when (languageCode) {
+        "ta" -> "அறிமுக முகம் கதைசொல்லிக்கு — குழந்தைகள் மகிழ்வர்"
+        "hi" -> "जाना-पहचाना चेहरा कहानी सुनाने वाले के रूप में"
+        else -> "A familiar face as the storyteller — kids light up"
+    }
+
+    fun onboardingAvatarBenefitTrust(): String = when (languageCode) {
+        "ta" -> "குழந்தைகளுக்கு வேடிக்கை — பெற்றோருக்கு நம்பிக்கை"
+        "hi" -> "बच्चों के लिए मज़ा — माता-पिता के लिए भरोसा"
+        else -> "Playful for kids, reassuring for you"
+    }
+
+    fun onboardingAvatarBenefitOptional(): String = when (languageCode) {
+        "ta" -> "விருப்பமே — தவிர்த்து கேட்டுக்கொள்ளலாம்"
+        "hi" -> "पूरी तरह वैकल्पिक — कभी भी छोड़ सकते हैं"
+        else -> "Totally optional — skip and keep listening anytime"
+    }
+
+    /** Short section title above value bullets (step 1–4 onboarding). */
+    fun onboardingStripTitle(step: Int): String = when (step) {
+        1 -> when (languageCode) {
+            "ta" -> "ஏன் குடும்பங்கள் தேர்வு செய்கின்றன"
+            "hi" -> "परिवार क्यों चुनते हैं"
+            else -> "Why families pick Tamixa"
+        }
+        2 -> when (languageCode) {
+            "ta" -> "இதில் கவனிக்கவும்"
+            "hi" -> "इस पर ध्यान दें"
+            else -> "Listen for this"
+        }
+        3 -> when (languageCode) {
+            "ta" -> "குரல் அடுக்கு"
+            "hi" -> "आवाज़ की परत"
+            else -> "The voice magic"
+        }
+        4 -> when (languageCode) {
+            "ta" -> "முகம் + கதை"
+            "hi" -> "चेहरा + कहानी"
+            else -> "Face + story"
+        }
+        else -> when (languageCode) {
+            "ta" -> "சிறப்பம்சங்கள்"
+            "hi" -> "खास बातें"
+            else -> "Highlights"
+        }
+    }
+
     fun preparingDemo(): String = when (languageCode) {
         "ta" -> "உதாரணம் தயாரிக்கிறது..."
         "hi" -> "डेमो तैयार हो रहा है..."
@@ -2105,6 +2617,27 @@ object Strings {
         else -> "We couldn’t verify that story right now. Please try again in a moment."
     }
 
+    /** POST /stories/generate — UNKNOWN_GENERATION_TOPIC. */
+    fun storyGenerateUnknownTopic(): String = when (languageCode) {
+        "ta" -> "அந்த தலைப்பு தற்போது கிடைக்கவில்லை. வேறு தலைப்பைத் தேர்ந்தெடுக்கவும் அல்லது ஒரு தீமை உள்ளிடவும்."
+        "hi" -> "वह विषय अभी उपलब्ध नहीं है। दूसरा विषय चुनें या अपना विषय लिखें।"
+        else -> "That curated topic isn’t available. Pick another topic or enter a theme."
+    }
+
+    /** POST /stories/generate — THEME_OR_TOPIC_REQUIRED. */
+    fun storyGenerateThemeOrTopicRequired(): String = when (languageCode) {
+        "ta" -> "ஒரு தலைப்பைத் தேர்ந்தெடுக்கவும் அல்லது தீமை உள்ளிடவும்."
+        "hi" -> "कोई विषय चुनें या विषय दर्ज करें।"
+        else -> "Choose a curated topic or enter a theme."
+    }
+
+    /** POST /stories/generate — GENERATION_LANGUAGE_NOT_SUPPORTED. */
+    fun storyGenerateTamilOnly(): String = when (languageCode) {
+        "ta" -> "தற்போது கதை உருவாக்கம் தமிழில் மட்டுமே."
+        "hi" -> "अभी कहानी जनरेशन केवल तमिल में उपलब्ध है।"
+        else -> "Story generation is available in Tamil only for now."
+    }
+
     fun noMoralAvailable(): String = when (languageCode) {
         "ta" -> "நீதி கிடைக்கவில்லை."
         "hi" -> "सबक उपलब्ध नहीं।"
@@ -2231,6 +2764,31 @@ object Strings {
         "ta" -> "உங்கள் குழந்தைக்கான தனிப்பட்ட கதைகளை உருவாக்குங்கள்"
         "hi" -> "अपने बच्चे के लिए व्यक्तिगत कहानियाँ बनाएँ"
         else -> "Create personalized stories for your child"
+    }
+
+    /** Hook screen: value bullets (store-style clarity, Tamixa-specific copy). */
+    fun onboardingHookBenefitVoice(): String = when (languageCode) {
+        "ta" -> "அறிமுக குரல்களில் — ரோபோ குரல் அல்ல"
+        "hi" -> "जानी-पहचानी आवाज़ें — रोबोटिक नहीं"
+        else -> "Warm, familiar voices — not robotic narrators"
+    }
+
+    fun onboardingHookBenefitPersonal(): String = when (languageCode) {
+        "ta" -> "உங்கள் குழந்தைக்கே ஏற்ற கதைகள் மற்றும் தீம்கள்"
+        "hi" -> "आपके बच्चे के हिसाब से कहानियाँ और थीम"
+        else -> "Stories and themes shaped around your child"
+    }
+
+    fun onboardingHookBenefitCalm(): String = when (languageCode) {
+        "ta" -> "அமைதியான நேரத்திற்கு — பாதுகாப்பான, மென்மையான"
+        "hi" -> "शांत समय के लिए — सुरक्षित, कोमल अनुभव"
+        else -> "Made for wind-down time — safe, gentle listening"
+    }
+
+    fun onboardingProgressShort(step: Int, totalSteps: Int): String = when (languageCode) {
+        "ta" -> "படி $step / $totalSteps"
+        "hi" -> "चरण $step / $totalSteps"
+        else -> "Step $step of $totalSteps"
     }
 
     fun startStoryMagic(): String = when (languageCode) {
@@ -2367,6 +2925,19 @@ object Strings {
         else -> "No content yet"
     }
 
+    fun noShortContentHint(): String = when (languageCode) {
+        "ta" -> "மேலே வேறு வகையைத் தேர்ந்தெடுக்கவும் அல்லது புதுப்பிக்க இழுக்கவும்"
+        "hi" -> "ऊपर दूसरी श्रेणी चुनें या रीफ़्रेश करने के लिए खींचें"
+        else -> "Try another category above, or pull down to refresh"
+    }
+
+    /** Fallback label when API returns a new short-content type we do not map yet. */
+    fun shortContentTypeOther(): String = when (languageCode) {
+        "ta" -> "மேலும்"
+        "hi" -> "अन्य"
+        else -> "More"
+    }
+
     fun shortContentTypeLabel(type: String): String = when (type.uppercase()) {
         "RIDDLE" -> riddle()
         "JOKE" -> joke()
@@ -2421,31 +2992,12 @@ object Strings {
             "hi" -> "सामान्य ज्ञान"
             else -> "Trivia"
         }
-        else -> type
-    }
-
-    // --- Onboarding daily quote samples (Thought, Proverb, Tongue twister, Quote) ---
-    fun onboardingQuoteThought(): String = when (languageCode) {
-        "ta" -> "கதைகள் கற்பனையை வளர்க்கின்றன."
-        "hi" -> "कहानियाँ कल्पना को बढ़ाती हैं।"
-        else -> "Stories grow imagination."
-    }
-
-    fun onboardingQuoteProverb(): String = when (languageCode) {
-        "ta" -> "கற்றது கைமண் அளவு."
-        "hi" -> "ज्ञान सबसे बड़ा धन है।"
-        else -> "A book is a dream you hold in your hands."
-    }
-
-    fun onboardingQuoteTongueTwister(): String = when (languageCode) {
-        "ta" -> "செந்தமிழ் நாடெனும் போதினிலே."
-        "hi" -> "चार कच्चे चाचा चार पक्के पापा।"
-        else -> "She sells seashells by the seashore."
-    }
-
-    fun onboardingQuoteQuote(): String = when (languageCode) {
-        "ta" -> "கதை சொல்லுதல் என்பது அன்பைப் பகிர்வது."
-        "hi" -> "कहानी सुनाना प्यार बांटना है।"
-        else -> "There is no greater power than a story."
+        else -> when (languageCode) {
+            "ta", "hi" -> shortContentTypeOther()
+            else -> type.replace('_', ' ').split(' ')
+                .joinToString(" ") { word ->
+                    word.lowercase().replaceFirstChar { c -> c.titlecase() }
+                }
+        }
     }
 }

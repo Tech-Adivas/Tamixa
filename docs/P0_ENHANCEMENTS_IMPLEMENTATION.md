@@ -209,7 +209,7 @@ object TamixaDesignTokens {
 **Files Normalized:**
 1. ✅ `OnboardingHookScreen.kt` - 16dp → cardSpacing, 14dp → smallSpacing
 2. ✅ `OnboardingAvatarInvitationScreen.kt` - 16dp → cardSpacing, 14dp → smallSpacing
-3. ✅ `OnboardingInterestsScreen.kt` - 16dp/18dp → cardSpacing/headerPaddingHorizontal (2 instances)
+3. ~~`OnboardingInterestsScreen.kt`~~ — **removed** (onboarding interests step dropped from product)
 4. ✅ `OnboardingDemoScreen.kt` - 16dp → cardSpacing, 14dp → smallSpacing
 5. ✅ `OnboardingVoiceInvitationScreen.kt` - 16dp → cardSpacing, 14dp → smallSpacing
 6. ✅ `VoiceUploadScreen.kt` - 20dp → cardSpacing (card content padding)
