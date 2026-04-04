@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -88,6 +91,40 @@ enum class OnboardingHeroHaloKind {
     AvatarShimmer
 }
 
+/** Learn-lane ribbon — consistent edu-story positioning across onboarding steps. */
+@Composable
+internal fun OnboardingEduStoryBadge(modifier: Modifier = Modifier) {
+    val label = Strings.onboardingEduStoryBadgeLabel()
+    Surface(
+        modifier = modifier.semantics { contentDescription = label },
+        shape = RoundedCornerShape(50),
+        color = TamixaColors.deepTeal.copy(alpha = 0.44f),
+        border = BorderStroke(1.dp, TamixaColors.goldAccent.copy(alpha = 0.52f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "📚",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.35.sp
+                ),
+                color = Color(0xFFFFF8F0),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 @Composable
 fun OnboardingHookScreen(
     onStartStoryMagic: () -> Unit,
@@ -125,7 +162,7 @@ fun OnboardingHookScreen(
         // Store-quality hero first — halo tint unique to this step.
         OnboardingHeroSpotlight(
             kind = OnboardingHeroHaloKind.HookWarmth,
-            haloHeight = 252.dp,
+            haloHeight = 268.dp,
             modifier = Modifier.onboardingEntrance(delayMs = 70)
         ) {
             HookVisualPreviewCard()
@@ -167,6 +204,11 @@ fun OnboardingHookScreen(
                 emoji = "🌙",
                 text = Strings.onboardingHookBenefitCalm(),
                 modifier = Modifier.onboardingEntrance(delayMs = 290)
+            )
+            OnboardingBenefitRow(
+                emoji = "🛡️",
+                text = Strings.onboardingHookBenefitLearn(),
+                modifier = Modifier.onboardingEntrance(delayMs = 340)
             )
         }
     }
@@ -221,8 +263,19 @@ internal fun OnboardingHeroSpotlight(
                 .background(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            inner.copy(alpha = if (kind == OnboardingHeroHaloKind.VoiceRipple) 0.22f else 0.2f),
-                            outer.copy(alpha = 0.1f),
+                            inner.copy(
+                                alpha = when (kind) {
+                                    OnboardingHeroHaloKind.VoiceRipple -> 0.22f
+                                    OnboardingHeroHaloKind.HookWarmth -> 0.27f
+                                    else -> 0.2f
+                                }
+                            ),
+                            outer.copy(
+                                alpha = when (kind) {
+                                    OnboardingHeroHaloKind.HookWarmth -> 0.19f
+                                    else -> 0.1f
+                                }
+                            ),
                             Color.Transparent
                         ),
                         center = Offset(centerX, centerY),
@@ -254,9 +307,9 @@ internal fun OnboardingValueStripTitle(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "✦",
+            text = "📖",
             style = MaterialTheme.typography.titleMedium,
-            color = TamixaColors.goldAccent.copy(alpha = 0.55f),
+            color = TamixaColors.deepTeal.copy(alpha = 0.72f),
             modifier = Modifier.padding(end = gemPad)
         )
         Text(
@@ -265,19 +318,19 @@ internal fun OnboardingValueStripTitle(
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = spec.valueStripLetterSpacing.sp
             ),
-            color = OnboardingCardColors.onboardingSubline.copy(alpha = 0.92f)
+            color = Color(0xFFE8F4F2).copy(alpha = 0.94f)
         )
         Text(
-            text = "✦",
+            text = "📖",
             style = MaterialTheme.typography.titleMedium,
-            color = TamixaColors.goldAccent.copy(alpha = 0.55f),
+            color = TamixaColors.deepTeal.copy(alpha = 0.72f),
             modifier = Modifier.padding(start = gemPad)
         )
     }
 }
 
 /**
- * Headline + subline in a terracotta→teal rimmed panel — unique to Tamixa (not flat Material cards).
+ * Headline + subline — edu-story “open book” frame: teal-forward rim, parchment panel, spine accent.
  */
 @Composable
 internal fun OnboardingEditorialTextCard(
@@ -289,33 +342,54 @@ internal fun OnboardingEditorialTextCard(
     val innerR = (outerR - 2.dp).coerceAtLeast(12.dp)
     val outer = RoundedCornerShape(outerR)
     val inner = RoundedCornerShape(innerR)
+    val spineShape = RoundedCornerShape(topStart = innerR, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = innerR)
     Box(
         modifier = modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 10.dp,
+                elevation = 11.dp,
                 shape = outer,
                 ambientColor = OnboardingCardDefaults.cardShadowAmbient,
-                spotColor = OnboardingCardDefaults.cardShadowSpot
+                spotColor = TamixaColors.deepTeal.copy(alpha = 0.22f)
             )
             .clip(outer)
-            .background(TamixaGradients.storybookShelfFrameBrush())
+            .background(TamixaGradients.onboardingEduStoryFrameBrush())
             .padding(2.dp)
             .clip(inner)
-            .background(Color.White.copy(alpha = 0.11f))
+            .background(Color(0xFFFFF4EC).copy(alpha = 0.15f))
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = spec.editorialHPadding, vertical = spec.editorialVPadding),
-            verticalArrangement = Arrangement.spacedBy(spec.editorialSectionGap)
+                .height(IntrinsicSize.Min)
         ) {
-            content()
+            Box(
+                modifier = Modifier
+                    .width(5.dp)
+                    .fillMaxHeight()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                TamixaColors.deepTeal.copy(alpha = 0.92f),
+                                TamixaColors.goldAccent.copy(alpha = 0.42f)
+                            )
+                        ),
+                        shape = spineShape
+                    )
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = spec.editorialHPadding, vertical = spec.editorialVPadding),
+                verticalArrangement = Arrangement.spacedBy(spec.editorialSectionGap)
+            ) {
+                content()
+            }
         }
     }
 }
 
-/** Single-line value prop row — scannable like Play listing bullets, glass on starfield. */
+/** Value prop row — Learn-lane list: teal spine + soft glass (edu-story scan pattern). */
 @Composable
 internal fun OnboardingBenefitRow(
     emoji: String,
@@ -323,41 +397,64 @@ internal fun OnboardingBenefitRow(
     modifier: Modifier = Modifier
 ) {
     val spec = LocalOnboardingLayoutSpec.current
+    val rowR = spec.scaledCorner(TamixaDesignTokens.cardRadius)
+    val spineShape = RoundedCornerShape(topStart = rowR, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = rowR)
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(spec.scaledCorner(18.dp)),
-        color = Color.White.copy(alpha = 0.09f),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
+        shape = RoundedCornerShape(rowR),
+        color = Color.White.copy(alpha = 0.085f),
+        border = BorderStroke(1.dp, TamixaColors.deepTeal.copy(alpha = 0.24f))
     ) {
         Row(
             modifier = Modifier
-                .padding(
-                    horizontal = (spec.cardContentPadding - 2.dp).coerceAtLeast(10.dp),
-                    vertical = spec.benefitRowVerticalPadding
-                )
-                .semantics(mergeDescendants = true) {
-                    contentDescription = text
-                },
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(spec.gapMd)
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min)
         ) {
-            Text(
-                text = emoji,
-                style = MaterialTheme.typography.headlineMedium.copy(lineHeight = spec.benefitEmojiLineHeight),
-                modifier = Modifier.padding(top = 2.dp)
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                TamixaColors.deepTeal.copy(alpha = 0.88f),
+                                TamixaColors.mintGreen.copy(alpha = 0.38f)
+                            )
+                        ),
+                        shape = spineShape
+                    )
             )
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = FontWeight.Medium,
-                    lineHeight = spec.sublineLineHeight,
-                    letterSpacing = 0.12.sp
-                ),
-                color = OnboardingCardColors.onboardingHeadline.copy(alpha = 0.96f),
-                maxLines = 5,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(
+                        horizontal = (spec.cardContentPadding - 2.dp).coerceAtLeast(10.dp),
+                        vertical = spec.benefitRowVerticalPadding
+                    )
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = text
+                    },
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(spec.gapMd)
+            ) {
+                Text(
+                    text = emoji,
+                    style = MaterialTheme.typography.headlineMedium.copy(lineHeight = spec.benefitEmojiLineHeight),
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.Medium,
+                        lineHeight = spec.sublineLineHeight,
+                        letterSpacing = 0.12.sp
+                    ),
+                    color = Color(0xFFF5FAF9).copy(alpha = 0.97f),
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
 }
@@ -374,11 +471,11 @@ private fun HookVisualPreviewCard() {
                 elevation = OnboardingCardDefaults.cardShadowElevation,
                 shape = OnboardingCardDefaults.cardShape,
                 ambientColor = OnboardingCardDefaults.cardShadowAmbient,
-                spotColor = OnboardingCardDefaults.cardShadowSpot
+                spotColor = TamixaColors.deepTeal.copy(alpha = 0.2f)
             ),
         shape = OnboardingCardDefaults.cardShape,
         color = OnboardingCardColors.cardBackground,
-        border = BorderStroke(1.dp, OnboardingCardColors.cardBorder)
+        border = BorderStroke(1.dp, TamixaColors.deepTeal.copy(alpha = 0.3f))
     ) {
         Column(
             modifier = Modifier.padding(spec.cardContentPadding),
@@ -398,18 +495,31 @@ private fun HookVisualPreviewCard() {
                     cornerRadius = imgCorner
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HookThemePill(text = Strings.themeAdventure(), accent = OnboardingCardColors.pillWarmOrange)
-                HookThemePill(text = Strings.themeFriendship(), accent = OnboardingCardColors.pillSoftPurple)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OnboardingLanePill(
+                    text = Strings.onboardingHookPillLearnSafety(),
+                    accent = OnboardingCardColors.pillLearnLane
+                )
+                OnboardingLanePill(text = Strings.themeAdventure(), accent = OnboardingCardColors.pillWarmOrange)
+                OnboardingLanePill(text = Strings.themeFriendship(), accent = OnboardingCardColors.pillSoftPurple)
             }
         }
     }
 }
 
+/** Theme / lane chip — reused on Hook and Demo onboarding cards. */
 @Composable
-private fun HookThemePill(text: String, accent: androidx.compose.ui.graphics.Color = OnboardingCardColors.pillBackground) {
+internal fun OnboardingLanePill(
+    text: String,
+    accent: androidx.compose.ui.graphics.Color = OnboardingCardColors.pillBackground
+) {
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(TamixaDesignTokens.cardRadius),
         color = accent
     ) {
         Row(
@@ -600,6 +710,10 @@ fun OnboardingShell(
                                     .fillMaxWidth()
                                     .onboardingEntrance(delayMs = 40)
                             )
+                            Spacer(Modifier.height(8.dp))
+                            OnboardingEduStoryBadge(
+                                modifier = Modifier.onboardingEntrance(delayMs = 52)
+                            )
                         }
                         Box(
                             modifier = Modifier
@@ -758,13 +872,16 @@ fun OnboardingProgressHeader(
     val completedFill = TamixaColors.goldAccent.copy(alpha = 0.85f)
     val currentFill = TamixaColors.deepTeal.copy(alpha = 0.92f)
     val currentRing = TamixaColors.goldAccent
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .semantics {
                 contentDescription =
                     "${Strings.onboardingProgressShort(step, totalSteps)}. Step $step of $totalSteps"
             },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+    Row(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -830,5 +947,12 @@ fun OnboardingProgressHeader(
                     ) {}
                 }
             }
+    }
+    Text(
+        text = Strings.onboardingProgressShort(step, totalSteps),
+        style = MaterialTheme.typography.labelMedium,
+        color = OnboardingCardColors.onboardingSubline.copy(alpha = 0.78f),
+        modifier = Modifier.padding(top = 8.dp)
+    )
     }
 }

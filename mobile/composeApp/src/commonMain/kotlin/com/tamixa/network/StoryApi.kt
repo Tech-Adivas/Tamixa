@@ -16,6 +16,8 @@ import io.ktor.client.plugins.ResponseException
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.http.*
 
 /** Extended timeout for cloned voice (on-demand TTS can take 60–90s). */
@@ -41,6 +43,25 @@ internal data class VoicePreferenceResponseDto(
 internal data class VoicePreferenceRequestDto(
     val voiceProfile: String,
     val playbackMode: String = "default"
+)
+
+@kotlinx.serialization.Serializable
+internal data class LifeSkillChoiceRequestDto(
+    val libraryStoryId: Long,
+    val childId: Long,
+    val segmentId: String,
+    val choiceId: String,
+    val skillDeltas: Map<String, Int>? = null,
+)
+
+@kotlinx.serialization.Serializable
+data class LifeSkillCountersResponseDto(
+    val childId: Long,
+    val wisdom: Int,
+    val social: Int,
+    val money: Int,
+    val balance: Int,
+    val copyForParents: String = "",
 )
 
 @kotlinx.serialization.Serializable
@@ -198,8 +219,72 @@ class StoryApi(private val client: HttpClient) {
         }
     }
 
+    /** Records a choice from an interactive library episode (soft stats / audit; no scores returned). */
+    suspend fun recordLifeSkillChoice(
+        libraryStoryId: Long,
+        childId: Long,
+        segmentId: String,
+        choiceId: String,
+        skillDeltas: Map<String, Int>?,
+    ): Boolean =
+        try {
+            val resp = client.post("${ApiConfig.API_VERSION}/edu/life-skill-choices") {
+                contentType(ContentType.Application.Json)
+                setBody(
+                    LifeSkillChoiceRequestDto(
+                        libraryStoryId = libraryStoryId,
+                        childId = childId,
+                        segmentId = segmentId,
+                        choiceId = choiceId,
+                        skillDeltas = skillDeltas,
+                    )
+                )
+            }
+            resp.status.value in 200..299
+        } catch (e: Exception) {
+            TamixaLog.w("StoryApi", "recordLifeSkillChoice failed", e)
+            false
+        }
+
+    /**
+     * Warms HTTP cache / connection for branch audio while the choice overlay is visible.
+     * [urls] should already be absolute (caller resolves relative paths against [ApiConfig]).
+     */
+    suspend fun prefetchInteractiveSegmentAudio(urls: List<String>) {
+        val distinct = urls.asSequence().map { it.trim() }.filter { it.startsWith("http://") || it.startsWith("https://") }.distinct().toList()
+        if (distinct.isEmpty()) return
+        distinct.forEach { url ->
+            try {
+                client.get(url) {
+                    timeout { requestTimeoutMillis = 25_000 }
+                }.body<ByteArray>()
+            } catch (e: Exception) {
+                TamixaLog.w("StoryApi", "prefetchInteractiveSegmentAudio failed", e)
+            }
+        }
+    }
+
+    /** Soft pillar counters for the signed-in parent’s child (practice signals, not grades). */
+    suspend fun getLifeSkillCounters(childId: Long): LifeSkillCountersResponseDto? =
+        try {
+            val resp = client.get("${ApiConfig.API_VERSION}/edu/life-skill-choices/counters") {
+                parameter("childId", childId)
+            }
+            if (resp.status.value in 200..299) resp.body() else null
+        } catch (e: Exception) {
+            TamixaLog.w("StoryApi", "getLifeSkillCounters failed", e)
+            null
+        }
+
     suspend fun getFavorites(): List<FavoriteStoryDto> =
-        client.get("${ApiConfig.API_VERSION}/favorites").body()
+        try {
+            client.get("${ApiConfig.API_VERSION}/favorites").bodyIfSuccess() ?: emptyList()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            TamixaLog.w("StoryApi", "getFavorites failed", e)
+            emptyList()
+        }
 
     suspend fun addFavorite(storyId: Long, storySource: String = TamixaConstants.STORY_SOURCE_GENERATED) {
         client.post("${ApiConfig.API_VERSION}/favorites/$storyId?storySource=$storySource") { }
@@ -211,9 +296,8 @@ class StoryApi(private val client: HttpClient) {
 
     suspend fun isFavorite(storyId: Long): Boolean =
         try {
-            val resp = client.get("${ApiConfig.API_VERSION}/favorites/$storyId/check")
-            val body = resp.body<FavoriteCheckDto>()
-            body.isFavorite
+            val body = client.get("${ApiConfig.API_VERSION}/favorites/$storyId/check").bodyIfSuccess<FavoriteCheckDto>()
+            body?.isFavorite == true
         } catch (e: Exception) {
             TamixaLog.w("StoryApi", "isFavorite(storyId=$storyId) failed", e)
             false
@@ -387,31 +471,40 @@ class StoryApi(private val client: HttpClient) {
             null
         }
 
-    /** Regenerate AI cover for a story. */
+    /** Regenerate AI cover for a story (still image provider is server-side: OpenAI or Gemini). */
     suspend fun regenerateCover(storyId: Long): Story =
-        client.post("${ApiConfig.API_VERSION}/stories/$storyId/regenerate-cover").body()
+        client.post("${ApiConfig.API_VERSION}/stories/$storyId/regenerate-cover").requireBodyOrThrow()
 
     /** Remix a story with a tweak (e.g. "make the dragon friendly"). */
     suspend fun remix(storyId: Long, remixInstruction: String): Story =
         client.post("${ApiConfig.API_VERSION}/stories/$storyId/remix") {
             setBody(RemixRequest(remixInstruction))
-        }.body()
+        }.requireBodyOrThrow()
 
     suspend fun getRecommended(childId: Long? = null, language: String = TamixaConstants.DEFAULT_LANGUAGE, limit: Int = TamixaConstants.RECOMMENDED_LIMIT): List<RecommendedStoryDto> =
-        client.get("${ApiConfig.API_VERSION}/stories/recommended") {
-            parameter("language", language)
-            parameter("limit", limit)
-            childId?.let { parameter("childId", it) }
-        }.body()
+        try {
+            client.get("${ApiConfig.API_VERSION}/stories/recommended") {
+                parameter("language", language)
+                parameter("limit", limit)
+                childId?.let { parameter("childId", it) }
+            }.bodyIfSuccess() ?: emptyList()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            TamixaLog.w("StoryApi", "getRecommended failed", e)
+            emptyList()
+        }
 
     suspend fun savePlaybackPosition(storyId: Long, storySource: String, positionSeconds: Int, childId: Long? = null) {
         client.post("${ApiConfig.API_VERSION}/playback/position") {
-            setBody(buildMap<String, Any> {
-                put("storyId", storyId)
-                put("storySource", storySource)
-                put("positionSeconds", positionSeconds)
-                childId?.let { put("childId", it) }
-            })
+            setBody(
+                SavePlaybackPositionRequest(
+                    storyId = storyId,
+                    storySource = storySource,
+                    positionSeconds = positionSeconds,
+                    childId = childId
+                )
+            )
         }
     }
 
@@ -420,21 +513,36 @@ class StoryApi(private val client: HttpClient) {
             client.get("${ApiConfig.API_VERSION}/playback/position") {
                 parameter("storyId", storyId)
                 parameter("storySource", storySource)
-            }.body<PlaybackPositionResponse>().positionSeconds
+            }.bodyIfSuccess<PlaybackPositionResponse>()?.positionSeconds ?: 0
         } catch (e: Exception) {
             TamixaLog.w("StoryApi", "getPlaybackPosition(storyId=$storyId) failed", e)
             0
         }
 
     suspend fun getRecentPlayback(limit: Int = TamixaConstants.RECENT_PLAYBACK_LIMIT): List<PlaybackPositionDto> =
-        client.get("${ApiConfig.API_VERSION}/playback/recent") { parameter("limit", limit) }.body()
+        try {
+            client.get("${ApiConfig.API_VERSION}/playback/recent") { parameter("limit", limit) }.bodyIfSuccess()
+                ?: emptyList()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            TamixaLog.w("StoryApi", "getRecentPlayback failed", e)
+            emptyList()
+        }
 
     /** Title, cover, and progress from the server — use for dashboard "Continue listening" without N+1 story fetches. */
     suspend fun getRecentPlaybackEnriched(limit: Int = TamixaConstants.RECENT_PLAYBACK_LIMIT): List<PlaybackPositionEnrichedDto> =
-        client.get("${ApiConfig.API_VERSION}/playback/recent") {
-            parameter("limit", limit)
-            parameter("enriched", true)
-        }.body()
+        try {
+            client.get("${ApiConfig.API_VERSION}/playback/recent") {
+                parameter("limit", limit)
+                parameter("enriched", true)
+            }.bodyIfSuccess() ?: emptyList()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            TamixaLog.w("StoryApi", "getRecentPlaybackEnriched failed", e)
+            emptyList()
+        }
 
     suspend fun searchStories(q: String, language: String = TamixaConstants.DEFAULT_LANGUAGE, page: Int = 0, size: Int = TamixaConstants.SEARCH_PAGE_SIZE): SearchStoriesResponse =
         try {
@@ -443,7 +551,7 @@ class StoryApi(private val client: HttpClient) {
                 parameter("language", language)
                 parameter("page", page)
                 parameter("size", size)
-            }.body()
+            }.bodyIfSuccess() ?: SearchStoriesResponse(content = emptyList(), totalElements = 0)
         } catch (e: Exception) {
             TamixaLog.w("StoryApi", "searchStories(q=$q) failed", e)
             SearchStoriesResponse(content = emptyList(), totalElements = 0)
@@ -534,6 +642,15 @@ fun PlaybackPositionEnrichedDto.toContinueListeningStory(language: String): Stor
 
 @kotlinx.serialization.Serializable
 internal data class PlaybackPositionResponse(val positionSeconds: Int)
+
+/** POST /playback/position body; field names match backend SavePositionRequest. */
+@kotlinx.serialization.Serializable
+internal data class SavePlaybackPositionRequest(
+    val storyId: Long,
+    val storySource: String,
+    val positionSeconds: Int,
+    val childId: Long? = null,
+)
 
 @kotlinx.serialization.Serializable
 internal data class RemixRequest(val remixInstruction: String)

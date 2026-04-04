@@ -273,11 +273,17 @@ fun SubscriptionScreen(
                 Text(
                     text = Strings.premiumBenefits(),
                     style = MaterialTheme.typography.titleSmall,
-                    color = TamixaColors.lavenderGlow.copy(alpha = 0.95f)
+                    color = TamixaColors.eduStoryMint.copy(alpha = 0.92f)
                 )
                 Spacer(Modifier.height(10.dp))
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            width = 1.dp,
+                            color = TamixaColors.deepTeal.copy(alpha = 0.28f),
+                            shape = RoundedCornerShape(TamixaDesignTokens.dialogRadius)
+                        ),
                     shape = RoundedCornerShape(TamixaDesignTokens.dialogRadius),
                     colors = TamixaCardColors.surface(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -452,7 +458,7 @@ private fun BenefitRow(
         Icon(
             Icons.Default.CheckCircle,
             contentDescription = Strings.included(),
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+            tint = TamixaColors.eduStoryMint.copy(alpha = 0.9f),
             modifier = Modifier.size(22.dp)
         )
     }

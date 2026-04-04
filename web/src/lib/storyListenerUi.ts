@@ -21,8 +21,45 @@ export function isLearnStory(theme: string, category?: string | null): boolean {
   return LEARN_PREFIX.test(c) || LEARN_PREFIX.test(t);
 }
 
+const DIGITAL_SAFETY = "digital safety";
+
+/** Learn-prefixed rows or explicit Digital Safety series (library Edu lane). */
+export function isLearnOrDigitalSafetyStory(theme: string, category?: string | null): boolean {
+  if (isLearnStory(theme, category)) return true;
+  const t = theme?.trim().toLowerCase() ?? "";
+  const c = category?.trim().toLowerCase() ?? "";
+  return t.includes(DIGITAL_SAFETY) || c.includes(DIGITAL_SAFETY);
+}
+
+const SIMULATOR_PREFIX = /^learn\s*·\s*simulator\b/i;
+
+/** Theme/category convention for Learn · Simulator series. */
+export function isSimulatorStory(theme: string, category?: string | null): boolean {
+  const c = category?.trim() ?? "";
+  const t = theme?.trim() ?? "";
+  return SIMULATOR_PREFIX.test(c) || SIMULATOR_PREFIX.test(t);
+}
+
+/** Practice hub: simulator naming or non-empty interactive graph payload from API. */
+export function isInteractivePracticeLibraryStory(story: {
+  theme: string;
+  category?: string | null;
+  interactiveGraph?: unknown;
+}): boolean {
+  if (isSimulatorStory(story.theme, story.category)) return true;
+  const g = story.interactiveGraph;
+  if (g == null) return false;
+  if (typeof g === "object" && !Array.isArray(g) && Object.keys(g as object).length > 0) return true;
+  return false;
+}
+
 export function funCornerBadgeLabel(): string {
   return "Just for fun";
+}
+
+/** Library poster chip for branching Edu / simulator tales (matches mobile copy). */
+export function interactivePracticeBadgeLabel(): string {
+  return "You choose";
 }
 
 /** Short line under card title. */

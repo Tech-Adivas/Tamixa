@@ -84,6 +84,7 @@ class VoiceCloningController(
             audioFileSizeBytes = job.audioFileSizeBytes,
             voiceName = job.voiceName,
             elevenLabsVoiceId = job.elevenLabsVoiceId,
+            fishAudioModelId = job.fishAudioModelId,
             status = job.status,
             errorMessage = job.errorMessage,
             createdAt = job.createdAt.toString(),

@@ -33,6 +33,9 @@ import {
   POST_APPROVAL_CONTENT_CHANGE_HELP,
   REGENERATE_THEN_TRANSLATIONS_HELP,
   REVIEW_QUEUE_EXPECTATION_HELP,
+  isLibraryStoryPipelineMetaKey,
+  adminStoryLanguageLabel,
+  ADMIN_STORY_LANGUAGE_SHORT,
 } from "@/lib/library-story-workflow";
 import { parseJsonStoryContent, cn, resolveLibraryStoryEditorBody, parsePipelineLanguageSet } from "@/lib/utils";
 import {
@@ -49,36 +52,9 @@ import {
   ExternalLink,
 } from "lucide-react";
 
-const LANG_LABELS: Record<string, string> = {
-  ta: "Tamil",
-  hi: "Hindi",
-  en: "English",
-  te: "Telugu",
-  kn: "Kannada",
-  ml: "Malayalam",
-};
-
-const LANG_SHORT: Record<string, string> = {
-  ta: "Ta",
-  hi: "Hi",
-  en: "En",
-  te: "Te",
-  kn: "Kn",
-  ml: "Ml",
-};
-
-const REVIEW_META_KEYS = [
-  "processing",
-  "progress",
-  "overallStatus",
-  "reviewedLanguages",
-  "reviewStaleLanguages",
-  "allLanguagesReviewed",
-];
-
 function reviewLangEntries(status?: PipelineStatusResponse | Record<string, string | undefined> | null) {
   if (!status) return [];
-  return Object.entries(status).filter(([k]) => !REVIEW_META_KEYS.includes(k));
+  return Object.entries(status).filter(([k]) => !isLibraryStoryPipelineMetaKey(k));
 }
 
 function isPipelineFullyComplete(status?: PipelineStatusResponse | Record<string, string | undefined> | null): boolean {
@@ -101,29 +77,16 @@ function isPipelineInProgress(status?: PipelineStatusResponse | Record<string, s
   return isLibraryStoryPipelineBusy(status);
 }
 
-const NARRATION_META_KEYS = [
-  "processing",
-  "progress",
-  "overallStatus",
-  "reviewedLanguages",
-  "reviewStaleLanguages",
-  "allLanguagesReviewed",
-  "generatedAtIst",
-  "durationSeconds",
-  "audioCoverageWarnings",
-  "failedLanguagesCount",
-];
-
 function getCompletedLanguages(status?: PipelineStatusResponse | null): string[] {
   if (!status || typeof status !== "object") return [];
   return Object.entries(status)
-    .filter(([k, s]) => !NARRATION_META_KEYS.includes(k) && s === "COMPLETED")
+    .filter(([k, s]) => !isLibraryStoryPipelineMetaKey(k) && s === "COMPLETED")
     .map(([lang]) => lang);
 }
 
 function getPipelineProgress(status?: PipelineStatusResponse | null): { completed: number; total: number; estMinLeft: number } {
   if (!status || typeof status !== "object") return { completed: 0, total: 0, estMinLeft: 0 };
-  const entries = Object.entries(status).filter(([k]) => !NARRATION_META_KEYS.includes(k));
+  const entries = Object.entries(status).filter(([k]) => !isLibraryStoryPipelineMetaKey(k));
   const total = entries.length;
   const completed = entries.filter(([, s]) => s === "COMPLETED").length;
   const failed = entries.filter(([, s]) => s?.includes("FAILED")).length;
@@ -313,7 +276,7 @@ export function StoryReviewStepPanel({
         showError(
           "Translation not loaded",
           msg.includes("404") || msg.includes("not found")
-            ? `${LANG_LABELS[language] ?? language} content is not ready yet. Run the pipeline so this language is translated.`
+            ? `${adminStoryLanguageLabel(language)} content is not ready yet. Run the pipeline so this language is translated.`
             : msg
         );
         setTranslationModalOpen(false);
@@ -504,7 +467,7 @@ export function StoryReviewStepPanel({
                           ? "border-border bg-muted/40"
                           : "border-border bg-muted/20 text-muted-foreground"
                   )}
-                  title={`${LANG_LABELS[lang] ?? lang}${
+                  title={`${adminStoryLanguageLabel(lang)}${
                     isReviewStale
                       ? " — content changed since review; open and tap Have reviewed"
                       : isReviewed
@@ -512,14 +475,14 @@ export function StoryReviewStepPanel({
                         : ` — ${stage}`
                   }`}
                 >
-                  <span className="font-medium text-foreground w-6 text-center">{LANG_SHORT[lang] ?? lang}</span>
+                  <span className="font-medium text-foreground w-6 text-center">{ADMIN_STORY_LANGUAGE_SHORT[lang] ?? lang}</span>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     className="h-6 w-6 p-0 min-w-0"
                     onClick={() => openTranslationModal(lang)}
-                    title={`View ${LANG_LABELS[lang] ?? lang}`}
+                    title={`View ${adminStoryLanguageLabel(lang)}`}
                   >
                     <Eye className="h-3 w-3" />
                   </Button>
@@ -623,7 +586,7 @@ export function StoryReviewStepPanel({
       <Dialog open={translationModalOpen} onOpenChange={setTranslationModalOpen}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>View {translationLang ? LANG_LABELS[translationLang] ?? translationLang : ""}</DialogTitle>
+            <DialogTitle>View {translationLang ? adminStoryLanguageLabel(translationLang) : ""}</DialogTitle>
             <DialogDescription>
               Review content for this language. Use &ldquo;Have reviewed&rdquo; when done. Once all languages are reviewed, Approve is enabled.
             </DialogDescription>
@@ -919,7 +882,7 @@ export function StoryNarrationStepPanel({
           languages?.length ? { languages } : undefined
         );
         const scope =
-          languages?.length ? `languages (${languages.map((l) => LANG_SHORT[l] ?? l).join(", ")})` : "all languages";
+          languages?.length ? `languages (${languages.map((l) => ADMIN_STORY_LANGUAGE_SHORT[l] ?? l).join(", ")})` : "all languages";
         showSuccess("Regenerate started", `${scope} — pipeline queued or running.`);
       } else {
         await api.admin.triggerLibraryStoryPipeline(storyId);
@@ -1024,7 +987,7 @@ export function StoryNarrationStepPanel({
                 {statusObj?.processing
                   ? statusObj.processing === "starting"
                     ? "Starting pipeline…"
-                    : `Generating ${LANG_SHORT[statusObj.processing] ?? statusObj.processing} audio…`
+                    : `Generating ${ADMIN_STORY_LANGUAGE_SHORT[statusObj.processing] ?? statusObj.processing} audio…`
                   : narrationProgressLabel(statusObj?.overallStatus ?? "")}
               </span>
               {(() => {
@@ -1062,7 +1025,7 @@ export function StoryNarrationStepPanel({
                 Possible truncation:{" "}
                 {statusObj.audioCoverageWarnings
                   .split(",")
-                  .map((l) => LANG_SHORT[l.trim().toLowerCase()] ?? l.trim())
+                  .map((l) => ADMIN_STORY_LANGUAGE_SHORT[l.trim().toLowerCase()] ?? l.trim())
                   .join(", ")}
               </span>
             )}
@@ -1092,7 +1055,7 @@ export function StoryNarrationStepPanel({
         <span className="text-xs font-medium text-muted-foreground">Preview</span>
         {playingAudio ? (
           <div className="flex items-center gap-1">
-            <span className="text-xs font-medium">{LANG_SHORT[playingAudio.language] ?? playingAudio.language}</span>
+            <span className="text-xs font-medium">{ADMIN_STORY_LANGUAGE_SHORT[playingAudio.language] ?? playingAudio.language}</span>
             <Button variant="outline" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={handlePausePreview} title={isPaused ? "Resume" : "Pause"}>
               {isPaused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
             </Button>
@@ -1111,11 +1074,11 @@ export function StoryNarrationStepPanel({
             <DropdownMenuContent align="start" className="min-w-[120px]">
               {(() => {
                 const completedLangs = getCompletedLanguages(statusObj);
-                const langs = completedLangs.length > 0 ? completedLangs : Object.keys(LANG_SHORT);
+                const langs = completedLangs.length > 0 ? completedLangs : Object.keys(ADMIN_STORY_LANGUAGE_SHORT);
                 return langs.map((lang) => (
                   <DropdownMenuItem key={lang} onClick={() => void handlePlayPreview(lang)}>
                     <Play className="h-3.5 w-3.5 mr-2 shrink-0" />
-                    {LANG_SHORT[lang] ?? lang}
+                    {ADMIN_STORY_LANGUAGE_SHORT[lang] ?? lang}
                   </DropdownMenuItem>
                 ));
               })()}
@@ -1168,7 +1131,7 @@ export function StoryNarrationStepPanel({
                 Regenerate flagged (
                 {statusObj.audioCoverageWarnings
                   .split(",")
-                  .map((l) => LANG_SHORT[l.trim().toLowerCase()] ?? l.trim())
+                  .map((l) => ADMIN_STORY_LANGUAGE_SHORT[l.trim().toLowerCase()] ?? l.trim())
                   .join(", ")}
                 )
               </DropdownMenuItem>

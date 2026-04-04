@@ -3,7 +3,7 @@
  * so playback works reliably (parent sets src and calls play() on the ref).
  * When avatarVideoUrl is provided, shows a small video preview and uses the video element for playback (video includes audio).
  */
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 export interface StoryAudioPlayerProps {
   audioRef: React.RefObject<HTMLAudioElement | null>;
@@ -13,11 +13,21 @@ export interface StoryAudioPlayerProps {
   avatarVideoUrl?: string | null;
   /** Optional muted loop alongside audio-only playback (Phase 4 host clip). */
   hostClipUrl?: string | null;
+  /** Browser SpeechSynthesis fallback (no scrub timeline). */
+  isBrowserTts?: boolean;
+  /** Scene boundaries as fractions of duration (0–1), e.g. from stream narrativeScenes. */
+  chapterFractions?: number[] | null;
+  /** Brief on-screen cue when the scene advances (Learn stories). */
+  enableSceneReflectionCue?: boolean;
   isPlaying: boolean;
   isLoading: boolean;
   title: string | null;
   /** Optional line under the title (e.g. Learn focus or theme while listening). */
   subtitle?: string | null;
+  /** Library interactive episode — parent-facing cue (pauses / choices). */
+  practiceStoryChip?: boolean;
+  /** Extra controls (e.g. per-story voice and play mode) rendered under the subtitle. */
+  extras?: React.ReactNode;
   currentTime: number;
   duration: number;
   onPlayPause: () => void;
@@ -38,10 +48,15 @@ export default function StoryAudioPlayer({
   videoRef,
   avatarVideoUrl,
   hostClipUrl,
+  isBrowserTts = false,
+  chapterFractions = null,
+  enableSceneReflectionCue = false,
   isPlaying,
   isLoading,
   title,
   subtitle,
+  practiceStoryChip = false,
+  extras,
   currentTime,
   duration,
   onPlayPause,
@@ -51,6 +66,39 @@ export default function StoryAudioPlayer({
 }: StoryAudioPlayerProps) {
   const progressRef = useRef<HTMLInputElement | null>(null);
   const hostClipRef = useRef<HTMLVideoElement | null>(null);
+  const [reflectionCue, setReflectionCue] = useState(false);
+  const prevSceneIdxRef = useRef<number | null>(null);
+  const cueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const sortedChapters = useMemo(
+    () =>
+      chapterFractions?.length
+        ? [...new Set(chapterFractions.filter((t) => t > 0.02 && t < 0.98))].sort((a, b) => a - b)
+        : [],
+    [chapterFractions]
+  );
+
+  useEffect(() => {
+    if (!enableSceneReflectionCue || sortedChapters.length < 1 || duration <= 0 || isBrowserTts) {
+      prevSceneIdxRef.current = null;
+      return;
+    }
+    const frac = currentTime / duration;
+    let idx = 0;
+    for (const b of sortedChapters) {
+      if (frac + 1e-6 >= b) idx++;
+    }
+    const prev = prevSceneIdxRef.current;
+    if (prev !== null && idx !== prev) {
+      if (cueTimeoutRef.current) clearTimeout(cueTimeoutRef.current);
+      setReflectionCue(true);
+      cueTimeoutRef.current = setTimeout(() => setReflectionCue(false), 4200);
+    }
+    prevSceneIdxRef.current = idx;
+    return () => {
+      if (cueTimeoutRef.current) clearTimeout(cueTimeoutRef.current);
+    };
+  }, [currentTime, duration, enableSceneReflectionCue, isBrowserTts, sortedChapters]);
 
   useEffect(() => {
     const clip = hostClipRef.current;
@@ -146,6 +194,12 @@ export default function StoryAudioPlayer({
       {subtitle != null && subtitle !== "" ? (
         <p className="story-audio-player-subtitle">{subtitle}</p>
       ) : null}
+      {practiceStoryChip ? (
+        <p className="story-audio-player-practice-chip" role="status">
+          Practice story · choices
+        </p>
+      ) : null}
+      {extras != null ? <div className="story-audio-player-extras">{extras}</div> : null}
       <div className="story-audio-player-controls">
         <button
           type="button"
@@ -156,24 +210,68 @@ export default function StoryAudioPlayer({
         >
           {isLoading ? "…" : isPlaying ? "⏸" : "▶"}
         </button>
+        {isBrowserTts ? (
+          <p className="story-audio-player-tts-hint muted" style={{ margin: 0, fontSize: "0.75rem", flex: 1 }}>
+            Read-aloud mode — pause stops playback (restart from beginning to play again).
+          </p>
+        ) : (
         <div className="story-audio-player-progress-wrap">
           <span className="story-audio-player-time" aria-live="polite">
             {formatTime(currentTime)}
           </span>
-          <input
-            ref={progressRef}
-            type="range"
-            className="story-audio-player-progress"
-            min={0}
-            max={duration || 100}
-            step={1}
-            value={currentTime}
-            onChange={handleSeek}
-            aria-label="Playback position"
-          />
+          <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+            {sortedChapters.length > 0 && (
+              <div
+                className="story-audio-player-chapter-ticks"
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  height: 8,
+                  pointerEvents: "none",
+                }}
+              >
+                {sortedChapters.map((t, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      position: "absolute",
+                      left: `${t * 100}%`,
+                      transform: "translateX(-50%)",
+                      width: 2,
+                      height: 8,
+                      background: "rgba(255,255,255,0.55)",
+                      borderRadius: 1,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+            <input
+              ref={progressRef}
+              type="range"
+              className="story-audio-player-progress"
+              min={0}
+              max={duration || 100}
+              step={1}
+              value={currentTime}
+              onChange={handleSeek}
+              aria-label="Playback position"
+              style={{ position: "relative", zIndex: 1, width: "100%" }}
+            />
+          </div>
           <span className="story-audio-player-time">{formatTime(duration)}</span>
         </div>
+        )}
       </div>
+      {reflectionCue ? (
+        <p className="story-audio-player-reflection-cue muted" style={{ margin: "0.35rem 0 0", fontSize: "0.8rem", textAlign: "center" }}>
+          New scene — pause if you’d like to chat together for a moment.
+        </p>
+      ) : null}
     </div>
       )}
     </>

@@ -13,10 +13,9 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Service
 
 /**
- * Generates AI cover illustrations for generated stories. Builds a DALL-E reference frame, then
- * **prefers** animated GIF (Sora image-to-video + FFmpeg) when enabled; uploads GIF before static
- * image. Falls back to static-only when Sora/storage/FFmpeg are unavailable or fail.
- * Theme: Tamil Nadu / South India, culturally neutral (no religion/caste). HD quality.
+ * Generates AI cover illustrations for generated stories: still image (DALL·E or Gemini per config), then optional animated GIF when a
+ * [CoverVideoGenerationPort] bean exists (FFmpeg MP4→GIF). Falls back to static-only when image-to-video is absent
+ * or fails. Theme: Tamil Nadu / South India, culturally neutral (no religion/caste). HD quality.
  */
 @Service
 class StoryIllustrationService(
@@ -32,7 +31,7 @@ class StoryIllustrationService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * Generate cover: DALL-E image bytes, then try animated GIF first (upload), then static image (upload).
+     * Generate cover: image bytes from [ImageGenerationPort], then try animated GIF first when image-to-video is configured (upload), then static image (upload).
      * Idempotent: skips if already has cover. When force=true, deletes existing and regenerates.
      */
     fun generateCoverForStory(story: Story, force: Boolean = false): Story? {
@@ -50,20 +49,20 @@ class StoryIllustrationService(
         }
 
         val prompt = buildCoverPrompt(current)
-        log.debug("DALL-E prompt length={} excerpt={}", prompt.length, prompt.take(80))
+        log.debug("Cover image prompt length={} excerpt={}", prompt.length, prompt.take(80))
         val imageBytes = imageGeneration.generateImage(prompt) ?: run {
             val fallbackPrompt = buildPolicySafeFallbackPrompt(current)
-            log.warn("Primary DALL-E failed for story {}, retrying with fallback", current.id)
+            log.warn("Primary cover image generation failed for story {}, retrying with fallback", current.id)
             imageGeneration.generateImage(fallbackPrompt)
         } ?: run {
-            log.warn("Story {} cover generation failed (OpenAI content policy or API)", current.id)
+            log.warn("Story {} cover generation failed (content policy, missing API key, or provider error)", current.id)
             return null
         }
 
         var coverAnimationPath: String? = null
         if (coverVideoGeneration != null && coverVideoStorage != null) {
             val motionPrompt = buildCoverVideoMotionPrompt(current)
-            log.info("Sora (preferred): generating cover animation for story {} before static upload", current.id)
+            log.info("Cover animation: generating GIF for story {} before static upload", current.id)
             val videoBytes = coverVideoGeneration.generateVideoFromImage(imageBytes, motionPrompt)
             if (videoBytes != null) {
                 val gifBytes = videoToGifConverter?.convertMp4ToGif(videoBytes)
@@ -75,13 +74,13 @@ class StoryIllustrationService(
                         log.warn("Story {} cover GIF storage failed", current.id)
                     }
                 } else {
-                    log.warn("Story {} MP4-to-GIF conversion failed (install FFmpeg, SORA_CONVERT_TO_GIF=true)", current.id)
+                    log.warn("Story {} MP4-to-GIF conversion failed (install FFmpeg; app.cover-animation.convert-mp4-to-gif=true)", current.id)
                 }
             } else {
-                log.warn("Story {} cover video generation failed (Sora returned null); continuing with static cover only", current.id)
+                log.warn("Story {} cover video generation failed (adapter returned null); continuing with static cover only", current.id)
             }
         } else {
-            log.debug("Cover animation skipped: Sora or storage not configured — generating static cover only")
+            log.debug("Cover animation skipped: image-to-video or storage not configured — generating static cover only")
         }
 
         val path = imageStorage.storeCoverImage(current.id, imageBytes) ?: run {

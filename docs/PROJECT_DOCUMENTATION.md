@@ -8,13 +8,15 @@ This document is the **single entry point** for understanding the Tamixa monorep
 
 ## 1. Product overview
 
-**Tamixa** is an AI-assisted storytelling product for families: parents configure child-friendly profiles, browse a **story library**, generate **personalized stories**, listen with **TTS** (and optional **cloned parent voice**), and optionally use **avatar / video** experiences. An **admin** web app supports content operations, moderation, and pipeline tooling. A **parent web** client (React) complements the primary **mobile** app (Kotlin Multiplatform + Compose).
+**Tamixa** is an AI-assisted **storytelling and edustory** product for families and lifelong listeners: parents configure profiles, browse a **story library**, generate **personalized stories**, listen with **TTS** (and optional **cloned parent voice**), and optionally use **avatar / video** experiences. Content strategy spans **Fun** (entertainment, wonder, culture—today’s library and generation stay in this lane) and **Edu** (life skills, money, research habits, case-style reasoning, growth, and work intuition—delivered as narrative first, not as a course app). See **[EDUSTORY_PRODUCT_VISION.md](EDUSTORY_PRODUCT_VISION.md)** for audiences (kids through seniors), content pillars, and differentiated product ideas.
+
+An **admin** web app supports content operations, moderation, and pipeline tooling. A **parent web** client (React) complements the primary **mobile** app (Kotlin Multiplatform + Compose).
 
 | Stakeholder | Primary surface | Goals |
 |-------------|-----------------|--------|
-| Parent / caregiver | Mobile (first), Web | Safe stories, personalization, subscription, voice/avatar setup |
-| Child (via parent device) | Mobile | Listening, simple navigation within parent-controlled flows |
-| Operations / content | Admin (Next.js) | Curated stories, approvals, users, health, revenue views |
+| Parent / caregiver | Mobile (first), Web | Safe stories, personalization, subscription, voice/avatar setup; optional shared Edu listening |
+| Child / teen / adult / senior (via household device or own profile where offered) | Mobile, Web | Listening, discovery; Edu framed by age-appropriate story collections |
+| Operations / content | Admin (Next.js) | Curated stories, Fun vs Edu tagging/collections, approvals, users, health, revenue views |
 | Platform / integrations | Backend | Auth, billing webhooks, AI/TTS vendors, storage, push |
 
 ---
@@ -374,6 +376,10 @@ The mobile app’s **screens and API alignment** are documented in [ARCHITECTURE
 
 | Topic | Document |
 |--------|----------|
+| Edustory vision, Fun vs Edu, audiences, innovation ideas | [EDUSTORY_PRODUCT_VISION.md](EDUSTORY_PRODUCT_VISION.md) |
+| Edustory values and principles | [EDUSTORY_VALUES_AND_PRINCIPLES.md](EDUSTORY_VALUES_AND_PRINCIPLES.md) |
+| Edustory India problems → features | [EDUSTORY_INDIA_PROBLEMS_AND_FEATURES.md](EDUSTORY_INDIA_PROBLEMS_AND_FEATURES.md) |
+| Edustory content matrix, engineering phases, twelve-month simulator roadmap | [EDUSTORY_CONTENT_MATRIX_AND_ROADMAP.md](EDUSTORY_CONTENT_MATRIX_AND_ROADMAP.md) |
 | Integrations and optional guardrails | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Narration / TTS pipeline | [backend/NARRATION_ARCHITECTURE.md](backend/NARRATION_ARCHITECTURE.md) |
 | Voice cloning | [VOICE_CLONING_ARCHITECTURE.md](VOICE_CLONING_ARCHITECTURE.md) |
@@ -382,6 +388,7 @@ The mobile app’s **screens and API alignment** are documented in [ARCHITECTURE
 | Env vars | [ENV_REFERENCE.md](ENV_REFERENCE.md) |
 | AI guardrails | [AI_GUARDRAILS.md](AI_GUARDRAILS.md) |
 | Admin UI / pipeline | [admin/](admin/) |
+| Library Fun / Edu / Simulator categories & authoring | [admin/EDU_METADATA_CONVENTIONS.md](admin/EDU_METADATA_CONVENTIONS.md), [admin/EDUSTORY_SIMULATOR_CONTENT_BLUEPRINT.md](admin/EDUSTORY_SIMULATOR_CONTENT_BLUEPRINT.md) |
 | Cursor / agent rules | [AGENTS.md](../AGENTS.md), [CURSOR_AGENTS_GUIDE.md](CURSOR_AGENTS_GUIDE.md) |
 
 ---

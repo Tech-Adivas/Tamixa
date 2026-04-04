@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useParams, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -10,6 +10,7 @@ import {
   STORY_CATEGORIES,
   AGE_GROUPS,
   MIN_WORD_COUNT,
+  EMOTION_MODES,
 } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,9 +32,21 @@ import {
   isLibraryStoryPipelineActivelyRunning,
   isLibraryStoryInReviewQueue,
   REGENERATE_THEN_TRANSLATIONS_HELP,
+  getLibraryStoryMasterScriptContentError,
+  adminStoryEmotionModeLabel,
+  ADMIN_POST_CREATE_PROMPTS_KEY,
 } from "@/lib/library-story-workflow";
 import { parseJsonStoryContent, resolveLibraryStoryEditorBody } from "@/lib/utils";
-import { ArrowLeft, Save, ImagePlus, Sparkles, RefreshCw, ExternalLink } from "lucide-react";
+import { lintInteractiveGraphJson } from "@/lib/interactive-graph-lint";
+import { outlineInteractiveGraphJson } from "@/lib/interactive-graph-outline";
+import {
+  DIGITAL_SAFETY_INTERACTIVE_GRAPH_TEMPLATE,
+  DIGITAL_SAFETY_SIMULATOR_POST_MISSION,
+  DIGITAL_SAFETY_SIMULATOR_THEME,
+  getDefaultDecisionJournalUrl,
+} from "@/lib/edu-simulator-template";
+import { validateInteractiveStoryCategory } from "@/lib/story-interactive-conventions";
+import { ArrowLeft, Save, ImagePlus, Sparkles, RefreshCw, ExternalLink, Braces, LayoutTemplate } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   StoryWorkflowStepper,
@@ -359,6 +372,8 @@ export default function EditLibraryStoryPage() {
   /** Guard against rapid double-clicks before React state disables buttons. */
   const submitInFlightRef = useRef(false);
   const regenerateInFlightRef = useRef(false);
+  /** One-time: apply Create-page prompts + optional welcome when landing from new story flow. */
+  const postCreateFlowHandledRef = useRef<number | null>(null);
 
   const elevatedAdmin = isElevatedStoryAdmin(user?.role);
   const regenerateBlockedForRole =
@@ -367,6 +382,21 @@ export default function EditLibraryStoryPage() {
   const wordCount = form?.content
     ? form.content.split(/\s+/).filter((w) => w.trim()).length
     : 0;
+  const interactiveGraphLint = useMemo(() => {
+    const ig = form?.interactiveGraph?.trim();
+    if (!ig) return { ok: true as const, errors: [] as string[] };
+    return lintInteractiveGraphJson(ig);
+  }, [form?.interactiveGraph]);
+  const interactiveCategoryHint = useMemo(() => {
+    const ig = form?.interactiveGraph?.trim();
+    if (!ig || !interactiveGraphLint.ok) return null;
+    return validateInteractiveStoryCategory(form?.theme, ig);
+  }, [form?.theme, form?.interactiveGraph, interactiveGraphLint.ok]);
+  const interactiveGraphOutline = useMemo(() => {
+    const ig = form?.interactiveGraph?.trim();
+    if (!ig || !interactiveGraphLint.ok) return null;
+    return outlineInteractiveGraphJson(ig);
+  }, [form?.interactiveGraph, interactiveGraphLint.ok]);
   const isValidWordCount = wordCount >= MIN_WORD_COUNT;
   const inReviewQueue = isLibraryStoryInReviewQueue(form?.status);
   const workflowBusy =
@@ -430,6 +460,18 @@ export default function EditLibraryStoryPage() {
           : undefined,
         parentContentNote: story.parentContentNote ?? null,
         speakAlongPrompt: story.speakAlongPrompt ?? null,
+        interactiveGraph: (() => {
+          const g = story.interactiveGraph;
+          if (g == null) return "";
+          if (typeof g === "string") return g;
+          try {
+            return JSON.stringify(g, null, 2);
+          } catch {
+            return "";
+          }
+        })(),
+        postStoryMission: story.postStoryMission?.trim() ?? "",
+        postStoryResourceUrl: story.postStoryResourceUrl?.trim() ?? "",
       });
       setReviewerFeedback(story.reviewNotes?.trim() ? story.reviewNotes.trim() : null);
       setCoverVideoUrl(story.coverVideoUrl ?? null);
@@ -607,8 +649,39 @@ export default function EditLibraryStoryPage() {
       .finally(() => setLoading(false));
   }, [id, router, loadStoryContent, refreshStoryPipelineStatus, refreshRegenerateStatus, showError]);
 
-  /** Tamil Unicode block U+0B80–U+0BFF */
-  const hasTamilScript = (text: string) => /[\u0B80-\u0BFF]/.test(text);
+  useEffect(() => {
+    if (!id || Number.isNaN(id) || loading) return;
+    if (postCreateFlowHandledRef.current === id) return;
+
+    try {
+      const raw = sessionStorage.getItem(ADMIN_POST_CREATE_PROMPTS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { storyId?: number; cover?: string; regenerate?: string };
+        if (parsed.storyId === id) {
+          if (parsed.cover?.trim()) {
+            setCoverCustomPrompt((p) => (p.trim() ? p : parsed.cover!));
+          }
+          if (parsed.regenerate?.trim()) {
+            setRegenerateCustomPrompt((p) => (p.trim() ? p : parsed.regenerate!));
+          }
+          sessionStorage.removeItem(ADMIN_POST_CREATE_PROMPTS_KEY);
+        }
+      }
+      if (searchParams.get("fromCreate") === "1") {
+        showSuccess(
+          "Story created",
+          "You are on All languages: run Regenerate & sync when ready, then Cover, then Submit — same order as Edit."
+        );
+        const q = new URLSearchParams(searchParams.toString());
+        q.delete("fromCreate");
+        router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      postCreateFlowHandledRef.current = id;
+    }
+  }, [id, loading, searchParams, pathname, router, showSuccess]);
 
   const validate = useCallback((): boolean => {
     if (!form) return false;
@@ -617,13 +690,36 @@ export default function EditLibraryStoryPage() {
     if (!form.content?.trim()) errs.content = "Story text is required";
     else if (wordCount < MIN_WORD_COUNT)
       errs.content = `Minimum ${MIN_WORD_COUNT} words required (current: ${wordCount})`;
-    else if (form.language === "ta" && !hasTamilScript(form.content))
-      errs.content = "Story content must contain Tamil script (தமிழ் characters). Use “Regenerate with prompt” to get Tamil output.";
+    else {
+      const scriptErr = getLibraryStoryMasterScriptContentError(form.content, form.language);
+      if (scriptErr) errs.content = scriptErr;
+    }
     if (form.title?.trim() && form.title.length > 255)
       errs.title = "Title must be 255 characters or less";
+    const ig = form.interactiveGraph?.trim();
+    if (ig) {
+      const igLint = lintInteractiveGraphJson(ig);
+      if (!igLint.ok) errs.interactiveGraph = igLint.errors.join(" · ");
+      else {
+        const categoryErr = validateInteractiveStoryCategory(form.theme, ig);
+        if (categoryErr) {
+          if (errs.theme) errs.theme = `${errs.theme} — ${categoryErr}`;
+          else errs.theme = categoryErr;
+          errs.interactiveGraph = categoryErr;
+        }
+      }
+    }
     setValidationErrors(errs);
     return Object.keys(errs).length === 0;
   }, [form, wordCount]);
+
+  const goNextWorkflowStep = useCallback(() => {
+    if (workflowStep === 0 && !validate()) {
+      showError("Check story", "Fix the highlighted fields before continuing.");
+      return;
+    }
+    setWorkflowStep(workflowStep + 1);
+  }, [workflowStep, validate, setWorkflowStep, showError]);
 
   /** Tamixa TTS-script conversion → persist draft (all languages from API) → server pipeline rebuild. */
   const handleRegenerateAndSyncScripts = useCallback(async () => {
@@ -823,6 +919,44 @@ export default function EditLibraryStoryPage() {
     regenerateCustomPrompt,
   ]);
 
+  const applyDigitalSafetyTemplate = () => {
+    if (!form) return;
+    if (form.interactiveGraph?.trim()) {
+      if (
+        !window.confirm(
+          "Replace the interactive graph? Theme will be set to Digital Safety simulator; post-mission is filled only if it is empty."
+        )
+      ) {
+        return;
+      }
+    }
+    const journalUrl = getDefaultDecisionJournalUrl();
+    setForm({
+      ...form,
+      theme: DIGITAL_SAFETY_SIMULATOR_THEME,
+      interactiveGraph: DIGITAL_SAFETY_INTERACTIVE_GRAPH_TEMPLATE,
+      postStoryMission: form.postStoryMission?.trim()
+        ? form.postStoryMission
+        : DIGITAL_SAFETY_SIMULATOR_POST_MISSION,
+      postStoryResourceUrl: form.postStoryResourceUrl?.trim() ? form.postStoryResourceUrl : journalUrl || "",
+    });
+  };
+
+  const formatInteractiveGraphField = () => {
+    if (!form) return;
+    const ig = form.interactiveGraph?.trim();
+    if (!ig) {
+      showError("Nothing to format", "Paste or load interactive graph JSON first.");
+      return;
+    }
+    try {
+      const obj = JSON.parse(ig) as unknown;
+      setForm({ ...form, interactiveGraph: JSON.stringify(obj, null, 2) });
+    } catch (e) {
+      showError("Invalid JSON", e instanceof Error ? e.message : "Could not parse JSON.");
+    }
+  };
+
   const handleSubmit = async (publish: boolean) => {
     if (!form || !id) return;
     if (submitInFlightRef.current) return;
@@ -867,6 +1001,9 @@ export default function EditLibraryStoryPage() {
         parentDiscussionPrompts: form.parentDiscussionPrompts?.length
           ? form.parentDiscussionPrompts
           : null,
+        interactiveGraph: form.interactiveGraph?.trim() ? form.interactiveGraph.trim() : null,
+        postStoryMission: form.postStoryMission?.trim() || null,
+        postStoryResourceUrl: form.postStoryResourceUrl?.trim() || null,
       });
       if (publish) {
         showSuccess(
@@ -914,8 +1051,10 @@ export default function EditLibraryStoryPage() {
             Edit Story #{id}
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Min {MIN_WORD_COUNT} words · Master language (saved on update): {sourceLangLabel(form.language ?? "ta")} · Tamil
-            script required when master is Tamil
+            Min {MIN_WORD_COUNT} words · Master (saved on update): {sourceLangLabel(form.language ?? "ta")}
+            {form.language !== "en"
+              ? ` · ${sourceLangLabel(form.language ?? "ta")} script required in story text when master is not English`
+              : ""}
           </p>
         </div>
         <Button
@@ -951,6 +1090,10 @@ export default function EditLibraryStoryPage() {
               "Pipeline still active",
               "The pipeline is queued or running for this story. Wait for Regenerate & sync to finish before moving to the next step."
             );
+            return;
+          }
+          if (next > workflowStep && workflowStep === 0 && next >= 1 && !validate()) {
+            showError("Check story", "Fix the highlighted fields before leaving the Content step.");
             return;
           }
           setWorkflowStep(next);
@@ -996,10 +1139,9 @@ export default function EditLibraryStoryPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">Story content</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Title, category, <strong>story text</strong> (translation/master row), and optional{" "}
-                pipeline-managed TTS script for the <strong>master</strong> language.
-                Use the next step for other languages, cover, and the
-                translation pipeline.
+                Title, category, <strong>story text</strong> (master language), and optional pipeline-managed TTS script for
+                the master row. Next: <strong>All languages</strong> (regenerate &amp; sync), then <strong>Cover</strong>, then
+                submit.
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1085,6 +1227,9 @@ export default function EditLibraryStoryPage() {
                 {validationErrors.theme && (
                   <p className="text-sm text-destructive mt-1">{validationErrors.theme}</p>
                 )}
+                {interactiveCategoryHint && !validationErrors.theme ? (
+                  <p className="text-sm text-amber-600 dark:text-amber-500 mt-1">{interactiveCategoryHint}</p>
+                ) : null}
               </div>
 
               <div>
@@ -1170,6 +1315,24 @@ export default function EditLibraryStoryPage() {
                 <Label htmlFor="moral">Moral (optional)</Label>
                 <Input id="moral" value={form.moral ?? ""} onChange={(e) => setForm((f) => (f ? { ...f, moral: e.target.value } : f))} placeholder="e.g. Sharing brings joy" className="mt-1 rounded-lg" />
               </div>
+              <div>
+                <Label htmlFor="emotionMode">Narration tone</Label>
+                <Select
+                  value={form.emotionMode ?? "CALM"}
+                  onValueChange={(v) => setForm((f) => (f ? { ...f, emotionMode: v } : f))}
+                >
+                  <SelectTrigger id="emotionMode" className="mt-1 rounded-lg">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EMOTION_MODES.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {adminStoryEmotionModeLabel(m)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Age group</Label>
@@ -1238,6 +1401,112 @@ export default function EditLibraryStoryPage() {
                   />
                 </div>
               </div>
+              <div className="rounded-lg border border-border/80 bg-muted/10 p-4 space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold">Interactive episode (EduStory pilot)</p>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-prose">
+                      Valid JSON with <code className="rounded bg-muted px-1">startSegmentId</code> and{" "}
+                      <code className="rounded bg-muted px-1">segments</code> (each segment:{" "}
+                      <code className="rounded bg-muted px-1">audioUrl</code>, optional{" "}
+                      <code className="rounded bg-muted px-1">choices</code> with{" "}
+                      <code className="rounded bg-muted px-1">id</code>, <code className="rounded bg-muted px-1">label</code>,{" "}
+                      <code className="rounded bg-muted px-1">nextSegmentId</code>, optional{" "}
+                      <code className="rounded bg-muted px-1">skillDeltas</code>). Leave empty for linear playback only.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    <Button type="button" variant="secondary" size="sm" onClick={applyDigitalSafetyTemplate}>
+                      <LayoutTemplate className="h-4 w-4 mr-1.5" />
+                      Digital Safety template
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={formatInteractiveGraphField}>
+                      <Braces className="h-4 w-4 mr-1.5" />
+                      Format JSON
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" asChild>
+                      <Link href="/dashboard/edu-simulator-analytics">Choice analytics</Link>
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="interactiveGraph">Interactive graph (JSON)</Label>
+                  <textarea
+                    id="interactiveGraph"
+                    value={form.interactiveGraph ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, interactiveGraph: e.target.value || "" } : f))
+                    }
+                    className="mt-1 flex min-h-[240px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono text-xs"
+                    spellCheck={false}
+                  />
+                  {validationErrors.interactiveGraph ? (
+                    <p className="text-sm text-destructive mt-2">{validationErrors.interactiveGraph}</p>
+                  ) : !interactiveGraphLint.ok ? (
+                    <ul className="text-sm text-destructive mt-2 list-disc pl-5 space-y-0.5">
+                      {interactiveGraphLint.errors.map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  ) : form.interactiveGraph?.trim() ? (
+                    <p className="text-sm text-muted-foreground mt-2">Interactive graph JSON looks valid.</p>
+                  ) : null}
+                </div>
+                {interactiveGraphOutline && interactiveGraphOutline.length > 0 ? (
+                  <div className="rounded-md border border-border/60 bg-background/80 p-3 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Flow preview</p>
+                    <ol className="text-sm space-y-2 list-decimal pl-4">
+                      {interactiveGraphOutline.map((seg) => (
+                        <li key={seg.id}>
+                          <span className="font-mono text-xs">{seg.id}</span>
+                          {seg.isEnd ? (
+                            <span className="text-muted-foreground"> — end</span>
+                          ) : (
+                            <ul className="mt-1 space-y-0.5 pl-0 list-none">
+                              {seg.choices.map((c) => (
+                                <li key={c.id} className="text-xs text-muted-foreground">
+                                  → <span className="text-foreground">{c.label}</span>{" "}
+                                  <span className="font-mono">({c.nextSegmentId})</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
+                <div>
+                  <Label htmlFor="postStoryMission">Post-episode family mission (plain text)</Label>
+                  <textarea
+                    id="postStoryMission"
+                    value={form.postStoryMission ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, postStoryMission: e.target.value || "" } : f))
+                    }
+                    className="mt-1 flex min-h-[80px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                    maxLength={8000}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="postStoryResourceUrl">Optional resource link (e.g. decision journal)</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Printable journal: parent app <code className="rounded bg-muted px-1">/decision-journal.html</code>. Pre-fill
+                    via admin env <code className="rounded bg-muted px-1">NEXT_PUBLIC_DECISION_JOURNAL_URL</code> (HTTPS in
+                    production).
+                  </p>
+                  <Input
+                    id="postStoryResourceUrl"
+                    value={form.postStoryResourceUrl ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, postStoryResourceUrl: e.target.value || "" } : f))
+                    }
+                    className="mt-1 rounded-lg"
+                    maxLength={512}
+                    placeholder="https://..."
+                  />
+                </div>
+              </div>
             </CardContent>
           </Card>
             </>
@@ -1249,8 +1518,8 @@ export default function EditLibraryStoryPage() {
               <CardTitle className="text-base font-semibold">Other languages</CardTitle>
               <p className="text-sm text-muted-foreground">
                 Edit per-language text if needed. Use <strong>Regenerate &amp; sync all languages</strong> in the right panel to run
-                Tamixa TTS script conversion and rebuild conversational scripts for every pipeline language (no MP3s). After
-                approval, open <strong>Narration</strong> and use <strong>Generate audio</strong>.
+                Tamixa TTS script conversion and rebuild scripts for every pipeline language (no MP3s). When idle, go to{" "}
+                <strong>Cover</strong>. After approval, open <strong>Narration</strong> and use <strong>Generate audio</strong>.
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1331,10 +1600,117 @@ export default function EditLibraryStoryPage() {
           {workflowStep === 2 && (
             <Card>
               <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">Cover</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  After scripts are synced on the previous step, add the poster. AI-generated or paste a URL — same controls as
+                  before, moved here so cover comes <strong>after</strong> language sync.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input
+                  value={form.coverImageUrl ?? ""}
+                  onChange={(e) => setForm((f) => (f ? { ...f, coverImageUrl: e.target.value || null } : f))}
+                  placeholder="URL or generate below"
+                  className="rounded-lg h-9 text-sm"
+                />
+                <div className="space-y-1.5">
+                  <Label htmlFor="cover-custom-prompt-main" className="text-xs font-medium">
+                    Custom cover instructions (optional)
+                  </Label>
+                  <textarea
+                    id="cover-custom-prompt-main"
+                    className="w-full min-h-[88px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="e.g. Warmer evening light; show the river in the background; keep characters younger…"
+                    value={coverCustomPrompt}
+                    onChange={(e) => setCoverCustomPrompt(e.target.value.slice(0, 8000))}
+                    disabled={coverGenerating || !id}
+                    maxLength={8000}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Standard Tamixa cover template is always applied first; your text is appended. {coverCustomPrompt.length}
+                    /8000 characters.
+                  </p>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={coverGenerating || !id}
+                    onClick={async () => {
+                      if (!id) return;
+                      setCoverGenerating(true);
+                      try {
+                        const hasCover = !!(form.coverImageUrl?.trim() || coverVideoUrl?.trim());
+                        const updated = await api.admin.regenerateLibraryStoryCover(
+                          id,
+                          hasCover,
+                          coverCustomPrompt.trim() || null
+                        );
+                        setForm((f) =>
+                          f ? { ...f, coverImageUrl: updated?.coverImageUrl?.trim() ?? f.coverImageUrl ?? "" } : f
+                        );
+                        setCoverVideoUrl(updated?.coverVideoUrl ?? null);
+                        setCoverRefreshKey(Date.now());
+                        showSuccess("Generate cover", hasCover ? "New cover generated." : "Cover generated.");
+                      } catch (e) {
+                        showError("Failed", e instanceof Error ? e.message : "Generate cover failed");
+                      } finally {
+                        setCoverGenerating(false);
+                      }
+                    }}
+                  >
+                    <ImagePlus className="h-3.5 w-3.5 mr-1" />
+                    {coverGenerating ? "Generating…" : "Generate cover"}
+                  </Button>
+                </div>
+                {(form.coverImageUrl?.trim() || coverVideoUrl) && (
+                  <div className="space-y-2 pt-1">
+                    {coverVideoUrl?.trim() && (
+                      <div className="relative aspect-video max-w-xl rounded-lg border bg-muted/30 overflow-hidden">
+                        {coverVideoUrl.includes(".gif") ? (
+                          <Image
+                            key={coverRefreshKey}
+                            src={`${resolveCoverSrc(coverVideoUrl) ?? coverVideoUrl}?t=${coverRefreshKey}`}
+                            alt="Animated"
+                            fill
+                            unoptimized
+                            className="object-cover"
+                          />
+                        ) : (
+                          <video
+                            key={coverRefreshKey}
+                            src={resolveCoverSrc(coverVideoUrl) ?? coverVideoUrl}
+                            className="w-full h-full object-cover"
+                            controls
+                            loop
+                            muted
+                            playsInline
+                          />
+                        )}
+                      </div>
+                    )}
+                    {form.coverImageUrl?.trim() && (
+                      <div className="relative aspect-video max-w-xl rounded-lg border bg-muted/30 overflow-hidden">
+                        <CoverImageWithFallback
+                          key={coverRefreshKey}
+                          src={`${resolveCoverSrc(form.coverImageUrl) ?? form.coverImageUrl}?t=${coverRefreshKey}`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {workflowStep === 3 && (
+            <Card>
+              <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold">Save &amp; submit for review</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  When you are happy with the master story, translations, and cover, save a draft or send the story to the
-                  review queue. Use the actions in the right column.
+                  When content, languages, and cover are ready, save a draft or send the story to the review queue. Use the
+                  actions in the right column.
                 </p>
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
@@ -1351,7 +1727,7 @@ export default function EditLibraryStoryPage() {
             </Card>
           )}
 
-          {workflowStep === 3 && (
+          {workflowStep === 4 && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold">Story for review</CardTitle>
@@ -1364,7 +1740,7 @@ export default function EditLibraryStoryPage() {
                 {id != null && !Number.isNaN(id) ? (
                   <StoryReviewStepPanel
                     storyId={id}
-                    onGoToSubmitStep={() => setWorkflowStep(2)}
+                    onGoToSubmitStep={() => setWorkflowStep(3)}
                     onStoryRefresh={() => void loadStoryContent(id)}
                   />
                 ) : null}
@@ -1382,7 +1758,7 @@ export default function EditLibraryStoryPage() {
             </Card>
           )}
 
-          {workflowStep === 4 && (
+          {workflowStep === 5 && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold">Narration (audio)</CardTitle>
@@ -1395,7 +1771,7 @@ export default function EditLibraryStoryPage() {
                 {id != null && !Number.isNaN(id) ? (
                   <StoryNarrationStepPanel
                     storyId={id}
-                    onGoToReviewStep={() => setWorkflowStep(3)}
+                    onGoToReviewStep={() => setWorkflowStep(4)}
                     onStoryRefresh={() => void loadStoryContent(id)}
                   />
                 ) : null}
@@ -1412,98 +1788,6 @@ export default function EditLibraryStoryPage() {
         </div>
 
         <div className="space-y-6 lg:sticky lg:top-20 lg:self-start">
-          {(workflowStep === 0 || workflowStep === 1) && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">Cover</CardTitle>
-              <p className="text-xs text-muted-foreground">AI-generated or paste URL</p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Input
-                value={form.coverImageUrl ?? ""}
-                onChange={(e) => setForm((f) => (f ? { ...f, coverImageUrl: e.target.value || null } : f))}
-                placeholder="URL or regenerate"
-                className="rounded-lg h-9 text-sm"
-              />
-              <div className="space-y-1.5">
-                <Label htmlFor="cover-custom-prompt" className="text-xs font-medium">
-                  Custom cover instructions (optional)
-                </Label>
-                <textarea
-                  id="cover-custom-prompt"
-                  className="w-full min-h-[88px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="e.g. Warmer evening light; show the river in the background; keep characters younger; more magical sparkles in the sky…"
-                  value={coverCustomPrompt}
-                  onChange={(e) => setCoverCustomPrompt(e.target.value.slice(0, 8000))}
-                  disabled={coverGenerating || !id}
-                  maxLength={8000}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Standard Tamixa cover template (story title + excerpt + style rules) is always applied first; your text is appended for
-                  illustration and motion. {coverCustomPrompt.length}/8000 characters.
-                </p>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 min-w-0"
-                  disabled={coverGenerating || !id}
-                  onClick={async () => {
-                    if (!id) return;
-                    setCoverGenerating(true);
-                    try {
-                      const hasCover = !!(form.coverImageUrl?.trim() || coverVideoUrl?.trim());
-                      const updated = await api.admin.regenerateLibraryStoryCover(
-                        id,
-                        hasCover,
-                        coverCustomPrompt.trim() || null
-                      );
-                      setForm((f) => (f ? { ...f, coverImageUrl: updated?.coverImageUrl?.trim() ?? f.coverImageUrl ?? "" } : f));
-                      setCoverVideoUrl(updated?.coverVideoUrl ?? null);
-                      setCoverRefreshKey(Date.now());
-                      showSuccess("Generate cover", hasCover ? "New cover generated." : "Cover generated.");
-                    } catch (e) {
-                      showError("Failed", e instanceof Error ? e.message : "Generate cover failed");
-                    } finally {
-                      setCoverGenerating(false);
-                    }
-                  }}
-                >
-                  <ImagePlus className="h-3.5 w-3.5 mr-1" />
-                  {coverGenerating ? "Generating…" : "Generate cover"}
-                </Button>
-              </div>
-              {(form.coverImageUrl?.trim() || coverVideoUrl) && (
-                <div className="space-y-2 pt-1">
-                  {coverVideoUrl?.trim() && (
-                    <div className="relative aspect-video rounded-lg border bg-muted/30 overflow-hidden">
-                      {coverVideoUrl.includes(".gif") ? (
-                        <Image
-                          key={coverRefreshKey}
-                          src={`${resolveCoverSrc(coverVideoUrl) ?? coverVideoUrl}?t=${coverRefreshKey}`}
-                          alt="Animated"
-                          fill
-                          unoptimized
-                          className="object-cover"
-                        />
-                      ) : (
-                        <video key={coverRefreshKey} src={resolveCoverSrc(coverVideoUrl) ?? coverVideoUrl} className="w-full h-full object-cover" controls loop muted playsInline />
-                      )}
-                    </div>
-                  )}
-                  {form.coverImageUrl?.trim() && (
-                    <div className="relative aspect-video rounded-lg border bg-muted/30 overflow-hidden">
-                      <CoverImageWithFallback key={coverRefreshKey} src={`${resolveCoverSrc(form.coverImageUrl) ?? form.coverImageUrl}?t=${coverRefreshKey}`} />
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          )}
-
           {workflowStep === 1 && (
           <Card>
             <CardHeader className="pb-2">
@@ -1600,8 +1884,8 @@ export default function EditLibraryStoryPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold">AI &amp; unlock</CardTitle>
               <p className="text-xs text-muted-foreground">
-                Use <strong>Generate cover</strong> above for the poster. Tamixa TTS script conversion and language sync are on the{" "}
-                <strong>Cover &amp; languages</strong> step: <strong>Regenerate &amp; sync all languages</strong>.
+                Cover art is on the <strong>Cover</strong> step (after sync). Tamixa script conversion is on{" "}
+                <strong>All languages</strong>: <strong>Regenerate &amp; sync all languages</strong>.
               </p>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -1665,16 +1949,16 @@ export default function EditLibraryStoryPage() {
                 </Button>
               )}
               <p className="text-xs text-muted-foreground">
-                Unlock only affects who may run the combined regenerate + pipeline action on the next workflow step.
+                Unlock only affects who may run the combined regenerate + pipeline action on the <strong>All languages</strong> step.
               </p>
             </CardContent>
           </Card>
           )}
 
-          {workflowStep === 2 && (
+          {workflowStep === 3 && (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">Publish</CardTitle>
+              <CardTitle className="text-sm font-semibold">Save &amp; submit</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               <Button onClick={() => handleSubmit(false)} variant="outline" size="default" className="w-full" disabled={workflowBusy}>
@@ -1701,7 +1985,7 @@ export default function EditLibraryStoryPage() {
           </Card>
           )}
 
-          {workflowStep === 3 && (
+          {workflowStep === 4 && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold">Bulk queue</CardTitle>
@@ -1717,7 +2001,7 @@ export default function EditLibraryStoryPage() {
           </Card>
           )}
 
-          {workflowStep === 4 && (
+          {workflowStep === 5 && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold">Bulk queue</CardTitle>
@@ -1739,8 +2023,19 @@ export default function EditLibraryStoryPage() {
         currentStep={workflowStep}
         totalSteps={WORKFLOW_STEP_COUNT}
         onBack={() => setWorkflowStep(workflowStep - 1)}
-        onNext={() => setWorkflowStep(workflowStep + 1)}
+        onNext={goNextWorkflowStep}
         disableNext={blockNextStepForPipeline}
+        nextLabel={
+          workflowStep === 0
+            ? "All languages"
+            : workflowStep === 1
+              ? "Cover"
+              : workflowStep === 2
+                ? "Submit"
+                : workflowStep === 3
+                  ? "Review"
+                  : "Next step"
+        }
       />
     </div>
   );

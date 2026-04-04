@@ -17,8 +17,9 @@ spring:
     hibernate:
       ddl-auto: validate
   datasource:
-    # Require an explicit Railway (or other) URL — no baked-in proxy host. Reference Postgres DATABASE_PUBLIC_URL and/or DATABASE_URL on the service.
-    url: ${DATABASE_PUBLIC_URL:${DATABASE_URL:}}
+    # Same resolution as dev/prod: DATABASE_URL (JDBC) → POSTGRES_* / PG* chain.
+    # DATABASE_PUBLIC_URL (postgresql://...) is applied by PostgresqlUrlEnvironmentPostProcessor when DATABASE_URL is unset.
+    url: ${DATABASE_URL:jdbc:postgresql://${POSTGRES_HOST:${PGHOST:localhost}}:${POSTGRES_PORT:${PGPORT:5432}}/${POSTGRES_DB:${PGDATABASE:araro_kids}}}
     username: ${DATABASE_USERNAME:${POSTGRES_USER:${PGUSER:postgres}}}
     password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:${PGPASSWORD:}}}
     hikari:

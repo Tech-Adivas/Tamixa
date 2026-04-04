@@ -25,6 +25,32 @@ fun isLearnStory(theme: String, category: String?): Boolean {
 
 fun isLearnStory(story: Story): Boolean = isLearnStory(story.theme, story.category)
 
+/** Edu & safety lane: Learn-prefixed metadata or explicit Digital Safety series. */
+fun isLearnOrDigitalSafetyStory(story: Story): Boolean {
+    if (isLearnStory(story)) return true
+    val needle = "digital safety"
+    return story.theme.contains(needle, ignoreCase = true) ||
+        story.category?.contains(needle, ignoreCase = true) == true
+}
+
+/** Interactive life-simulator series (branching); theme/category starts with "Learn · Simulator". */
+private val simulatorPrefix = Regex("^learn\\s*·\\s*simulator\\b", RegexOption.IGNORE_CASE)
+
+fun isSimulatorStory(theme: String, category: String?): Boolean {
+    val c = category?.trim().orEmpty()
+    val t = theme.trim()
+    return simulatorPrefix.containsMatchIn(c) || simulatorPrefix.containsMatchIn(t)
+}
+
+fun isSimulatorStory(story: Story): Boolean = isSimulatorStory(story.theme, story.category)
+
+/** Library “Practice” hub: naming convention or non-empty interactive graph from API. */
+fun isInteractivePracticeLibraryStory(story: Story): Boolean {
+    if (isSimulatorStory(story)) return true
+    val g = story.interactiveGraph
+    return g != null && g.isNotEmpty()
+}
+
 private const val MAX_CONTEXT = 120
 
 private fun truncate(s: String): String =

@@ -50,7 +50,7 @@ export default function Register() {
       <div className="auth-shell-brand">
         <div className="auth-shell-brand-inner">
           <Link to="/" className="auth-shell-brand-logo">
-            <img src="/tamixa-logo.svg" alt="Tamixa" width={180} height={48} className="auth-shell-brand-logo-img" />
+            <img src="/tamixa-app-icon.png" alt="Tamixa" width={112} height={112} className="auth-shell-brand-logo-img" />
           </Link>
           <p className="auth-shell-brand-kicker">Join the fun</p>
           <h2 className="auth-shell-brand-headline">One cozy login for every bedtime adventure</h2>

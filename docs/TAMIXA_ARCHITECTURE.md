@@ -341,7 +341,7 @@ User requests avatar video
             └─ pipeline-status shows PENDING (no translations yet)
 
   Admin can optionally:
-       • regenerateCover (DALL-E) before or after submit
+       • regenerateCover (AI still cover per `AI_COVER_IMAGE_PROVIDER`) before or after submit
        • use "Regenerate with prompt" on the edit page to transform raw text via LLM (preview only; save or submit to persist)
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -551,7 +551,10 @@ processing_job.status (STORY_PIPELINE):
 | `DATABASE_URL`             | PostgreSQL |
 | `REDIS_HOST`              | Cache |
 | `S3_BUCKET`, `AWS_REGION`  | Storage |
-| `OPENAI_API_KEY`           | Story, moderation |
+| `AI_LLM_PROVIDER`          | `openai` or `gemini` (story, moderation, rewrite) |
+| `OPENAI_API_KEY`           | When LLM/cover image uses OpenAI |
+| `GEMINI_API_KEY`           | When LLM, translation, Gemini cover, and/or Veo uses Google AI |
+| `AI_COVER_IMAGE_PROVIDER`  | Still cover: `openai` (DALL·E) or `gemini` |
 | `GOOGLE_CLOUD_TTS_API_KEY` | Default TTS |
 | `ELEVENLABS_API_KEY`       | Voice cloning |
 | `HEYGEN_API_KEY`           | Avatar + HeyGen TTS |

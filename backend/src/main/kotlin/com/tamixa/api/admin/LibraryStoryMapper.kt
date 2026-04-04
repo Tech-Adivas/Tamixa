@@ -1,9 +1,15 @@
 package com.tamixa.api.admin
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.tamixa.api.admin.dto.LibraryStoryResponse
 import com.tamixa.domain.LibraryStory
 
 object LibraryStoryMapper {
+    private val jsonMapper = ObjectMapper()
+
+    fun parseInteractiveGraphJson(raw: String?): com.fasterxml.jackson.databind.JsonNode? =
+        raw?.trim()?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { jsonMapper.readTree(it) }.getOrNull() }
     /**
      * Include coverImageUrl when it's a loadable URL: http(s) or proxy path (/api/v1/covers/...).
      */
@@ -47,6 +53,9 @@ object LibraryStoryMapper {
         parentDiscussionPrompts = parentDiscussionPrompts,
         parentContentNote = parentContentNote,
         speakAlongPrompt = speakAlongPrompt,
+        interactiveGraph = parseInteractiveGraphJson(interactiveGraphJson),
+        postStoryMission = postStoryMission,
+        postStoryResourceUrl = postStoryResourceUrl,
         sourceContent = content
     )
 }

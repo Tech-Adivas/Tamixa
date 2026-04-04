@@ -146,6 +146,19 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
         }
     }
 
+    override suspend fun getLifeSkillPreferredChildId(): Long? {
+        val s = context.dataStore.data.first()[LIFE_SKILL_PREFERRED_CHILD_ID_KEY]?.trim().orEmpty()
+        if (s.isEmpty()) return null
+        return s.toLongOrNull()
+    }
+
+    override suspend fun setLifeSkillPreferredChildId(id: Long?) {
+        context.dataStore.edit { prefs ->
+            if (id == null || id <= 0L) prefs.remove(LIFE_SKILL_PREFERRED_CHILD_ID_KEY)
+            else prefs[LIFE_SKILL_PREFERRED_CHILD_ID_KEY] = id.toString()
+        }
+    }
+
     companion object {
         private val USE_SYSTEM_THEME_KEY = booleanPreferencesKey("use_system_theme")
         private val DARK_MODE_KEY = booleanPreferencesKey("dark_mode")
@@ -160,5 +173,6 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
         private val STORY_ART_PERSONALIZATION_OPT_IN_KEY = booleanPreferencesKey("story_art_personalization_opt_in")
         private val API_BASE_URL_OVERRIDE_KEY = stringPreferencesKey("api_base_url_override")
         private val SUBSCRIPTION_WEB_URL_OVERRIDE_KEY = stringPreferencesKey("subscription_web_url_override")
+        private val LIFE_SKILL_PREFERRED_CHILD_ID_KEY = stringPreferencesKey("life_skill_preferred_child_id")
     }
 }

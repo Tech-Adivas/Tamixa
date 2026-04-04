@@ -20,6 +20,6 @@ data class StoryResponse(
     val audioFileUrl: String?,
     val createdAt: Instant,
     val coverImageUrl: String? = null,
-    /** Animated GIF cover (Sora image-to-video). Shown when available. */
+    /** Animated GIF cover when generated. Shown when available. */
     val coverVideoUrl: String? = null
 )

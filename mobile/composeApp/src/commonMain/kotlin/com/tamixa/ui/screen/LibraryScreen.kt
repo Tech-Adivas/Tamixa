@@ -6,9 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -16,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -33,34 +32,72 @@ import com.tamixa.domain.Story
 import com.tamixa.ui.components.TamixaBottomBar
 import com.tamixa.ui.components.TamixaTab
 import com.tamixa.ui.isFunStory
+import com.tamixa.ui.isInteractivePracticeLibraryStory
+import com.tamixa.ui.isLearnOrDigitalSafetyStory
 import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.TamixaColors
 
-private enum class LibraryHubTab { Browse, FunCorner }
+enum class LibraryHubTab {
+    Browse,
+    FunCorner,
+    LearnSafety,
+    Simulator,
+}
+
+fun LibraryHubTab.toAnalyticsHubKey(): String = when (this) {
+    LibraryHubTab.Browse -> "browse"
+    LibraryHubTab.FunCorner -> "fun"
+    LibraryHubTab.LearnSafety -> "learn"
+    LibraryHubTab.Simulator -> "simulator"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LibraryHubSegmentedRow(
-    browseSelected: Boolean,
+private fun LibraryHubPickerGrid(
+    selected: LibraryHubTab,
     onBrowse: () -> Unit,
     onFunCorner: () -> Unit,
+    onLearnSafety: () -> Unit,
+    onSimulator: () -> Unit,
 ) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        LibraryHubSegment(
-            label = Strings.libraryBrowseTab(),
-            selected = browseSelected,
-            onClick = onBrowse,
-            modifier = Modifier.weight(1f),
-        )
-        LibraryHubSegment(
-            label = Strings.libraryFunCornerTab(),
-            selected = !browseSelected,
-            onClick = onFunCorner,
-            modifier = Modifier.weight(1f),
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            LibraryHubSegment(
+                label = Strings.libraryBrowseTab(),
+                selected = selected == LibraryHubTab.Browse,
+                onClick = onBrowse,
+                modifier = Modifier.weight(1f),
+            )
+            LibraryHubSegment(
+                label = Strings.libraryFunCornerTab(),
+                selected = selected == LibraryHubTab.FunCorner,
+                onClick = onFunCorner,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            LibraryHubSegment(
+                label = Strings.libraryLearnSafetyTab(),
+                selected = selected == LibraryHubTab.LearnSafety,
+                onClick = onLearnSafety,
+                modifier = Modifier.weight(1f),
+            )
+            LibraryHubSegment(
+                label = Strings.librarySimulatorTab(),
+                selected = selected == LibraryHubTab.Simulator,
+                onClick = onSimulator,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -124,13 +161,12 @@ private fun LibraryHubSegment(
 }
 
 /**
- * Story Library: full catalog by default; optional **Fun corner** filters to
- * "Fun stories" / "Funny Stories" categories (lighter classics—no separate “learn” silo).
+ * Story Library: full catalog by default; **Fun corner** and **Learn & safety** filters.
  */
 @Composable
 fun LibraryScreen(
-    /** When true (e.g. deep link), start on the Fun corner tab. */
-    openFunCornerFirst: Boolean = false,
+    /** Initial hub tab from deep link / dashboard shortcuts. */
+    initialHubTab: LibraryHubTab = LibraryHubTab.Browse,
     cachedStories: List<Story>,
     loading: Boolean = false,
     loadError: String? = null,
@@ -143,15 +179,18 @@ fun LibraryScreen(
     onNavigateToProfile: () -> Unit,
     /** API origin for cover URLs in the poster grid. */
     apiBaseUrl: String? = null,
+    /** Fires when the visible library lane changes (incl. initial deep link). No PII. */
+    onHubTabChange: (LibraryHubTab) -> Unit = {},
 ) {
-    var hubTab by rememberSaveable(openFunCornerFirst) {
-        mutableStateOf(
-            if (openFunCornerFirst) LibraryHubTab.FunCorner else LibraryHubTab.Browse,
-        )
+    var hubTab by rememberSaveable(initialHubTab) { mutableStateOf(initialHubTab) }
+    LaunchedEffect(hubTab) {
+        onHubTabChange(hubTab)
     }
     val displayStories = when (hubTab) {
         LibraryHubTab.Browse -> cachedStories
         LibraryHubTab.FunCorner -> cachedStories.filter { isFunStory(it) }
+        LibraryHubTab.LearnSafety -> cachedStories.filter { isLearnOrDigitalSafetyStory(it) }
+        LibraryHubTab.Simulator -> cachedStories.filter { isInteractivePracticeLibraryStory(it) }
     }
     StorySelectionScreen(
         cachedStories = displayStories,
@@ -165,6 +204,8 @@ fun LibraryScreen(
         emptyStateSubtitle = when (hubTab) {
             LibraryHubTab.Browse -> Strings.generateFirstStoryPrompt()
             LibraryHubTab.FunCorner -> Strings.funCornerEmptyHint()
+            LibraryHubTab.LearnSafety -> Strings.learnSafetyEmptyHint()
+            LibraryHubTab.Simulator -> Strings.simulatorHubEmptyHint()
         },
         listLayout = StorySelectionListLayout.LibraryPosterGrid,
         apiBaseUrl = apiBaseUrl,
@@ -173,10 +214,12 @@ fun LibraryScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                LibraryHubSegmentedRow(
-                    browseSelected = hubTab == LibraryHubTab.Browse,
+                LibraryHubPickerGrid(
+                    selected = hubTab,
                     onBrowse = { hubTab = LibraryHubTab.Browse },
                     onFunCorner = { hubTab = LibraryHubTab.FunCorner },
+                    onLearnSafety = { hubTab = LibraryHubTab.LearnSafety },
+                    onSimulator = { hubTab = LibraryHubTab.Simulator },
                 )
                 Text(
                     text = Strings.dashboardSpotlightSubtitle(),

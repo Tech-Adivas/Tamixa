@@ -188,8 +188,10 @@ Clients should **not** rely on parsing English error codes; use HTTP status + `m
 
 | Setting | Env / property | Purpose |
 |---------|----------------|---------|
-| OpenAI key | `OPENAI_API_KEY` / `app.openai.api-key` | Required for real chat + moderations. |
-| Moderation required | `OPENAI_MODERATION_REQUIRED` / `app.openai.moderation-required` | If true and key blank → moderation rejects. Prod profile defaults true. |
+| OpenAI key | `OPENAI_API_KEY` / `app.openai.api-key` | Required when `AI_LLM_PROVIDER=openai` for story/moderation paths using OpenAI. |
+| Gemini key | `GEMINI_API_KEY` / `app.llm.gemini.api-key` | Required when `AI_LLM_PROVIDER=gemini` (and for Gemini translation, Gemini covers, Veo when enabled). |
+| Moderation required (OpenAI) | `OPENAI_MODERATION_REQUIRED` / `app.openai.moderation-required` | If true and OpenAI key blank → OpenAI moderation rejects. Prod profile defaults true. |
+| Moderation required (Gemini) | `GEMINI_MODERATION_REQUIRED` / `app.llm.gemini.moderation-required` | If true and Gemini key blank → Gemini moderation rejects. Prod profile defaults true. |
 | Theme allowlist | `STORY_THEME_ALLOWLIST` / `app.story.theme-allowlist` | Optional comma-separated themes. |
 | Safety score threshold | `STORY_SAFETY_SCORE_THRESHOLD` / `app.story.safety-score-threshold` | Min acceptable heuristic score (default 60). |
 | Keyword blocklist | `STORY_KEYWORD_BLOCKLIST` / `app.story.keyword-blocklist` | Layer 2 in `StoryModerationService`. |

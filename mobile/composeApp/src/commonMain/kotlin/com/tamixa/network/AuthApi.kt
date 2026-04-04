@@ -4,11 +4,14 @@ import com.tamixa.domain.AuthTokens
 import com.tamixa.domain.CurrentUser
 import io.ktor.client.*
 import io.ktor.client.call.body
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.*
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.*
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import com.tamixa.util.TamixaLog
 import kotlinx.serialization.Serializable
 
 /** Matches backend ErrorResponse for proper 4xx/5xx error message extraction. */
@@ -60,6 +63,29 @@ data class RegisterRequest(
     val acceptedParentalAttestation: Boolean = false
 )
 
+@Serializable
+data class ProfileParentJson(
+    val id: Long,
+    val email: String,
+    val nickname: String? = null,
+    val displayName: String? = null,
+)
+
+@Serializable
+data class ProfileChildJson(
+    val id: Long,
+    val name: String,
+    val dateOfBirth: String,
+    val languagePreference: String? = null,
+)
+
+@Serializable
+data class ProfileBootResponse(
+    val parent: ProfileParentJson,
+    val children: List<ProfileChildJson> = emptyList(),
+    val subscriptionPlan: String? = null,
+)
+
 class AuthApi(private val client: HttpClient) {
 
     private suspend fun parseAuthResponse(response: HttpResponse): AuthTokens {
@@ -101,13 +127,37 @@ class AuthApi(private val client: HttpClient) {
             }
         )
 
-    suspend fun me(): CurrentUser =
-        client.get("${ApiConfig.API_VERSION}/auth/me").body()
+    suspend fun me(): CurrentUser {
+        val resp = client.get("${ApiConfig.API_VERSION}/auth/me")
+        resp.bodyIfSuccess<CurrentUser>()?.let { return it }
+        throw ClientRequestException(resp, runCatching { resp.bodyAsText() }.getOrElse { "" })
+    }
+
+    /** Parent + children (same contract as web GET /profile). */
+    suspend fun getProfile(): ProfileBootResponse? =
+        try {
+            val response = client.get("${ApiConfig.API_VERSION}/profile")
+            when (response.status.value) {
+                in 200..299 -> response.body()
+                else -> null
+            }
+        } catch (e: Exception) {
+            TamixaLog.w("AuthApi", "getProfile failed", e)
+            null
+        }
 
     /** Update profile (nickname, displayName). Shown instead of email/phone across the app. */
     suspend fun updateProfile(nickname: String?, displayName: String?) {
-        client.patch("${ApiConfig.API_VERSION}/auth/profile") {
+        val response = client.patch("${ApiConfig.API_VERSION}/auth/profile") {
             setBody(UpdateProfileRequest(nickname = nickname, displayName = displayName))
+        }
+        if (!response.status.isSuccess()) {
+            val msg = try {
+                response.body<ApiErrorResponse>().message
+            } catch (_: Exception) {
+                "Profile update failed (${response.status})"
+            }
+            throw AuthApiException(response.status.value, msg.ifBlank { "Profile update failed (${response.status})" })
         }
     }
 

@@ -22,6 +22,7 @@ class VoiceCloningJobRepositoryAdapter(
             audioFileSizeBytes = job.audioFileSizeBytes,
             voiceName = job.voiceName,
             elevenLabsVoiceId = job.elevenLabsVoiceId,
+            fishAudioModelId = job.fishAudioModelId,
             googleVoiceCloningKey = job.googleVoiceCloningKey,
             status = job.status,
             errorMessage = job.errorMessage,
@@ -52,6 +53,7 @@ class VoiceCloningJobRepositoryAdapter(
         audioFileSizeBytes = it.audioFileSizeBytes,
         voiceName = it.voiceName,
         elevenLabsVoiceId = it.elevenLabsVoiceId,
+        fishAudioModelId = it.fishAudioModelId,
         googleVoiceCloningKey = it.googleVoiceCloningKey,
         status = it.status,
         errorMessage = it.errorMessage,
@@ -65,9 +67,18 @@ class VoiceCloningJobRepositoryAdapter(
         status: VoiceCloningStatus,
         errorMessage: String?,
         elevenLabsVoiceId: String?,
-        googleVoiceCloningKey: String?
+        googleVoiceCloningKey: String?,
+        fishAudioModelId: String?
     ) {
         val now = Instant.now()
-        voiceCloningJobJpaRepository.updateStatus(id, status.name, elevenLabsVoiceId, googleVoiceCloningKey, errorMessage, now)
+        voiceCloningJobJpaRepository.updateStatus(
+            id,
+            status.name,
+            elevenLabsVoiceId,
+            googleVoiceCloningKey,
+            fishAudioModelId,
+            errorMessage,
+            now
+        )
     }
 }

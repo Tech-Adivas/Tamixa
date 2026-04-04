@@ -127,4 +127,20 @@ class NsUserDefaultsPreferences : PreferencesPort {
         }
         defaults.synchronize()
     }
+
+    override suspend fun getLifeSkillPreferredChildId(): Long? {
+        val s = defaults.stringForKey("${prefix}life_skill_preferred_child_id")?.trim().orEmpty()
+        if (s.isEmpty()) return null
+        return s.toLongOrNull()
+    }
+
+    override suspend fun setLifeSkillPreferredChildId(id: Long?) {
+        val key = "${prefix}life_skill_preferred_child_id"
+        if (id == null || id <= 0L) {
+            defaults.removeObjectForKey(key)
+        } else {
+            defaults.setObject(id.toString(), forKey = key)
+        }
+        defaults.synchronize()
+    }
 }

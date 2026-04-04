@@ -28,6 +28,8 @@ object SampleData {
         "Learn · Science & Nature",
         "Learn · Culture & Heritage",
         "Learn · Life Skills",
+        "Learn · Digital Safety",
+        "Learn · Simulator · Digital Safety",
     )
 
     /** English fallback for TTS when Tamil/other language packs are not installed. */

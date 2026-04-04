@@ -20,7 +20,12 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Tamixa Admin",
   description: "Admin dashboard for Tamixa",
-  icons: { icon: "/favicon.svg" },
+  // favicon: app/favicon.ico (generated from app icon). Avoid listing favicon.svg — browsers prefer SVG and it was the old mark.
+  icons: {
+    icon: [{ url: "/favicon.png", sizes: "32x32", type: "image/png" }],
+    shortcut: "/favicon.ico",
+    apple: "/tamixa-app-icon.png",
+  },
 };
 
 export const viewport = {

@@ -7,6 +7,7 @@ const navItems = [
   { to: "/dashboard", label: "Home" },
   { to: "/subscription", label: "Subscription" },
   { to: "/voice", label: "Voice" },
+  { to: "/avatar", label: "Avatar" },
   { to: "/settings", label: "Settings" },
 ] as const;
 
@@ -15,6 +16,7 @@ const ROUTE_PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Home",
   "/subscription": "Subscription",
   "/voice": "Voice",
+  "/avatar": "Avatar",
   "/settings": "Settings",
 };
 
@@ -91,7 +93,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="app-sidebar-brand">
           <Link to="/stories" className="app-sidebar-logo" aria-label="Tamixa Stories">
             <span className="app-sidebar-logo-mark">
-              <img src="/tamixa-logo.svg" alt="" width={40} height={40} className="app-sidebar-logo-img" />
+              <img src="/tamixa-app-icon.png" alt="" width={40} height={40} className="app-sidebar-logo-img" />
             </span>
             <span className="app-sidebar-logo-word">Tamixa</span>
           </Link>

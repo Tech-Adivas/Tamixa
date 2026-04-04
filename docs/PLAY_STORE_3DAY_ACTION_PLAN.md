@@ -106,7 +106,7 @@
 | Task | Command / Check |
 |------|-----------------|
 | Health endpoints | `curl https://api.tamixa.com/actuator/health` → UP |
-| Env vars set | `JWT_SECRET` (non-default), `CORS_ALLOWED_ORIGINS`, `DATABASE_*`, `OPENAI_API_KEY` |
+| Env vars set | `JWT_SECRET` (non-default), `CORS_ALLOWED_ORIGINS`, `DATABASE_*`, `AI_LLM_PROVIDER` + `OPENAI_API_KEY` or `GEMINI_API_KEY`, `AI_COVER_IMAGE_PROVIDER` + matching key if using AI covers |
 | CORS | Include `https://app.tamixa.com` and mobile origin if needed |
 | Rate limits | Story generation limits in place (free/paid tiers) |
 | Flyway | All migrations applied; `ddl-auto: validate` |

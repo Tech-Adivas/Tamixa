@@ -57,7 +57,7 @@ Features implemented in this session (excluding offline download).
 
 ## 11. Creative & Personalization (Feb 2026)
 
-- **Story illustrations / Regenerate cover**: AI-generated cover images via DALL-E 3. `POST /stories/{id}/regenerate-cover`. Images stored in GCS when CDN enabled. Cover shown in story list.
+- **Story illustrations / Regenerate cover**: AI-generated cover stills via `AI_COVER_IMAGE_PROVIDER` (OpenAI DALL·E 3 or Gemini native image; see `app.image-generation`). Optional animated GIF when Veo + FFmpeg are configured. `POST /stories/{id}/regenerate-cover`. Images stored in S3 (or configured storage) when enabled. Cover shown in story list.
 - **Character builder**: Child profile extended with `favoriteColor`, `favoriteAnimal`, `characterTraits`, `avatarChoice`. Used in story generation prompt. Web/mobile: create + PATCH to edit.
 - **Soundscapes**: `GET /soundscapes` (permitAll) returns rain, forest, waves, fireplace, night. Web: ambient player during story time.
 - **Story remix**: `POST /stories/{id}/remix` with `{ remixInstruction }` (e.g. "make the dragon friendly"). Creates new personalized variant.

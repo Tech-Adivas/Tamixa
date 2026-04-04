@@ -40,6 +40,8 @@ const SEGMENT_LABELS: Record<string, string> = {
   audit: "Audit",
   users: "User management",
   "stories-with-issues": "Pipeline triage",
+  "short-content": "Short content",
+  "edu-simulator-analytics": "Edu simulator analytics",
 };
 
 function getLabel(segment: string): string {

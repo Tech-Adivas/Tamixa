@@ -137,7 +137,7 @@ export default function Login() {
             {ambientPlaying ? "Sound on" : "Ambient"}
           </button>
           <Link to="/" className="auth-shell-brand-logo">
-            <img src="/tamixa-logo.svg" alt="Tamixa" width={180} height={48} className="auth-shell-brand-logo-img" />
+            <img src="/tamixa-app-icon.png" alt="Tamixa" width={112} height={112} className="auth-shell-brand-logo-img" />
           </Link>
           <p className="auth-shell-brand-kicker">Tamixa for families</p>
           <h2 className="auth-shell-brand-headline">Your family&apos;s story room, on any screen</h2>

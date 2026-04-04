@@ -124,4 +124,4 @@ Before merging, verify:
 1. Refactor in place; avoid creating redundant files.
 2. Preserve existing patterns (repository ports, DTO naming).
 3. Add logging for new flows; never log secrets.
-4. Run tests before committing: `./gradlew :backend:test -Ptamixa.backendOnly=true`
+4. Run tests before committing: `./gradlew :backend:test -Ptamixa.backendOnly=true` (alias: `-Pararo.backendOnly=true`)

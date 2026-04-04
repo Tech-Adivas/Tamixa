@@ -28,6 +28,7 @@ import {
   WandSparkles,
   Lightbulb,
   FolderCog,
+  Waypoints,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { canAccessNav } from "@/lib/admin-roles";
@@ -39,6 +40,7 @@ const navMain = [
   { href: "/dashboard/moderation", label: "Story moderation", icon: Shield, key: "moderation" as const },
   { href: "/dashboard/stories", label: "Story library", icon: BookOpen, key: "storyLibrary" as const },
   { href: "/dashboard/stories/bulk-generate", label: "Bulk story generator", icon: WandSparkles, key: "storyLibrary" as const },
+  { href: "/dashboard/edu-simulator-analytics", label: "Edu simulator analytics", icon: Waypoints, key: "storyLibrary" as const },
   { href: "/dashboard/stories-with-issues", label: "Pipeline triage", icon: AlertTriangle, key: "pipelineTriage" as const },
   { href: "/dashboard/subscriptions", label: "Subscriptions", icon: CreditCard, key: "subscriptions" as const },
   { href: "/dashboard/referral-codes", label: "Referral codes", icon: Ticket, key: "referralCodes" as const },
@@ -103,10 +105,10 @@ export function Sidebar() {
             onClick={() => setOpen(false)}
           >
             <Image
-              src="/tamixa-logo-inverse.svg"
+              src="/tamixa-app-icon.png"
               alt=""
-              width={128}
-              height={36}
+              width={48}
+              height={48}
               className="object-contain"
             />
           </Link>

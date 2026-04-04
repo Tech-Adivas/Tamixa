@@ -80,6 +80,14 @@ class StoryViewModel(
     private val _favoritesError = MutableStateFlow<String?>(null)
     val favoritesError: StateFlow<String?> = _favoritesError.asStateFlow()
 
+    /** Bumped after interactive Edu choices so Profile can refetch life-skill counters without reloading my stories. */
+    private val _lifeSkillCountersRefreshVersion = MutableStateFlow(0)
+    val lifeSkillCountersRefreshVersion: StateFlow<Int> = _lifeSkillCountersRefreshVersion.asStateFlow()
+
+    fun bumpLifeSkillCountersRefresh() {
+        _lifeSkillCountersRefreshVersion.value = _lifeSkillCountersRefreshVersion.value + 1
+    }
+
     fun cachedStories(): List<Story> = storyRepository.getCachedStories()
 
     /** First child id from the parent's generated stories (for education / reading-level routes). */

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,9 +35,12 @@ import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -48,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -64,6 +69,7 @@ import com.tamixa.ui.components.TamixaPrimaryButton
 import com.tamixa.ui.state.UiState
 import com.tamixa.ui.state.dataOrNull
 import com.tamixa.domain.CurrentUser
+import com.tamixa.network.LifeSkillCountersResponseDto
 
 /**
  * Unified Profile hub per MVP blueprint: My Voices, My Avatars, Favorite Stories,
@@ -89,6 +95,12 @@ fun ProfileScreen(
     onNavigateToLibrary: () -> Unit,
     /** From a generated story linked to a child; enables reading level, streak, vocabulary, classroom. */
     educationChildId: Long? = null,
+    /** Soft pillars from interactive Edu episodes; [lifeSkillChildOptions] from GET /profile + story-linked child. */
+    lifeSkillCounters: LifeSkillCountersResponseDto? = null,
+    lifeSkillCountersLoading: Boolean = false,
+    lifeSkillChildOptions: List<Pair<Long, String>> = emptyList(),
+    selectedLifeSkillChildId: Long? = null,
+    onLifeSkillChildChange: (Long) -> Unit = {},
     onNavigateToReadingLevel: () -> Unit = {},
     onNavigateToReadingStreak: () -> Unit = {},
     onNavigateToVocabulary: () -> Unit = {},
@@ -225,6 +237,19 @@ fun ProfileScreen(
                             .padding(bottom = 8.dp)
                     )
                 }
+                if (lifeSkillChildOptions.isNotEmpty() &&
+                    selectedLifeSkillChildId != null &&
+                    selectedLifeSkillChildId > 0L &&
+                    (lifeSkillCountersLoading || lifeSkillCounters != null)
+                ) {
+                    LifeSkillPracticeCard(
+                        loading = lifeSkillCountersLoading,
+                        counters = lifeSkillCounters,
+                        childOptions = lifeSkillChildOptions,
+                        selectedChildId = selectedLifeSkillChildId,
+                        onChildSelected = onLifeSkillChildChange,
+                    )
+                }
                 ProfileMenuItem(
                     icon = Icons.Filled.School,
                     label = Strings.funAndLearn(),
@@ -247,6 +272,133 @@ fun ProfileScreen(
                 )
                 Spacer(Modifier.height(TamixaDesignTokens.cardSpacing))
             }
+        }
+    }
+}
+
+@Composable
+private fun LifeSkillPracticeCard(
+    loading: Boolean,
+    counters: LifeSkillCountersResponseDto?,
+    childOptions: List<Pair<Long, String>>,
+    selectedChildId: Long,
+    onChildSelected: (Long) -> Unit,
+) {
+    var childMenuExpanded by remember { mutableStateOf(false) }
+    val selectedLabel = childOptions.find { it.first == selectedChildId }?.second
+        ?: Strings.lifeSkillPracticeUnnamedChild()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
+        colors = TamixaCardColors.surface(),
+        elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = TamixaDesignTokens.contentPaddingHorizontal,
+                    vertical = TamixaDesignTokens.smallSpacing,
+                ),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (childOptions.size > 1) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { childMenuExpanded = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = "${Strings.lifeSkillPracticeChooseChild()}: $selectedLabel",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TamixaContentColors.cardPrimary(),
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = childMenuExpanded,
+                        onDismissRequest = { childMenuExpanded = false },
+                    ) {
+                        childOptions.forEach { (cid, name) ->
+                            DropdownMenuItem(
+                                text = { Text(name) },
+                                onClick = {
+                                    onChildSelected(cid)
+                                    childMenuExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            Text(
+                text = Strings.lifeSkillPracticeTitle(),
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = TamixaContentColors.cardPrimary(),
+            )
+            Text(
+                text = Strings.lifeSkillPracticeDisclaimer(),
+                style = MaterialTheme.typography.bodySmall,
+                color = TamixaContentColors.cardPrimary().copy(alpha = 0.75f),
+            )
+            if (loading) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(28.dp),
+                        strokeWidth = 2.dp,
+                        color = TamixaColors.goldAccent,
+                    )
+                }
+            } else if (counters != null) {
+                LifeSkillPillarRow(Strings.lifeSkillPillarWisdom(), counters.wisdom)
+                LifeSkillPillarRow(Strings.lifeSkillPillarSocial(), counters.social)
+                LifeSkillPillarRow(Strings.lifeSkillPillarMoney(), counters.money)
+                LifeSkillPillarRow(Strings.lifeSkillPillarBalance(), counters.balance)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LifeSkillPillarRow(label: String, value: Int) {
+    val frac = (value / 40f).coerceIn(0f, 1f)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TamixaContentColors.cardPrimary().copy(alpha = 0.88f),
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = value.toString(),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                color = TamixaContentColors.cardPrimary(),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(TamixaContentColors.cardPrimary().copy(alpha = 0.12f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(frac)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(TamixaColors.goldAccent.copy(alpha = 0.88f)),
+            )
         }
     }
 }

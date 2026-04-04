@@ -77,7 +77,13 @@ export function SessionExpiredDialog({
       <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <div className="mx-auto mb-2 flex justify-center">
-            <Image src="/tamixa-logo.svg" alt="Tamixa" width={120} height={36} className="h-10 w-auto" />
+            <Image
+              src="/tamixa-app-icon.png"
+              alt="Tamixa"
+              width={64}
+              height={64}
+              className="h-16 w-16 object-contain"
+            />
           </div>
           <DialogTitle className="text-center">Session expired</DialogTitle>
           <DialogDescription className="text-center">

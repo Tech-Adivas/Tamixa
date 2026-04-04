@@ -1,8 +1,10 @@
 package com.tamixa.infrastructure.openai
 
 import com.tamixa.application.port.ImageGenerationPort
+import com.tamixa.application.story.CoverIllustrationPrompts
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
@@ -12,6 +14,11 @@ import org.springframework.web.client.RestTemplate
 import java.net.URI
 
 @Component
+@ConditionalOnProperty(
+    name = ["app.image-generation.provider"],
+    havingValue = "openai",
+    matchIfMissing = true,
+)
 class DalleImageClient(
     private val restTemplate: RestTemplate,
     @Value("\${app.openai.api-key:}") private val apiKey: String,
@@ -28,7 +35,7 @@ class DalleImageClient(
         return try {
             val request = ImageGenRequest(
                 model = "dall-e-3",
-                prompt = buildChildSafePrompt(prompt),
+                prompt = CoverIllustrationPrompts.buildChildSafeCoverPrompt(prompt),
                 n = 1,
                 size = "1024x1024",
                 quality = "standard",
@@ -62,24 +69,6 @@ class DalleImageClient(
             log.warn("DALL-E image generation failed: {} cause={}", e.message, e.cause?.message, e)
             null
         }
-    }
-
-    /**
-     * Safety/style wrapper for DALL-E that keeps visuals child-safe while preserving story intent.
-     * Avoids fixed visual motifs (e.g. temple/kid/gold) unless the story explicitly asks for them.
-     */
-    private fun buildChildSafePrompt(theme: String): String {
-        // DALL·E 3 allows up to ~4000 chars; keep wrapper + scene text under that so library cover prompts (template + editor notes) survive.
-        val safe = theme.take(3200).replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
-        return (
-            "Create a premium storybook cover illustration for Tamixa app. " +
-                "Follow the story scene details exactly; do not default to generic temple, child portrait, or gold-tinted composition unless explicitly described. " +
-                "Keep it child-safe, calm, and emotionally warm (no violence, gore, fear, weapons, or distress). " +
-                "Use a refined, modern storybook style (not cartoonish, not photoreal). " +
-                "Color direction: derive colors from the story mood and setting while staying compatible with dark app UI (balanced contrast, no harsh neon, no blown-out whites). " +
-                "No text, words, logos, or letters in the image. High-definition square cover. " +
-                "Story scene input: $safe."
-            )
     }
 
     private data class ImageGenRequest(

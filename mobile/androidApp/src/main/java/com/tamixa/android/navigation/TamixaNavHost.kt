@@ -32,6 +32,7 @@ import com.tamixa.ui.viewmodel.StoryViewModel
 import com.tamixa.ui.viewmodel.SubscriptionViewModel
 import com.tamixa.ui.viewmodel.AvatarViewModel
 import com.tamixa.ui.viewmodel.VoiceViewModel
+import com.tamixa.analytics.AppAnalytics
 import org.koin.compose.koinInject
 import org.koin.core.qualifier.named
 import androidx.compose.foundation.layout.Box
@@ -111,17 +112,13 @@ fun TamixaNavHost(
     val referralError by subscriptionViewModel.referralError.collectAsState()
     val settingsState by settingsViewModel.state.collectAsState()
 
-    val postLoginDestination = when {
+    val postAuthHomeDestination = when {
         !settingsState.settingsLoaded -> null
-        !settingsState.hasCompletedLanguageSelection -> Screen.LanguageSelection.route
+        !settingsState.hasCompletedLanguageSelection -> null
         else -> Screen.Dashboard.route
     }
 
-    val startDestination = when {
-        !settingsState.settingsLoaded -> Screen.Splash.route
-        authViewModel.isLoggedIn() && postLoginDestination != null -> postLoginDestination
-        else -> Screen.Splash.route
-    }
+    val startDestination = Screen.Splash.route
 
     val appMessageNotifier: AppMessageNotifier = koinInject()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -154,14 +151,33 @@ fun TamixaNavHost(
         startDestination = startDestination
     ) {
         composable(Screen.Splash.route) {
-            LaunchedEffect(settingsState.settingsLoaded, authViewModel.isLoggedIn()) {
-                if (authViewModel.isLoggedIn() && settingsState.settingsLoaded && postLoginDestination != null) {
-                    navController.navigate(postLoginDestination) { popUpTo(Screen.Splash.route) { inclusive = true } }
+            LaunchedEffect(
+                settingsState.settingsLoaded,
+                settingsState.hasCompletedLanguageSelection,
+                authViewModel.isLoggedIn()
+            ) {
+                if (!settingsState.settingsLoaded) return@LaunchedEffect
+                if (!settingsState.hasCompletedLanguageSelection) {
+                    navController.navigate(Screen.LanguageSelection.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                    return@LaunchedEffect
+                }
+                if (authViewModel.isLoggedIn()) {
+                    navController.navigate(Screen.Dashboard.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
                 }
             }
             SplashScreen(
                 isLoggedIn = authViewModel.isLoggedIn(),
                 hasCompletedOnboarding = settingsState.hasCompletedOnboarding,
+                needsLanguageSelection = settingsState.settingsLoaded && !settingsState.hasCompletedLanguageSelection,
+                onNavigateToLanguage = {
+                    navController.navigate(Screen.LanguageSelection.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                },
                 onNavigateToHook = {
                     navController.navigate(Screen.OnboardingHook.route) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
@@ -175,9 +191,13 @@ fun TamixaNavHost(
             )
         }
         composable(Screen.Login.route) {
-            LaunchedEffect(loginState, settingsState.settingsLoaded, currentRoute) {
-                if (currentRoute == Screen.Login.route && authViewModel.isLoggedIn() && loginState is UiState.Success<*> && settingsState.settingsLoaded && postLoginDestination != null) {
-                    navController.navigate(postLoginDestination) { popUpTo(Screen.Login.route) { inclusive = true } }
+            LaunchedEffect(loginState, settingsState.settingsLoaded, settingsState.hasCompletedLanguageSelection, currentRoute) {
+                if (currentRoute == Screen.Login.route &&
+                    authViewModel.isLoggedIn() &&
+                    loginState is UiState.Success<*> &&
+                    postAuthHomeDestination != null
+                ) {
+                    navController.navigate(postAuthHomeDestination) { popUpTo(Screen.Login.route) { inclusive = true } }
                 }
             }
             LoginScreen(
@@ -232,9 +252,13 @@ fun TamixaNavHost(
             )
         }
         composable(Screen.Register.route) {
-            LaunchedEffect(registerState, settingsState.settingsLoaded, currentRoute) {
-                if (currentRoute == Screen.Register.route && authViewModel.isLoggedIn() && registerState is UiState.Success<*> && settingsState.settingsLoaded && postLoginDestination != null) {
-                    navController.navigate(postLoginDestination) { popUpTo(Screen.Register.route) { inclusive = true } }
+            LaunchedEffect(registerState, settingsState.settingsLoaded, settingsState.hasCompletedLanguageSelection, currentRoute) {
+                if (currentRoute == Screen.Register.route &&
+                    authViewModel.isLoggedIn() &&
+                    registerState is UiState.Success<*> &&
+                    postAuthHomeDestination != null
+                ) {
+                    navController.navigate(postAuthHomeDestination) { popUpTo(Screen.Register.route) { inclusive = true } }
                 }
             }
             RegisterScreen(
@@ -259,7 +283,14 @@ fun TamixaNavHost(
                             settingsViewModel.persistLanguageSelection(code)
                         }
                         Strings.setLanguage(code)
-                        navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.LanguageSelection.route) { inclusive = true } }
+                        val nextRoute = when {
+                            authViewModel.isLoggedIn() -> Screen.Dashboard.route
+                            !settingsState.hasCompletedOnboarding -> Screen.OnboardingHook.route
+                            else -> Screen.Login.route
+                        }
+                        navController.navigate(nextRoute) {
+                            popUpTo(Screen.LanguageSelection.route) { inclusive = true }
+                        }
                     }
                 }
             )
@@ -298,6 +329,8 @@ fun TamixaNavHost(
                 onNavigateToSearch = { navController.navigate(Screen.Search.route) },
                 onNavigateToLibrary = { navController.navigate(Screen.Library.withHub()) },
                 onNavigateToLibraryFunCorner = { navController.navigate(Screen.Library.withHub(Screen.Library.HUB_FUN)) },
+                onNavigateToLibraryLearnSafety = { navController.navigate(Screen.Library.withHub(Screen.Library.HUB_LEARN_SAFETY)) },
+                onNavigateToLibrarySimulator = { navController.navigate(Screen.Library.withHub(Screen.Library.HUB_SIMULATOR)) },
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                 spotlightPreview = spotlightPreviewRows,
@@ -314,7 +347,7 @@ fun TamixaNavHost(
                 isRefreshing = false,
                 usageStoriesUsed = usage?.storiesUsed ?: 0,
                 usageStoriesLimit = usage?.storiesLimit,
-                listeningStreakDays = settingsState.listeningStreakDays
+                listeningStreakDays = settingsState.listeningStreakDays,
             )
         }
         composable(
@@ -327,15 +360,20 @@ fun TamixaNavHost(
             )
         ) { libEntry ->
             val apiBaseUrl: String = koinInject(named("apiBaseUrl"))
+            val appAnalyticsLib: AppAnalytics = koinInject()
             val hubArg = libEntry.arguments?.getString("hub") ?: Screen.Library.HUB_BROWSE
-            val openFunCornerFirst =
-                hubArg == Screen.Library.HUB_FUN || hubArg == Screen.Library.HUB_LEARN
+            val initialLibraryHub = when (hubArg) {
+                Screen.Library.HUB_FUN -> com.tamixa.ui.screen.LibraryHubTab.FunCorner
+                Screen.Library.HUB_LEARN, Screen.Library.HUB_LEARN_SAFETY -> com.tamixa.ui.screen.LibraryHubTab.LearnSafety
+                Screen.Library.HUB_SIMULATOR -> com.tamixa.ui.screen.LibraryHubTab.Simulator
+                else -> com.tamixa.ui.screen.LibraryHubTab.Browse
+            }
             val prefLangLib = settingsState.languageCode.ifEmpty { "ta" }
             LaunchedEffect(prefLangLib) { storyViewModel.loadLibraryScreen(prefLangLib) }
             val libraryLoading by storyViewModel.libraryLoading.collectAsState()
             val libraryError by storyViewModel.libraryError.collectAsState()
             LibraryScreen(
-                openFunCornerFirst = openFunCornerFirst,
+                initialHubTab = initialLibraryHub,
                 cachedStories = storyViewModel.allStories(),
                 loading = libraryLoading,
                 loadError = libraryError,
@@ -347,6 +385,7 @@ fun TamixaNavHost(
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                 apiBaseUrl = apiBaseUrl,
+                onHubTabChange = { tab -> appAnalyticsLib.trackLibraryHub(tab.toAnalyticsHubKey()) },
             )
         }
         composable(Screen.Profile.route) {

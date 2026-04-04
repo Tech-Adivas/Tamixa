@@ -21,7 +21,7 @@
 - [ ] `SEED_ADMIN_ENABLED=false` – Disable dev seed endpoint
 - [ ] `DEV_OTP_CODE` – Unset or remove in production
 - [ ] Stripe/Zoho webhook secrets – Valid and kept secret
-- [ ] `OPENAI_API_KEY`, `AWS_*` – From secrets manager, not `.env` in CI
+- [ ] `OPENAI_API_KEY`, `GEMINI_API_KEY` (when using Gemini LLM, Gemini covers, translation, or Veo), `AWS_*` – From secrets manager, not `.env` in CI
 
 ## Vulnerability Mitigations
 

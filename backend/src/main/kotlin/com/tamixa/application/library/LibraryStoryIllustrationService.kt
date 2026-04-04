@@ -14,8 +14,8 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Service
 
 /**
- * Generates AI cover for library stories: DALL-E reference frame, then **prefers** Sora image-to-video
- * converted to GIF (upload GIF before static image). Uses English content when available.
+ * Generates AI cover for library stories: still image (DALL·E or Gemini per config), then optional animated GIF when a
+ * [CoverVideoGenerationPort] exists (FFmpeg MP4→GIF). Uses English content when available.
  * Static image is always stored when generation succeeds; serves as fallback when GIF is absent.
  */
 @Service
@@ -56,7 +56,7 @@ class LibraryStoryIllustrationService(
     }
 
     /**
-     * Generate cover: DALL-E bytes, try animated GIF upload first, then static image upload.
+     * Generate cover: image bytes from [ImageGenerationPort], try animated GIF upload first, then static image upload.
      * When force=true, clears existing cover and video then regenerates.
      * Otherwise idempotent: skips if already has cover.
      * Optional [customPrompt] is trimmed and capped; appended after the standard cover template (image + fallback + motion hints).
@@ -88,14 +88,14 @@ class LibraryStoryIllustrationService(
             return repository.findById(story.id)
         }
         val prompt = appendCoverEditorInstructions(buildAnimatedHdPrompt(current), editorCustom)
-        log.debug("DALL-E primary prompt length={} excerpt={}", prompt.length, prompt.take(80))
+        log.debug("Cover image primary prompt length={} excerpt={}", prompt.length, prompt.take(80))
         val primaryImageBytes = imageGeneration.generateImage(prompt)
         val imageBytes = if (primaryImageBytes != null) {
             primaryImageBytes
         } else {
             val fallbackPrompt = buildPolicySafeFallbackPrompt(current, editorCustom)
             log.warn(
-                "Primary DALL-E prompt failed for story {}. Retrying with policy-safe fallback prompt length={}",
+                "Primary cover image prompt failed for story {}. Retrying with policy-safe fallback prompt length={}",
                 current.id,
                 fallbackPrompt.length
             )
@@ -103,17 +103,17 @@ class LibraryStoryIllustrationService(
         }
         if (imageBytes == null) {
             log.warn(
-                "Library story {} cover generation failed after primary + fallback prompt (check OpenAI content policy, OPENAI_API_KEY, and API status)",
+                "Library story {} cover generation failed after primary + fallback prompt (check provider policy, API keys, and status)",
                 current.id
             )
             return null
         }
-        log.info("DALL-E returned {} bytes for story {}", imageBytes.size, current.id)
+        log.info("Cover image provider returned {} bytes for story {}", imageBytes.size, current.id)
         var coverAnimationPath: String? = null
         if (coverVideoGeneration != null && coverVideoStorage != null) {
             val motionPrompt = buildCoverVideoMotionPrompt(current, editorCustom)
-            log.info("Sora (preferred): generating cover animation for library story {} before static upload", current.id)
-            log.debug("Sora motion prompt length={} excerpt={}", motionPrompt.length, motionPrompt.take(80))
+            log.info("Cover animation: generating GIF for library story {} before static upload", current.id)
+            log.debug("Cover motion prompt length={} excerpt={}", motionPrompt.length, motionPrompt.take(80))
             val videoBytes = coverVideoGeneration.generateVideoFromImage(imageBytes, motionPrompt)
             if (videoBytes != null) {
                 val gifBytes = videoToGifConverter?.convertMp4ToGif(videoBytes)
@@ -125,13 +125,13 @@ class LibraryStoryIllustrationService(
                         log.warn("Library story {} cover GIF storage failed", current.id)
                     }
                 } else {
-                    log.warn("Library story {} MP4-to-GIF conversion failed (install FFmpeg and set SORA_CONVERT_TO_GIF=true for animated cover)", current.id)
+                    log.warn("Library story {} MP4-to-GIF conversion failed (install FFmpeg; app.cover-animation.convert-mp4-to-gif=true)", current.id)
                 }
             } else {
-                log.warn("Library story {} cover video generation failed (Sora returned null); continuing with static cover only", current.id)
+                log.warn("Library story {} cover video generation failed (adapter returned null); continuing with static cover only", current.id)
             }
         } else {
-            log.debug("Cover animation skipped: Sora or storage not configured — generating static cover only")
+            log.debug("Cover animation skipped: image-to-video or storage not configured — generating static cover only")
         }
         val path = imageStorage.storeCuratedCoverImage(current.id, imageBytes)
         if (path == null) {

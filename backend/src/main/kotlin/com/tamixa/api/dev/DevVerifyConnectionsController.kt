@@ -2,6 +2,7 @@ package com.tamixa.api.dev
 
 import com.tamixa.api.ApiVersion
 import com.tamixa.application.port.CoverVideoGenerationPort
+import com.tamixa.application.port.VideoToGifConverterPort
 import com.tamixa.application.narration.AudioStorageService
 import com.tamixa.application.narration.StoryProcessingService
 import com.tamixa.application.storylibrary.StoryLibraryService
@@ -39,7 +40,7 @@ import java.security.MessageDigest
 
 /**
  * Dev-only endpoints to verify external service connections and the audio translation pipeline.
- * - GET /api/v1/dev/verify-connections – OpenAI, S3
+ * - GET /api/v1/dev/verify-connections – LLM providers, S3, cover-animation (image-to-video + FFmpeg)
  * - GET /api/v1/dev/verify-audio-translation – Translation (ta→en) → TTS → S3 upload
  * - GET /api/v1/dev/verify-google-tts – Google Cloud TTS connectivity (when NARRATION_TTS_PROVIDER=google)
  * - GET /api/v1/dev/tts-status – Current TTS provider and whether Google TTS is active for story processing
@@ -65,10 +66,9 @@ class DevVerifyConnectionsController(
     private val audioStorageProvider: ObjectProvider<AudioStorageService>,
     private val tokenUsageService: TokenUsageService,
     private val coverVideoGenerationProvider: ObjectProvider<CoverVideoGenerationPort>,
+    private val videoToGifConverterProvider: ObjectProvider<VideoToGifConverterPort>,
     @Value("\${app.narration.tts-provider:simulated}") private val ttsProvider: String,
     @Value("\${app.narration.google-tts-api-key:}") private val googleTtsApiKey: String,
-    @Value("\${app.sora.enabled:false}") private val soraEnabled: Boolean,
-    @Value("\${app.sora.model:sora-2}") private val soraModel: String,
     private val elevenLabsProvider: ObjectProvider<ElevenLabsVoiceCloningPort>,
     private val voiceReferenceStorageProvider: ObjectProvider<VoiceReferenceStoragePort>,
     @Qualifier("triggerPipelineExecutor") private val triggerPipelineExecutor: TaskExecutor
@@ -77,21 +77,48 @@ class DevVerifyConnectionsController(
 
     @GetMapping("/verify-connections")
     fun verifyConnections(): ResponseEntity<Map<String, Any>> {
-        log.info("Verify connections request (OpenAI, S3)")
+        log.info("Verify connections request (LLM, S3)")
         val results = mutableMapOf<String, Map<String, Any>>()
 
-        // OpenAI (general: models API)
+        val llmProvider = appProperties.llm.provider.trim().lowercase()
+        val geminiPrimary = llmProvider == "gemini"
+
+        // OpenAI (models API) — primary check when LLM provider is OpenAI; optional when using Gemini-only for stories.
         val openaiResult = verifyOpenAI()
         results["openai"] = openaiResult
 
-        // Rewrite step: uses OpenAI Chat Completions (NarrationOpenAIAdapter). Pipeline REWRITING → this.
-        results["openaiRewrite"] = mapOf(
-            "usedBy" to "Pipeline rewrite step (REWRITING status). NarrationOpenAIAdapter → OpenAI /v1/chat/completions",
-            "apiKeySet" to appProperties.openai.apiKey.isNotBlank(),
-            "apiKeyHint" to (if (appProperties.openai.apiKey.isNotBlank()) "OPENAI_API_KEY is set" else "OPENAI_API_KEY not set. Add to .env: OPENAI_API_KEY=sk-..."),
-            "readTimeoutMs" to appProperties.openai.readTimeoutMs,
-            "readTimeoutEnv" to "OPENAI_READ_TIMEOUT_MS (default 60000). Set 45000 to fail faster if API is slow."
-        )
+        val geminiResult = verifyGemini()
+        results["gemini"] = geminiResult
+
+        // Pipeline rewrite: OpenAI or Gemini per app.llm.provider
+        results["narrationRewrite"] = if (geminiPrimary) {
+            mapOf(
+                "llmProvider" to "gemini",
+                "usedBy" to "Pipeline rewrite (REWRITING). NarrationGeminiAdapter → Gemini generateContent",
+                "apiKeySet" to appProperties.llm.gemini.apiKey.isNotBlank(),
+                "apiKeyHint" to (
+                    if (appProperties.llm.gemini.apiKey.isNotBlank()) "GEMINI_API_KEY is set"
+                    else "GEMINI_API_KEY not set. Set AI_LLM_PROVIDER=gemini and GEMINI_API_KEY=..."
+                    ),
+                "model" to appProperties.llm.gemini.model,
+                "readTimeoutMs" to appProperties.llm.gemini.readTimeoutMs,
+            )
+        } else {
+            mapOf(
+                "llmProvider" to "openai",
+                "usedBy" to "Pipeline rewrite (REWRITING). NarrationOpenAIAdapter → OpenAI /v1/chat/completions",
+                "apiKeySet" to appProperties.openai.apiKey.isNotBlank(),
+                "apiKeyHint" to (
+                    if (appProperties.openai.apiKey.isNotBlank()) "OPENAI_API_KEY is set"
+                    else "OPENAI_API_KEY not set. Add to .env: OPENAI_API_KEY=sk-..."
+                    ),
+                "readTimeoutMs" to appProperties.openai.readTimeoutMs,
+                "readTimeoutEnv" to "OPENAI_READ_TIMEOUT_MS (default 180000).",
+            )
+        }
+
+        // Backward-compatible key (older clients): same hints as narrationRewrite for OpenAI path
+        results["openaiRewrite"] = results["narrationRewrite"]!!
 
         // S3 (only when storage type is s3)
         val s3Result = if (appProperties.storage.type == "s3") {
@@ -104,31 +131,54 @@ class DevVerifyConnectionsController(
         }
         results["s3"] = s3Result
 
-        // Sora (cover video): config and bean presence; actual API access is tested when generating a cover
-        results["sora"] = mapOf(
-            "enabled" to soraEnabled,
-            "model" to soraModel,
-            "beanPresent" to (coverVideoGenerationProvider.getIfAvailable() != null),
-            "note" to "Videos API may require separate Sora access. Trigger 'Regenerate cover' on a curated story to test."
+        val veoCfg = appProperties.coverAnimation.veo
+        val imgGen = appProperties.imageGeneration
+        results["coverAnimation"] = mapOf(
+            "coverImageProvider" to imgGen.provider.trim().lowercase(),
+            "coverImageGeminiModel" to imgGen.gemini.model,
+            "veoEnabled" to veoCfg.enabled,
+            "veoModel" to veoCfg.model,
+            "veoDurationSeconds" to veoCfg.durationSeconds,
+            "geminiApiKeySet" to appProperties.llm.gemini.apiKey.isNotBlank(),
+            "imageToVideoBeanPresent" to (coverVideoGenerationProvider.getIfAvailable() != null),
+            "ffmpegMp4ToGifBeanPresent" to (videoToGifConverterProvider.getIfAvailable() != null),
+            "note" to (
+                "Still cover: AI_COVER_IMAGE_PROVIDER=openai (DALL·E 3) or gemini (Gemini image, GEMINI_API_KEY). " +
+                    "Animated GIF: COVER_ANIMATION_VEO_ENABLED=true + GEMINI_API_KEY (Veo 3.1 Lite)."
+                ),
         )
 
-        val allOk = (openaiResult["status"] == "OK") &&
-            (s3Result["status"] == "OK" || s3Result["status"] == "SKIPPED")
+        val llmOk = if (geminiPrimary) {
+            geminiResult["status"] == "OK"
+        } else {
+            openaiResult["status"] == "OK"
+        }
+        val allOk = llmOk && (s3Result["status"] == "OK" || s3Result["status"] == "SKIPPED")
         val status = if (allOk) HttpStatus.OK else HttpStatus.SERVICE_UNAVAILABLE
-        log.info("Verify connections complete openai={} s3={} soraEnabled={} overall={}", openaiResult["status"], s3Result["status"], soraEnabled, if (allOk) "OK" else "DEGRADED")
+        log.info(
+            "Verify connections complete llmProvider={} openai={} gemini={} s3={} overall={}",
+            llmProvider,
+            openaiResult["status"],
+            geminiResult["status"],
+            s3Result["status"],
+            if (allOk) "OK" else "DEGRADED",
+        )
 
-        val soraInfo = results["sora"] as Map<String, Any>
-        val openaiRewriteInfo = results["openaiRewrite"] as Map<String, Any>
+        val coverAnimationInfo = results["coverAnimation"] as Map<String, Any>
+        val narrationRewriteInfo = results["narrationRewrite"] as Map<String, Any>
         return ResponseEntity
             .status(status)
             .body(
                 mapOf<String, Any>(
+                    "llmProvider" to llmProvider,
                     "openai" to openaiResult,
-                    "openaiRewrite" to openaiRewriteInfo,
+                    "gemini" to geminiResult,
+                    "openaiRewrite" to narrationRewriteInfo,
+                    "narrationRewrite" to narrationRewriteInfo,
                     "s3" to s3Result,
-                    "sora" to soraInfo,
-                    "overall" to if (allOk) "OK" else "DEGRADED"
-                )
+                    "coverAnimation" to coverAnimationInfo,
+                    "overall" to if (allOk) "OK" else "DEGRADED",
+                ),
             )
     }
 
@@ -645,14 +695,55 @@ class DevVerifyConnectionsController(
         }
     }
 
+    private fun verifyGemini(): Map<String, Any> {
+        val apiKey = appProperties.llm.gemini.apiKey
+        val baseUrl = appProperties.llm.gemini.baseUrl.trimEnd('/')
+        if (apiKey.isBlank()) {
+            return mapOf(
+                "status" to "SKIPPED",
+                "message" to (
+                    "GEMINI_API_KEY not set (required when AI_LLM_PROVIDER=gemini, TRANSLATION_PROVIDER=gemini, " +
+                        "AI_COVER_IMAGE_PROVIDER=gemini, or COVER_ANIMATION_VEO_ENABLED=true)"
+                    ),
+                "configured" to false,
+            )
+        }
+        return try {
+            val enc = java.net.URLEncoder.encode(apiKey, java.nio.charset.StandardCharsets.UTF_8)
+            restTemplate.getForObject("$baseUrl/v1beta/models?key=$enc", Map::class.java)
+            mapOf(
+                "status" to "OK",
+                "message" to "Gemini API reachable",
+                "baseUrl" to baseUrl,
+                "configured" to true,
+            )
+        } catch (e: Exception) {
+            mapOf(
+                "status" to "ERROR",
+                "message" to (e.message ?: "Unknown error"),
+                "baseUrl" to baseUrl,
+                "configured" to true,
+            )
+        }
+    }
+
     private fun verifyOpenAI(): Map<String, Any> {
         val apiKey = appProperties.openai.apiKey
         val baseUrl = appProperties.openai.baseUrl.trimEnd('/')
+        val llmIsOpenAi = !appProperties.llm.provider.trim().equals("gemini", ignoreCase = true)
+        val coverUsesOpenAI = appProperties.imageGeneration.provider.trim().equals("openai", ignoreCase = true)
         if (apiKey.isBlank()) {
+            val message = when {
+                llmIsOpenAi -> "OPENAI_API_KEY not set"
+                coverUsesOpenAI ->
+                    "OPENAI_API_KEY not set (needed for DALL·E covers when AI_COVER_IMAGE_PROVIDER=openai; or set AI_COVER_IMAGE_PROVIDER=gemini)"
+                else ->
+                    "OPENAI_API_KEY not set (optional when AI_LLM_PROVIDER=gemini and AI_COVER_IMAGE_PROVIDER=gemini)"
+            }
             return mapOf(
-                "status" to "ERROR",
-                "message" to "OPENAI_API_KEY not set",
-                "configured" to false
+                "status" to if (llmIsOpenAi) "ERROR" else "SKIPPED",
+                "message" to message,
+                "configured" to false,
             )
         }
         return try {

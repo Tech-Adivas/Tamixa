@@ -568,7 +568,8 @@ fun TamixaThemeBackground(
 
 /**
  * Standard full-screen background for app screens.
- * Uses StarryNightBackground (old one) across the app for a consistent bedtime/night sky look.
+ * [StarryNightBackground] plus optional **Storybook Dusk** vignette and teal-forward top wash
+ * (same stack as onboarding / language / subscription) so the starfield does not read “flat”.
  */
 @Composable
 fun AppScreenBackground(
@@ -581,13 +582,32 @@ fun AppScreenBackground(
      * (users never lose the atmosphere because of accessibility).
      * Off for tests or minimal mode: pass `false`.
      */
-    ambientPresence: Boolean = true
+    ambientPresence: Boolean = true,
+    /**
+     * Bottom terracotta–teal vignette + soft top atmosphere (edu-story aligned). Pass `false` for tests
+     * or if a screen draws its own full-screen scrim on top.
+     */
+    storybookAtmosphere: Boolean = true
 ) {
-    StarryNightBackground(
-        modifier = modifier,
-        showStars = showStars,
-        showClouds = showClouds,
-        animateStars = animateStars,
-        ambientPresence = ambientPresence
-    )
+    Box(modifier = modifier.fillMaxSize()) {
+        StarryNightBackground(
+            modifier = Modifier.fillMaxSize(),
+            showStars = showStars,
+            showClouds = showClouds,
+            animateStars = animateStars,
+            ambientPresence = ambientPresence
+        )
+        if (storybookAtmosphere) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(TamixaGradients.splashStorybookVignetteBrush())
+            )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(TamixaGradients.onboardingTopAtmosphereBrush())
+            )
+        }
+    }
 }

@@ -101,12 +101,16 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       SERVER_PORT: ${SERVER_PORT:-8080}
-      # PostgreSQL
+      # PostgreSQL — same resolution as application-dev.yml; optional DATABASE_* override host .env / CI
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB:-araro_kids}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_PUBLIC_URL: ${DATABASE_PUBLIC_URL:-}
+      DATABASE_USERNAME: ${DATABASE_USERNAME:-}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
       # Redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -121,9 +125,19 @@ services:
       # Dev: seed admin via POST /api/v1/dev/seed-admin (admin@techadivas.com / Admin123!)
       SEED_ADMIN_ENABLED: ${SEED_ADMIN_ENABLED:-true}
       DEV_OTP_CODE: ${DEV_OTP_CODE:-123456}
-      # Optional: OpenAI, Translation, Voice encryption (set in production)
+      # Optional: OpenAI, Gemini (LLM / cover image / Veo), Translation, Voice encryption (set in production)
       TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-simulated}
+      AI_LLM_PROVIDER: ${AI_LLM_PROVIDER:-openai}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com}
+      GEMINI_READ_TIMEOUT_MS: ${GEMINI_READ_TIMEOUT_MS:-180000}
+      AI_COVER_IMAGE_PROVIDER: ${AI_COVER_IMAGE_PROVIDER:-openai}
+      AI_COVER_IMAGE_GEMINI_MODEL: ${AI_COVER_IMAGE_GEMINI_MODEL:-gemini-2.5-flash-image}
+      COVER_ANIMATION_VEO_ENABLED: ${COVER_ANIMATION_VEO_ENABLED:-false}
+      COVER_ANIMATION_VEO_DURATION_SECONDS: ${COVER_ANIMATION_VEO_DURATION_SECONDS:-4}
+      COVER_ANIMATION_FFMPEG_MP4_TO_GIF: ${COVER_ANIMATION_FFMPEG_MP4_TO_GIF:-true}
       # Python guardrails: enable with `docker compose --profile guardrails up` and set URL/key.
       GUARDRAILS_SERVICE_ENABLED: ${GUARDRAILS_SERVICE_ENABLED:-false}
       GUARDRAILS_SERVICE_URL: ${GUARDRAILS_SERVICE_URL:-http://guardrails-service:8090}

@@ -7,7 +7,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,6 +69,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -88,8 +92,11 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.zIndex
 import com.tamixa.domain.Story
+import com.tamixa.network.WordTiming
+import com.tamixa.util.NarrationTextUtils
 import com.tamixa.util.TamixaConstants
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import com.tamixa.ui.components.AppScreenBackground
 import com.tamixa.ui.components.MagicLoadingOverlay
 import com.tamixa.ui.components.TamixaBottomBar
@@ -98,6 +105,7 @@ import com.tamixa.ui.theme.TamixaColors
 import com.tamixa.ui.theme.TamixaDesignTokens
 import com.tamixa.ui.theme.TamixaDialogDefaults
 import com.tamixa.ui.components.NarrativeSceneOverlay
+import com.tamixa.ui.components.activeNarrativeScene
 import com.tamixa.ui.components.StoryCoverImage
 import com.tamixa.ui.components.narrativeLayerWorthShowing
 import com.tamixa.ui.components.platformIsReduceMotionEnabled
@@ -105,6 +113,7 @@ import com.tamixa.ui.strings.Strings
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.draw.shadow
@@ -172,12 +181,6 @@ private fun AudioPlayerStoryContentHost(
 private fun formatPlaybackClock(totalSec: Int): String =
     "${totalSec / 60}:${(totalSec % 60).toString().padStart(2, '0')}"
 
-private fun storySnippetExcerpt(content: String, maxLen: Int = 240): String {
-    val t = content.trim().replace(Regex("\\s+"), " ")
-    if (t.length <= maxLen) return t
-    return t.take(maxLen).trimEnd { it.isWhitespace() || it == '.' } + "…"
-}
-
 /** Callbacks for story retention analytics. Optional; no-op if null. */
 data class StoryAnalyticsCallbacks(
     val onStoryStarted: (Story, Int) -> Unit = { _, _ -> },
@@ -240,7 +243,11 @@ fun AudioPlayerScreen(
     /** Optional: open story quiz (e.g. when story is linked to a child). */
     onOpenQuiz: (() -> Unit)? = null,
     /** Optional line under the title (Learn cue or theme for generated). */
-    playbackSubtitle: String? = null
+    playbackSubtitle: String? = null,
+    /** Library interactive graph: small parent-facing cue near the title. */
+    showInteractivePracticeChip: Boolean = false,
+    /** On-device TTS file playback — no server word timings; hide voice-synced highlight. */
+    playbackUsesDeviceTts: Boolean = false,
 ) {
     var showVoicePremiumDialog by remember { mutableStateOf(false) }
     var playMenuExpanded by remember { mutableStateOf(false) }
@@ -358,7 +365,10 @@ fun AudioPlayerScreen(
                                 onVolumeClick = onVolumeClick,
                                 onSleepTimer = onSleepTimer,
                                 onDownload = onDownload,
-                                playbackSubtitle = playbackSubtitle
+                                playbackSubtitle = playbackSubtitle,
+                                showInteractivePracticeChip = showInteractivePracticeChip,
+                                playbackUsesDeviceTts = playbackUsesDeviceTts,
+                                onShare = onShare,
                             )
                         }
                     }
@@ -704,12 +714,19 @@ private fun PlayerContent(
     onVolumeClick: (() -> Unit)? = null,
     onSleepTimer: () -> Unit = {},
     onDownload: (() -> Unit)? = null,
-    playbackSubtitle: String? = null
+    playbackSubtitle: String? = null,
+    showInteractivePracticeChip: Boolean = false,
+    playbackUsesDeviceTts: Boolean = false,
+    onShare: (() -> Unit)? = null,
 ) {
+    val storyTextForDisplay = remember(story.id, story.content) {
+        NarrationTextUtils.stripRemainingMarkers(story.content)
+    }
+    val showSyncedReadAlong =
+        storyTextForDisplay.isNotBlank() && !playbackUsesDeviceTts
     val totalSec = (durationSeconds?.takeIf { it > 0 }
         ?: (story.readingTimeMinutes * 60).toInt()).coerceAtLeast(1)
     val accent = com.tamixa.ui.theme.TamixaColors.goldAccent
-    var snippetExpanded by remember(story.id) { mutableStateOf(false) }
     var showRemixDialog by remember(story.id) { mutableStateOf(false) }
     var remixInstruction by remember(story.id) { mutableStateOf("") }
     val remixHandler = onRemix?.takeIf { story.parentId != 0L }
@@ -723,14 +740,32 @@ private fun PlayerContent(
         if (progress >= 0.99f) analytics?.onCompleted?.invoke(story, totalSec)
     }
     val scrollState = rememberScrollState()
-    val snippetText = remember(story.content, story.id) {
-        storySnippetExcerpt(story.content.ifBlank { story.theme })
-    }
     val posSec = (progress * totalSec).toInt()
     val seekSec = (TamixaConstants.SEEK_MS / 1000).toInt()
     val snippetSurface = TamixaColors.nightSkySurface
     val heroControlTint = TamixaColors.onInputSurface
     val narrativeVisuals = narrativeScenes.orEmpty()
+    val chapterTicks = remember(narrativeVisuals) {
+        narrativeVisuals.map { it.startProgress }.filter { it in 0.02f..0.98f }.distinct().sorted()
+    }
+    val learnStory = story.theme.contains("Learn", ignoreCase = true) ||
+        (story.category?.contains("Learn", ignoreCase = true) == true)
+    val activeSceneIndex = activeNarrativeScene(progress, narrativeVisuals)?.sceneIndex
+    var prevSceneIndexForCue by remember(story.id) { mutableStateOf<Int?>(null) }
+    var reflectionCueVisible by remember(story.id) { mutableStateOf(false) }
+    LaunchedEffect(activeSceneIndex, learnStory, narrativeVisuals.size) {
+        val cur = activeSceneIndex
+        if (!learnStory || narrativeVisuals.size < 2 || cur == null) {
+            prevSceneIndexForCue = cur
+            return@LaunchedEffect
+        }
+        if (prevSceneIndexForCue != null && prevSceneIndexForCue != cur) {
+            reflectionCueVisible = true
+            delay(4200)
+            reflectionCueVisible = false
+        }
+        prevSceneIndexForCue = cur
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -739,17 +774,25 @@ private fun PlayerContent(
                 .fillMaxWidth()
                 .verticalScroll(scrollState)
         ) {
+        val heroHasAvatarMedia =
+            storytellingAvatarVideoContent != null || storytellingAvatarUrl != null
+        val heroShape = RoundedCornerShape(
+            topStart = 0.dp,
+            topEnd = 0.dp,
+            bottomStart = TamixaDesignTokens.storyIllustrationFrameRadius,
+            bottomEnd = TamixaDesignTokens.storyIllustrationFrameRadius
+        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp)
-                .height(264.dp)
+                .padding(bottom = 4.dp)
+                .height(300.dp)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .zIndex(0f)
-                    .clip(RoundedCornerShape(TamixaDesignTokens.storyIllustrationFrameRadius))
+                    .clip(heroShape)
             ) {
                 StoryCoverImage(
                     story = story,
@@ -757,19 +800,35 @@ private fun PlayerContent(
                     contentScale = ContentScale.Crop,
                     apiBaseUrl = apiBaseUrl
                 )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Black.copy(alpha = 0.42f),
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.28f)
+                if (!heroHasAvatarMedia) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Black.copy(alpha = 0.42f),
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.28f)
+                                    )
                                 )
                             )
-                        )
-                )
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Black.copy(alpha = 0.55f),
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.35f)
+                                    )
+                                )
+                            )
+                    )
+                }
                 if (narrativeLayerWorthShowing(narrativeVisuals)) {
                     NarrativeSceneOverlay(
                         progress = progress,
@@ -779,6 +838,24 @@ private fun PlayerContent(
                         modifier = Modifier
                             .fillMaxSize()
                             .zIndex(0.5f)
+                    )
+                }
+                if (storytellingAvatarVideoContent != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(0.65f)
+                    ) {
+                        storytellingAvatarVideoContent()
+                    }
+                } else if (storytellingAvatarUrl != null) {
+                    coil3.compose.AsyncImage(
+                        model = storytellingAvatarUrl,
+                        contentDescription = Strings.yourAvatar(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(0.65f),
+                        contentScale = ContentScale.Crop
                     )
                 }
             }
@@ -884,53 +961,12 @@ private fun PlayerContent(
             )
         }
 
-        if (storytellingAvatarVideoContent != null) {
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = Strings.storyWithYourAvatar(),
-                style = MaterialTheme.typography.labelMedium,
-                color = PlayerScreenMuted,
-                modifier = Modifier.padding(horizontal = 20.dp)
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .clip(RoundedCornerShape(20.dp))
-            ) {
-                storytellingAvatarVideoContent()
-            }
-            Spacer(Modifier.height(12.dp))
-        } else if (storytellingAvatarUrl != null) {
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                coil3.compose.AsyncImage(
-                    model = storytellingAvatarUrl,
-                    contentDescription = Strings.yourAvatar(),
-                    modifier = Modifier
-                        .size(72.dp)
-                        .clip(CircleShape),
-                    contentScale = ContentScale.Crop
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = Strings.storyWithYourAvatar(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = PlayerScreenMuted
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = story.title?.takeIf { it.isNotBlank() } ?: story.theme,
                 style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
@@ -952,13 +988,92 @@ private fun PlayerContent(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (showInteractivePracticeChip) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Text(
+                        text = Strings.playerInteractivePracticeChip(),
+                        modifier = Modifier
+                            .shadow(
+                                4.dp,
+                                RoundedCornerShape(10.dp),
+                                ambientColor = Color.Black.copy(alpha = 0.12f),
+                                spotColor = Color.White.copy(alpha = 0.08f),
+                            )
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(
+                                        TamixaColors.deepTeal.copy(alpha = 0.92f),
+                                        TamixaColors.terracotta.copy(alpha = 0.88f),
+                                    ),
+                                ),
+                            )
+                            .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                        color = Color.White,
+                    )
+                }
+            }
+            if (showSyncedReadAlong) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = Strings.playerListenAlongTitle(),
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = PlayerScreenInk,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(10.dp))
+                KaraokeFlowingCaption(
+                    wordTimings = wordTimings,
+                    progress = progress,
+                    durationSeconds = totalSec,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+                StoryTranscriptSection(
+                    content = storyTextForDisplay,
+                    progress = progress,
+                    wordTimings = wordTimings,
+                    durationSeconds = totalSec,
+                )
+            } else if (playbackUsesDeviceTts && storyTextForDisplay.isNotBlank()) {
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    text = Strings.playerDeviceReadAloudHint(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PlayerScreenMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = snippetSurface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, PlayerCardStroke),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = storyTextForDisplay,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = PlayerScreenInk.copy(alpha = 0.92f),
+                        lineHeight = 26.sp,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+                    )
+                }
+            }
             val hasParentExtras = story.parentId == 0L && (
                 !story.parentContentNote.isNullOrBlank() ||
                     !story.speakAlongPrompt.isNullOrBlank() ||
                     story.parentDiscussionPrompts?.any { it.isNotBlank() } == true
                 )
             if (hasParentExtras) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(18.dp))
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = snippetSurface,
@@ -1061,74 +1176,7 @@ private fun PlayerContent(
                     onClick = { onFavoriteToggle?.invoke() }
                 )
             }
-            Spacer(Modifier.height(22.dp))
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = snippetSurface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, PlayerCardStroke),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 18.dp, vertical = 20.dp)
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = if (snippetExpanded) story.content.ifBlank { snippetText } else snippetText,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = PlayerScreenInk.copy(alpha = 0.92f),
-                                maxLines = if (snippetExpanded) Int.MAX_VALUE else 5,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (!snippetExpanded) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .align(Alignment.BottomCenter)
-                                        .height(64.dp)
-                                        .background(
-                                            Brush.verticalGradient(
-                                                colors = listOf(Color.Transparent, snippetSurface)
-                                            )
-                                        )
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = { snippetExpanded = !snippetExpanded },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.White),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp, pressedElevation = 4.dp),
-                    contentPadding = PaddingValues(vertical = 12.dp, horizontal = 16.dp)
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.MenuBook,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (snippetExpanded) Strings.playerShowLess() else Strings.playerStartReading(),
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                }
-            }
-            Spacer(Modifier.height(20.dp))
-            if (SHOW_TRANSCRIPT) {
-                Spacer(Modifier.height(20.dp))
-                StoryTranscriptSection(
-                    content = story.content,
-                    progress = progress,
-                    wordTimings = wordTimings,
-                    durationSeconds = totalSec
-                )
-            }
+            Spacer(Modifier.height(16.dp))
         }
         }
 
@@ -1160,6 +1208,25 @@ private fun PlayerContent(
                     ) {
                         val frac = progress.coerceIn(0f, 1f)
                         val thumb = 14.dp
+                        if (chapterTicks.isNotEmpty()) {
+                            Canvas(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .align(Alignment.Center)
+                                    .height(10.dp)
+                            ) {
+                                val tickColor = PlayerScreenInk.copy(alpha = 0.45f)
+                                val h = size.height
+                                chapterTicks.forEach { t ->
+                                    val x = size.width * t.coerceIn(0f, 1f)
+                                    drawRect(
+                                        color = tickColor,
+                                        topLeft = Offset(x - 1f, h * 0.15f),
+                                        size = Size(2f, h * 0.7f),
+                                    )
+                                }
+                            }
+                        }
                         LinearProgressIndicator(
                             progress = { frac },
                             modifier = Modifier
@@ -1193,6 +1260,17 @@ private fun PlayerContent(
                         modifier = Modifier.width(44.dp),
                         maxLines = 1,
                         textAlign = TextAlign.End
+                    )
+                }
+                if (reflectionCueVisible) {
+                    Text(
+                        text = Strings.playerReflectionCue(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = PlayerScreenInk.copy(alpha = 0.88f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        textAlign = TextAlign.Center,
                     )
                 }
                 Spacer(Modifier.height(8.dp))
@@ -1255,6 +1333,16 @@ private fun PlayerContent(
                         modifier = Modifier.size(40.dp)
                     ) {
                         Icon(Icons.Default.FastForward, contentDescription = Strings.playerSkipSeconds(seekSec), tint = PlayerScreenInk, modifier = Modifier.size(22.dp))
+                    }
+                    if (onShare != null) {
+                        IconButton(onClick = onShare, modifier = Modifier.size(40.dp)) {
+                            Icon(
+                                Icons.Outlined.Share,
+                                contentDescription = Strings.playerShare(),
+                                tint = PlayerScreenInk,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
                     }
                     IconButton(onClick = onSleepTimer, modifier = Modifier.size(40.dp)) {
                         Icon(Icons.Outlined.Schedule, contentDescription = Strings.sleepTimer(), tint = PlayerScreenInk, modifier = Modifier.size(22.dp))
@@ -1323,6 +1411,48 @@ private fun PlayerContent(
         }
     }
 }
+
+/** Nudge highlight earlier so it tracks perceived speech (output / decoder latency). */
+private const val READ_ALONG_TIMING_OFFSET_SEC = 0.08
+
+/** Web parity: window of words around the current time (Stories.tsx captionFromWordTimings). */
+private fun captionFromWordTimings(timings: List<WordTiming>, t: Double): String? {
+    if (timings.isEmpty()) return null
+    val idx = timings.indexOfFirst { w -> t >= w.startSec && t < w.endSec }
+    val i = if (idx >= 0) idx else timings.indexOfFirst { w -> t < w.startSec }
+    val center = if (i >= 0) i else kotlin.math.max(0, timings.size - 1)
+    val from = kotlin.math.max(0, center - 5)
+    val to = kotlin.math.min(timings.size, center + 8)
+    return timings.subList(from, to).joinToString(" ") { it.word }.trim().takeIf { it.isNotBlank() }
+}
+
+@Composable
+private fun KaraokeFlowingCaption(
+    wordTimings: List<WordTiming>?,
+    progress: Float,
+    durationSeconds: Int,
+    modifier: Modifier = Modifier,
+) {
+    if (wordTimings.isNullOrEmpty() || durationSeconds <= 0) return
+    val t = (progress * durationSeconds.toDouble() + READ_ALONG_TIMING_OFFSET_SEC)
+        .coerceIn(0.0, durationSeconds.toDouble())
+    val line = captionFromWordTimings(wordTimings, t) ?: return
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = TamixaColors.nightSkySurfaceVariant.copy(alpha = 0.58f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, PlayerCardStroke),
+    ) {
+        Text(
+            text = line,
+            style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 26.sp, fontWeight = FontWeight.Medium),
+            color = TamixaColors.goldAccent,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+        )
+    }
+}
+
 private fun splitIntoSentences(text: String): List<String> {
     val trimmed = text.trim()
     if (trimmed.isBlank()) return emptyList()
@@ -1337,6 +1467,86 @@ private fun splitIntoWords(text: String): List<String> {
     return text.split(Regex("\\s+")).filter { it.isNotBlank() }
 }
 
+private fun stripReadAlongEdgePunctuation(word: String): String {
+    var w = word.trim()
+    val trailing = ".,!?;:\"')」】』›»］)].…।॥"
+    val leading = "(「【『‹«（［"
+    while (w.isNotEmpty() && w.last() in trailing) w = w.dropLast(1)
+    while (w.isNotEmpty() && w.first() in leading) w = w.drop(1)
+    return w.trim()
+}
+
+private fun readAlongTokensMatch(timingWord: String, storyWord: String): Boolean {
+    val a = stripReadAlongEdgePunctuation(timingWord)
+    val b = stripReadAlongEdgePunctuation(storyWord)
+    if (a == b) return true
+    val asciiA = a.isNotEmpty() && a.all { it.code < 128 }
+    val asciiB = b.isNotEmpty() && b.all { it.code < 128 }
+    if (asciiA && asciiB && a.equals(b, ignoreCase = true)) return true
+    return false
+}
+
+/**
+ * Maps each [WordTiming] index to a flat word index in the story (all sentences concatenated).
+ * Greedy sequential match tolerates small punctuation / tokenization differences vs assuming 1:1 counts.
+ */
+private fun alignWordTimingsToFlatStoryIndices(
+    flatStoryWords: List<String>,
+    timings: List<WordTiming>,
+): IntArray {
+    val out = IntArray(timings.size) { -1 }
+    if (flatStoryWords.isEmpty() || timings.isEmpty()) return out
+    var s = 0
+    val maxLookahead = 8
+    for (t in timings.indices) {
+        val needle = timings[t].word
+        if (stripReadAlongEdgePunctuation(needle).isEmpty()) {
+            if (t > 0 && out[t - 1] >= 0) out[t] = out[t - 1]
+            continue
+        }
+        var matched = false
+        val scanEnd = kotlin.math.min(flatStoryWords.size, s + maxLookahead)
+        for (tryS in s until scanEnd) {
+            if (readAlongTokensMatch(needle, flatStoryWords[tryS])) {
+                out[t] = tryS
+                s = tryS + 1
+                matched = true
+                break
+            }
+        }
+        if (!matched) {
+            // Keep search window moving so later timings can re-sync.
+            if (s < flatStoryWords.size) s++
+        }
+    }
+    var carry = 0
+    for (i in out.indices) {
+        if (out[i] >= 0) carry = out[i]
+        else out[i] = carry
+    }
+    carry = out.lastOrNull { it >= 0 } ?: 0
+    for (i in out.indices.reversed()) {
+        if (out[i] >= 0) carry = out[i]
+        else out[i] = carry
+    }
+    return out
+}
+
+private fun flatStoryWordIndexToSentenceWord(
+    flatIndex: Int,
+    sentences: List<String>,
+    startIndices: List<Int>,
+): Pair<Int, Int> {
+    if (sentences.isEmpty()) return 0 to 0
+    val f = flatIndex.coerceAtLeast(0)
+    val sentIdx = sentences.indices.lastOrNull { startIndices[it] <= f } ?: 0
+    val start = startIndices[sentIdx]
+    val endExclusive = startIndices.getOrElse(sentIdx + 1) { start }
+    val wCount = (endExclusive - start).coerceAtLeast(1)
+    val wordInSent = (f - start).coerceIn(0, wCount - 1)
+    return sentIdx to wordInSent
+}
+
 /** Cumulative word count per sentence: sentenceStartWordIndex[i] = words in sentences 0..i-1. */
 private fun sentenceStartWordIndices(sentences: List<String>): List<Int> {
     val indices = mutableListOf(0)
@@ -1346,11 +1556,8 @@ private fun sentenceStartWordIndices(sentences: List<String>): List<Int> {
     return indices
 }
 
-/** Delay (in word fraction) so highlight stays on each word longer and lags the voice. */
-private const val TRANSCRIPT_HIGHLIGHT_DELAY = 0.58f
-
-/** Set to true when transcript content matches TTS (no SSML/expressive collapse) or word timings are available. */
-private const val SHOW_TRANSCRIPT = false
+/** Delay (in word fraction) for heuristic-only sync when server word timings are absent. */
+private const val TRANSCRIPT_HIGHLIGHT_DELAY = 0.42f
 
 /**
  * Karaoke-style transcript: one sentence at a time, word-by-word highlight synced to playback.
@@ -1361,7 +1568,7 @@ private const val SHOW_TRANSCRIPT = false
 private fun StoryTranscriptSection(
     content: String?,
     progress: Float,
-    wordTimings: List<com.tamixa.network.WordTiming>? = null,
+    wordTimings: List<WordTiming>? = null,
     durationSeconds: Int = 0,
     modifier: Modifier = Modifier
 ) {
@@ -1372,21 +1579,35 @@ private fun StoryTranscriptSection(
     val sentences = remember(content) { content?.let { splitIntoSentences(it) } ?: emptyList() }
     val startIndices = remember(sentences) { sentenceStartWordIndices(sentences) }
     val sentenceCount = sentences.size
+    val flatStoryWords = remember(sentences) { sentences.flatMap { splitIntoWords(it) } }
+    val timingToFlat = remember(sentences, wordTimings, content) {
+        if (wordTimings.isNullOrEmpty() || flatStoryWords.isEmpty()) null
+        else alignWordTimingsToFlatStoryIndices(flatStoryWords, wordTimings)
+    }
 
     val (currentSentenceIndex, highlightWordIndex) = if (
         !wordTimings.isNullOrEmpty() && durationSeconds > 0
     ) {
-        val currentTimeSec = progress * durationSeconds
-        val wordIndex = wordTimings.indexOfFirst { currentTimeSec >= it.startSec && currentTimeSec <= it.endSec }
+        val currentTimeSec = (progress * durationSeconds.toFloat() + READ_ALONG_TIMING_OFFSET_SEC)
+            .toDouble()
+            .coerceIn(0.0, durationSeconds.toDouble())
+        val wordIndex = wordTimings.indexOfFirst { currentTimeSec >= it.startSec && currentTimeSec < it.endSec }
             .takeIf { it >= 0 }
             ?: wordTimings.indexOfLast { it.endSec <= currentTimeSec }.takeIf { it >= 0 }
             ?: 0
-        val globalWordIndex = wordIndex.coerceIn(0, wordTimings.size - 1)
-        val sentIdx = startIndices.indexOfFirst { it > globalWordIndex }.let { idx ->
-            if (idx < 0) (startIndices.size - 1).coerceAtLeast(0) else (idx - 1).coerceAtLeast(0)
+        val timingIdx = wordIndex.coerceIn(0, wordTimings.size - 1)
+        val map = timingToFlat
+        if (map != null && map.size == wordTimings.size) {
+            val flatIdx = map[timingIdx].coerceIn(0, (flatStoryWords.size - 1).coerceAtLeast(0))
+            flatStoryWordIndexToSentenceWord(flatIdx, sentences, startIndices)
+        } else {
+            val globalWordIndex = timingIdx
+            val sentIdx = startIndices.indexOfFirst { it > globalWordIndex }.let { idx ->
+                if (idx < 0) (startIndices.size - 2).coerceAtLeast(0) else (idx - 1).coerceAtLeast(0)
+            }
+            val wordInSent = (globalWordIndex - startIndices.getOrElse(sentIdx) { 0 }).coerceIn(0, Int.MAX_VALUE)
+            sentIdx to wordInSent
         }
-        val wordInSent = (globalWordIndex - startIndices.getOrElse(sentIdx) { 0 }).coerceIn(0, Int.MAX_VALUE)
-        sentIdx to wordInSent
     } else {
         val sentenceProgress = if (sentenceCount > 0) (progress * sentenceCount).toFloat().coerceIn(0f, (sentenceCount - 0.001f)) else 0f
         val sentIdx = sentenceProgress.toInt().coerceIn(0, (sentenceCount - 1).coerceAtLeast(0))
@@ -1410,7 +1631,7 @@ private fun StoryTranscriptSection(
             color = surfaceColor,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 100.dp, max = 240.dp)
+                .heightIn(min = 108.dp, max = 288.dp)
         ) {
             if (content.isNullOrBlank() || currentSentence.isBlank()) {
                 Text(

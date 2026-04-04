@@ -57,6 +57,7 @@ import com.tamixa.ui.components.StoryCoverImage
 import com.tamixa.ui.components.StoryThumbnailPlaceholder
 import com.tamixa.ui.components.TamixaChildrenListeningIllustration
 import com.tamixa.ui.isFunStory
+import com.tamixa.ui.isInteractivePracticeLibraryStory
 import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.TamixaCardColors
 import com.tamixa.ui.theme.TamixaColors
@@ -204,6 +205,38 @@ private fun LibraryPosterCard(
                         letterSpacing = 0.4.sp,
                     ),
                     color = Color.White,
+                )
+            }
+            if (isInteractivePracticeLibraryStory(story)) {
+                Text(
+                    text = Strings.libraryInteractivePosterBadge(),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .zIndex(2f)
+                        .shadow(
+                            4.dp,
+                            RoundedCornerShape(10.dp),
+                            ambientColor = Color.Black.copy(alpha = 0.12f),
+                            spotColor = Color.Black.copy(alpha = 0.08f),
+                        )
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    TamixaColors.deepTeal,
+                                    TamixaColors.goldAccent.copy(alpha = 0.92f),
+                                ),
+                            ),
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.4.sp,
+                    ),
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Column(

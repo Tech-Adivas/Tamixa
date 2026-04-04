@@ -28,6 +28,6 @@ data class Story(
     val parentCustomPrompt: String? = null,
     /** AI-generated cover/illustration (GCS path or URL). */
     val coverImageUrl: String? = null,
-    /** Animated GIF cover (Sora image-to-video). Path: generated_cover_videos/{id}.gif */
+    /** Animated GIF cover when image-to-video is configured. Path: generated_cover_videos/{id}.gif */
     val coverVideoUrl: String? = null
 )

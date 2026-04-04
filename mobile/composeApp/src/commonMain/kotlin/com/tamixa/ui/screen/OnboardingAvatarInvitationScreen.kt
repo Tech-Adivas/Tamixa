@@ -26,6 +26,7 @@ import com.tamixa.ui.components.TamixaSkipButton
 import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.OnboardingCardColors
 import com.tamixa.ui.theme.OnboardingCardDefaults
+import com.tamixa.ui.theme.TamixaColors
 
 /**
  * Optional onboarding step: introduce talking avatar.
@@ -127,11 +128,11 @@ private fun AvatarInvitationPreviewCard() {
                 elevation = OnboardingCardDefaults.cardShadowElevation,
                 shape = OnboardingCardDefaults.cardShape,
                 ambientColor = OnboardingCardDefaults.cardShadowAmbient,
-                spotColor = OnboardingCardDefaults.cardShadowSpot
+                spotColor = TamixaColors.deepTeal.copy(alpha = 0.2f)
             ),
         shape = OnboardingCardDefaults.cardShape,
         color = OnboardingCardColors.cardBackground,
-        border = BorderStroke(1.dp, OnboardingCardColors.cardBorder)
+        border = BorderStroke(1.dp, TamixaColors.deepTeal.copy(alpha = 0.3f))
     ) {
         Column(
             modifier = Modifier.padding(spec.cardContentPadding),

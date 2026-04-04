@@ -10,7 +10,7 @@ Quick-reference checklist aligned with [SECURITY.md](../SECURITY.md). Use before
 - [ ] `DEV_OTP_CODE` / `DEV_PASSWORDLESS_CODE` – **Unset in production** (startup fails if set with `prod` profile — `ProductionDevBypassValidator`)
 - [ ] Stripe/Zoho webhook secrets – Valid and kept secret
 - [ ] If Stripe enabled: `SUBSCRIPTION_WEBHOOK_ENCRYPTION_KEY` set (32-byte Base64 AES) – required in prod so webhook payloads are encrypted at rest (PCI/compliance)
-- [ ] `OPENAI_API_KEY`, `AWS_*` – From secrets manager, not `.env` in CI
+- [ ] `OPENAI_API_KEY`, `GEMINI_API_KEY` (per `AI_LLM_PROVIDER` / cover / Veo), `AWS_*` – From secrets manager, not `.env` in CI
 
 ## Completion Steps
 

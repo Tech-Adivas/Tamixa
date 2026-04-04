@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Link, useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import StoryAudioPlayer from "../components/StoryAudioPlayer";
+import InteractiveChoiceOverlay from "../components/InteractiveChoiceOverlay";
+import MissionCardOverlay from "../components/MissionCardOverlay";
 import {
   getLibraryStories,
   getLibraryCategories,
@@ -20,23 +22,167 @@ import {
   getPlaybackPosition,
   savePlaybackPosition,
   searchStories,
+  getAvailableVoices,
+  getVoicePreference,
+  setVoicePreference,
+  voicePreferenceStorySource,
+  uploadFamilyVoice,
+  deleteFamilyVoice,
+  getTimeline,
+  getNarrationScript,
+  recordLifeSkillChoice,
+  getProfile,
+  trackAppEventLibraryHub,
+  trackStoryInteractiveBranch,
+  reportStreamAnalytics,
   ApiClientError,
   STORY_GENERATE_ERROR_CODES,
   type LibraryStory,
   type Story,
   type SearchStoryItem,
   type GenerationTopic,
+  type VoiceOption,
+  type PlaybackManifest,
 } from "../lib/api";
 import type { StreamUrlResponse } from "../lib/api";
+import { stripNarrationMarkers } from "../lib/narrationTextUtils";
+
+function narrativeSceneFractions(
+  scenes: { startProgress: number }[] | null | undefined
+): number[] {
+  if (!scenes?.length) return [];
+  const out: number[] = [];
+  for (const s of scenes) {
+    const v = Number(s.startProgress);
+    if (Number.isFinite(v) && v > 0.02 && v < 0.98) out.push(v);
+  }
+  return [...new Set(out)].sort((a, b) => a - b);
+}
+import {
+  getPreferredVoiceProfile,
+  getOnboardingVoiceAvatarDismissed,
+  setOnboardingVoiceAvatarDismissed,
+} from "../lib/listenerPreferences";
+import { bumpLifeSkillCountersRefresh } from "../lib/lifeSkillPreferences";
+import {
+  parseInteractiveStoryGraph,
+  resolveInteractiveSegmentAudioUrl,
+  libraryRowForInteractivePlayback,
+  prefetchInteractiveAudio,
+  type InteractiveStoryGraph,
+  type InteractiveChoice,
+} from "../lib/interactiveStoryGraph";
 import { useAuth } from "../contexts/AuthContext";
 import { EmptyState } from "../components/EmptyState";
 import {
   isFunStory,
+  isLearnStory,
+  isLearnOrDigitalSafetyStory,
+  isInteractivePracticeLibraryStory,
+  isSimulatorStory,
   funCornerBadgeLabel,
+  interactivePracticeBadgeLabel,
   listenerPlaybackSubtitle,
 } from "../lib/storyListenerUi";
+import { normalizeLibraryHub, type LibraryHub } from "../lib/libraryHub";
 
 type Tab = "library" | "mine" | "favorites";
+
+type PlaybackMode = "default" | "my_voice" | "avatar";
+
+function interactiveBadgeForSearchHit(theme: string): boolean {
+  return isSimulatorStory(theme, null);
+}
+
+function dedupeVoicesForPicker(voices: VoiceOption[]): VoiceOption[] {
+  const hasCloned = voices.some((v) => v.voiceProfile.toLowerCase().startsWith("cloned:"));
+  if (hasCloned) return voices.filter((v) => v.voiceProfile.toLowerCase() !== "family");
+  return voices;
+}
+
+function sanitizePlaybackMode(mode: string, voiceProfile: string): PlaybackMode {
+  const m = mode === "my_voice" || mode === "avatar" ? mode : "default";
+  const voiceIsMy =
+    voiceProfile.toLowerCase().startsWith("cloned:") || voiceProfile.toLowerCase() === "family";
+  if (m === "avatar" && !voiceIsMy) return "default";
+  return m;
+}
+
+function voiceLabelForOption(v: VoiceOption): string {
+  if (v.displayLabel?.trim()) return v.displayLabel.trim();
+  const p = v.voiceProfile;
+  if (p === "default") return "Default";
+  if (p.toLowerCase() === "calm") return v.isPremium ? "Calm (plan)" : "Calm";
+  if (p.toLowerCase() === "family") return "My voice (this story)";
+  if (p.toLowerCase().startsWith("cloned:")) return `My voice (${p})`;
+  return p;
+}
+
+type KaraokeSegment = { startSec: number; endSec: number; text: string };
+
+/** Match mobile AudioPlayerScreen — small lead so captions track perceived speech. */
+const READ_ALONG_TIMING_OFFSET_SEC = 0.08;
+
+function flattenPlaybackManifest(m: PlaybackManifest | null): KaraokeSegment[] {
+  if (!m?.scenes?.length) return [];
+  let ms = 0;
+  const out: KaraokeSegment[] = [];
+  for (const sc of m.scenes) {
+    for (const seg of sc.segments ?? []) {
+      const startSec = ms / 1000;
+      ms += seg.durationMs > 0 ? seg.durationMs : 0;
+      const text = seg.text?.trim() ?? "";
+      if (text) out.push({ startSec, endSec: ms / 1000, text });
+    }
+  }
+  return out;
+}
+
+function captionFromWordTimings(
+  timings: { word: string; startSec: number; endSec: number }[],
+  t: number
+): string | null {
+  if (!timings.length) return null;
+  const idx = timings.findIndex((w) => t >= w.startSec && t < w.endSec);
+  const i = idx >= 0 ? idx : timings.findIndex((w) => t < w.startSec);
+  const center = i >= 0 ? i : Math.max(0, timings.length - 1);
+  const from = Math.max(0, center - 5);
+  const to = Math.min(timings.length, center + 8);
+  return timings
+    .slice(from, to)
+    .map((w) => w.word)
+    .join(" ")
+    .trim();
+}
+
+function captionFromSegments(segments: KaraokeSegment[], t: number): string | null {
+  const hit = segments.find((s) => t >= s.startSec && t < s.endSec);
+  return hit?.text?.trim() ? hit.text.trim() : null;
+}
+
+function timelineApiStorySource(
+  storySourceUi: string,
+  storyId: number,
+  favorites: { storyId: number; storySource: string }[]
+): string {
+  if (storySourceUi === "favorites") {
+    const f = favorites.find((x) => x.storyId === storyId);
+    return f?.storySource === "generated" ? "generated" : "library";
+  }
+  if (storySourceUi === "mine") return "generated";
+  if (storySourceUi === "library") return "library";
+  return "generated";
+}
+
+function resolveLifeSkillChildIdForWeb(
+  mine: Story[],
+  profileFallback: number | null
+): number | null {
+  for (const s of mine) {
+    if (s.childId != null && s.childId > 0) return s.childId;
+  }
+  return profileFallback;
+}
 
 function readTabFromSearch(): Tab {
   if (typeof window === "undefined") return "library";
@@ -95,7 +241,7 @@ function StoryCover({
 }
 
 export default function Stories() {
-  useAuth();
+  const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -141,7 +287,25 @@ export default function Stories() {
   const [playingSubtitle, setPlayingSubtitle] = useState<string | null>(null);
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
-  const [selectedVoice, setSelectedVoice] = useState<string>("default");
+  const [playbackVoiceProfile, setPlaybackVoiceProfile] = useState("default");
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("default");
+  const [playbackVoices, setPlaybackVoices] = useState<VoiceOption[]>([]);
+  const [playbackAvatarStatus, setPlaybackAvatarStatus] = useState<string | null>(null);
+  const [familyVoiceBusy, setFamilyVoiceBusy] = useState(false);
+  const playbackContextRef = useRef<{
+    storyId: number;
+    storySourceUi: string;
+    titleOverride?: string;
+  } | null>(null);
+  const familyVoiceFileRef = useRef<HTMLInputElement>(null);
+  const browserTtsTextRef = useRef<string>("");
+  const [playbackWordTimings, setPlaybackWordTimings] = useState<
+    { word: string; startSec: number; endSec: number }[] | null
+  >(null);
+  const [playbackKaraokeSegments, setPlaybackKaraokeSegments] = useState<KaraokeSegment[]>([]);
+  const [playbackChapterFractions, setPlaybackChapterFractions] = useState<number[]>([]);
+  const [playbackUsesBrowserTts, setPlaybackUsesBrowserTts] = useState(false);
+  const [showVoiceOnboarding, setShowVoiceOnboarding] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchStoryItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -154,6 +318,23 @@ export default function Stories() {
   const playingStoryRef = useRef<{ id: number; source: string } | null>(null);
   const playIntentRef = useRef<number | null>(null);
   const blobUrlRef = useRef<string | null>(null);
+  const streamRequestStartMsRef = useRef<number | null>(null);
+  const streamAnalyticsLatencySentRef = useRef(false);
+  const streamAnalyticsBufferSentRef = useRef(false);
+  const profileChildIdFallbackRef = useRef<number | null>(null);
+  const [interactivePlayback, setInteractivePlayback] = useState<{
+    storyId: number;
+    graph: InteractiveStoryGraph;
+    currentSegmentId: string;
+    overlayStyle: string | null;
+  } | null>(null);
+  const interactivePlaybackRef = useRef<typeof interactivePlayback>(null);
+  const [interactiveChoiceOpen, setInteractiveChoiceOpen] = useState(false);
+  const [interactiveMissionOpen, setInteractiveMissionOpen] = useState(false);
+
+  useEffect(() => {
+    interactivePlaybackRef.current = interactivePlayback;
+  }, [interactivePlayback]);
 
   /** Keep `?tab=` in sync when the user picks a tab (shareable / back button). */
   const setTabAndUrl = useCallback(
@@ -163,6 +344,7 @@ export default function Stories() {
         (prev) => {
           const p = new URLSearchParams(prev);
           p.set("tab", next);
+          if (next !== "library") p.delete("hub");
           return p;
         },
         { replace: true }
@@ -170,6 +352,43 @@ export default function Stories() {
     },
     [setSearchParams]
   );
+
+  const libraryHubParam = searchParams.get("hub");
+  const libraryHub: LibraryHub =
+    tab === "library" ? normalizeLibraryHub(libraryHubParam) : "browse";
+
+  const setLibraryHubInUrl = useCallback(
+    (hub: LibraryHub) => {
+      if (hub !== "browse") setLibraryThemeFilter(null);
+      setTab("library");
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.set("tab", "library");
+          if (hub === "browse") p.delete("hub");
+          else p.set("hub", hub);
+          return p;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+
+  const lastTrackedLibraryHubRef = useRef("");
+  useEffect(() => {
+    if (tab !== "library") {
+      lastTrackedLibraryHubRef.current = "";
+      return;
+    }
+    const hub = normalizeLibraryHub(libraryHubParam);
+    const hubKey =
+      hub === "browse" ? "browse" : hub === "fun" ? "fun" : hub === "learn" ? "learn" : "simulator";
+    const dedupe = `${tab}:${hubKey}`;
+    if (lastTrackedLibraryHubRef.current === dedupe) return;
+    lastTrackedLibraryHubRef.current = dedupe;
+    void trackAppEventLibraryHub(hubKey);
+  }, [tab, libraryHubParam]);
 
   /** After resume playback, drop only resume handoff params — preserve `tab` and other queries. */
   const clearResumeQueryParams = useCallback(() => {
@@ -183,6 +402,25 @@ export default function Stories() {
       { replace: true }
     );
   }, [setSearchParams]);
+
+  useEffect(() => {
+    setShowVoiceOnboarding(!getOnboardingVoiceAvatarDismissed());
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      profileChildIdFallbackRef.current = null;
+      return;
+    }
+    getProfile()
+      .then((p) => {
+        const first = (p.children ?? []).map((c) => c.id).find((id) => id > 0);
+        profileChildIdFallbackRef.current = first ?? null;
+      })
+      .catch(() => {
+        profileChildIdFallbackRef.current = null;
+      });
+  }, [user]);
 
   useEffect(() => {
     if (searchQuery.trim().length < 2) {
@@ -224,7 +462,10 @@ export default function Stories() {
     let cancelled = false;
     setLoading(true);
     setLibraryListError("");
-    getLibraryStories("ta", 0, 50, libraryThemeFilter, false)
+    const hub = normalizeLibraryHub(libraryHubParam);
+    const themeForApi = hub === "browse" ? libraryThemeFilter : null;
+    const pageSize = hub === "browse" ? 50 : 100;
+    getLibraryStories("ta", 0, pageSize, themeForApi, false)
       .then((rows) => {
         if (!cancelled) {
           setLibrary(rows);
@@ -243,7 +484,21 @@ export default function Stories() {
     return () => {
       cancelled = true;
     };
-  }, [tab, libraryThemeFilter, libraryRetryKey]);
+  }, [tab, libraryThemeFilter, libraryRetryKey, libraryHubParam]);
+
+  const displayLibrary = useMemo(() => {
+    if (tab !== "library") return [];
+    switch (libraryHub) {
+      case "fun":
+        return library.filter((s) => isFunStory(s.theme, s.category));
+      case "learn":
+        return library.filter((s) => isLearnOrDigitalSafetyStory(s.theme, s.category));
+      case "simulator":
+        return library.filter((s) => isInteractivePracticeLibraryStory(s));
+      default:
+        return library;
+    }
+  }, [tab, library, libraryHub]);
 
   useEffect(() => {
     if (tab === "mine") {
@@ -367,6 +622,17 @@ export default function Stories() {
 
   const isFav = (storyId: number) => favorites.some((f) => f.storyId === storyId);
 
+  const getPrefSourceForStory = useCallback(
+    (storyId: number, storySourceUi: string): string => {
+      if (storySourceUi === "favorites") {
+        const hit = favorites.find((f) => f.storyId === storyId);
+        return voicePreferenceStorySource(hit?.storySource ?? "library");
+      }
+      return voicePreferenceStorySource(storySourceUi);
+    },
+    [favorites]
+  );
+
   const getTitleForStory = useCallback(
     (id: number, source: string): string => {
       if (source === "library") {
@@ -407,6 +673,439 @@ export default function Stories() {
     [library, mine, searchResults, getTitleForStory]
   );
 
+  const resolveStoryPlainText = useCallback(
+    (storyId: number, storySourceUi: string): string | null => {
+      const clean = (raw: string | null | undefined): string | null => {
+        const t = raw?.trim();
+        if (!t) return null;
+        const s = stripNarrationMarkers(t);
+        return s.length > 0 ? s : null;
+      };
+      if (storySourceUi === "library") {
+        return clean(library.find((c) => c.id === storyId)?.content);
+      }
+      if (storySourceUi === "generated" || storySourceUi === "mine") {
+        return clean(mine.find((m) => m.id === storyId)?.content);
+      }
+      if (storySourceUi === "favorites") {
+        const fromLib = clean(library.find((c) => c.id === storyId)?.content);
+        if (fromLib) return fromLib;
+        return clean(mine.find((m) => m.id === storyId)?.content);
+      }
+      return null;
+    },
+    [library, mine]
+  );
+
+  const clearPlaybackAfterEnd = useCallback(() => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+    setPlayingAvatarVideoUrl(null);
+    setPlayingHostClipUrl(null);
+    setPlayingStoryId(null);
+    setPlayingTitle(null);
+    setPlayingSubtitle(null);
+    setParentPanelStory(null);
+    playingStoryRef.current = null;
+    playbackContextRef.current = null;
+    setPlaybackAvatarStatus(null);
+    setPlaybackWordTimings(null);
+    setPlaybackKaraokeSegments([]);
+    setPlaybackChapterFractions([]);
+    setPlaybackUsesBrowserTts(false);
+    browserTtsTextRef.current = "";
+    setInteractivePlayback(null);
+    setInteractiveChoiceOpen(false);
+    setInteractiveMissionOpen(false);
+    streamRequestStartMsRef.current = null;
+    streamAnalyticsLatencySentRef.current = false;
+    streamAnalyticsBufferSentRef.current = false;
+  }, []);
+
+  const handleInteractiveChoice = useCallback(
+    async (ch: InteractiveChoice) => {
+      const prev = interactivePlayback;
+      if (!prev) return;
+      void trackStoryInteractiveBranch(prev.storyId, "library", "ta");
+      const cid = resolveLifeSkillChildIdForWeb(mine, profileChildIdFallbackRef.current);
+      if (cid != null) {
+        const ok = await recordLifeSkillChoice({
+          libraryStoryId: prev.storyId,
+          childId: cid,
+          segmentId: prev.currentSegmentId,
+          choiceId: ch.id,
+          skillDeltas: ch.skillDeltas ?? undefined,
+        });
+        if (ok) bumpLifeSkillCountersRefresh();
+      }
+      setInteractiveChoiceOpen(false);
+      setInteractivePlayback({ ...prev, currentSegmentId: ch.nextSegmentId });
+    },
+    [interactivePlayback, mine]
+  );
+
+  const dismissInteractiveMission = useCallback(() => {
+    setInteractiveMissionOpen(false);
+    clearPlaybackAfterEnd();
+  }, [clearPlaybackAfterEnd]);
+
+  useEffect(() => {
+    if (!interactivePlayback) return;
+    const { graph, currentSegmentId, storyId } = interactivePlayback;
+    const seg = graph.segments[currentSegmentId];
+    if (!seg) {
+      setError("This episode’s interactive segment is missing.");
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      setLoadingStreamId(storyId);
+      setInteractiveChoiceOpen(false);
+      setError("");
+      const raw = resolveInteractiveSegmentAudioUrl(seg.audioUrl);
+      if (!raw) {
+        if (!cancelled) {
+          setError("No audio for this segment.");
+          setLoadingStreamId(null);
+        }
+        return;
+      }
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+      const audio = audioRef.current;
+      if (!audio) {
+        if (!cancelled) setLoadingStreamId(null);
+        return;
+      }
+      try {
+        let playUrl = raw;
+        const streamOrigin = new URL(raw).origin;
+        if (streamOrigin === getApiOrigin()) {
+          playUrl = await fetchStreamAsBlobUrl(raw);
+          blobUrlRef.current = playUrl;
+        }
+        if (cancelled) return;
+        audio.pause();
+        audio.src = playUrl;
+        audio.currentTime = 0;
+        setAudioCurrentTime(0);
+        setAudioDuration(0);
+        await new Promise<void>((resolve, reject) => {
+          const onMeta = () => {
+            audio.removeEventListener("loadedmetadata", onMeta);
+            audio.removeEventListener("error", onErr);
+            resolve();
+          };
+          const onErr = () => {
+            audio.removeEventListener("loadedmetadata", onMeta);
+            audio.removeEventListener("error", onErr);
+            reject(new Error("Audio failed to load"));
+          };
+          audio.addEventListener("loadedmetadata", onMeta);
+          audio.addEventListener("error", onErr);
+        });
+        if (cancelled) return;
+        setAudioDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+        await audio.play();
+        if (cancelled) return;
+        setPlayingStoryId(storyId);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Playback failed");
+      } finally {
+        if (!cancelled) setLoadingStreamId(null);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [interactivePlayback]);
+
+  useEffect(() => {
+    if (!interactivePlayback || interactiveChoiceOpen || interactiveMissionOpen) return;
+    if (playbackUsesBrowserTts || playingAvatarVideoUrl) return;
+    if (playingStoryId !== interactivePlayback.storyId) return;
+    const seg = interactivePlayback.graph.segments[interactivePlayback.currentSegmentId];
+    if (!seg) return;
+    const d = audioDuration;
+    const t = audioCurrentTime;
+    if (d <= 0 || !Number.isFinite(d)) return;
+    const frac = t / d;
+    if (seg.choices && seg.choices.length > 0 && frac >= 0.97) {
+      setInteractiveChoiceOpen(true);
+      audioRef.current?.pause();
+      return;
+    }
+    const hasMission =
+      parentPanelStory != null &&
+      ((parentPanelStory.postStoryMission?.trim() ?? "") !== "" ||
+        (parentPanelStory.postStoryResourceUrl?.trim() ?? "") !== "");
+    if ((!seg.choices || seg.choices.length === 0) && hasMission && frac >= 0.98) {
+      setInteractiveMissionOpen(true);
+      audioRef.current?.pause();
+    }
+  }, [
+    audioCurrentTime,
+    audioDuration,
+    interactivePlayback,
+    interactiveChoiceOpen,
+    interactiveMissionOpen,
+    playingStoryId,
+    playbackUsesBrowserTts,
+    playingAvatarVideoUrl,
+    parentPanelStory,
+  ]);
+
+  useEffect(() => {
+    if (!interactiveChoiceOpen || !interactivePlayback) return;
+    const seg = interactivePlayback.graph.segments[interactivePlayback.currentSegmentId];
+    const urls = (seg?.choices ?? [])
+      .map((choice) => {
+        const next = interactivePlayback.graph.segments[choice.nextSegmentId];
+        if (!next) return null;
+        return resolveInteractiveSegmentAudioUrl(next.audioUrl);
+      })
+      .filter((u): u is string => Boolean(u));
+    void prefetchInteractiveAudio(urls);
+  }, [interactiveChoiceOpen, interactivePlayback]);
+
+  type StreamLoadResult = "ok" | "upgrade" | "no_audio" | "aborted";
+
+  async function loadAndPlayStream(
+    storyId: number,
+    storySourceUi: string,
+    voiceProfile: string,
+    playbackModeParam: PlaybackMode,
+    startPositionSeconds: number | undefined,
+    titleOverride: string | undefined
+  ): Promise<StreamLoadResult> {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setPlaybackUsesBrowserTts(false);
+    streamRequestStartMsRef.current = performance.now();
+    streamAnalyticsLatencySentRef.current = false;
+    streamAnalyticsBufferSentRef.current = false;
+    const sourceForApi = storySourceUi === "mine" ? "generated" : storySourceUi;
+    const voiceToUse = voiceProfile === "default" ? null : voiceProfile;
+    let data: StreamUrlResponse | null;
+    try {
+      data = await getStreamUrl(storyId, "ta", voiceToUse, sourceForApi, playbackModeParam);
+    } catch (e) {
+      if (e instanceof ApiClientError && e.httpStatus === 402) return "upgrade";
+      throw e;
+    }
+    if (!data && voiceToUse != null) {
+      try {
+        data = await getStreamUrl(storyId, "ta", null, sourceForApi, playbackModeParam);
+      } catch (e2) {
+        if (e2 instanceof ApiClientError && e2.httpStatus === 402) return "upgrade";
+        throw e2;
+      }
+    }
+    if (playIntentRef.current !== storyId) return "aborted";
+    if (!data?.streamUrl) return "no_audio";
+
+    playingStoryRef.current = { id: storyId, source: storySourceUi };
+    setPlayingTitle(titleOverride ?? getTitleForStory(storyId, storySourceUi));
+    const subSrc =
+      storySourceUi === "mine" ? "generated" : storySourceUi === "favorites" ? "favorites" : storySourceUi;
+    const pf = getPlaybackFields(storyId, storySourceUi, titleOverride);
+    setPlayingSubtitle(listenerPlaybackSubtitle(subSrc, pf.theme, pf.category, pf.title));
+    if (storySourceUi === "library") {
+      setParentPanelStory(library.find((c) => c.id === storyId) ?? null);
+    } else {
+      setParentPanelStory(null);
+    }
+
+    setPlaybackAvatarStatus(data.avatarStatus?.trim() ? data.avatarStatus : null);
+    setPlaybackWordTimings(
+      Array.isArray(data.wordTimings) && data.wordTimings.length > 0 ? data.wordTimings : null
+    );
+    setPlaybackChapterFractions(narrativeSceneFractions(data.narrativeScenes));
+    setPlaybackUsesBrowserTts(false);
+
+    if (data.avatarVideoUrl) {
+      const resolvedVideoUrl = resolveCoverUrl(data.avatarVideoUrl) ?? data.avatarVideoUrl;
+      setPlayingHostClipUrl(null);
+      setPlayingAvatarVideoUrl(resolvedVideoUrl);
+      setPlayingStoryId(storyId);
+      const d =
+        typeof data.durationSeconds === "number" && Number.isFinite(data.durationSeconds) && data.durationSeconds > 0
+          ? data.durationSeconds
+          : 0;
+      setAudioDuration(d);
+      const start = startPositionSeconds != null && startPositionSeconds > 0 ? startPositionSeconds : 0;
+      setAudioCurrentTime(start);
+      queueMicrotask(() => {
+        if (videoRef.current && start > 0) videoRef.current.currentTime = start;
+      });
+      queueMicrotask(() => {
+        const v = videoRef.current;
+        if (!v || playingStoryRef.current?.id !== storyId) return;
+        const onPlaying = () => {
+          v.removeEventListener("playing", onPlaying);
+          if (streamAnalyticsLatencySentRef.current) return;
+          const t0 = streamRequestStartMsRef.current;
+          if (t0 == null) return;
+          streamAnalyticsLatencySentRef.current = true;
+          const ms = performance.now() - t0;
+          void reportStreamAnalytics({
+            storyId,
+            streamStartLatencyMs: Math.min(60_000, Math.max(0, ms)),
+          });
+        };
+        v.addEventListener("playing", onPlaying, { once: true });
+      });
+      return "ok";
+    }
+
+    const audio = audioRef.current;
+    if (!audio) {
+      setError("Audio player not ready");
+      return "no_audio";
+    }
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+    let playUrl = data.streamUrl;
+    try {
+      const streamOrigin = typeof window !== "undefined" ? new URL(data.streamUrl).origin : "";
+      if (streamOrigin === getApiOrigin()) {
+        playUrl = await fetchStreamAsBlobUrl(data.streamUrl);
+        blobUrlRef.current = playUrl;
+      }
+    } catch (e) {
+      if (playIntentRef.current === storyId) {
+        setError(e instanceof Error ? e.message : "Failed to load audio");
+      }
+      return "no_audio";
+    }
+    if (playIntentRef.current !== storyId) return "aborted";
+    audio.src = playUrl;
+    if (startPositionSeconds != null && startPositionSeconds > 0) {
+      audio.currentTime = startPositionSeconds;
+    }
+    const reduceMotion =
+      typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const clipRaw = !reduceMotion && data.hostStoryClipUrl?.trim()
+      ? resolveCoverUrl(data.hostStoryClipUrl) ?? data.hostStoryClipUrl
+      : null;
+    setPlayingHostClipUrl(clipRaw);
+    setPlayingAvatarVideoUrl(null);
+    const onPlayingAudio = () => {
+      audio.removeEventListener("playing", onPlayingAudio);
+      if (streamAnalyticsLatencySentRef.current) return;
+      const t0 = streamRequestStartMsRef.current;
+      if (t0 == null) return;
+      streamAnalyticsLatencySentRef.current = true;
+      const ms = performance.now() - t0;
+      void reportStreamAnalytics({
+        storyId,
+        streamStartLatencyMs: Math.min(60_000, Math.max(0, ms)),
+      });
+    };
+    audio.addEventListener("playing", onPlayingAudio, { once: true });
+    await audio.play();
+    if (playIntentRef.current !== storyId) return "aborted";
+    setPlayingStoryId(storyId);
+    setAudioDuration(audio.duration || 0);
+    setAudioCurrentTime(audio.currentTime || 0);
+    return "ok";
+  }
+
+  const beginBrowserTtsPlayback = useCallback(
+    (storyId: number, storySourceUi: string, script: string, titleOverride?: string): boolean => {
+      const trimmed = stripNarrationMarkers(script.trim());
+      if (!trimmed) return false;
+      if (typeof window === "undefined" || !window.speechSynthesis) {
+        setError("This browser does not support read-aloud fallback.");
+        return false;
+      }
+      window.speechSynthesis.cancel();
+      browserTtsTextRef.current = trimmed;
+      setPlaybackWordTimings(null);
+      setPlaybackChapterFractions([]);
+      setPlaybackUsesBrowserTts(true);
+      playingStoryRef.current = { id: storyId, source: storySourceUi };
+      setPlayingTitle(titleOverride ?? getTitleForStory(storyId, storySourceUi));
+      const subSrc =
+        storySourceUi === "mine" ? "generated" : storySourceUi === "favorites" ? "favorites" : storySourceUi;
+      const pf = getPlaybackFields(storyId, storySourceUi, titleOverride);
+      setPlayingSubtitle(listenerPlaybackSubtitle(subSrc, pf.theme, pf.category, pf.title));
+      if (storySourceUi === "library") {
+        setParentPanelStory(library.find((c) => c.id === storyId) ?? null);
+      } else {
+        setParentPanelStory(null);
+      }
+      setPlaybackAvatarStatus(null);
+      setPlayingAvatarVideoUrl(null);
+      setPlayingHostClipUrl(null);
+      setAudioDuration(0);
+      setAudioCurrentTime(0);
+      setPlayingStoryId(storyId);
+      const u = new SpeechSynthesisUtterance(trimmed);
+      u.lang = "ta-IN";
+      u.onend = () => {
+        clearPlaybackAfterEnd();
+      };
+      u.onerror = () => {
+        setError("Read-aloud was interrupted.");
+        clearPlaybackAfterEnd();
+      };
+      window.speechSynthesis.speak(u);
+      return true;
+    },
+    [library, getTitleForStory, getPlaybackFields, clearPlaybackAfterEnd]
+  );
+
+  const reloadStreamForPreferenceChange = async (
+    storyId: number,
+    storySourceUi: string,
+    voiceProfile: string,
+    mode: PlaybackMode,
+    titleOverride?: string
+  ) => {
+    const pos = playingAvatarVideoUrl
+      ? Math.floor(videoRef.current?.currentTime ?? 0)
+      : Math.floor(audioRef.current?.currentTime ?? 0);
+    playIntentRef.current = storyId;
+    setLoadingStreamId(storyId);
+    setError("");
+    try {
+      const result = await loadAndPlayStream(storyId, storySourceUi, voiceProfile, mode, pos, titleOverride);
+      if (result === "upgrade") {
+        setError("Premium voice or avatar needs an active plan. See Subscription in the sidebar.");
+      } else if (result === "no_audio") {
+        const script =
+          (await getNarrationScript(storyId, "ta")) ??
+          resolveStoryPlainText(storyId, storySourceUi) ??
+          "";
+        if (!beginBrowserTtsPlayback(storyId, storySourceUi, script, titleOverride)) {
+          setError("Audio not available for this story");
+        }
+      }
+    } catch (e) {
+      const isInterrupted =
+        (e instanceof DOMException && e.name === "AbortError") ||
+        (e instanceof Error && /interrupted|pause/i.test(e.message));
+      if (!isInterrupted) setError(e instanceof Error ? e.message : "Failed to load audio");
+    } finally {
+      if (playIntentRef.current === storyId) {
+        playIntentRef.current = null;
+        setLoadingStreamId(null);
+      }
+    }
+  };
+
   const playStory = async (
     storyId: number,
     storySource: string,
@@ -416,100 +1115,135 @@ export default function Stories() {
     if (playingStoryId === storyId) {
       audioRef.current?.pause();
       videoRef.current?.pause();
-      setPlayingAvatarVideoUrl(null);
-      setPlayingHostClipUrl(null);
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
       }
-      setPlayingStoryId(null);
-      setPlayingTitle(null);
-      setPlayingSubtitle(null);
-      setParentPanelStory(null);
+      clearPlaybackAfterEnd();
       return;
     }
     audioRef.current?.pause();
     videoRef.current?.pause();
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setPlaybackUsesBrowserTts(false);
+    browserTtsTextRef.current = "";
+    setPlaybackWordTimings(null);
+    setPlaybackKaraokeSegments([]);
+    setPlaybackChapterFractions([]);
     setPlayingAvatarVideoUrl(null);
     setPlayingHostClipUrl(null);
+    setInteractivePlayback(null);
+    setInteractiveChoiceOpen(false);
+    setInteractiveMissionOpen(false);
+    streamRequestStartMsRef.current = null;
+    streamAnalyticsLatencySentRef.current = false;
+    streamAnalyticsBufferSentRef.current = false;
     playIntentRef.current = storyId;
     setLoadingStreamId(storyId);
     setError("");
+    let skipFinallyLoadingClear = false;
     try {
-      const voiceToUse = selectedVoice === "default" ? null : selectedVoice;
-      const sourceForApi = storySource === "mine" ? "generated" : storySource;
-      let data: StreamUrlResponse | null = await getStreamUrl(storyId, "ta", voiceToUse, sourceForApi);
-      if (!data && voiceToUse != null) {
-        data = await getStreamUrl(storyId, "ta", null, sourceForApi);
-      }
-      if (!data?.streamUrl) {
-        setError("Audio not available for this story");
-        return;
-      }
-      if (playIntentRef.current !== storyId) return;
-      playingStoryRef.current = { id: storyId, source: storySource };
-      setPlayingTitle(titleOverride ?? getTitleForStory(storyId, storySource));
-      const subSrc =
-        storySource === "mine" ? "generated" : storySource === "favorites" ? "favorites" : storySource;
-      const pf = getPlaybackFields(storyId, storySource, titleOverride);
-      setPlayingSubtitle(listenerPlaybackSubtitle(subSrc, pf.theme, pf.category, pf.title));
-      if (storySource === "library") {
-        setParentPanelStory(library.find((c) => c.id === storyId) ?? null);
-      } else {
-        setParentPanelStory(null);
-      }
+      const prefSource = getPrefSourceForStory(storyId, storySource);
+      playbackContextRef.current = { storyId, storySourceUi: storySource, titleOverride };
 
-      if (data.avatarVideoUrl) {
-        const resolvedVideoUrl = resolveCoverUrl(data.avatarVideoUrl) ?? data.avatarVideoUrl;
+      const rawVoices = await getAvailableVoices(storyId, "ta");
+      let voices = dedupeVoicesForPicker(rawVoices);
+      if (voices.length === 0) {
+        voices = [
+          { voiceProfile: "default", isPremium: false },
+          { voiceProfile: "calm", isPremium: true },
+        ];
+      }
+      const pref = await getVoicePreference(storyId, prefSource);
+      let selectedV =
+        pref.voiceProfile &&
+        pref.voiceProfile.trim() !== "" &&
+        pref.voiceProfile.toLowerCase() !== "default" &&
+        voices.some((v) => v.voiceProfile.toLowerCase() === pref.voiceProfile.toLowerCase())
+          ? pref.voiceProfile
+          : "default";
+      if (selectedV === "default") {
+        const localPref = getPreferredVoiceProfile();
+        if (
+          localPref !== "default" &&
+          voices.some((v) => v.voiceProfile.toLowerCase() === localPref)
+        ) {
+          selectedV = localPref;
+        }
+      }
+      const mode = sanitizePlaybackMode(pref.playbackMode, selectedV);
+      if (mode !== pref.playbackMode) {
+        await setVoicePreference(storyId, prefSource, selectedV, mode);
+      }
+      setPlaybackVoices(voices);
+      setPlaybackVoiceProfile(selectedV);
+      setPlaybackMode(mode);
+
+      const libRow = libraryRowForInteractivePlayback(
+        storyId,
+        storySource,
+        library,
+        favorites
+      ) as LibraryStory | null;
+      const graph =
+        libRow?.interactiveGraph != null ? parseInteractiveStoryGraph(libRow.interactiveGraph) : null;
+
+      if (graph && libRow) {
+        skipFinallyLoadingClear = true;
+        setInteractiveChoiceOpen(false);
+        setInteractiveMissionOpen(false);
+        setPlaybackUsesBrowserTts(false);
+        setPlaybackKaraokeSegments([]);
+        setPlaybackWordTimings(null);
+        setPlaybackChapterFractions([]);
+        setPlayingAvatarVideoUrl(null);
         setPlayingHostClipUrl(null);
-        setPlayingAvatarVideoUrl(resolvedVideoUrl);
-        setPlayingStoryId(storyId);
-        setAudioDuration(0);
-        setAudioCurrentTime(0);
-        setLoadingStreamId(null);
-        playIntentRef.current = null;
+        setInteractivePlayback({
+          storyId,
+          graph,
+          currentSegmentId: graph.startSegmentId,
+          overlayStyle: graph.overlayStyle ?? null,
+        });
+        playingStoryRef.current = { id: storyId, source: storySource };
+        setPlayingTitle(titleOverride ?? getTitleForStory(storyId, storySource));
+        const subSrcI =
+          storySource === "mine" ? "generated" : storySource === "favorites" ? "favorites" : storySource;
+        const pfI = getPlaybackFields(storyId, storySource, titleOverride);
+        setPlayingSubtitle(listenerPlaybackSubtitle(subSrcI, pfI.theme, pfI.category, pfI.title));
+        setParentPanelStory(libRow);
         return;
       }
 
-      const audio = audioRef.current;
-      if (!audio) {
-        setError("Audio player not ready");
-        return;
-      }
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
-      let playUrl = data.streamUrl;
       try {
-        const streamOrigin = typeof window !== "undefined" ? new URL(data.streamUrl).origin : "";
-        if (streamOrigin === getApiOrigin()) {
-          playUrl = await fetchStreamAsBlobUrl(data.streamUrl);
-          blobUrlRef.current = playUrl;
-        }
-      } catch (e) {
+        const tlSrc = timelineApiStorySource(storySource, storyId, favorites);
+        const tl = await getTimeline(storyId, "ta", tlSrc, selectedV === "default" ? null : selectedV);
         if (playIntentRef.current === storyId) {
-          setError(e instanceof Error ? e.message : "Failed to load audio");
+          setPlaybackKaraokeSegments(flattenPlaybackManifest(tl));
         }
-        return;
+      } catch {
+        if (playIntentRef.current === storyId) setPlaybackKaraokeSegments([]);
       }
-      if (playIntentRef.current !== storyId) return;
-      audio.src = playUrl;
-      if (startPositionSeconds != null && startPositionSeconds > 0) {
-        audio.currentTime = startPositionSeconds;
+
+      const result = await loadAndPlayStream(
+        storyId,
+        storySource,
+        selectedV,
+        mode,
+        startPositionSeconds,
+        titleOverride
+      );
+      if (result === "upgrade") {
+        setError("Premium voice or avatar needs an active plan. See Subscription in the sidebar.");
+      } else if (result === "no_audio") {
+        const script =
+          (await getNarrationScript(storyId, "ta")) ??
+          resolveStoryPlainText(storyId, storySource) ??
+          "";
+        if (!beginBrowserTtsPlayback(storyId, storySource, script, titleOverride)) {
+          setError("Audio not available for this story");
+        }
       }
-      const reduceMotion =
-        typeof window !== "undefined" &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const clipRaw = !reduceMotion && data.hostStoryClipUrl?.trim()
-        ? resolveCoverUrl(data.hostStoryClipUrl) ?? data.hostStoryClipUrl
-        : null;
-      setPlayingHostClipUrl(clipRaw);
-      await audio.play();
-      if (playIntentRef.current !== storyId) return;
-      setPlayingStoryId(storyId);
-      setAudioDuration(audio.duration || 0);
-      setAudioCurrentTime(audio.currentTime || 0);
     } catch (e) {
       const isInterrupted =
         (e instanceof DOMException && e.name === "AbortError") ||
@@ -521,7 +1255,7 @@ export default function Stories() {
     } finally {
       if (playIntentRef.current === storyId) {
         playIntentRef.current = null;
-        setLoadingStreamId(null);
+        if (!skipFinallyLoadingClear) setLoadingStreamId(null);
       }
     }
   };
@@ -538,6 +1272,26 @@ export default function Stories() {
   }, [playingAvatarVideoUrl, playingStoryId]);
 
   const handleAudioPlayPause = useCallback(() => {
+    if (playbackUsesBrowserTts) {
+      if (playingStoryId != null) {
+        if (typeof window !== "undefined" && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+        }
+        clearPlaybackAfterEnd();
+        return;
+      }
+      const p = playingStoryRef.current;
+      const text = browserTtsTextRef.current;
+      if (p && text.trim()) {
+        beginBrowserTtsPlayback(
+          p.id,
+          p.source,
+          text,
+          playbackContextRef.current?.titleOverride
+        );
+      }
+      return;
+    }
     if (playingStoryId != null) {
       const p = playingStoryRef.current;
       if (p && playingAvatarVideoUrl && videoRef.current) {
@@ -547,11 +1301,16 @@ export default function Stories() {
           positionSeconds: Math.floor(videoRef.current.currentTime),
         }).catch(() => {});
       }
+      if (p && !playingAvatarVideoUrl && audioRef.current) {
+        savePlaybackPosition({
+          storyId: p.id,
+          storySource: p.source,
+          positionSeconds: Math.floor(audioRef.current.currentTime),
+        }).catch(() => {});
+      }
       audioRef.current?.pause();
       videoRef.current?.pause();
-      setPlayingAvatarVideoUrl(null);
-      setPlayingHostClipUrl(null);
-      setPlayingStoryId(null);
+      clearPlaybackAfterEnd();
       return;
     }
     const p = playingStoryRef.current;
@@ -579,9 +1338,18 @@ export default function Stories() {
         });
       }
     }
-  }, [playingStoryId, playingAvatarVideoUrl, getTitleForStory, getPlaybackFields]);
+  }, [
+    playbackUsesBrowserTts,
+    playingStoryId,
+    playingAvatarVideoUrl,
+    getTitleForStory,
+    getPlaybackFields,
+    clearPlaybackAfterEnd,
+    beginBrowserTtsPlayback,
+  ]);
 
   const handleSeek = useCallback((seconds: number) => {
+    if (playbackUsesBrowserTts) return;
     if (!Number.isFinite(seconds)) return;
     if (playingAvatarVideoUrl && videoRef.current) {
       videoRef.current.currentTime = seconds;
@@ -589,23 +1357,33 @@ export default function Stories() {
       audioRef.current.currentTime = seconds;
     }
     setAudioCurrentTime(seconds);
-  }, [playingAvatarVideoUrl]);
+  }, [playingAvatarVideoUrl, playbackUsesBrowserTts]);
+
+  useEffect(() => {
+    if (playingStoryId == null || playbackUsesBrowserTts) return;
+    const audio = audioRef.current;
+    const video = videoRef.current;
+    const el = playingAvatarVideoUrl && video ? video : audio;
+    if (!el) return;
+    const sid = playingStoryId;
+    const onWaiting = () => {
+      if (streamAnalyticsBufferSentRef.current) return;
+      streamAnalyticsBufferSentRef.current = true;
+      void reportStreamAnalytics({ storyId: sid, bufferingEvent: true });
+    };
+    el.addEventListener("waiting", onWaiting);
+    return () => el.removeEventListener("waiting", onWaiting);
+  }, [playingStoryId, playingAvatarVideoUrl, playbackUsesBrowserTts]);
 
   useEffect(() => {
     const audio = audioRef.current;
     const video = videoRef.current;
     const handleEnded = () => {
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
+      const p = playingStoryRef.current;
+      if (p && interactivePlaybackRef.current == null) {
+        void reportStreamAnalytics({ storyId: p.id, completed: true });
       }
-      setPlayingAvatarVideoUrl(null);
-      setPlayingHostClipUrl(null);
-      setPlayingStoryId(null);
-      setPlayingTitle(null);
-      setPlayingSubtitle(null);
-      setParentPanelStory(null);
-      playingStoryRef.current = null;
+      clearPlaybackAfterEnd();
     };
     const handlePause = () => {
       const p = playingStoryRef.current;
@@ -629,7 +1407,7 @@ export default function Stories() {
         audio.removeEventListener("pause", handlePause);
       };
     }
-  }, [playingStoryId, playingAvatarVideoUrl]);
+  }, [playingStoryId, playingAvatarVideoUrl, clearPlaybackAfterEnd]);
 
   const toggleFavorite = async (storyId: number, storySource: string) => {
     setFavToggling(storyId);
@@ -701,17 +1479,250 @@ export default function Stories() {
 
   const showPlayer = playingTitle != null || loadingStreamId != null;
 
+  const karaokeCaption = useMemo(() => {
+    if (playbackUsesBrowserTts || playingStoryId == null) return null;
+    const rawT = audioCurrentTime + READ_ALONG_TIMING_OFFSET_SEC;
+    const t =
+      audioDuration > 0
+        ? Math.min(Math.max(0, rawT), audioDuration)
+        : Math.max(0, rawT);
+    if (playbackWordTimings && playbackWordTimings.length > 0) {
+      return captionFromWordTimings(playbackWordTimings, t);
+    }
+    if (playbackKaraokeSegments.length > 0) {
+      return captionFromSegments(playbackKaraokeSegments, t);
+    }
+    return null;
+  }, [
+    playbackUsesBrowserTts,
+    playingStoryId,
+    audioCurrentTime,
+    audioDuration,
+    playbackWordTimings,
+    playbackKaraokeSegments,
+  ]);
+
+  const playbackCtx = playbackContextRef.current;
+  const activePlaybackStoryId = playingStoryId ?? loadingStreamId;
+  const showPlaybackExtras =
+    interactivePlayback == null &&
+    activePlaybackStoryId != null &&
+    playbackCtx != null &&
+    playbackCtx.storyId === activePlaybackStoryId;
+  const voiceIsMy =
+    playbackVoiceProfile.toLowerCase().startsWith("cloned:") ||
+    playbackVoiceProfile.toLowerCase() === "family";
+  const hasFamilyVoiceOption = playbackVoices.some((v) => v.voiceProfile.toLowerCase() === "family");
+
+  const playbackExtrasEl = showPlaybackExtras ? (
+    <div className="stories-playback-extras">
+      <div className="stories-playback-extras__row">
+        <label className="stories-playback-extras__label" htmlFor="playback-voice-select">
+          Voice for this story
+        </label>
+        <select
+          id="playback-voice-select"
+          className="stories-playback-extras__select"
+          value={playbackVoiceProfile}
+          disabled={loadingStreamId != null}
+          onChange={async (e) => {
+            const next = e.target.value;
+            const c = playbackContextRef.current;
+            if (!c) return;
+            const nextMode = sanitizePlaybackMode(playbackMode, next);
+            setPlaybackVoiceProfile(next);
+            if (nextMode !== playbackMode) setPlaybackMode(nextMode);
+            const pref = getPrefSourceForStory(c.storyId, c.storySourceUi);
+            await setVoicePreference(c.storyId, pref, next, nextMode);
+            await reloadStreamForPreferenceChange(c.storyId, c.storySourceUi, next, nextMode, c.titleOverride);
+          }}
+        >
+          {playbackVoices.map((v) => (
+            <option key={v.voiceProfile} value={v.voiceProfile}>
+              {voiceLabelForOption(v)}
+              {v.isPremium ? " · Plan" : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="stories-playback-extras__row">
+        <span className="stories-playback-extras__label">Play mode</span>
+        <select
+          className="stories-playback-extras__select"
+          aria-label="Play mode"
+          value={!voiceIsMy && playbackMode !== "default" ? "default" : playbackMode}
+          disabled={loadingStreamId != null}
+          onChange={async (e) => {
+            const m = e.target.value as PlaybackMode;
+            const c = playbackContextRef.current;
+            if (!c) return;
+            const eff = sanitizePlaybackMode(m, playbackVoiceProfile);
+            setPlaybackMode(eff);
+            const pref = getPrefSourceForStory(c.storyId, c.storySourceUi);
+            await setVoicePreference(c.storyId, pref, playbackVoiceProfile, eff);
+            await reloadStreamForPreferenceChange(c.storyId, c.storySourceUi, playbackVoiceProfile, eff, c.titleOverride);
+          }}
+        >
+          <option value="default">Tamixa voice (default)</option>
+          <option value="my_voice" disabled={!voiceIsMy}>
+            My voice — audio only
+          </option>
+          <option value="avatar" disabled={!voiceIsMy}>
+            My voice + avatar video
+          </option>
+        </select>
+      </div>
+      {!voiceIsMy ? (
+        <p className="stories-playback-extras__hint muted" style={{ margin: 0, fontSize: "0.75rem" }}>
+          Choose a cloned profile or upload a family recording below to enable &quot;My voice&quot; and avatar video.{" "}
+          <Link to="/voice">Voice</Link> · <Link to="/avatar">Avatar</Link>
+        </p>
+      ) : null}
+      {playbackAvatarStatus === "VIDEO_GENERATING" ? (
+        <p className="muted" style={{ margin: 0, fontSize: "0.75rem" }}>
+          Avatar video is generating — try again in a moment.
+        </p>
+      ) : null}
+      {playbackAvatarStatus === "VIDEO_FAILED" ? (
+        <p className="muted" style={{ margin: 0, fontSize: "0.75rem" }}>
+          Avatar video failed. Try another play mode or check your avatar photo on the Avatar page.
+        </p>
+      ) : null}
+      {!playbackUsesBrowserTts && karaokeCaption ? (
+        <div className="stories-playback-karaoke" role="status" aria-live="polite">
+          {karaokeCaption}
+        </div>
+      ) : null}
+      {playbackUsesBrowserTts ? (
+        <p className="muted" style={{ margin: 0, fontSize: "0.75rem" }}>
+          Using your browser&apos;s Tamil read-aloud because stream audio is unavailable.
+        </p>
+      ) : null}
+      <div className="stories-playback-extras__row stories-playback-extras__row--wrap">
+        <input
+          ref={familyVoiceFileRef}
+          type="file"
+          accept="audio/*,.mp3,.wav,.m4a"
+          className="visually-hidden"
+          aria-hidden
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            const c = playbackContextRef.current;
+            if (!file || !c) return;
+            setFamilyVoiceBusy(true);
+            setError("");
+            try {
+              await uploadFamilyVoice(c.storyId, "ta", file);
+              const raw = await getAvailableVoices(c.storyId, "ta");
+              const voices = dedupeVoicesForPicker(raw);
+              if (voices.length > 0) setPlaybackVoices(voices);
+              const nextV = voices.some((v) => v.voiceProfile.toLowerCase() === "family") ? "family" : playbackVoiceProfile;
+              const nextMode = sanitizePlaybackMode(playbackMode, nextV);
+              setPlaybackVoiceProfile(nextV);
+              setPlaybackMode(nextMode);
+              const pref = getPrefSourceForStory(c.storyId, c.storySourceUi);
+              await setVoicePreference(c.storyId, pref, nextV, nextMode);
+              await reloadStreamForPreferenceChange(c.storyId, c.storySourceUi, nextV, nextMode, c.titleOverride);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Family voice upload failed");
+            } finally {
+              setFamilyVoiceBusy(false);
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ fontSize: "0.8rem", padding: "0.35rem 0.65rem" }}
+          disabled={familyVoiceBusy || loadingStreamId != null}
+          onClick={() => familyVoiceFileRef.current?.click()}
+        >
+          {familyVoiceBusy ? "Uploading…" : "Upload family voice (this story)"}
+        </button>
+        {hasFamilyVoiceOption ? (
+          <button
+            type="button"
+            className="btn"
+            style={{ fontSize: "0.8rem", padding: "0.35rem 0.65rem" }}
+            disabled={familyVoiceBusy || loadingStreamId != null}
+            onClick={async () => {
+              const c = playbackContextRef.current;
+              if (!c) return;
+              setFamilyVoiceBusy(true);
+              setError("");
+              try {
+                await deleteFamilyVoice(c.storyId, "ta");
+                const raw = await getAvailableVoices(c.storyId, "ta");
+                const voices = dedupeVoicesForPicker(raw);
+                if (voices.length > 0) setPlaybackVoices(voices);
+                const nextV =
+                  playbackVoiceProfile.toLowerCase() === "family" ? "default" : playbackVoiceProfile;
+                const nextMode = sanitizePlaybackMode(playbackMode, nextV);
+                setPlaybackVoiceProfile(nextV);
+                setPlaybackMode(nextMode);
+                const pref = getPrefSourceForStory(c.storyId, c.storySourceUi);
+                await setVoicePreference(c.storyId, pref, nextV, nextMode);
+                await reloadStreamForPreferenceChange(c.storyId, c.storySourceUi, nextV, nextMode, c.titleOverride);
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Could not remove family voice");
+              } finally {
+                setFamilyVoiceBusy(false);
+              }
+            }}
+          >
+            Remove family voice
+          </button>
+        ) : null}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className={`page prime-page stories-page${showPlayer ? " has-audio-player" : ""}`}>
+      {showVoiceOnboarding ? (
+        <div className="stories-onboarding-hint" role="region" aria-label="Voice and avatar setup">
+          <p className="stories-onboarding-hint__text">
+            Fun library tales and <strong>Learn · Safety</strong> stories — including interactive episodes with choices. Optional: add <strong>your voice</strong> or a <strong>talking avatar</strong> like the mobile app.
+          </p>
+          <div className="stories-onboarding-hint__actions">
+            <Link to="/voice" className="btn btn-secondary" style={{ fontSize: "0.85rem" }}>
+              Voice
+            </Link>
+            <Link to="/avatar" className="btn btn-secondary" style={{ fontSize: "0.85rem" }}>
+              Avatar
+            </Link>
+            <button
+              type="button"
+              className="btn"
+              style={{ fontSize: "0.85rem" }}
+              onClick={() => {
+                setOnboardingVoiceAvatarDismissed();
+                setShowVoiceOnboarding(false);
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
       <StoryAudioPlayer
         audioRef={audioRef}
         videoRef={videoRef}
         avatarVideoUrl={playingAvatarVideoUrl}
         hostClipUrl={playingHostClipUrl}
+        isBrowserTts={playbackUsesBrowserTts}
+        chapterFractions={playbackChapterFractions}
+        enableSceneReflectionCue={Boolean(
+          parentPanelStory &&
+            isLearnStory(parentPanelStory.theme ?? "", parentPanelStory.category ?? null)
+        )}
+        practiceStoryChip={interactivePlayback != null}
         isPlaying={playingStoryId != null}
         isLoading={loadingStreamId != null}
         title={playingTitle ?? (loadingStreamId != null ? "Loading…" : null)}
         subtitle={playingSubtitle}
+        extras={playbackExtrasEl}
         currentTime={audioCurrentTime}
         duration={audioDuration}
         onPlayPause={handleAudioPlayPause}
@@ -719,6 +1730,22 @@ export default function Stories() {
         onDurationChange={setAudioDuration}
         onSeek={handleSeek}
       />
+      {interactiveChoiceOpen && interactivePlayback ? (
+        <InteractiveChoiceOverlay
+          choices={
+            interactivePlayback.graph.segments[interactivePlayback.currentSegmentId]?.choices ?? []
+          }
+          overlayStyle={interactivePlayback.overlayStyle}
+          onChoice={(ch) => void handleInteractiveChoice(ch)}
+        />
+      ) : null}
+      {interactiveMissionOpen && parentPanelStory ? (
+        <MissionCardOverlay
+          missionText={parentPanelStory.postStoryMission}
+          resourceUrl={parentPanelStory.postStoryResourceUrl}
+          onDismiss={dismissInteractiveMission}
+        />
+      ) : null}
       {parentPanelStory &&
       (parentPanelStory.parentContentNote?.trim() ||
         (parentPanelStory.parentDiscussionPrompts?.filter(Boolean).length ?? 0) > 0 ||
@@ -827,6 +1854,9 @@ export default function Stories() {
                   {isFunStory(s.theme, null) ? (
                     <span className="stories-fun-badge">{funCornerBadgeLabel()}</span>
                   ) : null}
+                  {interactiveBadgeForSearchHit(s.theme) ? (
+                    <span className="stories-interactive-badge">{interactivePracticeBadgeLabel()}</span>
+                  ) : null}
                   <p className="poster-card-title">{s.title || s.theme}</p>
                   <p className="poster-card-meta">{s.theme} · {s.wordCount} words</p>
                   <div className="poster-card-actions" onClick={(e) => e.stopPropagation()}>
@@ -900,25 +1930,6 @@ export default function Stories() {
               <span className="stories-tab-count">{favorites.length}</span>
             </button>
           </div>
-          <div className="stories-voice-inline">
-            <label htmlFor="voice-select" className="stories-voice-inline__label">
-              Voice
-            </label>
-            <select
-              id="voice-select"
-              value={selectedVoice}
-              onChange={(e) => setSelectedVoice(e.target.value)}
-              className="stories-voice-inline__select voice-select"
-              aria-describedby="voice-hint"
-              title="Premium Calm voice needs an active plan"
-            >
-              <option value="default">Default</option>
-              <option value="calm">Calm · Pass</option>
-            </select>
-            <span id="voice-hint" className="visually-hidden">
-              Premium voices require an active Tamixa plan.
-            </span>
-          </div>
         </div>
 
         {tab === "library" ? (
@@ -927,11 +1938,59 @@ export default function Stories() {
               <h3 className="stories-library-toolbar__title">Story library</h3>
               {!libraryListError ? (
                 <span className="stories-library-toolbar__count muted" aria-live="polite">
-                  {loading ? "Loading…" : `${library.length} ${library.length === 1 ? "tale" : "tales"}`}
+                  {loading
+                    ? "Loading…"
+                    : `${displayLibrary.length} ${displayLibrary.length === 1 ? "tale" : "tales"}`}
                 </span>
               ) : null}
             </div>
-            {libraryCategories.length > 0 ? (
+            <div className="stories-library-hub-grid" role="group" aria-label="Library hub">
+              <div className="stories-library-hub-row">
+                <button
+                  type="button"
+                  className={
+                    libraryHub === "browse" ? "stories-library-hub-segment stories-library-hub-segment--active" : "stories-library-hub-segment"
+                  }
+                  onClick={() => setLibraryHubInUrl("browse")}
+                >
+                  Browse
+                </button>
+                <button
+                  type="button"
+                  className={
+                    libraryHub === "fun" ? "stories-library-hub-segment stories-library-hub-segment--active" : "stories-library-hub-segment"
+                  }
+                  onClick={() => setLibraryHubInUrl("fun")}
+                >
+                  Fun corner
+                </button>
+              </div>
+              <div className="stories-library-hub-row">
+                <button
+                  type="button"
+                  className={
+                    libraryHub === "learn"
+                      ? "stories-library-hub-segment stories-library-hub-segment--active"
+                      : "stories-library-hub-segment"
+                  }
+                  onClick={() => setLibraryHubInUrl("learn")}
+                >
+                  Learn &amp; safety
+                </button>
+                <button
+                  type="button"
+                  className={
+                    libraryHub === "simulator"
+                      ? "stories-library-hub-segment stories-library-hub-segment--active"
+                      : "stories-library-hub-segment"
+                  }
+                  onClick={() => setLibraryHubInUrl("simulator")}
+                >
+                  Practice
+                </button>
+              </div>
+            </div>
+            {libraryHub === "browse" && libraryCategories.length > 0 ? (
               <div className="stories-library-chips-shell">
                 <div className="stories-chips stories-chips--compact stories-chips--library" role="group" aria-label="Filter by theme">
                   <button
@@ -953,13 +2012,37 @@ export default function Stories() {
                   ))}
                 </div>
               </div>
+            ) : libraryHub !== "browse" ? (
+              <p className="muted stories-library-hub-theme-hint" style={{ margin: "0 0 4px", fontSize: "0.85rem" }}>
+                Theme filters are available on <strong>Browse</strong>. Share this lane:{" "}
+                <code className="stories-hub-deeplink">
+                  ?tab=library&amp;hub=
+                  {libraryHub === "fun" ? "fun" : libraryHub === "learn" ? "learn" : "simulator"}
+                </code>
+              </p>
             ) : null}
             <div className="stories-library-ethos" role="note">
               <p className="stories-library-ethos__title">Every listen is a little lesson</p>
               <p className="stories-library-ethos__body muted">
-                Tamixa tales are written for growing minds—language, heart, and curiosity in every plot. For pure laughs and
-                older classics, editors tag stories as <strong>Fun stories</strong> or <strong>Funny Stories</strong>; use those
-                chips above to jump straight there.
+                {libraryHub === "browse" ? (
+                  <>
+                    Tamixa tales are written for growing minds—language, heart, and curiosity in every plot. On{" "}
+                    <strong>Browse</strong>, use theme chips for curated lists. For laughs only, open <strong>Fun corner</strong>;
+                    for Edu and digital safety, <strong>Learn &amp; safety</strong>; for choice-based practice,{" "}
+                    <strong>Practice</strong> (Learn · Simulator or interactive graph).
+                  </>
+                ) : libraryHub === "fun" ? (
+                  <>Lighthearted listens tagged <strong>Fun stories</strong> or <strong>Funny Stories</strong> in admin.</>
+                ) : libraryHub === "learn" ? (
+                  <>
+                    Stories whose theme or category starts with <strong>Learn</strong>, or mention <strong>Digital Safety</strong>.
+                  </>
+                ) : (
+                  <>
+                    <strong>Learn · Simulator</strong> series and other library tales with an interactive graph (choices during
+                    playback).
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -1008,16 +2091,31 @@ export default function Stories() {
                 Try again
               </button>
             </div>
-          ) : library.length === 0 ? (
-            <EmptyState
-              emoji="📚"
-              title="No stories in library"
-              description="Story library is being updated. Check back soon or try generating your own."
-              action={{ label: "Generate Story", onClick: () => setTabAndUrl("mine") }}
-            />
+          ) : displayLibrary.length === 0 ? (
+            library.length === 0 ? (
+              <EmptyState
+                emoji="📚"
+                title="No stories in library"
+                description="Story library is being updated. Check back soon or try generating your own."
+                action={{ label: "Generate Story", onClick: () => setTabAndUrl("mine") }}
+              />
+            ) : (
+              <EmptyState
+                emoji="🔎"
+                title="No tales in this lane"
+                description={
+                  libraryHub === "fun"
+                    ? "No Fun stories or Funny Stories tags in the current catalog slice. Try Browse or ask editors to tag lighter tales."
+                    : libraryHub === "learn"
+                      ? "No Learn-prefixed or Digital Safety rows in this slice. Try Browse or widen the catalog."
+                      : "No Learn · Simulator or interactive-graph stories in this slice yet. Try Learn & safety or Browse."
+                }
+                action={{ label: "Browse all", onClick: () => setLibraryHubInUrl("browse") }}
+              />
+            )
           ) : (
             <div className="stories-grid stories-library-grid">
-              {library.map((s) => (
+              {displayLibrary.map((s) => (
                 <div
                   key={s.id}
                   className="poster-card poster-card-clickable story-card-tile"
@@ -1036,6 +2134,9 @@ export default function Stories() {
                   </div>
                   {isFunStory(s.theme, s.category) ? (
                     <span className="stories-fun-badge">{funCornerBadgeLabel()}</span>
+                  ) : null}
+                  {isInteractivePracticeLibraryStory(s) ? (
+                    <span className="stories-interactive-badge">{interactivePracticeBadgeLabel()}</span>
                   ) : null}
                   <p className="poster-card-title">{s.title || s.theme}</p>
                   <p className="poster-card-meta">{s.theme} · {s.wordCount} words · {Number(s.readingTimeMinutes ?? 0).toFixed(1)} min</p>
@@ -1255,6 +2356,14 @@ export default function Stories() {
                     </div>
                     {s && isFunStory(s.theme, favCategory) ? (
                       <span className="stories-fun-badge">{funCornerBadgeLabel()}</span>
+                    ) : null}
+                    {s &&
+                    isInteractivePracticeLibraryStory({
+                      theme: s.theme,
+                      category: "category" in s ? (s as LibraryStory).category : null,
+                      interactiveGraph: "interactiveGraph" in s ? (s as LibraryStory).interactiveGraph : undefined,
+                    }) ? (
+                      <span className="stories-interactive-badge">{interactivePracticeBadgeLabel()}</span>
                     ) : null}
                     <p className="poster-card-title">{title}</p>
                     <p className="poster-card-meta">{s ? s.theme : "\u00A0"}</p>

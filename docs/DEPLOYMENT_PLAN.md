@@ -77,15 +77,16 @@ Before any deployment work:
 | `DATABASE_URL` | Full JDBC URL |
 | `DATABASE_USERNAME` | DB user |
 | `DATABASE_PASSWORD` | DB password |
-| `OPENAI_API_KEY` | Story generation, translation |
 | `VOICE_ENCRYPTION_KEY` | 32-byte Base64 AES for voice embeddings |
 | `MAGIC_LINK_BASE_URL` | e.g. `https://app.tamixa.com` |
+
+**LLM, translation, and AI covers:** Set `AI_LLM_PROVIDER` (default `openai`) and the matching API key (`OPENAI_API_KEY` or `GEMINI_API_KEY`). Set `AI_COVER_IMAGE_PROVIDER` for still covers (`openai` = DALL·E; `gemini` = Gemini image). Use `GEMINI_API_KEY` when `TRANSLATION_PROVIDER=gemini`, `AI_COVER_IMAGE_PROVIDER=gemini`, or `COVER_ANIMATION_VEO_ENABLED=true`. See [ENV_REFERENCE.md](ENV_REFERENCE.md).
 
 ### Optional (feature-dependent)
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `TRANSLATION_PROVIDER` | `simulated` | Set `openai` for prod |
+| `TRANSLATION_PROVIDER` | `simulated` | Set `openai` or `gemini` for prod (match API keys) |
 | `REDIS_HOST`, `REDIS_PORT` | localhost:6379 | For caches / rate limiting |
 | `S3_BUCKET`, `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | — | Audio storage |
 | `KAFKA_BOOTSTRAP_SERVERS` | — | Async pipeline; can defer to sync |

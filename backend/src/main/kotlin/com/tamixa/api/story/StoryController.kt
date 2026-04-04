@@ -176,7 +176,7 @@ class StoryController(
 
     /**
      * Parent-facing: regenerate AI cover for a generated story they own.
-     * Prefers animated GIF (Sora + FFmpeg when enabled), then static DALL-E image. Tamil Nadu/South India theme, HD.
+     * Prefers animated GIF when image-to-video is configured (then FFmpeg), else static cover image. Tamil Nadu/South India theme, HD.
      * Always deletes the old cover then generates a new one.
      */
     @PostMapping("/{id}/regenerate-cover")

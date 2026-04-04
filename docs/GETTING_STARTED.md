@@ -80,7 +80,7 @@ See `.env.example` for full list. Minimal local dev:
 - `DATABASE_URL` or `POSTGRES_*`
 - `REDIS_HOST=localhost`
 - `JWT_SECRET` (any 256-bit secret)
-- Optional: `OPENAI_API_KEY`, `GOOGLE_CLOUD_TTS_API_KEY` for narration
+- Optional: `OPENAI_API_KEY` and/or `GEMINI_API_KEY` (see `AI_LLM_PROVIDER`, `AI_COVER_IMAGE_PROVIDER` in `.env.example`), `GOOGLE_CLOUD_TTS_API_KEY` for narration
 
 ## Troubleshooting
 

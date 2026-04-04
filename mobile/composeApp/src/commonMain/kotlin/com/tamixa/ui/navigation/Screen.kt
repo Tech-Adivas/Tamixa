@@ -11,11 +11,16 @@ sealed class Screen(val route: String) {
     data object LanguageSelection : Screen("language")
     data object Dashboard : Screen("dashboard")
     data object Profile : Screen("profile")
-    /** Library hub tabs: [HUB_FUN] opens the Fun corner filter; [HUB_LEARN] kept for deep-link compatibility. */
+    /** Library hub tabs: browse, fun corner, learn & digital safety, interactive practice (Learn · Simulator). */
     data object Library : Screen("library?hub={hub}") {
         const val HUB_BROWSE = "browse"
         const val HUB_FUN = "fun"
+        /** Opens the Learn & digital safety lane (legacy alias: was previously mapped to fun corner). */
         const val HUB_LEARN = "learn"
+        /** Explicit Edu/safety deep link (same initial tab as [HUB_LEARN]). */
+        const val HUB_LEARN_SAFETY = "learn_safety"
+        /** Interactive practice: Learn · Simulator metadata and/or stories with an interactive graph. */
+        const val HUB_SIMULATOR = "simulator"
         fun withHub(hub: String = HUB_BROWSE): String = "library?hub=$hub"
     }
     data object StorySelection : Screen("stories")

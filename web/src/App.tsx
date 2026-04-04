@@ -23,6 +23,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Stories = lazy(() => import("./pages/Stories"));
 const Subscription = lazy(() => import("./pages/Subscription"));
 const Voice = lazy(() => import("./pages/Voice"));
+const Avatar = lazy(() => import("./pages/Avatar"));
 const Settings = lazy(() => import("./pages/Settings"));
 import "./index.css";
 
@@ -93,6 +94,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <Voice />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/avatar"
+        element={
+          <ProtectedRoute>
+            <Avatar />
           </ProtectedRoute>
         }
       />

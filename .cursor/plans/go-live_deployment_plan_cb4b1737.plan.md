@@ -50,7 +50,7 @@ From [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md), [docs/PRODUCT
 | `CORS_ALLOWED_ORIGINS`                                                 | Yes         | Comma-separated, e.g. `https://app.tamixa.com,https://admin.tamixa.com` (no `*` in prod) |
 | `DATABASE_URL`                                                         | Yes         | Full JDBC URL                                                                            |
 | `DATABASE_USERNAME` / `DATABASE_PASSWORD`                              | Yes         | DB credentials                                                                           |
-| `OPENAI_API_KEY`                                                       | Yes         | Story generation and translation                                                         |
+| `OPENAI_API_KEY` / `GEMINI_API_KEY`                                    | Per config  | Story generation per `AI_LLM_PROVIDER`; translation per `TRANSLATION_PROVIDER`; Gemini covers / Veo when enabled |
 | `VOICE_ENCRYPTION_KEY`                                                 | Yes         | 32-byte Base64 AES for voice embeddings                                                  |
 | `TRANSLATION_PROVIDER`                                                 | Prod        | Set to `openai` (not simulated)                                                          |
 | `REDIS_HOST` / `REDIS_PORT`                                            | If used     | Redis for caches                                                                         |

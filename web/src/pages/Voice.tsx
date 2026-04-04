@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { getVoiceProfiles, uploadVoiceProfile, type VoiceProfile } from "../lib/api";
 
@@ -48,7 +49,10 @@ export default function Voice() {
     <div className="page app-surface-page">
       <header className="app-page-header">
         <h1>Clone your voice</h1>
-        <p className="page-subtitle">Upload a voice sample to use your voice for story narration</p>
+        <p className="page-subtitle">
+          Upload a voice sample to use your voice for story narration. For talking-head video, add a photo on{" "}
+          <Link to="/avatar">Avatar</Link>.
+        </p>
       </header>
 
       {error && <p className="error">{error}</p>}

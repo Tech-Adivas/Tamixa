@@ -4,19 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
-import type { LibraryStorySummary, CreateLibraryStoryRequest, PagedResponse, PipelineStatusResponse } from "@/types/api";
-import { STORY_CATEGORIES, AGE_GROUPS, MIN_WORD_COUNT } from "@/types/api";
+import type { LibraryStorySummary, PagedResponse, PipelineStatusResponse } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -30,35 +22,21 @@ import { useAuth } from "@/contexts/auth-context";
 import { usePipelineActive } from "@/contexts/pipeline-active-context";
 import { useActionResult } from "@/contexts/action-result-context";
 import { canModerateStories } from "@/lib/admin-roles";
+import { PageHeader } from "@/components/layout/page-header";
 import { cn, parseJsonStoryContent, resolveLibraryStoryEditorBody, parsePipelineLanguageSet } from "@/lib/utils";
-import { isLibraryStoryPipelineActivelyRunning, REGENERATE_THEN_TRANSLATIONS_HELP, REVIEW_QUEUE_EXPECTATION_HELP } from "@/lib/library-story-workflow";
+import {
+  isLibraryStoryPipelineActivelyRunning,
+  REGENERATE_THEN_TRANSLATIONS_HELP,
+  REVIEW_QUEUE_EXPECTATION_HELP,
+  isLibraryStoryPipelineMetaKey,
+  adminStoryLanguageLabel,
+  ADMIN_STORY_LANGUAGE_SHORT,
+} from "@/lib/library-story-workflow";
 
 const PAGE_SIZE = 20;
-const LANG_LABELS: Record<string, string> = {
-  ta: "Tamil",
-  hi: "Hindi",
-  en: "English",
-  te: "Telugu",
-  kn: "Kannada",
-  ml: "Malayalam",
-};
-
-const PIPELINE_META_KEYS = [
-  "processing",
-  "progress",
-  "overallStatus",
-  "reviewedLanguages",
-  "reviewStaleLanguages",
-  "allLanguagesReviewed",
-  "durationSeconds",
-  "generatedAtIst",
-  "audioCoverageWarnings",
-  "failedLanguagesCount",
-];
-
 function langEntries(status?: PipelineStatusResponse | Record<string, string | undefined> | null) {
   if (!status) return [];
-  return Object.entries(status).filter(([k]) => !PIPELINE_META_KEYS.includes(k));
+  return Object.entries(status).filter(([k]) => !isLibraryStoryPipelineMetaKey(k));
 }
 
 function isPipelineFullyComplete(status?: PipelineStatusResponse | Record<string, string | undefined> | null): boolean {
@@ -80,15 +58,6 @@ function getAllPipelineLanguages(status?: PipelineStatusResponse | Record<string
 function isPipelineInProgress(status?: PipelineStatusResponse | Record<string, string | undefined> | null): boolean {
   return isLibraryStoryPipelineActivelyRunning(status);
 }
-
-const LANG_SHORT: Record<string, string> = {
-  ta: "Ta",
-  hi: "Hi",
-  en: "En",
-  te: "Te",
-  kn: "Kn",
-  ml: "Ml",
-};
 
 export default function ApproveTabPage() {
   const searchParams = useSearchParams();
@@ -113,12 +82,6 @@ export default function ApproveTabPage() {
   const [rejectNotes, setRejectNotes] = useState("");
   const { showSuccess, showError } = useActionResult();
 
-  const [editStoryModalOpen, setEditStoryModalOpen] = useState(false);
-  const [editStoryId, setEditStoryId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<CreateLibraryStoryRequest | null>(null);
-  const [editStoryLoading, setEditStoryLoading] = useState(false);
-  const [editStorySubmitting, setEditStorySubmitting] = useState(false);
-  const [editCoverVideoUrl, setEditCoverVideoUrl] = useState<string | null>(null);
   const [focusedStory, setFocusedStory] = useState<LibraryStorySummary | null>(null);
   const [focusedStoryLoading, setFocusedStoryLoading] = useState(false);
 
@@ -327,93 +290,6 @@ export default function ApproveTabPage() {
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Edit full story modal; wire to UI when needed
-  const openEditStoryModal = (storyId: number) => {
-    setEditStoryId(storyId);
-    setEditForm(null);
-    setEditCoverVideoUrl(null);
-    setEditStoryModalOpen(true);
-    setEditStoryLoading(true);
-    api.admin
-      .getLibraryStory(storyId)
-      .then((story) => {
-        const contentRaw =
-          typeof story.sourceContent === "string" ? story.sourceContent : story.content ?? "";
-        const parsed = parseJsonStoryContent(contentRaw);
-        const resolved = parsed ?? { content: contentRaw };
-        setEditForm({
-          title: resolved.title ?? story.title ?? "",
-          content: resolved.content,
-          theme: resolved.theme ?? story.theme,
-          language: story.language ?? "ta",
-          age: story.age,
-          childName: story.childName ?? "Child",
-          moral: resolved.moral ?? story.moral ?? "",
-          status: story.status ?? "DRAFT",
-          coverImageUrl: story.coverImageUrl ?? "",
-          emotionMode: story.emotionMode ?? "CALM",
-          narratedContent: story.narratedContent ?? "",
-          parentDiscussionPrompts: story.parentDiscussionPrompts?.length
-            ? [...story.parentDiscussionPrompts]
-            : undefined,
-          parentContentNote: story.parentContentNote ?? null,
-          speakAlongPrompt: story.speakAlongPrompt ?? null,
-        });
-        setEditCoverVideoUrl(story.coverVideoUrl ?? null);
-      })
-      .catch((e) => {
-        showError("Failed to load story", e instanceof Error ? e.message : "Load failed");
-        setEditStoryModalOpen(false);
-      })
-      .finally(() => setEditStoryLoading(false));
-  };
-
-  const handleEditStorySubmit = async () => {
-    if (!editForm || !editStoryId) return;
-    const wordCount = editForm.content?.split(/\s+/).filter((w) => w.trim()).length ?? 0;
-    if (wordCount < MIN_WORD_COUNT) {
-      showError("Validation failed", `Minimum ${MIN_WORD_COUNT} words required.`);
-      return;
-    }
-    setEditStorySubmitting(true);
-    try {
-      await api.admin.updateLibraryStory(editStoryId, {
-        ...editForm,
-        title: editForm.title?.trim() || null,
-        moral: editForm.moral?.trim() || null,
-        status: "PUBLISHED",
-        coverImageUrl: editForm.coverImageUrl ?? null,
-        coverVideoUrl: editCoverVideoUrl ?? null,
-        narratedContent: editForm.narratedContent ?? "",
-        parentContentNote: editForm.parentContentNote?.trim() || null,
-        speakAlongPrompt: editForm.speakAlongPrompt?.trim() || null,
-        parentDiscussionPrompts: editForm.parentDiscussionPrompts?.length
-          ? editForm.parentDiscussionPrompts
-          : null,
-      });
-      await api.admin.approveLibraryStoryNarration(editStoryId);
-      showSuccess(
-        "Approved for delivery",
-        "Open Narration (Story to Speech) and use Generate audio when you are ready. The story is approved for delivery; MP3s are produced when you trigger TTS there."
-      );
-      setEditStoryModalOpen(false);
-      setEditStoryId(null);
-      setEditForm(null);
-      load(true);
-      setPipelineStatusMap((m) => {
-        const next = { ...m };
-        delete next[editStoryId];
-        return next;
-      });
-      refreshPipelineActive();
-      setTimeout(refreshPipelineActive, 1500);
-    } catch (e) {
-      showError("Submit failed", e instanceof Error ? e.message : "Submit failed");
-    } finally {
-      setEditStorySubmitting(false);
-    }
-  };
-
   const openTranslationModal = (storyId: number, language: string) => {
     setTranslationStoryId(storyId);
     setTranslationLang(language);
@@ -439,7 +315,7 @@ export default function ApproveTabPage() {
         showError(
           "Translation not loaded",
           msg.includes("404") || msg.includes("not found")
-            ? `${LANG_LABELS[language] ?? language} content is not ready yet. Run the pipeline so this language is translated. If you still see Tamil for other languages, set TRANSLATION_PROVIDER=openai on the backend and re-run the pipeline.`
+            ? `${adminStoryLanguageLabel(language)} content is not ready yet. Run the pipeline so this language is translated. If you still see Tamil for other languages, set TRANSLATION_PROVIDER=openai on the backend and re-run the pipeline.`
             : msg
         );
         setTranslationModalOpen(false);
@@ -449,16 +325,11 @@ export default function ApproveTabPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="page-header">Review</h1>
-        <p className="page-subheader mt-1">
-          Stories appear here after <strong>Submit for review</strong>. {REVIEW_QUEUE_EXPECTATION_HELP} For Tamixa-style
-          rewrites before scripts exist: Story library → <strong>Edit</strong> → <strong>Regenerate with prompt</strong>, then{" "}
-          <strong>Save draft</strong> (or <strong>Move to draft</strong> if in review), then <strong>Generate translations</strong>.{" "}
-          {REGENERATE_THEN_TRANSLATIONS_HELP} Refresh to see per-language status. <strong>Approve</strong> for delivery or{" "}
-          <strong>Reject</strong> to send back. After approval, use <strong>Narration</strong> → <strong>Generate audio</strong>. If a job hangs, clear the banner when offered or retry from edit / Stories with issues.
-        </p>
-      </div>
+      <PageHeader
+        title="Story for review"
+        description={`Stories appear here after Submit for review. ${REVIEW_QUEUE_EXPECTATION_HELP} For Tamixa-style rewrites before scripts exist: Story library → Edit → Regenerate with prompt, then Save draft (or Move to draft if in review), then Generate translations. ${REGENERATE_THEN_TRANSLATIONS_HELP} Refresh to see per-language status. Approve for delivery or Reject to send back. After approval, use Narration → Generate audio. If a job hangs, clear the banner when offered or retry from edit / Pipeline triage. For full content edits, open Story library → Edit.`}
+        breadcrumbs
+      />
 
       <Card className="border-border shadow-sm overflow-hidden">
         <CardHeader className="card-header-responsive border-b bg-muted/30 px-4 py-3 sm:px-6 sm:py-4">
@@ -597,7 +468,7 @@ export default function ApproveTabPage() {
                                               ? "border-border bg-muted/40"
                                               : "border-border bg-muted/20 text-muted-foreground"
                                       )}
-                                      title={`${LANG_LABELS[lang] ?? lang}${
+                                      title={`${adminStoryLanguageLabel(lang)}${
                                         isReviewStale
                                           ? " — content changed since review; open and tap Have reviewed"
                                           : isReviewed
@@ -606,7 +477,7 @@ export default function ApproveTabPage() {
                                       }`}
                                     >
                                       <span className="font-medium text-foreground w-6 text-center">
-                                        {LANG_SHORT[lang] ?? lang}
+                                        {ADMIN_STORY_LANGUAGE_SHORT[lang] ?? lang}
                                       </span>
                                       <Button
                                         type="button"
@@ -617,7 +488,7 @@ export default function ApproveTabPage() {
                                           e.stopPropagation();
                                           openTranslationModal(row.id, lang);
                                         }}
-                                        title={`View ${LANG_LABELS[lang] ?? lang}`}
+                                        title={`View ${adminStoryLanguageLabel(lang)}`}
                                       >
                                         <Eye className="h-3 w-3" />
                                       </Button>
@@ -801,208 +672,12 @@ export default function ApproveTabPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit story (full) modal */}
-      <Dialog open={editStoryModalOpen} onOpenChange={setEditStoryModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit story</DialogTitle>
-            <DialogDescription>
-              Update content and details, then submit for delivery to publish on the app.
-            </DialogDescription>
-          </DialogHeader>
-          {editStoryLoading ? (
-            <p className="py-6 text-center text-muted-foreground">Loading story…</p>
-          ) : editForm ? (
-            <div className="space-y-4 py-2">
-              <div>
-                <Label htmlFor="edit-title">Title</Label>
-                <Input
-                  id="edit-title"
-                  value={editForm.title ?? ""}
-                  onChange={(e) =>
-                    setEditForm((f) => (f ? { ...f, title: e.target.value } : f))
-                  }
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-theme">Category</Label>
-                <Select
-                  value={editForm.theme}
-                  onValueChange={(v) =>
-                    setEditForm((f) => (f ? { ...f, theme: v } : f))
-                  }
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STORY_CATEGORIES.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="edit-content">Story content *</Label>
-                <textarea
-                  id="edit-content"
-                  value={editForm.content}
-                  onChange={(e) =>
-                    setEditForm((f) => (f ? { ...f, content: e.target.value } : f))
-                  }
-                  className="mt-1 flex min-h-[160px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {editForm.content?.split(/\s+/).filter((w) => w.trim()).length ?? 0} / {MIN_WORD_COUNT} words
-                </p>
-              </div>
-              <div>
-                <Label htmlFor="edit-narrated">Narration script (optional)</Label>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Stored separately from story text; clear the field and save to remove the script row.
-                </p>
-                <textarea
-                  id="edit-narrated"
-                  value={editForm.narratedContent ?? ""}
-                  onChange={(e) =>
-                    setEditForm((f) => (f ? { ...f, narratedContent: e.target.value } : f))
-                  }
-                  className="mt-1 flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-moral">Moral (optional)</Label>
-                <Input
-                  id="edit-moral"
-                  value={editForm.moral ?? ""}
-                  onChange={(e) =>
-                    setEditForm((f) => (f ? { ...f, moral: e.target.value } : f))
-                  }
-                  className="mt-1"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Age group</Label>
-                  <Select
-                    value={String(editForm.age)}
-                    onValueChange={(v) =>
-                      setEditForm((f) => (f ? { ...f, age: parseInt(v, 10) } : f))
-                    }
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AGE_GROUPS.map((a) => (
-                        <SelectItem key={a.value} value={String(a.value)}>{a.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="edit-childName">Child name placeholder</Label>
-                  <Input
-                    id="edit-childName"
-                    value={editForm.childName ?? "Child"}
-                    onChange={(e) =>
-                      setEditForm((f) => (f ? { ...f, childName: e.target.value } : f))
-                    }
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-              <div className="rounded-md border border-border/80 bg-muted/10 p-3 space-y-3">
-                <p className="text-sm font-semibold">Parent resources (optional)</p>
-                <div>
-                  <Label htmlFor="edit-parent-note">Content note for parents</Label>
-                  <textarea
-                    id="edit-parent-note"
-                    value={editForm.parentContentNote ?? ""}
-                    onChange={(e) =>
-                      setEditForm((f) =>
-                        f ? { ...f, parentContentNote: e.target.value || null } : f
-                      )
-                    }
-                    className="mt-1 flex min-h-[64px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    maxLength={4000}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="edit-speak-along">Speak-along prompt</Label>
-                  <Input
-                    id="edit-speak-along"
-                    value={editForm.speakAlongPrompt ?? ""}
-                    onChange={(e) =>
-                      setEditForm((f) =>
-                        f ? { ...f, speakAlongPrompt: e.target.value || null } : f
-                      )
-                    }
-                    maxLength={500}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="edit-discussion">Discussion prompts (one per line, max 10)</Label>
-                  <textarea
-                    id="edit-discussion"
-                    value={(editForm.parentDiscussionPrompts ?? []).join("\n")}
-                    onChange={(e) => {
-                      const lines = e.target.value
-                        .split("\n")
-                        .map((s) => s.trim())
-                        .filter(Boolean)
-                        .slice(0, 10)
-                        .map((s) => s.slice(0, 400));
-                      setEditForm((f) =>
-                        f
-                          ? {
-                              ...f,
-                              parentDiscussionPrompts: lines.length ? lines : undefined,
-                            }
-                          : f
-                      );
-                    }}
-                    className="mt-1 flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="edit-cover">Cover image URL (optional)</Label>
-                <Input
-                  id="edit-cover"
-                  value={editForm.coverImageUrl ?? ""}
-                  onChange={(e) =>
-                    setEditForm((f) =>
-                      f ? { ...f, coverImageUrl: e.target.value || null } : f
-                    )
-                  }
-                  className="mt-1"
-                  placeholder="Leave blank to keep existing"
-                />
-              </div>
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditStoryModalOpen(false)} disabled={editStorySubmitting}>
-              Cancel
-            </Button>
-            {editForm && (
-              <Button onClick={handleEditStorySubmit} disabled={editStorySubmitting || editStoryLoading}>
-                {editStorySubmitting ? "Submitting…" : "Submit for delivery"}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* View & approve translation (per language) modal */}
       <Dialog open={translationModalOpen} onOpenChange={handleTranslationModalClose}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              View {translationLang ? LANG_LABELS[translationLang] ?? translationLang : ""}
+              View {translationLang ? adminStoryLanguageLabel(translationLang) : ""}
             </DialogTitle>
             <DialogDescription>
               Review content for this language. Click &ldquo;Have reviewed&rdquo; when done. Once all languages are reviewed, the Approve button in the table will be enabled.

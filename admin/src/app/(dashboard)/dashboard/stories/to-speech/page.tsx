@@ -22,40 +22,28 @@ import {
   POST_APPROVAL_CONTENT_CHANGE_HELP,
   isLibraryStoryPipelineActivelyRunning,
   isLibraryStoryPipelineBusy,
+  isLibraryStoryPipelineMetaKey,
+  ADMIN_STORY_LANGUAGE_SHORT,
 } from "@/lib/library-story-workflow";
-
-const PIPELINE_META_KEYS = [
-  "processing",
-  "progress",
-  "overallStatus",
-  "reviewedLanguages",
-  "reviewStaleLanguages",
-  "allLanguagesReviewed",
-  "generatedAtIst",
-  "durationSeconds",
-  "audioCoverageWarnings",
-  "failedLanguagesCount",
-];
-const LANG_SHORT: Record<string, string> = { ta: "Ta", hi: "Hi", en: "En", te: "Te", kn: "Kn", ml: "Ml" };
 
 function getCompletedLanguages(status?: PipelineStatusResponse | null): string[] {
   if (!status || typeof status !== "object") return [];
   return Object.entries(status)
-    .filter(([k, s]) => !PIPELINE_META_KEYS.includes(k) && s === "COMPLETED")
+    .filter(([k, s]) => !isLibraryStoryPipelineMetaKey(k) && s === "COMPLETED")
     .map(([lang]) => lang);
 }
 
 function getIncompleteLanguages(status?: PipelineStatusResponse | null): string[] {
   if (!status || typeof status !== "object") return [];
   return Object.entries(status)
-    .filter(([k, s]) => !PIPELINE_META_KEYS.includes(k) && s !== "COMPLETED")
+    .filter(([k, s]) => !isLibraryStoryPipelineMetaKey(k) && s !== "COMPLETED")
     .map(([lang]) => lang);
 }
 
 /** Pipeline progress: completed count, total languages, estimated min left. */
 function getPipelineProgress(status?: PipelineStatusResponse | null): { completed: number; total: number; estMinLeft: number } {
   if (!status || typeof status !== "object") return { completed: 0, total: 0, estMinLeft: 0 };
-  const entries = Object.entries(status).filter(([k]) => !PIPELINE_META_KEYS.includes(k));
+  const entries = Object.entries(status).filter(([k]) => !isLibraryStoryPipelineMetaKey(k));
   const total = entries.length;
   const completed = entries.filter(([, s]) => s === "COMPLETED").length;
   const failed = entries.filter(([, s]) => s?.includes("FAILED")).length;
@@ -479,7 +467,7 @@ export default function StoryToSpeechTabPage() {
         );
         const scope =
           effectiveLanguages?.length
-            ? `languages (${effectiveLanguages.map((l) => LANG_SHORT[l] ?? l).join(", ")})`
+            ? `languages (${effectiveLanguages.map((l) => ADMIN_STORY_LANGUAGE_SHORT[l] ?? l).join(", ")})`
             : "all languages";
         showSuccess("Regenerate started", `${scope} — pipeline queued or running. Progress will update below.`);
         setPreviewFailedLanguagesByStory((prev) => {
@@ -638,7 +626,7 @@ export default function StoryToSpeechTabPage() {
                                     {statusObj?.processing
                                       ? statusObj.processing === "starting"
                                         ? "Starting pipeline…"
-                                        : `Generating ${LANG_SHORT[statusObj.processing] ?? statusObj.processing} audio…`
+                                        : `Generating ${ADMIN_STORY_LANGUAGE_SHORT[statusObj.processing] ?? statusObj.processing} audio…`
                                       : progressLabel(statusObj?.overallStatus ?? "")}
                                   </span>
                                   {(() => {
@@ -678,7 +666,7 @@ export default function StoryToSpeechTabPage() {
                                     ⚠ Possible truncation:{" "}
                                     {statusObj.audioCoverageWarnings
                                       .split(",")
-                                      .map((l) => LANG_SHORT[l.trim().toLowerCase()] ?? l.trim())
+                                      .map((l) => ADMIN_STORY_LANGUAGE_SHORT[l.trim().toLowerCase()] ?? l.trim())
                                       .join(", ")}
                                   </span>
                                 )}
@@ -712,7 +700,7 @@ export default function StoryToSpeechTabPage() {
                             {playingAudio?.storyId === row.id ? (
                               <div className="flex items-center gap-1">
                                 <span className="text-xs text-muted-foreground font-medium">
-                                  {LANG_SHORT[playingAudio.language] ?? playingAudio.language}
+                                  {ADMIN_STORY_LANGUAGE_SHORT[playingAudio.language] ?? playingAudio.language}
                                 </span>
                                 <Button
                                   variant="outline"
@@ -753,14 +741,14 @@ export default function StoryToSpeechTabPage() {
                                 <DropdownMenuContent align="start" className="min-w-[120px]">
                                   {(() => {
                                     const completedLangs = getCompletedLanguages(statusObj);
-                                    const langs = completedLangs.length > 0 ? completedLangs : Object.keys(LANG_SHORT);
+                                    const langs = completedLangs.length > 0 ? completedLangs : Object.keys(ADMIN_STORY_LANGUAGE_SHORT);
                                     return langs.map((lang) => (
                                       <DropdownMenuItem
                                         key={lang}
                                         onClick={() => handlePlayPreview(row.id, lang)}
                                       >
                                         <Play className="h-3.5 w-3.5 mr-2 shrink-0" />
-                                        {LANG_SHORT[lang] ?? lang}
+                                        {ADMIN_STORY_LANGUAGE_SHORT[lang] ?? lang}
                                       </DropdownMenuItem>
                                     ));
                                   })()}
@@ -813,7 +801,7 @@ export default function StoryToSpeechTabPage() {
                                       Regenerate flagged (
                                       {statusObj.audioCoverageWarnings
                                         .split(",")
-                                        .map((l) => LANG_SHORT[l.trim().toLowerCase()] ?? l.trim())
+                                        .map((l) => ADMIN_STORY_LANGUAGE_SHORT[l.trim().toLowerCase()] ?? l.trim())
                                         .join(", ")}
                                       )
                                     </DropdownMenuItem>

@@ -14,6 +14,19 @@ data class AppProperties(
     val rateLimit: RateLimitProperties = RateLimitProperties(),
     val jwt: JwtProperties = JwtProperties(),
     val openai: OpenAIProperties = OpenAIProperties(),
+    /**
+     * Primary LLM provider for story generation, moderation (when using this client), pipeline rewrite, etc.
+     * See [com.tamixa.infrastructure.openai.OpenAIClient] vs [com.tamixa.infrastructure.gemini.GeminiLlmClient].
+     */
+    val llm: LlmProperties = LlmProperties(),
+    /**
+     * Still cover illustration (before optional Veo GIF): OpenAI DALL·E 3 or Gemini native image.
+     * Uses [OpenAIProperties.apiKey] when [ImageGenerationProperties.provider] is openai;
+     * [LlmProperties.GeminiLlmProperties.apiKey] when provider is gemini.
+     */
+    val imageGeneration: ImageGenerationProperties = ImageGenerationProperties(),
+    /** Cover GIF pipeline: FFmpeg MP4→GIF; optional Google Veo Lite image-to-video. */
+    val coverAnimation: CoverAnimationProperties = CoverAnimationProperties(),
     val story: StoryProperties = StoryProperties(),
     val audio: AudioProperties = AudioProperties(),
     val cdn: CdnStreamProperties = CdnStreamProperties(),
@@ -120,15 +133,24 @@ data class AppProperties(
 
     data class VoiceCloningProperties(
         val enabled: Boolean = false,
-        /** Primary provider: elevenlabs | google | xtts. Default from application.yml: google */
+        /** Primary provider: elevenlabs | fishaudio | google | xtts. Default from application.yml: google */
         val provider: String = "google",
         /**
          * When true and provider=google, failed Google clone/synthesize attempts may fall back to ElevenLabs
          * if ELEVENLABS_API_KEY is configured.
          */
         val allowElevenLabsFallback: Boolean = true,
+        /**
+         * When true and provider=google, no-consent reference-only jobs and failed Google clones may use Fish Audio
+         * if FISH_AUDIO_API_KEY is configured (useful when ElevenLabs is unavailable).
+         */
+        val allowFishAudioFallback: Boolean = false,
         val elevenLabsApiKey: String = "",
         val elevenLabsBaseUrl: String = "https://api.elevenlabs.io",
+        val fishAudioApiKey: String = "",
+        val fishAudioBaseUrl: String = "https://api.fish.audio",
+        /** Fish TTS model header (e.g. s2-pro, s1). */
+        val fishAudioTtsModel: String = "s2-pro",
         /** Google Cloud API key for Chirp 3 Instant Custom Voice (when provider=google). */
         val googleCloudApiKey: String = "",
         /** Base URL for self-hosted XTTS-style voice cloning service (optional). */
@@ -238,6 +260,64 @@ data class AppProperties(
             val maxAttempts: Int = 3,
             val initialIntervalMs: Long = 1000,
             val multiplier: Double = 2.0
+        )
+    }
+
+    data class LlmProperties(
+        /** openai (default) | gemini */
+        val provider: String = "openai",
+        val gemini: GeminiLlmProperties = GeminiLlmProperties(),
+    ) {
+        data class GeminiLlmProperties(
+            val apiKey: String = "",
+            val baseUrl: String = "https://generativelanguage.googleapis.com",
+            val model: String = "gemini-2.0-flash",
+            val connectTimeoutMs: Long = 15000,
+            val readTimeoutMs: Long = 180000,
+            /**
+             * When true, [com.tamixa.infrastructure.gemini.GeminiLlmClient.getModerationResult] fails closed if the API key is blank.
+             */
+            val moderationRequired: Boolean = false,
+        )
+    }
+
+    data class ImageGenerationProperties(
+        /** openai = DALL·E 3 (default); gemini = Gemini image model ([generateContent] IMAGE modality). */
+        val provider: String = "openai",
+        val gemini: GeminiCoverImageProperties = GeminiCoverImageProperties(),
+    ) {
+        data class GeminiCoverImageProperties(
+            val model: String = "gemini-2.5-flash-image",
+            val aspectRatio: String = "1:1",
+            val imageSize: String = "1K",
+            /**
+             * When false, omit [imageConfig] in the request (only `responseModalities`).
+             * Use if a model rejects `imageConfig` or for troubleshooting.
+             */
+            val useImageConfig: Boolean = true,
+        )
+    }
+
+    data class CoverAnimationProperties(
+        val convertMp4ToGif: Boolean = true,
+        val veo: VeoCoverAnimationProperties = VeoCoverAnimationProperties(),
+    ) {
+        /**
+         * Google Veo 3.1 Lite via Gemini API ([predictLongRunning](https://ai.google.dev/gemini-api/docs/video)).
+         * Uses [LlmProperties.GeminiLlmProperties.apiKey] (same as GEMINI_API_KEY) when enabled.
+         */
+        data class VeoCoverAnimationProperties(
+            val enabled: Boolean = false,
+            val baseUrl: String = "https://generativelanguage.googleapis.com",
+            val model: String = "veo-3.1-lite-generate-preview",
+            /** "4", "6", or "8" (shorter = lower cost). */
+            val durationSeconds: String = "4",
+            val resolution: String = "720p",
+            val aspectRatio: String = "16:9",
+            /** Image-to-video requires allow_adult per Google policy table. */
+            val personGeneration: String = "allow_adult",
+            val pollIntervalSec: Long = 10,
+            val maxWaitSec: Long = 360,
         )
     }
 

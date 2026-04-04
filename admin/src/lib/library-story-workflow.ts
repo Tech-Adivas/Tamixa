@@ -5,6 +5,59 @@
 
 import type { PipelineStatusResponse } from "@/types/api";
 
+/** Keys on pipeline-status payloads that are not per-language stage strings (single source for admin UI). */
+export const LIBRARY_STORY_PIPELINE_META_KEYS = [
+  "processing",
+  "progress",
+  "overallStatus",
+  "reviewedLanguages",
+  "reviewStaleLanguages",
+  "allLanguagesReviewed",
+  "durationSeconds",
+  "generatedAtIst",
+  "audioCoverageWarnings",
+  "failedLanguagesCount",
+] as const;
+
+const PIPELINE_STATUS_META_KEYS = new Set<string>(LIBRARY_STORY_PIPELINE_META_KEYS);
+
+export function isLibraryStoryPipelineMetaKey(key: string): boolean {
+  return PIPELINE_STATUS_META_KEYS.has(key);
+}
+
+/** Full display names for curated-story language codes (tabs, badges, errors). */
+export const ADMIN_STORY_LANGUAGE_LABELS: Record<string, string> = {
+  en: "English",
+  ta: "Tamil",
+  hi: "Hindi",
+  te: "Telugu",
+  kn: "Kannada",
+  ml: "Malayalam",
+};
+
+export function adminStoryLanguageLabel(code: string): string {
+  const c = code.trim().toLowerCase();
+  return ADMIN_STORY_LANGUAGE_LABELS[c] ?? code;
+}
+
+/** Display labels for library story narration tone (matches EMOTION_MODES). */
+export function adminStoryEmotionModeLabel(mode: string): string {
+  const m = (mode ?? "").trim().toUpperCase();
+  return (
+    ({ CALM: "Calm", SOOTHING: "Soothing", ADVENTUROUS: "Adventurous" } as Record<string, string>)[m] ?? mode
+  );
+}
+
+/** Short labels for dense pipeline badges. */
+export const ADMIN_STORY_LANGUAGE_SHORT: Record<string, string> = {
+  ta: "Ta",
+  hi: "Hi",
+  en: "En",
+  te: "Te",
+  kn: "Kn",
+  ml: "Ml",
+};
+
 export function normalizeLibraryStoryStatus(status?: string | null): string {
   return (status ?? "DRAFT").trim().toUpperCase() || "DRAFT";
 }
@@ -19,19 +72,6 @@ export function isLibraryStoryInReviewQueue(status?: string | null): boolean {
 export function canSubmitLibraryStoryForReview(status: string | undefined | null, hasContent: boolean): boolean {
   return !isLibraryStoryInReviewQueue(status) && !!hasContent;
 }
-
-const PIPELINE_STATUS_META_KEYS = new Set([
-  "processing",
-  "progress",
-  "overallStatus",
-  "reviewedLanguages",
-  "reviewStaleLanguages",
-  "allLanguagesReviewed",
-  "durationSeconds",
-  "generatedAtIst",
-  "audioCoverageWarnings",
-  "failedLanguagesCount",
-]);
 
 /**
  * Single source of truth: treat *queued* and *in-progress* pipeline statuses as busy.
@@ -121,7 +161,7 @@ export function isLibraryStoryPipelineActivelyRunning(
  * Admin edit: one action runs Tamixa TTS-style conversion, saves draft + translation fields, then the server pipeline for all languages.
  */
 export const REGENERATE_THEN_TRANSLATIONS_HELP =
-  "On Edit → Cover & languages, use Regenerate & sync all languages: it runs the Tamixa TTS script prompt, saves your draft, then rebuilds every pipeline language on the server (translate → conversational script; no MP3s until Narration after approval). You can still Save draft without LLM when you only fix typos.";
+  "On Edit → All languages, use Regenerate & sync all languages: it runs the Tamixa TTS script prompt, saves your draft, then rebuilds every pipeline language on the server (translate → conversational script; no MP3s until Narration after approval). You can still Save draft without LLM when you only fix typos.";
 
 export const REVIEW_QUEUE_EXPECTATION_HELP =
   "Scripts are usually built before submit via Edit → Generate translations. Submit for review does not run the translation pipeline by itself.";
@@ -129,3 +169,55 @@ export const REVIEW_QUEUE_EXPECTATION_HELP =
 /** After narration approval, text changes require draft → translations → review again before TTS here stays correct. */
 export const POST_APPROVAL_CONTENT_CHANGE_HELP =
   "If story or script text changes after approval, use Edit → Move to draft → Generate translations → Submit for review → Approve again, then return here to regenerate MP3s.";
+
+/** sessionStorage: bridges optional cover/regenerate prompts from Create → Edit (shape: { storyId, cover?, regenerate? }). */
+export const ADMIN_POST_CREATE_PROMPTS_KEY = "tamixa_admin_post_create_prompts";
+
+/** Master-language codes supported in admin create/edit (matches story new + edit pages). */
+const SOURCE_LANG_SCRIPT_LABEL: Record<string, string> = {
+  ta: "Tamil",
+  en: "English",
+  hi: "Hindi",
+  te: "Telugu",
+  kn: "Kannada",
+  ml: "Malayalam",
+};
+
+/**
+ * Whether `text` contains characters in the expected script for the library master language.
+ * English skips script checks. Aligns with backend StoryLibraryValidation-style expectations.
+ */
+export function hasScriptForLibraryStoryLanguage(text: string, lang: string): boolean {
+  if (!text?.trim()) return false;
+  const normalized = lang.trim().toLowerCase();
+  if (normalized === "en") return true;
+  if (normalized === "ta") return /[\u0B80-\u0BFF]/.test(text);
+  if (normalized === "hi") return /[\u0900-\u097F]/.test(text);
+  if (normalized === "te") return /[\u0C00-\u0C7F]/.test(text);
+  if (normalized === "kn") return /[\u0C80-\u0CFF]/.test(text);
+  if (normalized === "ml") return /[\u0D00-\u0D7F]/.test(text);
+  return true;
+}
+
+export function libraryStoryMasterScriptLabel(lang: string | undefined | null): string {
+  const code = (lang ?? "ta").trim().toLowerCase();
+  return SOURCE_LANG_SCRIPT_LABEL[code] ?? code;
+}
+
+/**
+ * Content-level script validation for the master row. Returns a user-facing error or null if OK.
+ * Call only when content is non-empty and word count is already valid.
+ */
+export function getLibraryStoryMasterScriptContentError(
+  content: string,
+  lang: string | undefined | null
+): string | null {
+  const l = (lang ?? "ta").trim().toLowerCase();
+  if (l === "en") return null;
+  if (hasScriptForLibraryStoryLanguage(content, l)) return null;
+  const label = libraryStoryMasterScriptLabel(l);
+  if (l === "ta") {
+    return `Story content must contain Tamil script (தமிழ் characters). Use “Regenerate with prompt” on Edit → All languages if you need Tamil output from English prose.`;
+  }
+  return `Story content must contain ${label} script.`;
+}

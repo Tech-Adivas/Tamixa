@@ -59,7 +59,7 @@ export function PipelineStatusBanner() {
       />
       <span className="flex-1">
         <strong>Background pipeline active</strong> — Translate/rewrite and/or TTS is queued or running for {statusLine}. Often about 10–30 minutes for six languages. Typical triggers: <strong>Generate translations</strong> on story edit, or <strong>Generate audio</strong> on Narration after approval.{" "}
-        <strong>Submit for review</strong> stays disabled on the story <strong>Publish</strong> step while any pipeline is active.{" "}
+        <strong>Submit for review</strong> stays disabled on the story <strong>Save &amp; submit</strong> step while any pipeline is active.{" "}
         <Link
           href="/dashboard/stories/approve"
           className="underline underline-offset-2 hover:no-underline font-medium"

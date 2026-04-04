@@ -65,7 +65,8 @@ This document summarizes the production hardening changes applied to the backend
 
 - `JWT_SECRET` (required in prod; startup fails if default is used)
 - `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`
-- `OPENAI_API_KEY`
+- LLM: `AI_LLM_PROVIDER` (`openai` or `gemini`) and matching key — `OPENAI_API_KEY` when OpenAI; `GEMINI_API_KEY` when Gemini (and for Gemini covers / Veo when enabled)
+- Still cover image: `AI_COVER_IMAGE_PROVIDER` (`openai` = DALL·E + `OPENAI_API_KEY`; `gemini` = Gemini image + `GEMINI_API_KEY`)
 - `VOICE_ENCRYPTION_KEY` (for voice uploads)
 - Optional: `CORS_ALLOWED_ORIGINS` (if you add origin restriction in `SecurityConfig`)
 

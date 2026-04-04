@@ -1,5 +1,6 @@
 package com.tamixa.api.admin.dto
 
+import com.fasterxml.jackson.databind.JsonNode
 import java.time.Instant
 
 data class LibraryStoryResponse(
@@ -54,4 +55,8 @@ data class LibraryStoryResponse(
     val parentContentNote: String? = null,
     /** Short invitation to try speaking aloud after the story. */
     val speakAlongPrompt: String? = null,
+    /** Parsed branching graph for interactive library episodes (null if unset or invalid JSON in DB). */
+    val interactiveGraph: JsonNode? = null,
+    val postStoryMission: String? = null,
+    val postStoryResourceUrl: String? = null,
 )

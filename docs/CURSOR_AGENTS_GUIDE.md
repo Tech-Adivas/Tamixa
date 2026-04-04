@@ -217,7 +217,7 @@ See [AI_EVALUATION_SYSTEM.md](AI_EVALUATION_SYSTEM.md) and [.github/prompts/eval
    *“Act as the Documentation agent. Document the new GET /curated-stories endpoint: purpose, query params, response shape, and example. Put it in docs/backend/ or next to the API, and link to the controller or OpenAPI.”*
 
 3. **Env template**  
-   *“Following the Documentation agent: add the new STRIPE_WEBHOOK_SECRET and OPENAI_API_KEY to .env.example with one-line descriptions. No real values.”*
+   *“Following the Documentation agent: add the new STRIPE_WEBHOOK_SECRET, OPENAI_API_KEY / GEMINI_API_KEY (as applicable), and AI_LLM_PROVIDER to .env.example with one-line descriptions. No real values.”*
 
 ---
 

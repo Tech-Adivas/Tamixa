@@ -174,7 +174,7 @@ export interface LibraryStorySummary {
   audioFileUrl: string | null;
   status: string;
   coverImageUrl: string | null;
-  /** Resolved path/URL for Sora-generated cover video (MP4). Shown when SORA_ENABLED. */
+  /** Resolved path/URL for animated cover (GIF) when image-to-video pipeline produced one. */
   coverVideoUrl?: string | null;
   createdAt: string;
   modifiedAt?: string;
@@ -206,6 +206,10 @@ export interface LibraryStorySummary {
   parentDiscussionPrompts?: string[] | null;
   parentContentNote?: string | null;
   speakAlongPrompt?: string | null;
+  /** Branching episode graph (JSON object from API; edit as JSON string in admin). */
+  interactiveGraph?: unknown;
+  postStoryMission?: string | null;
+  postStoryResourceUrl?: string | null;
 }
 
 export const EMOTION_MODES = ["CALM", "SOOTHING", "ADVENTUROUS"] as const;
@@ -240,6 +244,10 @@ export interface CreateLibraryStoryRequest {
   parentDiscussionPrompts?: string[] | null;
   parentContentNote?: string | null;
   speakAlongPrompt?: string | null;
+  /** Valid JSON string: startSegmentId, segments map with audioUrl and choices[]. */
+  interactiveGraph?: string | null;
+  postStoryMission?: string | null;
+  postStoryResourceUrl?: string | null;
 }
 
 export interface BulkGenerateStoriesRequest {
@@ -369,9 +377,16 @@ export interface LibraryStoryStreamUrlResponse {
  * Story categories for admin (bulk generate, filters, edit). Must stay aligned with:
  * - Mobile: composeApp/src/commonMain/kotlin/.../SampleData.kt categories (excluding "All")
  * - Backend: StoryCategories.canonical in application/storylibrary/StoryCategories.kt
+ * - Taxonomy: docs/admin/EDU_METADATA_CONVENTIONS.md
  *
  * "Fun stories" / "Funny Stories" are the light-classics lane in the parent app (Fun corner filter).
  * "Learn · …" rows remain valid editorial categories; there is no separate Learn-only hub in the app.
+ * "Learn · Digital Safety" / "Learn · Simulator · Digital Safety" = Edu painkiller lane (scams, digital judgment).
+ */
+/**
+ * Library story categories (backend allowlist). Parent apps group the catalog into hubs:
+ * Browse (all), Fun (e.g. Fun stories / Funny Stories), Learn & safety (Learn · * including Digital Safety),
+ * Practice (e.g. Learn · Simulator · Digital Safety, interactive graph stories).
  */
 export const STORY_CATEGORIES = [
   "Animals",
@@ -389,6 +404,8 @@ export const STORY_CATEGORIES = [
   "Learn · Science & Nature",
   "Learn · Culture & Heritage",
   "Learn · Life Skills",
+  "Learn · Digital Safety",
+  "Learn · Simulator · Digital Safety",
 ] as const;
 
 export const AGE_GROUPS = [
@@ -707,6 +724,21 @@ export interface CompletionMetricsDto {
   periodDays: number;
 }
 
+/** Admin aggregate of interactive Edu choices (life_skill_choice_events). */
+export interface LifeSkillChoiceAnalyticsRowResponse {
+  libraryStoryId: number;
+  storyTitle?: string | null;
+  segmentId: string;
+  choiceId: string;
+  eventCount: number;
+}
+
+export interface LifeSkillChoiceAnalyticsResponse {
+  periodDays: number;
+  totalEvents: number;
+  rows: LifeSkillChoiceAnalyticsRowResponse[];
+}
+
 // Medium priority features types
 export interface VoiceCloningJob {
   id: number;
@@ -715,6 +747,8 @@ export interface VoiceCloningJob {
   audioFileSizeBytes: number;
   voiceName: string;
   elevenLabsVoiceId: string | null;
+  /** Fish Audio TTS model id (managed clone alternative to ElevenLabs). */
+  fishAudioModelId?: string | null;
   status: string;
   errorMessage: string | null;
   providerAuthFailed?: boolean;

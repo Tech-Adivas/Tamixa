@@ -51,7 +51,7 @@ flowchart LR
 | **Web (Vite)** | **S3** + **CloudFront** | Static `dist/`; SPA error doc → `index.html` |
 | **Admin (Next.js)** | **Amplify Hosting**, **ECS Fargate**, or **App Runner** | Needs Node at runtime if SSR/API routes; set `NEXT_PUBLIC_API_URL` at build time |
 | **Images** | **ECR** | Push `docker build` output; ECS pulls from ECR |
-| **Secrets** | **Secrets Manager** or **SSM Parameter Store** | `JWT_SECRET`, `DATABASE_*`, `OPENAI_API_KEY`, etc. — inject as ECS secrets |
+| **Secrets** | **Secrets Manager** or **SSM Parameter Store** | `JWT_SECRET`, `DATABASE_*`, `OPENAI_API_KEY`, `GEMINI_API_KEY` (per `AI_LLM_PROVIDER` / features), etc. — inject as ECS secrets |
 | **DNS** | **Route 53** *or* **Squarespace** | If DNS stays on Squarespace: **CNAME** `api.…` → ALB DNS name; **CNAME** `app.…` → CloudFront domain |
 
 ---
@@ -130,7 +130,7 @@ flowchart LR
 |--------|----------------|
 | `DATABASE_*` | RDS endpoint in Secrets Manager; inject into ECS task |
 | `REDIS_*` | ElastiCache primary endpoint |
-| `JWT_SECRET`, `OPENAI_API_KEY`, … | Secrets Manager (`valueFrom` in task definition) |
+| `JWT_SECRET`, `OPENAI_API_KEY` / `GEMINI_API_KEY`, … | Secrets Manager (`valueFrom` in task definition) |
 | `S3_BUCKET`, `S3_REGION` | Task env; IAM task role for S3 |
 | `CORS_ALLOWED_ORIGINS` | Plain env on task (comma-separated HTTPS origins) |
 | `MAGIC_LINK_BASE_URL` | Your public web URL (`https://app.…`) |

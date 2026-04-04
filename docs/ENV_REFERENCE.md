@@ -22,7 +22,10 @@ Single reference for backend and admin environment variables. Copy from root `.e
 - **Database / Redis**: Set via `SPRING_DATASOURCE_*`, `REDIS_HOST`, `REDIS_PORT` (or defaults in `application.yml`)
 - **Storage**: `STORAGE_TYPE`, `S3_BUCKET`, `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
 - **Translation**: `TRANSLATION_PROVIDER`
-- **OpenAI**: `OPENAI_API_KEY` (required for pipeline rewrite and bulk story generation), `OPENAI_READ_TIMEOUT_MS`, `OPENAI_BASE_URL`
+- **Primary LLM**: `AI_LLM_PROVIDER` (`openai` \| `gemini`). When `gemini`: `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_BASE_URL`, `GEMINI_READ_TIMEOUT_MS`, `GEMINI_MODERATION_REQUIRED` (see `application-prod.yml`).
+- **OpenAI**: `OPENAI_API_KEY` (required when `AI_LLM_PROVIDER=openai` and for OpenAI translation/TTS paths), `OPENAI_READ_TIMEOUT_MS`, `OPENAI_BASE_URL`
+- **Cover still image**: `AI_COVER_IMAGE_PROVIDER` (`openai` = DALL·E 3 + `OPENAI_API_KEY`; `gemini` = Gemini image + `GEMINI_API_KEY`). Optional: `AI_COVER_IMAGE_GEMINI_MODEL`, `AI_COVER_IMAGE_GEMINI_ASPECT_RATIO`, `AI_COVER_IMAGE_GEMINI_IMAGE_SIZE`, `AI_COVER_IMAGE_GEMINI_USE_IMAGE_CONFIG`.
+- **Cover GIF (Veo)**: `COVER_ANIMATION_VEO_ENABLED`, `GEMINI_API_KEY`, `COVER_ANIMATION_VEO_*` (see root `.env.example`)
 - **Narration**: `NARRATION_TTS_PROVIDER`, `NARRATION_TAMIXA_TTS_DEFAULT_FILE`, `GOOGLE_CLOUD_TTS_API_KEY`, and provider-specific options (see `.env.example`)
 - **Avatar video**: `AVATAR_VIDEO_ENABLED`, `AVATAR_VIDEO_PROVIDER`, `REPLICATE_API_TOKEN`, `HEYGEN_API_KEY`, etc.
 - **Voice cloning**: `VOICE_CLONING_ENABLED`, `VOICE_CLONING_PROVIDER` (default `elevenlabs`; or `google`). For **ElevenLabs** (default): set `ELEVENLABS_API_KEY`; upload reference only, then run job (admin: upload at `/parents/{parentId}/voice/upload`, then POST `/parents/{parentId}/voice/{voiceProfileId}/run-job`). For **Google**: set `GOOGLE_CLOUD_TTS_API_KEY`; upload reference and consent, then POST `.../consent` with file.

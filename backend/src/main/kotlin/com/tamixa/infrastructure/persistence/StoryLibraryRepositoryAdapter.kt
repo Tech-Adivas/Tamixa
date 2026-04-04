@@ -77,6 +77,9 @@ class StoryLibraryRepositoryAdapter(
             parentDiscussionPrompts = story.parentDiscussionPrompts,
             parentContentNote = story.parentContentNote,
             speakAlongPrompt = story.speakAlongPrompt,
+            interactiveGraph = story.interactiveGraphJson,
+            postStoryMission = story.postStoryMission,
+            postStoryResourceUrl = story.postStoryResourceUrl,
         )
         val saved = jpaRepository.save(entity)
         return saved.toDomain()
@@ -268,6 +271,9 @@ class StoryLibraryRepositoryAdapter(
             parentDiscussionPrompts = story.parentDiscussionPrompts,
             parentContentNote = story.parentContentNote,
             speakAlongPrompt = story.speakAlongPrompt,
+            interactiveGraph = story.interactiveGraphJson,
+            postStoryMission = story.postStoryMission,
+            postStoryResourceUrl = story.postStoryResourceUrl,
         )
         val saved = jpaRepository.save(entity)
         return saved.toDomain()
@@ -350,4 +356,7 @@ private fun LibraryStoryEntity.toDomain() = LibraryStory(
     parentDiscussionPrompts = parentDiscussionPrompts,
     parentContentNote = parentContentNote,
     speakAlongPrompt = speakAlongPrompt,
+    interactiveGraphJson = interactiveGraph,
+    postStoryMission = postStoryMission,
+    postStoryResourceUrl = postStoryResourceUrl,
 )

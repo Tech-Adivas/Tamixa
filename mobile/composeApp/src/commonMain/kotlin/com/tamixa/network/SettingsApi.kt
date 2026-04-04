@@ -32,7 +32,7 @@ data class ListeningProgressDto(
 class SettingsApi(private val client: HttpClient) {
 
     suspend fun getConsentRecords(): List<ConsentRecordDto> = try {
-        client.get("${ApiConfig.API_VERSION}/consent").body()
+        client.get("${ApiConfig.API_VERSION}/consent").bodyIfSuccess() ?: emptyList()
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -41,7 +41,7 @@ class SettingsApi(private val client: HttpClient) {
     }
 
     suspend fun getDataExportJobs(): List<ExportJobDto> = try {
-        client.get("${ApiConfig.API_VERSION}/data-export").body()
+        client.get("${ApiConfig.API_VERSION}/data-export").bodyIfSuccess() ?: emptyList()
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -50,7 +50,7 @@ class SettingsApi(private val client: HttpClient) {
     }
 
     suspend fun requestDataExport(): ExportJobDto? = try {
-        client.post("${ApiConfig.API_VERSION}/data-export/request").body<ExportJobDto>()
+        client.post("${ApiConfig.API_VERSION}/data-export/request").bodyIfSuccess()
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -61,7 +61,7 @@ class SettingsApi(private val client: HttpClient) {
     suspend fun getListeningProgress(days: Int = 30): ListeningProgressDto? = try {
         client.get("${ApiConfig.API_VERSION}/listening-progress") {
             parameter("days", days)
-        }.body<ListeningProgressDto>()
+        }.bodyIfSuccess()
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -71,7 +71,7 @@ class SettingsApi(private val client: HttpClient) {
 
     /** Consecutive days with at least one story play. For Dashboard streak. */
     suspend fun getListeningStreak(): Int? = try {
-        client.get("${ApiConfig.API_VERSION}/listening-progress/streak").body<ListeningStreakDto>()?.streakDays
+        client.get("${ApiConfig.API_VERSION}/listening-progress/streak").bodyIfSuccess<ListeningStreakDto>()?.streakDays
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

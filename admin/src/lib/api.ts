@@ -4,6 +4,7 @@ import type {
   AuditEntry,
   AuthResponse,
   CompletionMetricsDto,
+  LifeSkillChoiceAnalyticsResponse,
   CurrentUserResponse,
   PagedResponse,
   ParentDetail,
@@ -481,6 +482,14 @@ export async function getMe(): Promise<CurrentUserResponse> {
 /** Prevent duplicate concurrent PUT /stories/{id} from double-clicks/retries in the same tab. */
 const updateLibraryStoryInFlight = new Map<number, Promise<LibraryStorySummary>>();
 
+/** Backend route is still `bulk-publish`; it sets library status PUBLISHED (review queue), not app delivery. */
+function bulkLibraryStoriesSubmitForReview(ids: number[]) {
+  return fetchJson<{ updated: number; ids: number[] }>(
+    "/api/v1/admin/stories/bulk-publish",
+    { method: "PUT", body: JSON.stringify({ ids }) }
+  );
+}
+
 // Admin API (uses fetchJson to throw on non-OK responses)
 const admin = {
   getAdminUsers: (page = 0, size = 20) =>
@@ -605,7 +614,7 @@ const admin = {
     return res.blob();
   },
 
-  /** Run ElevenLabs voice cloning job for a profile that has reference audio (no consent). */
+  /** Run managed cloud clone job (ElevenLabs or Fish Audio) for a profile that has reference audio (no consent). */
   runVoiceCloningJobForProfile: async (
     parentId: number,
     voiceProfileId: number
@@ -632,13 +641,17 @@ const admin = {
     ok: boolean;
     provider?: string;
     allowElevenLabsFallback?: boolean;
+    allowFishAudioFallback?: boolean;
     hasGoogleVoiceCloningKey?: boolean;
     hasElevenLabsVoiceId?: boolean;
+    hasFishAudioModelId?: boolean;
     hasReferenceAudio?: boolean;
     providerAuthFailed?: boolean;
     providerQuotaFailed?: boolean;
     providerStatusMessage?: string;
     elevenLabsApiKeyConfigured?: boolean;
+    fishAudioApiKeyConfigured?: boolean;
+    managedProvider?: string;
     userApiStatus?: number;
     voiceApiStatus?: number;
     sampleBytes?: number;
@@ -651,13 +664,17 @@ const admin = {
       ok?: boolean;
       provider?: string;
       allowElevenLabsFallback?: boolean;
+      allowFishAudioFallback?: boolean;
       hasGoogleVoiceCloningKey?: boolean;
       hasElevenLabsVoiceId?: boolean;
+      hasFishAudioModelId?: boolean;
       hasReferenceAudio?: boolean;
       providerAuthFailed?: boolean;
       providerQuotaFailed?: boolean;
       providerStatusMessage?: string;
       elevenLabsApiKeyConfigured?: boolean;
+      fishAudioApiKeyConfigured?: boolean;
+      managedProvider?: string;
       userApiStatus?: number;
       voiceApiStatus?: number;
       sampleBytes?: number;
@@ -668,13 +685,17 @@ const admin = {
       ok: Boolean(data.ok),
       provider: data.provider,
       allowElevenLabsFallback: data.allowElevenLabsFallback,
+      allowFishAudioFallback: data.allowFishAudioFallback,
       hasGoogleVoiceCloningKey: data.hasGoogleVoiceCloningKey,
       hasElevenLabsVoiceId: data.hasElevenLabsVoiceId,
+      hasFishAudioModelId: data.hasFishAudioModelId,
       hasReferenceAudio: data.hasReferenceAudio,
       providerAuthFailed: data.providerAuthFailed,
       providerQuotaFailed: data.providerQuotaFailed,
       providerStatusMessage: data.providerStatusMessage,
       elevenLabsApiKeyConfigured: data.elevenLabsApiKeyConfigured,
+      fishAudioApiKeyConfigured: data.fishAudioApiKeyConfigured,
+      managedProvider: data.managedProvider,
       userApiStatus: data.userApiStatus,
       voiceApiStatus: data.voiceApiStatus,
       sampleBytes: data.sampleBytes,
@@ -701,6 +722,7 @@ const admin = {
       audioFileSizeBytes: data.audioFileSizeBytes ?? 0,
       voiceName: data.voiceName ?? "",
       elevenLabsVoiceId: data.elevenLabsVoiceId ?? null,
+      fishAudioModelId: data.fishAudioModelId ?? null,
       status: data.status ?? "PENDING",
       errorMessage: data.errorMessage ?? null,
       providerAuthFailed: Boolean(data.providerAuthFailed),
@@ -923,6 +945,11 @@ const admin = {
   getCompletionMetrics: (days = 30) =>
     fetchJson<CompletionMetricsDto>(
       `/api/v1/admin/analytics/completion?days=${days}`
+    ),
+
+  getEduLifeSkillChoiceAnalytics: (days = 30) =>
+    fetchJson<LifeSkillChoiceAnalyticsResponse>(
+      `/api/v1/admin/analytics/edu-life-skill-choices?days=${days}`
     ),
 
   flagStory: async (storyId: number, reason?: string) => {
@@ -1624,11 +1651,10 @@ const admin = {
     };
   },
 
-  bulkPublish: (ids: number[]) =>
-    fetchJson<{ updated: number; ids: number[] }>(
-      "/api/v1/admin/stories/bulk-publish",
-      { method: "PUT", body: JSON.stringify({ ids }) }
-    ),
+  bulkSubmitForReview: (ids: number[]) => bulkLibraryStoriesSubmitForReview(ids),
+
+  /** @deprecated Use bulkSubmitForReview — same request and response. */
+  bulkPublish: (ids: number[]) => bulkLibraryStoriesSubmitForReview(ids),
 
   bulkUpdateCategory: (ids: number[], theme: string) =>
     fetchJson<{ updated: number; theme: string }>(

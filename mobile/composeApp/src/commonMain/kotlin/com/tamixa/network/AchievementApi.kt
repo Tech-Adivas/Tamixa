@@ -1,7 +1,6 @@
 package com.tamixa.network
 
 import io.ktor.client.*
-import io.ktor.client.call.body
 import io.ktor.client.request.*
 
 @kotlinx.serialization.Serializable
@@ -17,13 +16,31 @@ data class AchievementDto(
 class AchievementApi(private val client: HttpClient) {
 
     suspend fun getByChild(childId: Long): List<AchievementDto> =
-        client.get("${ApiConfig.API_VERSION}/achievements/children/$childId").body()
+        try {
+            client.get("${ApiConfig.API_VERSION}/achievements/children/$childId").bodyIfSuccess() ?: emptyList()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
 
     suspend fun getDefinitions(): List<AchievementDefinitionDto> =
-        client.get("${ApiConfig.API_VERSION}/achievements/definitions").body()
+        try {
+            client.get("${ApiConfig.API_VERSION}/achievements/definitions").bodyIfSuccess() ?: emptyList()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
 
     suspend fun getMe(): List<AchievementDto> =
-        client.get("${ApiConfig.API_VERSION}/achievements/me").body()
+        try {
+            client.get("${ApiConfig.API_VERSION}/achievements/me").bodyIfSuccess() ?: emptyList()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
 }
 
 @kotlinx.serialization.Serializable

@@ -167,6 +167,71 @@ export interface CurrentUser {
   storyArtPersonalizationOptIn?: boolean;
 }
 
+/** GET /profile — child row (parent boot payload). */
+export interface ProfileChildDto {
+  id: number;
+  name: string;
+  dateOfBirth: string;
+  languagePreference?: string | null;
+}
+
+export interface ProfileResponse {
+  parent: { id: number; email: string; nickname?: string | null; displayName?: string | null };
+  children: ProfileChildDto[];
+  subscriptionPlan?: string | null;
+}
+
+/** GET /edu/life-skill-choices/counters — soft practice pillars (not grades). */
+export interface LifeSkillCountersResponse {
+  childId: number;
+  wisdom: number;
+  social: number;
+  money: number;
+  balance: number;
+  copyForParents?: string;
+}
+
+export async function getProfile(): Promise<ProfileResponse> {
+  const res = await fetchWithAuth("/profile");
+  if (!res.ok) {
+    throw await parseApiClientError(res, "Failed to load profile");
+  }
+  return res.json();
+}
+
+export async function getLifeSkillCounters(childId: number): Promise<LifeSkillCountersResponse | null> {
+  const res = await fetchWithAuth(`/edu/life-skill-choices/counters?childId=${encodeURIComponent(String(childId))}`);
+  if (res.status === 400) return null;
+  if (!res.ok) {
+    throw await parseApiClientError(res, "Failed to load practice signals");
+  }
+  return res.json();
+}
+
+export interface LifeSkillChoiceRequest {
+  libraryStoryId: number;
+  childId: number;
+  segmentId: string;
+  choiceId: string;
+  skillDeltas?: Record<string, number> | null;
+}
+
+/** POST /edu/life-skill-choices — record interactive branch choice (soft stats). */
+export async function recordLifeSkillChoice(body: LifeSkillChoiceRequest): Promise<boolean> {
+  const res = await fetchWithAuth("/edu/life-skill-choices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      libraryStoryId: body.libraryStoryId,
+      childId: body.childId,
+      segmentId: body.segmentId,
+      choiceId: body.choiceId,
+      skillDeltas: body.skillDeltas ?? undefined,
+    }),
+  });
+  return res.ok;
+}
+
 export interface LibraryStory {
   id: number;
   title: string | null;
@@ -182,12 +247,15 @@ export interface LibraryStory {
   audioFileUrl: string | null;
   status: string;
   coverImageUrl?: string | null;
-  /** Animated cover (GIF or video) from Sora; played muted. */
+  /** Animated cover (GIF) when generated; played muted. */
   coverVideoUrl?: string | null;
   createdAt: string;
   parentDiscussionPrompts?: string[] | null;
   parentContentNote?: string | null;
   speakAlongPrompt?: string | null;
+  interactiveGraph?: unknown;
+  postStoryMission?: string | null;
+  postStoryResourceUrl?: string | null;
 }
 
 export interface Story {
@@ -253,6 +321,13 @@ export interface GenerateStoryRequest {
   learningFocus?: string | null;
 }
 
+export interface NarrativeSceneVisualDto {
+  sceneIndex: number;
+  startProgress: number;
+  illustrationUrl?: string | null;
+  backgroundHint?: string | null;
+}
+
 export interface StreamUrlResponse {
   streamUrl: string;
   avatarUrl?: string | null;
@@ -261,7 +336,7 @@ export interface StreamUrlResponse {
   voiceFallback?: boolean;
   wordTimings?: { word: string; startSec: number; endSec: number }[] | null;
   durationSeconds?: number | null;
-  narrativeScenes?: unknown[] | null;
+  narrativeScenes?: NarrativeSceneVisualDto[] | null;
   /** Muted supplementary clip; pair with primary story audio (muted looping video on web). */
   hostStoryClipUrl?: string | null;
 }
@@ -295,6 +370,44 @@ export interface PlaybackSegment {
 export interface VoiceOption {
   voiceProfile: string;
   isPremium: boolean;
+  displayLabel?: string | null;
+}
+
+/** Backend story_voice_preference.story_source: use `generated` (not `mine`) for user-generated tales. */
+export function voicePreferenceStorySource(uiStorySource: string): string {
+  return uiStorySource === "mine" ? "generated" : uiStorySource;
+}
+
+export interface VoicePreferenceResponse {
+  voiceProfile: string;
+  playbackMode: string;
+}
+
+export async function getVoicePreference(
+  storyId: number,
+  storySource: string
+): Promise<VoicePreferenceResponse> {
+  const src = encodeURIComponent((storySource || "library").slice(0, 20));
+  const res = await fetchWithAuth(`/stories/${storyId}/voice-preference?storySource=${src}`);
+  if (!res.ok) return { voiceProfile: "default", playbackMode: "default" };
+  return res.json() as Promise<VoicePreferenceResponse>;
+}
+
+export async function setVoicePreference(
+  storyId: number,
+  storySource: string,
+  voiceProfile: string,
+  playbackMode: string
+): Promise<boolean> {
+  const src = encodeURIComponent((storySource || "library").slice(0, 20));
+  const res = await fetchWithAuth(`/stories/${storyId}/voice-preference?storySource=${src}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      voiceProfile: voiceProfile.trim() || "default",
+      playbackMode: playbackMode.trim() || "default",
+    }),
+  });
+  return res.ok;
 }
 
 export interface VoicesResponse {
@@ -556,6 +669,37 @@ export async function getStreamUrl(
   return data;
 }
 
+/** POST /stories/stream/analytics — same contract as mobile; best-effort, no throw. */
+export interface StreamAnalyticsPayload {
+  storyId: number;
+  streamStartLatencyMs?: number;
+  bufferingEvent?: boolean;
+  completed?: boolean;
+}
+
+export async function reportStreamAnalytics(payload: StreamAnalyticsPayload): Promise<void> {
+  const body: Record<string, unknown> = { storyId: payload.storyId };
+  if (payload.streamStartLatencyMs != null && Number.isFinite(payload.streamStartLatencyMs)) {
+    body.streamStartLatencyMs = Math.min(60_000, Math.max(0, payload.streamStartLatencyMs));
+  }
+  if (payload.bufferingEvent === true) body.bufferingEvent = true;
+  if (payload.completed === true) body.completed = true;
+  try {
+    const res = await fetchWithAuth("/stories/stream/analytics", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      logger.warn("api", "reportStreamAnalytics failed", { storyId: payload.storyId, status: res.status });
+    }
+  } catch (e) {
+    logger.warn("api", "reportStreamAnalytics error", {
+      storyId: payload.storyId,
+      message: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
 /**
  * Fetch playback manifest (timeline) with scenes and segments for subtitle sync.
  * Use for karaoke-style playback; each segment can have its own audioUrl when per-segment TTS is enabled.
@@ -573,6 +717,18 @@ export async function getTimeline(
   const res = await fetchWithAuth(`/stories/${storyId}/timeline${qs ? `?${qs}` : ""}`);
   if (!res.ok) return null;
   return res.json();
+}
+
+/** Warm narration script for device TTS when stream audio is unavailable (mobile parity). */
+export async function getNarrationScript(storyId: number, language = "ta"): Promise<string | null> {
+  const res = await fetchWithAuth(
+    `/stories/${storyId}/narration-script?language=${encodeURIComponent(language)}`
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) return null;
+  const data = (await res.json()) as { script?: string | null };
+  const s = data.script?.trim();
+  return s ? s : null;
 }
 
 export async function regenerateStoryCover(storyId: number): Promise<Story> {
@@ -630,6 +786,13 @@ export interface PlaybackPosition {
   updatedAt: string;
 }
 
+/** From `GET /playback/recent?enriched=true` — title, cover, and progress fraction for dashboard resume rows. */
+export interface PlaybackPositionEnriched extends PlaybackPosition {
+  title: string;
+  coverImageUrl?: string | null;
+  progress?: number | null;
+}
+
 export async function savePlaybackPosition(data: { storyId: number; storySource: string; positionSeconds: number; childId?: number }): Promise<void> {
   const res = await fetchWithAuth("/playback/position", {
     method: "POST",
@@ -648,10 +811,13 @@ export async function getPlaybackPosition(storyId: number, storySource = "genera
   return data.positionSeconds ?? 0;
 }
 
-export async function getRecentPlayback(limit = 10): Promise<PlaybackPosition[]> {
-  const res = await fetchWithAuth(`/playback/recent?limit=${limit}`);
+export async function getRecentPlayback(limit?: number, enriched?: false): Promise<PlaybackPosition[]>;
+export async function getRecentPlayback(limit: number, enriched: true): Promise<PlaybackPositionEnriched[]>;
+export async function getRecentPlayback(limit = 10, enriched = false): Promise<PlaybackPosition[] | PlaybackPositionEnriched[]> {
+  const q = enriched ? `limit=${limit}&enriched=true` : `limit=${limit}`;
+  const res = await fetchWithAuth(`/playback/recent?${q}`);
   if (!res.ok) {
-    logger.warn("api", "getRecentPlayback failed", { limit, status: res.status });
+    logger.warn("api", "getRecentPlayback failed", { limit, enriched, status: res.status });
     return [];
   }
   return res.json();
@@ -949,6 +1115,71 @@ export async function uploadVoiceProfile(
   return res.json();
 }
 
+// Parent storytelling avatar (premium) — aligns with mobile AvatarApi
+export async function getParentAvatarUrl(): Promise<string | null> {
+  const res = await fetchWithAuth("/parents/me/avatar");
+  if (res.status === 404) return null;
+  if (!res.ok) return null;
+  const data = (await res.json()) as { avatarUrl?: string | null };
+  return data.avatarUrl?.trim() ? data.avatarUrl : null;
+}
+
+export async function uploadParentAvatar(file: File): Promise<string> {
+  const token = getStoredToken();
+  const formData = new FormData();
+  formData.append("file", file);
+  const headers: HeadersInit = { ...buildTracingHeaders() };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}/parents/me/avatar`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+  if (res.status === 402) throw new Error("A Tamixa plan is required to upload a storytelling avatar.");
+  if (res.status === 413) throw new Error("Image is too large.");
+  if (!res.ok) throw new Error("Failed to upload avatar");
+  const data = (await res.json()) as { avatarUrl?: string };
+  if (!data.avatarUrl?.trim()) throw new Error("Upload succeeded but no URL was returned");
+  return data.avatarUrl;
+}
+
+export async function deleteParentAvatar(): Promise<void> {
+  const res = await fetchWithAuth("/parents/me/avatar", { method: "DELETE" });
+  if (res.status === 404) return;
+  if (res.status === 402) throw new Error("A Tamixa plan is required to manage your avatar.");
+  if (!res.ok) throw new Error("Failed to remove avatar");
+}
+
+/** Per-story family voice recording (multipart), same as mobile StoryApi.uploadFamilyVoice. */
+export async function uploadFamilyVoice(storyId: number, language: string, file: File): Promise<void> {
+  const token = getStoredToken();
+  const formData = new FormData();
+  formData.append("file", file);
+  const headers: HeadersInit = { ...buildTracingHeaders() };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const q = encodeURIComponent(language || "ta");
+  const res = await fetch(`${API_BASE}/stories/${storyId}/upload-family-voice?language=${q}`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err?.message ?? "Failed to upload family voice");
+  }
+}
+
+export async function deleteFamilyVoice(storyId: number, language = "ta"): Promise<void> {
+  const q = encodeURIComponent(language);
+  const res = await fetchWithAuth(`/stories/${storyId}/delete-family-voice?language=${q}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err?.message ?? "Failed to remove family voice");
+  }
+}
+
 /** Matches backend [com.tamixa.api.dto.VoiceCloningJobDto] JSON. */
 export interface VoiceCloningJob {
   id: number;
@@ -957,6 +1188,7 @@ export interface VoiceCloningJob {
   audioFileSizeBytes: number;
   voiceName: string;
   elevenLabsVoiceId?: string | null;
+  fishAudioModelId?: string | null;
   status: string;
   errorMessage?: string | null;
   createdAt: string;
@@ -1013,6 +1245,45 @@ export async function getVoiceTiers(): Promise<VoiceTier[]> {
   const res = await fetchWithAuth("/voice-cloning/tiers");
   if (!res.ok) throw new Error("Failed to load voice tiers");
   return res.json();
+}
+
+/** Parent app analytics — non-blocking; no PII in payload. */
+export async function trackAppEventLibraryHub(hubKey: string): Promise<void> {
+  try {
+    const res = await fetchWithAuth("/analytics/app-events", {
+      method: "POST",
+      body: JSON.stringify({ eventType: "library_hub", hubKey }),
+    });
+    if (!res.ok) {
+      logger.debug("api", "trackAppEventLibraryHub failed", { status: res.status });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function trackStoryInteractiveBranch(
+  storyId: number,
+  storySource: "library" | "generated",
+  language: string
+): Promise<void> {
+  try {
+    const res = await fetchWithAuth("/analytics/story-events", {
+      method: "POST",
+      body: JSON.stringify({
+        storyId,
+        storySource,
+        language,
+        eventType: "interactive_branch",
+        playbackPositionSeconds: 0,
+      }),
+    });
+    if (!res.ok) {
+      logger.debug("api", "trackStoryInteractiveBranch failed", { status: res.status });
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 export const authStorage = {

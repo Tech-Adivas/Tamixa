@@ -15,7 +15,7 @@ The application **largely meets** the project’s security and compliance expect
 
 | Rule | Status | Evidence |
 |------|--------|----------|
-| No hardcoded API keys / JWT secret / DB password | ✅ | Keys and secrets come from `AppProperties` / env (e.g. `OPENAI_API_KEY`, `JWT_SECRET`, Stripe, Twilio). |
+| No hardcoded API keys / JWT secret / DB password | ✅ | Keys and secrets come from `AppProperties` / env (e.g. `OPENAI_API_KEY`, `GEMINI_API_KEY`, `JWT_SECRET`, Stripe, Twilio). |
 | `.env` gitignored | ✅ | `.gitignore` includes `.env`, `.env.local`, `*.env`. |
 | `.env.example` template only | ✅ | Placeholders only; no real values. |
 

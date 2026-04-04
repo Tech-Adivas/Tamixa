@@ -8,6 +8,8 @@ data class VoiceProfile(
     val encryptedEmbedding: ByteArray,
     val createdAt: Instant,
     val elevenlabsVoiceId: String? = null,
+    /** Fish Audio TTS model `_id` (used as `reference_id` in /v1/tts). */
+    val fishAudioModelId: String? = null,
     val googleVoiceCloningKey: String? = null,
     val referenceAudioPath: String? = null,
     val heygenVoiceId: String? = null
@@ -21,6 +23,7 @@ data class VoiceProfile(
         if (!encryptedEmbedding.contentEquals(other.encryptedEmbedding)) return false
         if (createdAt != other.createdAt) return false
         if (elevenlabsVoiceId != other.elevenlabsVoiceId) return false
+        if (fishAudioModelId != other.fishAudioModelId) return false
         if (googleVoiceCloningKey != other.googleVoiceCloningKey) return false
         if (referenceAudioPath != other.referenceAudioPath) return false
         if (heygenVoiceId != other.heygenVoiceId) return false
@@ -33,6 +36,7 @@ data class VoiceProfile(
         result = 31 * result + encryptedEmbedding.contentHashCode()
         result = 31 * result + createdAt.hashCode()
         result = 31 * result + (elevenlabsVoiceId?.hashCode() ?: 0)
+        result = 31 * result + (fishAudioModelId?.hashCode() ?: 0)
         result = 31 * result + (googleVoiceCloningKey?.hashCode() ?: 0)
         result = 31 * result + (referenceAudioPath?.hashCode() ?: 0)
         result = 31 * result + (heygenVoiceId?.hashCode() ?: 0)

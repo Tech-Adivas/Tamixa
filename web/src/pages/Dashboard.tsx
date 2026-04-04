@@ -9,11 +9,16 @@ import {
   getLibraryStories,
   resolveCoverUrl,
   type RecommendedStory,
-  type PlaybackPosition,
+  type PlaybackPositionEnriched,
   type ListeningProgress,
   type LibraryStory,
 } from "../lib/api";
-import { isFunStory, funCornerBadgeLabel } from "../lib/storyListenerUi";
+import {
+  isFunStory,
+  isInteractivePracticeLibraryStory,
+  funCornerBadgeLabel,
+  interactivePracticeBadgeLabel,
+} from "../lib/storyListenerUi";
 
 function formatResumeMeta(positionSeconds: number): string {
   if (positionSeconds < 60) {
@@ -44,7 +49,7 @@ function completionPercent(rate: number): number {
 export default function Dashboard() {
   const { user } = useAuth();
   const [recommended, setRecommended] = useState<RecommendedStory[]>([]);
-  const [recent, setRecent] = useState<PlaybackPosition[]>([]);
+  const [recent, setRecent] = useState<PlaybackPositionEnriched[]>([]);
   const [progress, setProgress] = useState<ListeningProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [libraryPicks, setLibraryPicks] = useState<LibraryStory[]>([]);
@@ -73,11 +78,11 @@ export default function Dashboard() {
         });
         return [] as RecommendedStory[];
       }),
-      getRecentPlayback(8).catch((err) => {
+      getRecentPlayback(8, true).catch((err) => {
         logger.warn("dashboard", "Failed to load recent playback", {
           message: err instanceof Error ? err.message : String(err),
         });
-        return [] as PlaybackPosition[];
+        return [] as PlaybackPositionEnriched[];
       }),
       getListeningProgress(30).catch((err) => {
         logger.warn("dashboard", "Failed to load listening progress", {
@@ -136,6 +141,16 @@ export default function Dashboard() {
               <p className="dash-hero-subtitle">
                 Jump back into the tale you paused, see what Tamixa suggests next, or open the library for a brand-new
                 adventure.
+              </p>
+              <p className="dash-hero-library-map muted" style={{ marginTop: "0.65rem", fontSize: "0.88rem", lineHeight: 1.45 }}>
+                Library hubs:{" "}
+                <Link to="/stories?tab=library">Browse</Link>
+                {" · "}
+                <Link to="/stories?tab=library&hub=fun">Fun</Link>
+                {" · "}
+                <Link to="/stories?tab=library&hub=learn">Learn &amp; safety</Link>
+                {" · "}
+                <Link to="/stories?tab=library&hub=simulator">Practice</Link>
               </p>
             </div>
             <div className="dash-hero-actions">
@@ -200,6 +215,9 @@ export default function Dashboard() {
                       {isFunStory(s.theme, s.category) ? (
                         <span className="stories-fun-badge">{funCornerBadgeLabel()}</span>
                       ) : null}
+                      {isInteractivePracticeLibraryStory(s) ? (
+                        <span className="stories-interactive-badge">{interactivePracticeBadgeLabel()}</span>
+                      ) : null}
                       <p className="poster-card-title">{s.title || s.theme}</p>
                       <p className="poster-card-meta">{s.theme}</p>
                     </Link>
@@ -222,21 +240,33 @@ export default function Dashboard() {
             </div>
             {recent.length > 0 ? (
               <div className="dash-poster-row">
-                {recent.map((p) => (
-                  <Link
-                    key={`${p.storyId}-${p.storySource}`}
-                    to={`/stories?resume=${p.storyId}&source=${p.storySource}`}
-                    className="poster-card dash-poster-card"
-                  >
-                    <div
-                      className="poster-card-cover poster-card-placeholder--default-cover"
-                      aria-hidden
-                      style={{ backgroundImage: "url(/story-card-default.png)" }}
-                    />
-                    <p className="poster-card-title">Story #{p.storyId}</p>
-                    <p className="poster-card-meta">{formatResumeMeta(p.positionSeconds)}</p>
-                  </Link>
-                ))}
+                {recent.map((p) => {
+                  const cover = resolveCoverUrl(p.coverImageUrl ?? null);
+                  const pct =
+                    p.progress != null && Number.isFinite(p.progress)
+                      ? Math.round(Math.min(1, Math.max(0, p.progress)) * 100)
+                      : null;
+                  return (
+                    <Link
+                      key={`${p.storyId}-${p.storySource}`}
+                      to={`/stories?resume=${p.storyId}&source=${p.storySource}`}
+                      className="poster-card dash-poster-card"
+                    >
+                      <div className="poster-card-cover poster-card-placeholder--default-cover" aria-hidden>
+                        {cover ? (
+                          <img src={cover} alt="" className="dash-poster-card-img" />
+                        ) : (
+                          <span className="dash-poster-card-fallback" aria-hidden />
+                        )}
+                        {pct != null ? (
+                          <span className="dash-resume-progress" style={{ width: `${pct}%` }} aria-hidden />
+                        ) : null}
+                      </div>
+                      <p className="poster-card-title">{p.title?.trim() || `Story #${p.storyId}`}</p>
+                      <p className="poster-card-meta">{formatResumeMeta(p.positionSeconds)}</p>
+                    </Link>
+                  );
+                })}
               </div>
             ) : (
               <div className="dash-empty">

@@ -12,10 +12,11 @@ import java.nio.file.Files
  * Uses two-pass palette (palettegen + paletteuse) for accurate colors and brightness,
  * higher resolution (960px), and a slight contrast/brightness nudge so the GIF is not dim.
  * Requires FFmpeg on PATH (e.g. apt-get install ffmpeg / brew install ffmpeg).
- * Enable with app.sora.convert-to-gif=true (default true when Sora is used).
+ * Used when an image-to-video adapter produces MP4 bytes (e.g. a future [CoverVideoGenerationPort]).
+ * Disable with app.cover-animation.convert-mp4-to-gif=false.
  */
 @Component
-@ConditionalOnProperty(name = ["app.sora.convert-to-gif"], havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = ["app.cover-animation.convert-mp4-to-gif"], havingValue = "true", matchIfMissing = true)
 class FfmpegVideoToGifAdapter : VideoToGifConverterPort {
 
     private val log = LoggerFactory.getLogger(javaClass)

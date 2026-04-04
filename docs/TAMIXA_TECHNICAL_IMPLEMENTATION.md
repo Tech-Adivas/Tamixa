@@ -318,7 +318,8 @@ processing_job / shareable_clips / story_avatar_video:
 | Service | Purpose | Config |
 |---------|---------|--------|
 | **Google Cloud TTS** | Default neural narration | NARRATION_TTS_PROVIDER=google, GOOGLE_CLOUD_TTS_API_KEY |
-| **OpenAI** | Translation, rewrite, moderation | OPENAI_API_KEY, app.openai.baseUrl |
+| **OpenAI** | LLM / translation / moderation when `AI_LLM_PROVIDER=openai` | OPENAI_API_KEY, app.openai.baseUrl |
+| **Google Gemini** | LLM / translation / cover still image / Veo when configured | GEMINI_API_KEY, `AI_LLM_PROVIDER`, `AI_COVER_IMAGE_PROVIDER`, `COVER_ANIMATION_VEO_ENABLED` |
 | **ElevenLabs** | Voice cloning (IVC) | VOICE_CLONING_ENABLED, ELEVENLABS_API_KEY |
 | **XTTS** | Self-hosted voice clone | app.voiceCloning.xttsBaseUrl |
 | **HeyGen** | Avatar video (primary) | AVATAR_VIDEO_PROVIDER=heygen, HEYGEN_API_KEY |
@@ -425,7 +426,9 @@ Full OpenAPI: `/v3/api-docs` (SpringDoc).
 | SERVER_PORT | 8080 | HTTP port |
 | REDIS_HOST / REDIS_PORT | localhost:6379 | Redis |
 | JWT_SECRET | — | Required for prod |
-| OPENAI_API_KEY | — | Translation, rewrite |
+| OPENAI_API_KEY | — | When `AI_LLM_PROVIDER=openai` (and DALL·E covers when `AI_COVER_IMAGE_PROVIDER=openai`) |
+| GEMINI_API_KEY | — | When `AI_LLM_PROVIDER=gemini`, Gemini translation, Gemini covers, and/or Veo GIF |
+| AI_LLM_PROVIDER / AI_COVER_IMAGE_PROVIDER | openai | Primary LLM and still-cover image backends |
 | GOOGLE_CLOUD_TTS_API_KEY | — | Default TTS |
 | S3_BUCKET, AWS_ACCESS_KEY_ID | — | Storage |
 | AVATAR_VIDEO_PROVIDER | sadtalker | heygen, sadtalker, d-id |
@@ -433,7 +436,7 @@ Full OpenAPI: `/v3/api-docs` (SpringDoc).
 
 ### 11.2 AppProperties Structure
 
-- `app.auth`, `app.storage`, `app.jwt`, `app.openai`
+- `app.auth`, `app.storage`, `app.jwt`, `app.openai`, `app.llm`, `app.imageGeneration`, `app.coverAnimation`
 - `app.translationPipeline` (sourceLanguage, targetLanguages, parallelism)
 - `app.narration` (maxConcurrentTts, ttsTimeoutSeconds)
 - `app.avatarVideo`, `app.voiceCloning`, `app.subscription`

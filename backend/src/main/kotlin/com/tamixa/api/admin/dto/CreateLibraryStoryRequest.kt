@@ -74,4 +74,14 @@ data class CreateLibraryStoryRequest(
 
     @field:Size(max = 500)
     val speakAlongPrompt: String? = null,
+
+    /** JSON object: startSegmentId, segments map (audioUrl, choices[]). Max size enforced server-side. */
+    @field:Size(max = 100_000)
+    val interactiveGraph: String? = null,
+
+    @field:Size(max = 8000)
+    val postStoryMission: String? = null,
+
+    @field:Size(max = 512)
+    val postStoryResourceUrl: String? = null,
 )

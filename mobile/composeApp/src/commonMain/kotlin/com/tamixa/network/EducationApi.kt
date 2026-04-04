@@ -1,7 +1,6 @@
 package com.tamixa.network
 
 import io.ktor.client.*
-import io.ktor.client.call.body
 import io.ktor.client.request.*
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -112,52 +111,52 @@ class EducationApi(private val client: HttpClient) {
 
     // Reading level
     suspend fun getReadingLevel(childId: Long): ReadingLevelDto =
-        client.get("${ApiConfig.API_VERSION}/reading-levels/$childId").body()
+        client.get("${ApiConfig.API_VERSION}/reading-levels/$childId").requireBodyOrThrow()
 
     // Reading streak
     suspend fun getStreak(childId: Long): ReadingStreakDto =
-        client.get("${ApiConfig.API_VERSION}/reading-streaks/$childId").body()
+        client.get("${ApiConfig.API_VERSION}/reading-streaks/$childId").requireBodyOrThrow()
 
     suspend fun recordRead(childId: Long): ReadingStreakDto =
-        client.post("${ApiConfig.API_VERSION}/reading-streaks/$childId/record-read").body()
+        client.post("${ApiConfig.API_VERSION}/reading-streaks/$childId/record-read").requireBodyOrThrow()
 
     // Vocabulary
     suspend fun getVocabularyProgress(childId: Long): VocabularyProgressDto =
-        client.get("${ApiConfig.API_VERSION}/vocabulary/child/$childId/progress").body()
+        client.get("${ApiConfig.API_VERSION}/vocabulary/child/$childId/progress").requireBodyOrThrow()
 
     suspend fun getChildVocabulary(childId: Long): List<ChildVocabularyDto> =
-        client.get("${ApiConfig.API_VERSION}/vocabulary/child/$childId/words").body()
+        client.get("${ApiConfig.API_VERSION}/vocabulary/child/$childId/words").bodyIfSuccess() ?: emptyList()
 
     suspend fun getWordSuggestions(childId: Long, language: String? = null, limit: Int = 10): List<VocabularyWordDto> =
         client.get("${ApiConfig.API_VERSION}/vocabulary/child/$childId/suggestions") {
             language?.let { parameter("language", it) }
             parameter("limit", limit)
-        }.body()
+        }.bodyIfSuccess() ?: emptyList()
 
     suspend fun markWordLearned(childId: Long, wordId: Long, masteryLevel: Int = 1): ChildVocabularyDto =
         client.post("${ApiConfig.API_VERSION}/vocabulary/learn") {
             contentType(ContentType.Application.Json)
             setBody(LearnWordRequest(childId, wordId, masteryLevel))
-        }.body()
+        }.requireBodyOrThrow()
 
     // Classrooms
     suspend fun getChildClassrooms(childId: Long): List<ClassroomDto> =
-        client.get("${ApiConfig.API_VERSION}/teachers/child/$childId/classrooms").body()
+        client.get("${ApiConfig.API_VERSION}/teachers/child/$childId/classrooms").bodyIfSuccess() ?: emptyList()
 
     suspend fun joinClassroom(code: String, childId: Long): ClassroomDto =
         client.post("${ApiConfig.API_VERSION}/teachers/classrooms/join") {
             contentType(ContentType.Application.Json)
             setBody(JoinClassroomRequest(code, childId))
-        }.body()
+        }.requireBodyOrThrow()
 
     // Quiz
     suspend fun getQuizForStory(storyId: Long): QuizDto =
-        client.get("${ApiConfig.API_VERSION}/quizzes/stories/$storyId").body()
+        client.get("${ApiConfig.API_VERSION}/quizzes/stories/$storyId").requireBodyOrThrow()
 
     suspend fun submitQuiz(quizId: Long, childId: Long, answers: Map<String, String>): QuizResultDto =
         client.post("${ApiConfig.API_VERSION}/quizzes/$quizId/submit") {
             contentType(ContentType.Application.Json)
             parameter("childId", childId)
             setBody(SubmitQuizRequest(answers))
-        }.body()
+        }.requireBodyOrThrow()
 }

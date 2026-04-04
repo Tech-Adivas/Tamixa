@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tamixa.composeapp.generated.resources.Res
-import com.tamixa.composeapp.generated.resources.tamixa_logo_full
+import com.tamixa.composeapp.generated.resources.tamixa_app_icon
 import com.tamixa.ui.components.StarryNightBackground
 import com.tamixa.ui.strings.Strings
 import com.tamixa.platform.playSplashRevealSound
@@ -59,6 +59,9 @@ private const val TAGLINE_DELAY_MS = 1680L
 fun SplashScreen(
     isLoggedIn: Boolean = false,
     hasCompletedOnboarding: Boolean = false,
+    /** When true, timer/skip routes to language selection before onboarding or login. */
+    needsLanguageSelection: Boolean = false,
+    onNavigateToLanguage: () -> Unit = {},
     onNavigateToHook: () -> Unit = {},
     onNavigateToLogin: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -74,9 +77,10 @@ fun SplashScreen(
         }
     }
 
-    LaunchedEffect(Unit, isLoggedIn, hasCompletedOnboarding, skipRequested) {
+    LaunchedEffect(Unit, isLoggedIn, hasCompletedOnboarding, needsLanguageSelection, skipRequested) {
         fun navigateAfterSplash() {
             when {
+                needsLanguageSelection -> onNavigateToLanguage()
                 isLoggedIn -> { }
                 !hasCompletedOnboarding -> onNavigateToHook()
                 else -> onNavigateToLogin()
@@ -187,6 +191,11 @@ fun SplashScreen(
                 .fillMaxSize()
                 .background(TamixaGradients.splashStorybookVignetteBrush())
         )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(TamixaGradients.onboardingTopAtmosphereBrush())
+        )
 
         // Concentric shockwaves — modern, no logo “plate”
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -288,7 +297,7 @@ fun SplashScreen(
                     )
                 }
                 Image(
-                    painter = painterResource(Res.drawable.tamixa_logo_full),
+                    painter = painterResource(Res.drawable.tamixa_app_icon),
                     contentDescription = "Tamixa",
                     modifier = Modifier.size(logoSize),
                     contentScale = ContentScale.Fit

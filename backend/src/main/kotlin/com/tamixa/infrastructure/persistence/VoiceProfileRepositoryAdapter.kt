@@ -20,6 +20,7 @@ class VoiceProfileRepositoryAdapter(
             encryptedEmbedding = voiceProfile.encryptedEmbedding,
             createdAt = voiceProfile.createdAt,
             elevenlabsVoiceId = voiceProfile.elevenlabsVoiceId,
+            fishAudioModelId = voiceProfile.fishAudioModelId,
             googleVoiceCloningKey = voiceProfile.googleVoiceCloningKey,
             referenceAudioPath = voiceProfile.referenceAudioPath,
             heygenVoiceId = voiceProfile.heygenVoiceId
@@ -51,6 +52,7 @@ private fun VoiceProfileEntity.toDomain(): VoiceProfile = VoiceProfile(
     encryptedEmbedding = encryptedEmbedding,
     createdAt = createdAt,
     elevenlabsVoiceId = elevenlabsVoiceId,
+    fishAudioModelId = fishAudioModelId,
     googleVoiceCloningKey = googleVoiceCloningKey,
     referenceAudioPath = referenceAudioPath,
     heygenVoiceId = heygenVoiceId

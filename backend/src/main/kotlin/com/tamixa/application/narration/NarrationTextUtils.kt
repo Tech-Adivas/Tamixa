@@ -7,12 +7,12 @@ package com.tamixa.application.narration
  */
 object NarrationTextUtils {
 
-    /** Pause markers: [Pause 500ms], [Pause 1s], [Pause1s], etc. */
-    private val PAUSE_REGEX = Regex("""\[Pause\s*\d+(?:ms|s)\s*\]""", RegexOption.IGNORE_CASE)
+    /** Pause markers: [Pause 500ms], [Pause 1s], [Pause 1.5s]; ASCII or fullwidth brackets. */
+    private val PAUSE_REGEX = Regex("""[\[\［]\s*Pause\s*[\d.]+(?:ms|s)\s*[\]\］]""", RegexOption.IGNORE_CASE)
 
     /** Tone/scene markers used by prompt templates (e.g. [Warm tone], [Scene shifts], [Brisk pacing]). */
     private val TONE_REGEX = Regex(
-        """[\[\［]\s*(?:Warm\s*tone|Gentle\s*tone|Calm(?:\s*tone)?|Happy\s*tone|Excited\s*tone|Playful\s*tone|Curious\s*tone|Wonder\s*tone|Reassuring\s*tone|Thoughtful\s*tone|Soft\s*voice|Whisper(?:ed)?\s*tone|Emotional\s*tone|Soft\s*emotional\s*tone|Celebration\s*tone|Storyteller\s*tone|Slow\s*pacing|Medium\s*pacing|Brisk\s*pacing|Scene\s*opens\s*softly|Scene\s*shifts|A\s*gentle\s*moment|A\s*magical\s*moment|A\s*quiet\s*pause|A\s*joyful\s*moment|A\s*surprise\s*moment|Closing\s*tone|Audio\s*imagination|Joyful\s*moment|Clear\s*tone)\s*[\]\］]""",
+        """[\[\［]\s*(?:Warm\s*tone|Gentle\s*tone|Calm(?:\s*tone)?|Happy\s*tone|Excited\s*tone|Playful\s*tone|Curious\s*tone|Wonder\s*tone|Reassuring\s*tone|Thoughtful\s*tone|Soft\s*voice|Whisper(?:ed)?\s*tone|Emotional\s*tone|Soft\s*emotional\s*tone|Celebration\s*tone|Storyteller\s*tone|Slow\s*pacing|(?:Meduim|Medium)\s*pacing|Brisk\s*pacing|Scene\s*opens\s*softly|Scene\s*shifts|A\s*gentle\s*moment|A\s*magical\s*moment|A\s*quiet\s*pause|A\s*joyful\s*moment|A\s*surprise\s*moment|Closing\s*tone|Audio\s*imagination|Joyful\s*moment|Clear\s*tone)\s*[\]\］]""",
         RegexOption.IGNORE_CASE
     )
 

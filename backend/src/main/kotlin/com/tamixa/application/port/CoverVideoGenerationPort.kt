@@ -1,7 +1,8 @@
 package com.tamixa.application.port
 
 /**
- * Generates a short video from an image (e.g. DALL-E cover) using an image-to-video API (e.g. OpenAI Sora).
+ * Generates a short video from a cover still image for animated GIF covers.
+ * Default implementation when enabled: [com.tamixa.infrastructure.gemini.VeoLiteCoverVideoClient] (Veo 3.1 Lite via Gemini API).
  * Returns MP4 bytes or null if disabled/fails.
  */
 interface CoverVideoGenerationPort {

@@ -13,6 +13,8 @@ Central place for architecture, deployment, security, and feature documentation.
 | Area | Documents |
 |------|-----------|
 | **Project overview (diagrams: context, layers, use cases, sequences, ER)** | [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) |
+| **Edustory product vision (Fun vs Edu, lifelong audiences, differentiated ideas)** | [EDUSTORY_PRODUCT_VISION.md](EDUSTORY_PRODUCT_VISION.md) |
+| **Edustory program (values, India problems→features, matrix & rollout)** | [EDUSTORY_VALUES_AND_PRINCIPLES.md](EDUSTORY_VALUES_AND_PRINCIPLES.md), [EDUSTORY_INDIA_PROBLEMS_AND_FEATURES.md](EDUSTORY_INDIA_PROBLEMS_AND_FEATURES.md), [EDUSTORY_CONTENT_MATRIX_AND_ROADMAP.md](EDUSTORY_CONTENT_MATRIX_AND_ROADMAP.md) |
 | **Agentic SDLC & AI governance** | [AGENTIC_SDLC_IMPLEMENTATION.md](AGENTIC_SDLC_IMPLEMENTATION.md), [AGENTIC_SDLC_GOVERNANCE.md](AGENTIC_SDLC_GOVERNANCE.md), [AI_EVALUATION_SYSTEM.md](AI_EVALUATION_SYSTEM.md), [AI_GOVERNANCE_E2E.md](AI_GOVERNANCE_E2E.md), [AI_USAGE_METRICS.md](AI_USAGE_METRICS.md), [COST_GOVERNANCE.md](COST_GOVERNANCE.md), [CONTEXT_LIFECYCLE.md](CONTEXT_LIFECYCLE.md), [AGENT_EXECUTION_BOUNDARIES.md](AGENT_EXECUTION_BOUNDARIES.md), [TAMIXA_AI_CONTROL_PLANE.md](TAMIXA_AI_CONTROL_PLANE.md), [CONTROL_PLANE_ARCHITECTURE.md](CONTROL_PLANE_ARCHITECTURE.md), [MCP_POLICY.md](MCP_POLICY.md), [METRICS_EXPORT.md](METRICS_EXPORT.md), [engineering-brain/README.md](engineering-brain/README.md), [context-packs/README.md](context-packs/README.md) |
 | **Architecture (full map + integrations)** | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | **Enterprise: quality now, B2B later** | [ENTERPRISE_ROADMAP.md](ENTERPRISE_ROADMAP.md) |
@@ -23,7 +25,7 @@ Central place for architecture, deployment, security, and feature documentation.
 | **API & runbooks** | [API_ERROR_RESPONSES.md](API_ERROR_RESPONSES.md), [api/PARENT_STORY_API_ERRORS.md](api/PARENT_STORY_API_ERRORS.md), [ENV_REFERENCE.md](ENV_REFERENCE.md), [runbooks/README.md](runbooks/README.md) |
 | **Voice & narration** | [ELEVENLABS_INTEGRATION.md](ELEVENLABS_INTEGRATION.md), [VOICE_CLONING_ARCHITECTURE.md](VOICE_CLONING_ARCHITECTURE.md), [AVATAR_VIDEO.md](AVATAR_VIDEO.md), [INDIAN_LANGUAGE_TTS_OPTIONS.md](INDIAN_LANGUAGE_TTS_OPTIONS.md) |
 | **Mobile** | [mobile/](mobile/) — FOLDER_STRUCTURE, IOS_TESTING, FIREBASE_SETUP, etc. |
-| **Admin** | [admin/](admin/) — DESIGN_SYSTEM, DEPLOYMENT |
+| **Admin** | [admin/](admin/) — DESIGN_SYSTEM, DEPLOYMENT; **library metadata (Fun / Edu / Simulator):** [admin/EDU_METADATA_CONVENTIONS.md](admin/EDU_METADATA_CONVENTIONS.md); **simulator authoring:** [admin/EDUSTORY_SIMULATOR_CONTENT_BLUEPRINT.md](admin/EDUSTORY_SIMULATOR_CONTENT_BLUEPRINT.md) |
 | **Design** | [design/TAMIXA_UI_DESIGN_SPEC.md](design/TAMIXA_UI_DESIGN_SPEC.md) |
 | **Analytics & product** | [STORY_ANALYTICS.md](STORY_ANALYTICS.md), [REVENUE_ANALYTICS.md](REVENUE_ANALYTICS.md), [DORA_METRICS_FRAMEWORK.md](DORA_METRICS_FRAMEWORK.md), [MOBILE_PRODUCT_EVALUATION.md](MOBILE_PRODUCT_EVALUATION.md), [MOBILE_CAPABILITIES_AND_ROADMAP.md](MOBILE_CAPABILITIES_AND_ROADMAP.md) |
 

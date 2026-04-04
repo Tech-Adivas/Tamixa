@@ -48,4 +48,24 @@ class NarrationTextUtilsTest {
         assertTrue(NarrationTextUtils.stripRemainingMarkers("   ").isEmpty())
         assertTrue(NarrationTextUtils.stripRemainingMarkers("\t\n").isEmpty())
     }
+
+    @Test
+    fun `stripRemainingMarkers removes typo Meduim pacing and decimal pause`() {
+        val input = "Hello. [Meduim pacing] World. [Pause 1.5s] End."
+        val result = NarrationTextUtils.stripRemainingMarkers(input)
+        assertFalse(result.contains("Meduim"), result)
+        assertFalse(result.contains("Pause 1.5s"), result)
+        assertTrue(result.contains("Hello."), result)
+        assertTrue(result.contains("World."), result)
+        assertTrue(result.contains("End."), result)
+    }
+
+    @Test
+    fun `stripRemainingMarkers removes Thoughtful tone`() {
+        val input = "She paused. [Thoughtful tone] Then she smiled."
+        val result = NarrationTextUtils.stripRemainingMarkers(input)
+        assertFalse(result.contains("Thoughtful"), result)
+        assertTrue(result.contains("She paused."), result)
+        assertTrue(result.contains("smiled."), result)
+    }
 }

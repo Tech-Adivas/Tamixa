@@ -39,8 +39,10 @@ The root `Dockerfile` is built for a flat layout. Fix it for the monorepo:
 - **Backend prod env vars** (see `PRODUCTION_UPGRADE.md`):
   - `JWT_SECRET` (256+ bits)
   - `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`
-  - `OPENAI_API_KEY`, `VOICE_ENCRYPTION_KEY`
-  - `TRANSLATION_PROVIDER=openai` (real translation; default is simulated)
+  - `VOICE_ENCRYPTION_KEY`
+  - `AI_LLM_PROVIDER` + `OPENAI_API_KEY` or `GEMINI_API_KEY` (story generation, moderation, rewrite)
+  - `AI_COVER_IMAGE_PROVIDER` + matching key if using AI-generated still covers
+  - `TRANSLATION_PROVIDER=openai` or `gemini` (real translation; default is simulated)
   - S3: `S3_BUCKET`, `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
   - Optional: `CORS_ALLOWED_ORIGINS`, `CDN_STREAM_ENABLED`
 - **Web:** `VITE_API_BASE_URL` or equivalent for prod build (adjust `config/api.config.ts` if needed)
@@ -54,7 +56,7 @@ The root `Dockerfile` is built for a flat layout. Fix it for the monorepo:
 - Verify:
   - `/actuator/health`
   - Register / login flow
-  - Story list, generation (if OpenAI key set)
+  - Story list, generation (if LLM API key set for chosen `AI_LLM_PROVIDER`)
   - Web + Admin pointing to backend
 
 ---
@@ -122,9 +124,9 @@ Pick one and stick to it:
 ### 3.3 Production Checklist
 
 - [ ] JWT_SECRET changed from default
-- [ ] TRANSLATION_PROVIDER=openai (real translations; default is simulated)
+- [ ] TRANSLATION_PROVIDER=openai or gemini (real translations; default is simulated); matching API key set
 - [ ] S3 credentials set (S3_BUCKET, S3_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
-- [ ] OPENAI_API_KEY set for story generation and translation
+- [ ] `AI_LLM_PROVIDER` and `OPENAI_API_KEY` or `GEMINI_API_KEY` set for story generation (and translation when not simulated)
 - [ ] HTTPS everywhere
 - [ ] CORS restricted to prod origins
 - [ ] DB credentials not in code
@@ -167,7 +169,12 @@ SPRING_PROFILES_ACTIVE=prod
 REDIS_HOST=<redis-host>
 REDIS_PORT=6379
 KAFKA_BOOTSTRAP_SERVERS=<kafka-brokers>  # or leave empty if not used
+AI_LLM_PROVIDER=openai
 OPENAI_API_KEY=<key>
+# Alternative: AI_LLM_PROVIDER=gemini and GEMINI_API_KEY=<key>
+AI_COVER_IMAGE_PROVIDER=openai
+# If AI_COVER_IMAGE_PROVIDER=gemini, set GEMINI_API_KEY (can match LLM key)
+# GEMINI_API_KEY=<key>
 VOICE_ENCRYPTION_KEY=<32-byte key>
 TRANSLATION_PROVIDER=openai
 STORAGE_TYPE=s3

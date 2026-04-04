@@ -5,6 +5,7 @@ import com.tamixa.application.port.VoiceCloningJobRepositoryPort
 import com.tamixa.application.port.ParentRepositoryPort
 import com.tamixa.application.port.VoiceRepositoryPort
 import com.tamixa.application.port.voice.ElevenLabsVoiceCloningPort
+import com.tamixa.application.port.voice.FishAudioVoiceCloningPort
 import com.tamixa.application.port.voice.GoogleCloudVoiceCloningPort
 import com.tamixa.application.port.voice.VoiceReferenceStoragePort
 import com.tamixa.domain.VoiceProfile
@@ -26,6 +27,7 @@ class VoiceCloningService(
     private val voiceRepository: VoiceRepositoryPort,
     private val voiceReferenceStorage: VoiceReferenceStoragePort,
     @Autowired(required = false) private val elevenLabsAdapter: ElevenLabsVoiceCloningPort?,
+    @Autowired(required = false) private val fishAudioAdapter: FishAudioVoiceCloningPort?,
     @Autowired(required = false) private val googleCloudAdapter: GoogleCloudVoiceCloningPort?,
     private val appProperties: AppProperties,
     @Autowired(required = false) private val voiceCloneAnalytics: VoiceCloneAnalyticsService?
@@ -63,6 +65,7 @@ class VoiceCloningService(
             audioFileSizeBytes = audioFileSizeBytes,
             voiceName = voiceName,
             elevenLabsVoiceId = null,
+            fishAudioModelId = null,
             googleVoiceCloningKey = null,
             status = VoiceCloningStatus.PENDING,
             errorMessage = null,
@@ -86,24 +89,31 @@ class VoiceCloningService(
         val provider = voiceCloningConfig.provider.trim().lowercase()
         val useGooglePrimary = provider == "google" && googleCloudAdapter != null
         val useElevenLabsPrimary = provider == "elevenlabs" && voiceCloningConfig.elevenLabsApiKey.isNotBlank() && elevenLabsAdapter != null
+        val useFishPrimary = provider == "fishaudio" && voiceCloningConfig.fishAudioApiKey.isNotBlank() && fishAudioAdapter != null
         val canFallbackToElevenLabsFromGoogle = useGooglePrimary &&
             voiceCloningConfig.allowElevenLabsFallback &&
             voiceCloningConfig.elevenLabsApiKey.isNotBlank() &&
             elevenLabsAdapter != null
+        val canFallbackToFishFromGoogle = useGooglePrimary &&
+            voiceCloningConfig.allowFishAudioFallback &&
+            voiceCloningConfig.fishAudioApiKey.isNotBlank() &&
+            fishAudioAdapter != null
 
-        if (!voiceCloningConfig.enabled || (!useGooglePrimary && !useElevenLabsPrimary)) {
-            val msg = "Set VOICE_CLONING_ENABLED=true and VOICE_CLONING_PROVIDER=google (with GOOGLE_CLOUD_TTS_API_KEY) or provider=elevenlabs (with ELEVENLABS_API_KEY)"
+        if (!voiceCloningConfig.enabled || (!useGooglePrimary && !useElevenLabsPrimary && !useFishPrimary)) {
+            val msg =
+                "Set VOICE_CLONING_ENABLED=true and VOICE_CLONING_PROVIDER=google (with GOOGLE_CLOUD_TTS_API_KEY), " +
+                    "or provider=elevenlabs (with ELEVENLABS_API_KEY), or provider=fishaudio (with FISH_AUDIO_API_KEY)"
             log.error(
                 "Voice cloning job cannot be processed: jobId={} provider={}",
                 jobId,
                 voiceCloningConfig.provider,
                 StructuredArguments.kv("parentId", job.parentId)
             )
-            voiceCloningJobRepository.updateStatus(jobId, VoiceCloningStatus.FAILED, msg, null, null)
+            voiceCloningJobRepository.updateStatus(jobId, VoiceCloningStatus.FAILED, msg, null, null, null)
             return
         }
 
-        voiceCloningJobRepository.updateStatus(jobId, VoiceCloningStatus.PROCESSING, null, null, null)
+        voiceCloningJobRepository.updateStatus(jobId, VoiceCloningStatus.PROCESSING, null, null, null, null)
 
         try {
             when {
@@ -116,39 +126,96 @@ class VoiceCloningService(
                             job.parentId
                         )
                         processWithElevenLabs(jobId, job)
+                    } else if (!hasConsentAudio && canFallbackToFishFromGoogle) {
+                        log.info(
+                            "Google is primary but consent audio is missing; using Fish Audio fallback directly. jobId={} parentId={}",
+                            jobId,
+                            job.parentId
+                        )
+                        processWithFishAudio(jobId, job)
                     } else {
                         try {
                             processWithGoogle(jobId, job)
                         } catch (googleError: Exception) {
-                            if (!canFallbackToElevenLabsFromGoogle) throw googleError
-                            log.warn(
-                                "Google voice cloning failed; trying ElevenLabs fallback. jobId={} parentId={} reason={}",
-                                jobId,
-                                job.parentId,
-                                googleError.message
-                            )
-                            try {
-                                processWithElevenLabs(jobId, job)
-                                log.info(
-                                    "Voice cloning completed with ElevenLabs fallback after Google failure: jobId={} parentId={}",
+                            if (canFallbackToElevenLabsFromGoogle) {
+                                log.warn(
+                                    "Google voice cloning failed; trying ElevenLabs fallback. jobId={} parentId={} reason={}",
                                     jobId,
-                                    job.parentId
+                                    job.parentId,
+                                    googleError.message
                                 )
-                            } catch (fallbackError: Exception) {
-                                throw IllegalStateException(
-                                    "Google clone failed: ${googleError.message ?: "unknown"}; ElevenLabs fallback failed: ${fallbackError.message ?: "unknown"}",
-                                    fallbackError
+                                try {
+                                    processWithElevenLabs(jobId, job)
+                                    log.info(
+                                        "Voice cloning completed with ElevenLabs fallback after Google failure: jobId={} parentId={}",
+                                        jobId,
+                                        job.parentId
+                                    )
+                                } catch (fallbackError: Exception) {
+                                    if (canFallbackToFishFromGoogle) {
+                                        log.warn(
+                                            "ElevenLabs fallback failed; trying Fish Audio. jobId={} parentId={} reason={}",
+                                            jobId,
+                                            job.parentId,
+                                            fallbackError.message
+                                        )
+                                        try {
+                                            processWithFishAudio(jobId, job)
+                                            log.info(
+                                                "Voice cloning completed with Fish Audio after Google+ElevenLabs failure: jobId={} parentId={}",
+                                                jobId,
+                                                job.parentId
+                                            )
+                                        } catch (fishError: Exception) {
+                                            throw IllegalStateException(
+                                                "Google clone failed: ${googleError.message ?: "unknown"}; " +
+                                                    "ElevenLabs fallback failed: ${fallbackError.message ?: "unknown"}; " +
+                                                    "Fish Audio fallback failed: ${fishError.message ?: "unknown"}",
+                                                fishError
+                                            )
+                                        }
+                                    } else {
+                                        throw IllegalStateException(
+                                            "Google clone failed: ${googleError.message ?: "unknown"}; " +
+                                                "ElevenLabs fallback failed: ${fallbackError.message ?: "unknown"}",
+                                            fallbackError
+                                        )
+                                    }
+                                }
+                            } else if (canFallbackToFishFromGoogle) {
+                                log.warn(
+                                    "Google voice cloning failed; trying Fish Audio fallback. jobId={} parentId={} reason={}",
+                                    jobId,
+                                    job.parentId,
+                                    googleError.message
                                 )
+                                try {
+                                    processWithFishAudio(jobId, job)
+                                    log.info(
+                                        "Voice cloning completed with Fish Audio fallback after Google failure: jobId={} parentId={}",
+                                        jobId,
+                                        job.parentId
+                                    )
+                                } catch (fishError: Exception) {
+                                    throw IllegalStateException(
+                                        "Google clone failed: ${googleError.message ?: "unknown"}; " +
+                                            "Fish Audio fallback failed: ${fishError.message ?: "unknown"}",
+                                        fishError
+                                    )
+                                }
+                            } else {
+                                throw googleError
                             }
                         }
                     }
                 }
                 useElevenLabsPrimary -> processWithElevenLabs(jobId, job)
+                useFishPrimary -> processWithFishAudio(jobId, job)
                 else -> throw IllegalStateException("No voice cloning provider")
             }
         } catch (e: Exception) {
             log.error("Voice cloning failed: jobId={}", jobId, e)
-            voiceCloningJobRepository.updateStatus(jobId, VoiceCloningStatus.FAILED, e.message ?: "Unknown error", null, null)
+            voiceCloningJobRepository.updateStatus(jobId, VoiceCloningStatus.FAILED, e.message ?: "Unknown error", null, null, null)
         }
     }
 
@@ -171,7 +238,7 @@ class VoiceCloningService(
         val voiceCloningKey = adapter.createVoiceCloningKey(referenceBytes, consentBytes, languageCode)
             ?: throw IllegalStateException("Google voice cloning key creation failed")
 
-        voiceCloningJobRepository.updateStatus(jobId, VoiceCloningStatus.READY, null, null, voiceCloningKey)
+        voiceCloningJobRepository.updateStatus(jobId, VoiceCloningStatus.READY, null, null, voiceCloningKey, null)
 
         // Update the profile that provided the reference (same path as job), or first with key, or first.
         val profiles = voiceRepository.findByParentId(job.parentId)
@@ -189,6 +256,7 @@ class VoiceCloningService(
                     encryptedEmbedding = ByteArray(0),
                     createdAt = Instant.now(),
                     elevenlabsVoiceId = null,
+                    fishAudioModelId = null,
                     googleVoiceCloningKey = voiceCloningKey,
                     referenceAudioPath = null,
                     heygenVoiceId = null
@@ -226,7 +294,7 @@ class VoiceCloningService(
             )
         }
 
-        voiceCloningJobRepository.updateStatus(jobId, VoiceCloningStatus.READY, null, voiceId, null)
+        voiceCloningJobRepository.updateStatus(jobId, VoiceCloningStatus.READY, null, voiceId, null, null)
 
         // Prefer the profile that provided the reference (same path as job), so admin-run job attaches to that profile.
         val profiles = voiceRepository.findByParentId(job.parentId)
@@ -246,6 +314,7 @@ class VoiceCloningService(
                     encryptedEmbedding = ByteArray(0),
                     createdAt = Instant.now(),
                     elevenlabsVoiceId = voiceId,
+                    fishAudioModelId = null,
                     googleVoiceCloningKey = null,
                     referenceAudioPath = null,
                     heygenVoiceId = null
@@ -254,6 +323,61 @@ class VoiceCloningService(
         }
         voiceCloneAnalytics?.trackCreated(job.parentId, jobId, profile.id)
         log.info("Voice cloning completed (ElevenLabs): jobId={} voiceId={}", jobId, voiceId.take(8), StructuredArguments.kv("parentId", job.parentId))
+    }
+
+    private fun processWithFishAudio(jobId: Long, job: VoiceCloningJob) {
+        val audioBytes = voiceReferenceStorage.getReferenceAudio(job.audioStoragePath)
+            ?: throw IllegalStateException("Audio file not found or empty: ${job.audioStoragePath}")
+        if (audioBytes.isEmpty()) throw IllegalStateException("Audio file is empty: ${job.audioStoragePath}")
+
+        val adapter = fishAudioAdapter
+            ?: throw IllegalStateException("Fish Audio adapter not configured. Set FISH_AUDIO_API_KEY.")
+        val modelId = adapter.createModelFromSample(
+            audioBytes = audioBytes,
+            fileName = "voice_${job.voiceName}.mp3",
+            title = job.voiceName.take(200)
+        ) ?: throw IllegalStateException("Fish Audio model creation failed")
+
+        val smokeBytes = adapter.synthesize(
+            text = "Hello from Tamixa.",
+            modelId = modelId,
+            language = "en"
+        )
+        if (smokeBytes == null || smokeBytes.isEmpty()) {
+            throw IllegalStateException(
+                "Fish Audio model was created but is not playable. " +
+                    "Re-upload a clear 10-30s speech sample (MP3/WAV), then run job again."
+            )
+        }
+
+        voiceCloningJobRepository.updateStatus(jobId, VoiceCloningStatus.READY, null, null, null, modelId)
+
+        val profiles = voiceRepository.findByParentId(job.parentId)
+        val existingByRef = profiles.firstOrNull { it.referenceAudioPath == job.audioStoragePath }
+        val existing = existingByRef ?: profiles.firstOrNull { it.fishAudioModelId == modelId }
+        val profile = if (existing != null) {
+            val toSave = if (existingByRef != null) existing.copy(fishAudioModelId = modelId) else existing
+            if (toSave != existing) {
+                log.debug("Updating VoiceProfile id={} with Fish Audio modelId for parentId={}", existing.id, job.parentId)
+                voiceRepository.save(toSave)
+            } else existing
+        } else {
+            voiceRepository.save(
+                VoiceProfile(
+                    id = 0,
+                    parentId = job.parentId,
+                    encryptedEmbedding = ByteArray(0),
+                    createdAt = Instant.now(),
+                    elevenlabsVoiceId = null,
+                    fishAudioModelId = modelId,
+                    googleVoiceCloningKey = null,
+                    referenceAudioPath = null,
+                    heygenVoiceId = null
+                )
+            )
+        }
+        voiceCloneAnalytics?.trackCreated(job.parentId, jobId, profile.id)
+        log.info("Voice cloning completed (Fish Audio): jobId={} modelId={}", jobId, modelId.take(12), StructuredArguments.kv("parentId", job.parentId))
     }
 
     fun getVoiceCloningJobs(parentId: Long): List<VoiceCloningJob> {
@@ -290,6 +414,7 @@ class VoiceCloningService(
                 encryptedEmbedding = ByteArray(0),
                 createdAt = Instant.now(),
                 elevenlabsVoiceId = null,
+                fishAudioModelId = null,
                 googleVoiceCloningKey = null,
                 referenceAudioPath = storagePath,
                 heygenVoiceId = null
@@ -339,12 +464,11 @@ class VoiceCloningService(
     }
 
     /**
-     * Create an ElevenLabs voice cloning job from an existing voice profile (reference already uploaded).
-     * No consent required. For use when VOICE_CLONING_PROVIDER=elevenlabs and the profile has
-     * reference_audio_path but no elevenlabs_voice_id (e.g. admin uploaded reference only).
+     * Create a no-consent managed cloud clone job (ElevenLabs or Fish Audio) from an existing voice profile.
+     * For use when the profile has reference_audio_path but no cloud clone id yet (e.g. admin uploaded reference only).
      *
      * @return The created job (status PENDING then PROCESSING). Retry preview after completion.
-     * @throws IllegalArgumentException if profile not found, has no reference path, or ElevenLabs not configured.
+     * @throws IllegalArgumentException if profile not found, has no reference path, or no managed provider is configured.
      */
     @Transactional
     fun createElevenLabsVoiceCloningJobFromProfile(parentId: Long, profileId: Long): VoiceCloningJob {
@@ -362,12 +486,24 @@ class VoiceCloningService(
                 voiceCloningConfig.allowElevenLabsFallback &&
                 voiceCloningConfig.elevenLabsApiKey.isNotBlank() &&
                 elevenLabsAdapter != null
-        val useElevenLabs = useElevenLabsPrimary || useElevenLabsFallbackFromGoogle
-        if (!useElevenLabs || !voiceCloningConfig.enabled)
+        val useFishPrimary =
+            provider == "fishaudio" &&
+                voiceCloningConfig.fishAudioApiKey.isNotBlank() &&
+                fishAudioAdapter != null
+        val useFishFallbackFromGoogle =
+            provider == "google" &&
+                voiceCloningConfig.allowFishAudioFallback &&
+                voiceCloningConfig.fishAudioApiKey.isNotBlank() &&
+                fishAudioAdapter != null
+        val useManagedCloud =
+            useElevenLabsPrimary || useElevenLabsFallbackFromGoogle || useFishPrimary || useFishFallbackFromGoogle
+        if (!useManagedCloud || !voiceCloningConfig.enabled) {
             throw IllegalArgumentException(
-                "ElevenLabs voice cloning not configured. Set VOICE_CLONING_ENABLED=true and ELEVENLABS_API_KEY, " +
-                    "with VOICE_CLONING_PROVIDER=elevenlabs, or keep provider=google with VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK=true."
+                "Managed cloud voice cloning not configured. Set VOICE_CLONING_ENABLED=true and either " +
+                    "ELEVENLABS_API_KEY (VOICE_CLONING_PROVIDER=elevenlabs or VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK=true with Google) " +
+                    "or FISH_AUDIO_API_KEY (VOICE_CLONING_PROVIDER=fishaudio or VOICE_CLONING_ALLOW_FISH_AUDIO_FALLBACK=true with Google)."
             )
+        }
         val job = createVoiceCloningJob(
             parentId = parentId,
             audioStoragePath = referencePath,
@@ -376,7 +512,7 @@ class VoiceCloningService(
             voiceName = deriveVoiceNameFromReferencePath(referencePath, profileId)
         )
         processVoiceCloningJob(job.id)
-        log.info("Admin ElevenLabs voice cloning job created and started: jobId={} parentId={} profileId={}", job.id, parentId, profileId)
+        log.info("Admin managed cloud voice cloning job created and started: jobId={} parentId={} profileId={}", job.id, parentId, profileId)
         return job
     }
 
@@ -415,6 +551,7 @@ class VoiceCloningService(
                 existingByName.copy(
                     referenceAudioPath = storagePath,
                     elevenlabsVoiceId = null,
+                    fishAudioModelId = null,
                     googleVoiceCloningKey = null
                 )
             )
@@ -438,6 +575,7 @@ class VoiceCloningService(
                 encryptedEmbedding = ByteArray(0),
                 createdAt = Instant.now(),
                 elevenlabsVoiceId = null,
+                fishAudioModelId = null,
                 googleVoiceCloningKey = null,
                 referenceAudioPath = storagePath,
                 heygenVoiceId = null
@@ -557,6 +695,7 @@ class VoiceCloningService(
             audioFileSizeBytes = referenceBytes.size.toLong(),
             voiceName = fileName.substringBeforeLast('.').takeIf { it.isNotBlank() } ?: "voice",
             elevenLabsVoiceId = null,
+            fishAudioModelId = null,
             googleVoiceCloningKey = null,
             status = VoiceCloningStatus.PENDING,
             errorMessage = null,

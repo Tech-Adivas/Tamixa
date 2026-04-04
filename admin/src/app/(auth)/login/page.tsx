@@ -68,11 +68,11 @@ function LoginForm() {
         <CardHeader className="space-y-1 pb-6 text-center">
           <div className="mx-auto mb-2 flex justify-center">
             <Image
-              src="/tamixa-logo.svg"
+              src="/tamixa-app-icon.png"
               alt="Tamixa"
-              width={180}
-              height={50}
-              className="h-12 w-auto"
+              width={112}
+              height={112}
+              className="h-24 w-24 object-contain"
               priority
             />
           </div>

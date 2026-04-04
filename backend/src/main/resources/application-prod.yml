@@ -3,7 +3,8 @@ spring:
     # When JDBC metadata is unavailable (e.g. pool init failure), avoid "Unable to determine Dialect" cascade.
     database-platform: org.hibernate.dialect.PostgreSQLDialect
   datasource:
-    # Prod default: Railway private Postgres (same project). Override with DATABASE_URL for public proxy or other hosts.
+    # Same URL pattern as dev/staging; defaults target Railway private Postgres. Override with DATABASE_URL for public proxy or other hosts.
+    # DATABASE_PUBLIC_URL is promoted to JDBC when DATABASE_URL is unset (PostgresqlUrlEnvironmentPostProcessor).
     # Credentials must come from env only — never commit real passwords.
     url: ${DATABASE_URL:jdbc:postgresql://${POSTGRES_HOST:${PGHOST:postgres.railway.internal}}:${POSTGRES_PORT:${PGPORT:5432}}/${POSTGRES_DB:${PGDATABASE:railway}}}
     username: ${DATABASE_USERNAME:${POSTGRES_USER:${PGUSER:postgres}}}
@@ -24,6 +25,10 @@ app:
   openai:
     # Production: require moderation API unless explicitly disabled (never ship without a key in prod).
     moderation-required: ${OPENAI_MODERATION_REQUIRED:true}
+  llm:
+    gemini:
+      # When AI_LLM_PROVIDER=gemini, fail closed if GEMINI_API_KEY is missing (aligns with OpenAI prod default).
+      moderation-required: ${GEMINI_MODERATION_REQUIRED:true}
   rate-limit:
     # Multi-instance prod: use Redis for distributed rate limiting.
     # Requires Redis (REDIS_HOST / REDIS_PORT). Overrides the default false in application.yml.

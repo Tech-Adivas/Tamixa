@@ -191,11 +191,12 @@ class SettingsViewModel(
         }
     }
 
-    /** Fetches listening streak only. Call from Dashboard to show streak without loading full settings. */
+    /** Fetches streak + 30-day listening stats for the home dashboard (no full settings payload). */
     fun loadListeningStreak() {
         scope.launch {
             val streak = repository.getListeningStreak()
-            _state.value = _state.value.copy(listeningStreakDays = streak)
+            val progress = repository.getListeningProgress(30)
+            _state.value = _state.value.copy(listeningStreakDays = streak, listeningProgress = progress)
         }
     }
 

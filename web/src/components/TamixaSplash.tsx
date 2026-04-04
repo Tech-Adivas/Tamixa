@@ -39,10 +39,10 @@ export function TamixaSplash({ onDone }: { onDone: () => void }) {
       <div className="tamixa-splash__particle tamixa-splash__particle--7" />
       <div className="tamixa-splash__particle tamixa-splash__particle--8" />
 
-      {/* Hero: logo (title is in the logo asset) */}
+      {/* Hero: app icon */}
       <div className="tamixa-splash__hero">
         <img
-          src="/tamixa-logo-full.png"
+          src="/tamixa-app-icon.png"
           alt="Tamixa"
           className="tamixa-splash__logo-img"
         />

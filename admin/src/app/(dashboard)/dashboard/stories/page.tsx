@@ -30,7 +30,14 @@ import { useAuth } from "@/contexts/auth-context";
 import { usePipelineActive } from "@/contexts/pipeline-active-context";
 import { useActionResult } from "@/contexts/action-result-context";
 import { isSuperAdmin, canManageStories } from "@/lib/admin-roles";
-import { isLibraryStoryPipelineActivelyRunning, REGENERATE_THEN_TRANSLATIONS_HELP } from "@/lib/library-story-workflow";
+import {
+  isLibraryStoryPipelineActivelyRunning,
+  REGENERATE_THEN_TRANSLATIONS_HELP,
+  isLibraryStoryPipelineMetaKey,
+  adminStoryLanguageLabel,
+  adminStoryEmotionModeLabel,
+  ADMIN_STORY_LANGUAGE_SHORT,
+} from "@/lib/library-story-workflow";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -56,37 +63,6 @@ const VIEW_LANGUAGES: Array<{ code: string; label: string }> = [
   { code: "kn", label: "Kannada" },
   { code: "ml", label: "Malayalam" },
 ];
-const PIPELINE_META_KEYS = [
-  "processing",
-  "progress",
-  "overallStatus",
-  "reviewedLanguages",
-  "reviewStaleLanguages",
-  "allLanguagesReviewed",
-  "durationSeconds",
-  "generatedAtIst",
-  "audioCoverageWarnings",
-  "failedLanguagesCount",
-];
-
-const LANG_LABELS: Record<string, string> = {
-  ta: "Tamil",
-  hi: "Hindi",
-  en: "English",
-  te: "Telugu",
-  kn: "Kannada",
-  ml: "Malayalam",
-};
-
-const LANG_SHORT: Record<string, string> = {
-  ta: "Ta",
-  hi: "Hi",
-  en: "En",
-  te: "Te",
-  kn: "Kn",
-  ml: "Ml",
-};
-
 /** Resolve cover URL for img src (relative path → full API URL). */
 function resolveCoverSrc(coverImageUrl: string | null | undefined): string | null {
   if (!coverImageUrl?.trim()) return null;
@@ -127,7 +103,7 @@ export default function LibraryStoriesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [approvedFilter, setApprovedFilter] = useState<"all" | "approved" | "not_approved">("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [bulkAction, setBulkAction] = useState<"publish" | "category" | "delete" | null>(
+  const [bulkAction, setBulkAction] = useState<"submitForReview" | "category" | "delete" | null>(
     null
   );
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -381,19 +357,19 @@ export default function LibraryStoriesPage() {
     isLibraryStoryPipelineActivelyRunning(status);
 
   const isPipelineFullyComplete = (status?: PipelineStatusResponse | Record<string, string | undefined> | null) => {
-    const entries = Object.entries(status ?? {}).filter(([k]) => !PIPELINE_META_KEYS.includes(k));
+    const entries = Object.entries(status ?? {}).filter(([k]) => !isLibraryStoryPipelineMetaKey(k));
     return entries.length > 0 && entries.every(([, s]) => s === "COMPLETED");
   };
 
   const getCompletedLanguages = (status?: PipelineStatusResponse | Record<string, string | undefined> | null) => {
     return Object.entries(status ?? {})
-      .filter(([k, s]) => !PIPELINE_META_KEYS.includes(k) && s === "COMPLETED")
+      .filter(([k, s]) => !isLibraryStoryPipelineMetaKey(k) && s === "COMPLETED")
       .map(([lang]) => lang);
   };
 
   /** Total pipeline languages (excludes meta keys). */
   const getTotalPipelineLanguages = (status?: PipelineStatusResponse | Record<string, string | undefined> | null) =>
-    Object.keys(status ?? {}).filter((k) => !PIPELINE_META_KEYS.includes(k)).length;
+    Object.keys(status ?? {}).filter((k) => !isLibraryStoryPipelineMetaKey(k)).length;
 
   const toggleSelectAll = () => {
     if (listRows.length === 0) return;
@@ -405,7 +381,7 @@ export default function LibraryStoriesPage() {
     }
   };
 
-  const handleBulkPublish = async () => {
+  const handleBulkSubmitForReview = async () => {
     if (selectedIds.size === 0) {
       showError("Invalid selection", "Please select at least one story.");
       return;
@@ -414,16 +390,16 @@ export default function LibraryStoriesPage() {
     ids.forEach((id) => registerTriggered(id)); // Show pipeline banner for each story
     setPublishing(true);
     try {
-      const res = await api.admin.bulkPublish(ids);
+      const res = await api.admin.bulkSubmitForReview(ids);
       showSuccess(
-        "Stories published",
-        `${res.updated} story${res.updated === 1 ? "" : "s"} published. Run Generate translations from each story’s Edit page when needed, then Narration → Generate audio after approval.`
+        "Submitted to review queue",
+        `${res.updated} draft ${res.updated === 1 ? "story" : "stories"} moved to Story for review (status PUBLISHED). Run Regenerate & sync / translations from each story’s Edit page when needed, then Narration → Generate audio after approval.`
       );
       setBulkAction(null);
       setSelectedIds(new Set());
       load();
     } catch (e) {
-      showError("Bulk publish failed", e instanceof Error ? e.message : "Bulk publish failed");
+      showError("Bulk submit failed", e instanceof Error ? e.message : "Bulk submit for review failed");
     } finally {
       setPublishing(false);
     }
@@ -572,9 +548,9 @@ export default function LibraryStoriesPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setBulkAction("publish")}
+                    onClick={() => setBulkAction("submitForReview")}
                   >
-                    Bulk publish
+                    Bulk submit for review
                   </Button>
                   <Button
                     size="sm"
@@ -605,9 +581,9 @@ export default function LibraryStoriesPage() {
               >
                 Clear
               </Button>
-              {bulkAction === "publish" && (
-                <Button size="sm" onClick={handleBulkPublish} disabled={publishing}>
-                  {publishing ? "Publishing…" : "Confirm publish"}
+              {bulkAction === "submitForReview" && (
+                <Button size="sm" onClick={handleBulkSubmitForReview} disabled={publishing}>
+                  {publishing ? "Submitting…" : "Confirm submit for review"}
                 </Button>
               )}
               {bulkAction === "category" && (
@@ -662,9 +638,9 @@ export default function LibraryStoriesPage() {
               <SelectContent>
                 <SelectItem value="ALL">All status</SelectItem>
                 <SelectItem value="DRAFT">Draft</SelectItem>
-                <SelectItem value="PUBLISHED">Published (+ processing)</SelectItem>
-                <SelectItem value="PROCESSING">Processing</SelectItem>
-                <SelectItem value="READY">Ready</SelectItem>
+                <SelectItem value="PUBLISHED">In review queue (+ processing)</SelectItem>
+                <SelectItem value="PROCESSING">Pipeline processing</SelectItem>
+                <SelectItem value="READY">Ready for human review</SelectItem>
                 <SelectItem value="CHANGES_REQUESTED">Changes requested</SelectItem>
                 <SelectItem value="REJECTED">Rejected</SelectItem>
               </SelectContent>
@@ -868,15 +844,15 @@ export default function LibraryStoriesPage() {
                             </TooltipTrigger>
                             <TooltipContent side="top">
                               {row.status === "PUBLISHED" && row.narrationApprovedAt
-                                ? "Published"
+                                ? "Live on app — narration approved for delivery"
                                 : row.status === "PUBLISHED" && !row.narrationApprovedAt
-                                  ? "Ready for review — approve to generate/regenerate audio"
+                                  ? "In review queue — approve to allow Narration / audio"
                                   : row.status === "PROCESSING"
-                                    ? "Processing…"
+                                    ? "Pipeline running (translate / script / prep)"
                                     : row.status === "READY"
-                                      ? "Ready"
+                                      ? "Ready for human review in Story for review"
                                       : row.status === "DRAFT"
-                                        ? "Draft"
+                                        ? "Draft — not submitted for review"
                                         : row.status}
                             </TooltipContent>
                           </Tooltip>
@@ -1091,7 +1067,7 @@ export default function LibraryStoriesPage() {
             <p className="py-8 text-center text-muted-foreground">Loading…</p>
           ) : viewStoryData ? (
             <div className="space-y-4 overflow-y-auto pr-2 -mr-2">
-              {/* Animated cover (Sora) */}
+              {/* Animated cover (GIF) */}
               {viewStoryData.coverVideoUrl?.trim() && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-1.5">Animated cover (GIF)</p>
@@ -1147,11 +1123,15 @@ export default function LibraryStoriesPage() {
                 <div><span className="text-muted-foreground">Child name</span><br />{viewStoryData.childName}</div>
                 <div><span className="text-muted-foreground">Word count</span><br />{viewStoryData.wordCount}</div>
                 <div><span className="text-muted-foreground">Reading time</span><br />~{Number(viewStoryData.readingTimeMinutes ?? 0).toFixed(1)} min</div>
-                <div><span className="text-muted-foreground">Status</span><br /><Badge variant="outline">{viewStoryData.status === "PUBLISHED" && !viewStoryData.narrationApprovedAt ? "Ready for review" : viewStoryData.status === "PUBLISHED" && viewStoryData.narrationApprovedAt ? "Published" : viewStoryData.status}</Badge></div>
+                <div><span className="text-muted-foreground">Status</span><br /><Badge variant="outline">{viewStoryData.status === "PUBLISHED" && !viewStoryData.narrationApprovedAt ? "In review queue" : viewStoryData.status === "PUBLISHED" && viewStoryData.narrationApprovedAt ? "Live on app" : viewStoryData.status}</Badge></div>
                 <div><span className="text-muted-foreground">Owner</span><br />{viewStoryData.storyOwner || "system"}</div>
                 <div><span className="text-muted-foreground">Modified</span><br />{viewStoryData.modifiedAt ? new Date(viewStoryData.modifiedAt).toLocaleString() : "—"}</div>
                 {viewStoryData.emotionMode && (
-                  <div><span className="text-muted-foreground">Tone</span><br />{viewStoryData.emotionMode}</div>
+                  <div>
+                    <span className="text-muted-foreground">Tone</span>
+                    <br />
+                    {adminStoryEmotionModeLabel(viewStoryData.emotionMode)}
+                  </div>
                 )}
               </div>
               {/* Story content by language (stored in story_translations, returned by API per language) */}
@@ -1247,7 +1227,7 @@ function PipelineStatusBadges({
   if (!status || Object.keys(status).length === 0) return <span>—</span>;
   const processingLang = status["processing"];
   const entries = Object.entries(status).filter(
-    ([k]) => !PIPELINE_META_KEYS.includes(k)
+    ([k]) => !isLibraryStoryPipelineMetaKey(k)
   );
   const total = entries.length;
   const completed = entries.filter(([, s]) => s === "COMPLETED").length;
@@ -1273,14 +1253,14 @@ function PipelineStatusBadges({
         : inProgress
           ? processingLang
             ? processingStage === "TRANSLATING"
-              ? `Translating ${LANG_SHORT[processingLang] || processingLang}…`
+              ? `Translating ${ADMIN_STORY_LANGUAGE_SHORT[processingLang] || processingLang}…`
               : processingStage === "REWRITING"
-                ? `Rewriting ${LANG_SHORT[processingLang] || processingLang}…`
+                ? `Rewriting ${ADMIN_STORY_LANGUAGE_SHORT[processingLang] || processingLang}…`
                 : processingStage === "TTS_PROCESSING"
-                  ? `Generating ${LANG_SHORT[processingLang] || processingLang} audio…`
-                  : `${LANG_SHORT[processingLang] || processingLang}: ${baseStatus(processingStage ?? "")}…`
+                  ? `Generating ${ADMIN_STORY_LANGUAGE_SHORT[processingLang] || processingLang} audio…`
+                  : `${ADMIN_STORY_LANGUAGE_SHORT[processingLang] || processingLang}: ${baseStatus(processingStage ?? "")}…`
             : currentStep
-              ? `${LANG_SHORT[currentStep[0]] || currentStep[0]}: ${baseStatus(currentStep[1] ?? "")}…`
+              ? `${ADMIN_STORY_LANGUAGE_SHORT[currentStep[0]] || currentStep[0]}: ${baseStatus(currentStep[1] ?? "")}…`
               : "Starting…"
           : null;
 
@@ -1302,7 +1282,7 @@ function PipelineStatusBadges({
             stage === "TTS_PROCESSING";
           const isOrange = isPending || isActive;
           const { status, error } = parsePipelineStatus(stage ?? "");
-          const label = LANG_SHORT[lang] || lang;
+          const label = ADMIN_STORY_LANGUAGE_SHORT[lang] || lang;
           const badgeText = isDone ? label : isFailed && status ? `${label} — ${status}` : `${label} ${stage ?? ""}`.trim();
           return (
             <Badge
@@ -1318,7 +1298,7 @@ function PipelineStatusBadges({
                 isDone &&
                   "border-emerald-500/60 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
               )}
-              title={error ? `${status} — ${error}` : isDone ? `${LANG_LABELS[lang] || lang} completed` : stage ?? undefined}
+              title={error ? `${status} — ${error}` : isDone ? `${adminStoryLanguageLabel(lang)} completed` : stage ?? undefined}
             >
               {badgeText}
             </Badge>
@@ -1336,7 +1316,7 @@ function PipelineStatusBadges({
               const { status, error } = parsePipelineStatus(stage ?? "");
               return (
                 <div key={lang} className="text-[10px]">
-                  <span className="font-medium">{LANG_SHORT[lang] || lang}</span>
+                  <span className="font-medium">{ADMIN_STORY_LANGUAGE_SHORT[lang] || lang}</span>
                   {status && <span className="text-muted-foreground"> — {status}</span>}
                   {error && (
                     <p className="text-destructive pl-1 text-[9px] break-words mt-0.5">

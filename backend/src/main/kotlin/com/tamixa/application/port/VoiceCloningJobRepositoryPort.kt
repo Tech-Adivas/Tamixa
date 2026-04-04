@@ -13,6 +13,7 @@ interface VoiceCloningJobRepositoryPort {
         status: VoiceCloningStatus,
         errorMessage: String? = null,
         elevenLabsVoiceId: String? = null,
-        googleVoiceCloningKey: String? = null
+        googleVoiceCloningKey: String? = null,
+        fishAudioModelId: String? = null
     )
 }

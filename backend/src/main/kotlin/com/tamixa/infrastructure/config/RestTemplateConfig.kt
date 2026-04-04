@@ -38,10 +38,20 @@ class RestTemplateConfig {
         builder: RestTemplateBuilder,
         appProperties: AppProperties
     ): RestTemplate {
-        val openai = appProperties.openai
+        val geminiHttp =
+            appProperties.llm.provider.trim().equals("gemini", ignoreCase = true) ||
+                appProperties.imageGeneration.provider.trim().equals("gemini", ignoreCase = true)
+        val (connectMs, readMs) =
+            if (geminiHttp) {
+                val g = appProperties.llm.gemini
+                g.connectTimeoutMs to g.readTimeoutMs
+            } else {
+                val o = appProperties.openai
+                o.connectTimeoutMs to o.readTimeoutMs
+            }
         return builder
-            .setConnectTimeout(Duration.ofMillis(openai.connectTimeoutMs))
-            .setReadTimeout(Duration.ofMillis(openai.readTimeoutMs))
+            .setConnectTimeout(Duration.ofMillis(connectMs))
+            .setReadTimeout(Duration.ofMillis(readMs))
             .additionalInterceptors(RateLimitLoggingInterceptor())
             .build()
     }

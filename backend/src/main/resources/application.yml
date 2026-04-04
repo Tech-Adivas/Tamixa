@@ -35,6 +35,8 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 10MB
+  # Datasource URL per profile: dev/staging/prod set spring.datasource.url via DATABASE_URL or POSTGRES_* / PG* chain.
+  # PostgresqlUrlEnvironmentPostProcessor promotes DATABASE_PUBLIC_URL (postgresql://) when DATABASE_URL is unset.
   datasource:
     hikari:
       connection-timeout: 30000
@@ -112,11 +114,17 @@ springdoc:
     path: /swagger-ui.html
     enabled: true
 
-# Resilience4j circuit breaker for OpenAI and TTS (fail fast when downstream is failing)
+# Resilience4j circuit breaker for OpenAI, Gemini, and TTS (fail fast when downstream is failing)
 resilience4j:
   circuitbreaker:
     instances:
       openai:
+        register-health-indicator: true
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+      gemini:
         register-health-indicator: true
         sliding-window-size: 10
         failure-rate-threshold: 50
@@ -180,14 +188,39 @@ app:
       max-attempts: ${OPENAI_RETRY_MAX_ATTEMPTS:3}
       initial-interval-ms: ${OPENAI_RETRY_INITIAL_MS:1000}
       multiplier: ${OPENAI_RETRY_MULTIPLIER:2.0}
-  # Sora: image-to-video for story cover (after DALL-E). Output is converted to GIF for app. Requires Sora API access.
-  sora:
-    enabled: ${SORA_ENABLED:false}
-    convert-to-gif: ${SORA_CONVERT_TO_GIF:true}
-    model: ${SORA_MODEL:sora-2}
-    seconds: ${SORA_SECONDS:4}
-    poll-interval-sec: ${SORA_POLL_INTERVAL_SEC:20}
-    max-wait-sec: ${SORA_MAX_WAIT_SEC:300}
+  # Primary LLM: openai (default) or gemini. Story generation, moderation, and pipeline rewrite follow this switch.
+  llm:
+    provider: ${AI_LLM_PROVIDER:openai}
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
+      base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+      model: ${GEMINI_MODEL:gemini-2.0-flash}
+      connect-timeout-ms: ${GEMINI_CONNECT_TIMEOUT_MS:15000}
+      read-timeout-ms: ${GEMINI_READ_TIMEOUT_MS:180000}
+      moderation-required: ${GEMINI_MODERATION_REQUIRED:false}
+  # Still cover image: openai (DALL·E 3, default) or gemini (Gemini native image; same GEMINI_API_KEY as Veo/LLM when gemini).
+  image-generation:
+    provider: ${AI_COVER_IMAGE_PROVIDER:openai}
+    gemini:
+      model: ${AI_COVER_IMAGE_GEMINI_MODEL:gemini-2.5-flash-image}
+      aspect-ratio: ${AI_COVER_IMAGE_GEMINI_ASPECT_RATIO:1:1}
+      image-size: ${AI_COVER_IMAGE_GEMINI_IMAGE_SIZE:1K}
+      use-image-config: ${AI_COVER_IMAGE_GEMINI_USE_IMAGE_CONFIG:true}
+  # Cover animation: still cover + optional Veo 3.1 Lite (image→short MP4) + FFmpeg→GIF. Veo uses GEMINI_API_KEY.
+  cover-animation:
+    convert-mp4-to-gif: ${COVER_ANIMATION_FFMPEG_MP4_TO_GIF:true}
+    veo:
+      enabled: ${COVER_ANIMATION_VEO_ENABLED:false}
+      base-url: ${COVER_ANIMATION_VEO_BASE_URL:https://generativelanguage.googleapis.com}
+      model: ${COVER_ANIMATION_VEO_MODEL:veo-3.1-lite-generate-preview}
+      # 4 | 6 | 8 seconds (4 = lowest cost on Veo Lite)
+      duration-seconds: ${COVER_ANIMATION_VEO_DURATION_SECONDS:4}
+      resolution: ${COVER_ANIMATION_VEO_RESOLUTION:720p}
+      aspect-ratio: ${COVER_ANIMATION_VEO_ASPECT_RATIO:16:9}
+      # Image-to-video: Google requires allow_adult on this path
+      person-generation: ${COVER_ANIMATION_VEO_PERSON_GENERATION:allow_adult}
+      poll-interval-sec: ${COVER_ANIMATION_VEO_POLL_INTERVAL_SEC:10}
+      max-wait-sec: ${COVER_ANIMATION_VEO_MAX_WAIT_SEC:360}
   story:
     cache-ttl-hours: ${STORY_CACHE_TTL_HOURS:24}
     # Max words for generated stories and for curated pipeline translation + rewrite (prompts + hard clamp).
@@ -224,7 +257,7 @@ app:
     system-wide-daily: ${AI_TOKEN_LIMIT_SYSTEM_DAILY:500000}
     circuit-breaker-spike-threshold: ${AI_CIRCUIT_BREAKER_SPIKE_THRESHOLD:100000}
   translation:
-    # openai = real translation via OpenAI; simulated = dev-only prefix [lang]
+    # openai | gemini = real translation via LLM; simulated = dev-only prefix [lang]
     provider: ${TRANSLATION_PROVIDER:simulated}
   # Curated library ops flow (recommended): raw draft → AI rephrase/edit (TA) → Run pipeline (translate+rewrite
   # scripts only, no TTS) with audio-after-approval=true → Submit for review → Approve narration → Generate audio.
@@ -359,17 +392,23 @@ app:
   voice:
     encryption-key: ${VOICE_ENCRYPTION_KEY:}
     max-file-size-bytes: 10485760
-  # Cloned-voice story narration: Google Chirp 3 primary, optional ElevenLabs fallback.
-  # ElevenLabs fallback requires ELEVENLABS_API_KEY: https://elevenlabs.io/app/settings/api-keys
-  # Tamil (ta) requires a managed cloned-voice provider (Google or ElevenLabs); XTTS does not support Tamil.
+  # Cloned-voice story narration: Google Chirp 3 primary, optional ElevenLabs / Fish Audio fallback.
+  # ElevenLabs: ELEVENLABS_API_KEY — https://elevenlabs.io/app/settings/api-keys
+  # Fish Audio (ElevenLabs alternative): FISH_AUDIO_API_KEY — https://fish.audio/app/api-keys/
+  # Tamil (ta) requires a managed cloned-voice provider (Google, ElevenLabs, or Fish Audio); XTTS does not support Tamil.
   voice-cloning:
     enabled: ${VOICE_CLONING_ENABLED:false}
     provider: ${VOICE_CLONING_PROVIDER:google}
     # Production recommendation: Google Chirp 3 primary + ElevenLabs fallback.
     allow-eleven-labs-fallback: ${VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK:true}
+    # When primary is Google: allow Fish Audio for reference-only jobs / fallback if EL is not used (see backend docs).
+    allow-fish-audio-fallback: ${VOICE_CLONING_ALLOW_FISH_AUDIO_FALLBACK:false}
     google-cloud-api-key: ${GOOGLE_CLOUD_TTS_API_KEY:}
     eleven-labs-api-key: ${ELEVENLABS_API_KEY:}
     eleven-labs-base-url: ${ELEVENLABS_BASE_URL:https://api.elevenlabs.io}
+    fish-audio-api-key: ${FISH_AUDIO_API_KEY:}
+    fish-audio-base-url: ${FISH_AUDIO_BASE_URL:https://api.fish.audio}
+    fish-audio-tts-model: ${FISH_AUDIO_TTS_MODEL:s2-pro}
     # Default localhost:9000 when backend runs on host. Use 10.0.2.2:9000 only when backend runs inside Android emulator (emulator's alias for host).
     xtts-base-url: ${XTTS_BASE_URL:http://localhost:9000}
     # Read timeout for XTTS /synthesize (seconds). Full-story cloned synthesis can take 5–30+ min; increase if you see "Read timed out".

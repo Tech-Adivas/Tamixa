@@ -169,7 +169,10 @@ SPRING_PROFILES_ACTIVE=prod
 REDIS_HOST=<redis-host>
 REDIS_PORT=6379
 KAFKA_BOOTSTRAP_SERVERS=<brokers>  # or leave empty if not used
+AI_LLM_PROVIDER=openai
 OPENAI_API_KEY=<key>
+# Or: AI_LLM_PROVIDER=gemini and GEMINI_API_KEY=<key>
+AI_COVER_IMAGE_PROVIDER=openai
 VOICE_ENCRYPTION_KEY=<32-byte key>
 CORS_ALLOWED_ORIGINS=https://app.tamixa.com,https://admin.tamixa.com
 MAGIC_LINK_BASE_URL=https://app.tamixa.com

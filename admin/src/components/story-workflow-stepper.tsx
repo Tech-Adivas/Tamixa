@@ -151,21 +151,29 @@ export function StoryWorkflowStepFooter({
   );
 }
 
-/** Full 5-step lifecycle shared by Create and Edit. On Create, steps 3–4 explain what happens after the story exists. */
+/**
+ * Library story ops order: master text → sync scripts for all languages → cover art → submit → review → narration.
+ * Create story uses a single form; Edit follows these steps.
+ */
 export const LIBRARY_STORY_WORKFLOW_STEPS: readonly StoryWorkflowStepDef[] = [
   {
     key: "content",
     label: "Content",
-    description: "Master language, title, story text, metadata",
+    description: "Tamil (or master) title, story text, metadata",
   },
   {
-    key: "cover-languages",
-    label: "Cover & languages",
-    description: "Art, other languages, generate scripts",
+    key: "languages",
+    label: "All languages",
+    description: "Regenerate & sync scripts, edit translations",
+  },
+  {
+    key: "cover",
+    label: "Cover",
+    description: "Generate or paste cover image",
   },
   {
     key: "submit",
-    label: "Save & submit",
+    label: "Submit",
     description: "Save draft or send for review",
   },
   {
@@ -180,5 +188,5 @@ export const LIBRARY_STORY_WORKFLOW_STEPS: readonly StoryWorkflowStepDef[] = [
   },
 ] as const;
 
-/** @deprecated Use LIBRARY_STORY_WORKFLOW_STEPS — same 5 steps. */
+/** @deprecated Use LIBRARY_STORY_WORKFLOW_STEPS — same steps as Edit. */
 export const EDIT_LIBRARY_STORY_WORKFLOW_STEPS = LIBRARY_STORY_WORKFLOW_STEPS;

@@ -11,28 +11,42 @@ import kotlinx.coroutines.CancellationException
 class SubscriptionApi(private val client: HttpClient) {
 
     suspend fun getSubscription(): SubscriptionInfo? {
-        val resp = client.get("${ApiConfig.API_VERSION}/subscription")
-        val body = resp.body<SubscriptionResponse>()
-        return SubscriptionInfo(
-            isActive = body.status.lowercase() in listOf("active", "trial", "grace_period", "past_due"),
-            planId = body.plan,
-            expiresAt = body.currentPeriodEnd,
-            trialEnd = body.trialEnd,
-            cancelAtPeriodEnd = body.cancelAtPeriodEnd,
-            maxChildren = body.maxChildren
-        )
+        return try {
+            val body = client.get("${ApiConfig.API_VERSION}/subscription").bodyIfSuccess<SubscriptionResponse>()
+                ?: return null
+            SubscriptionInfo(
+                isActive = body.status.lowercase() in listOf("active", "trial", "grace_period", "past_due"),
+                planId = body.plan,
+                expiresAt = body.currentPeriodEnd,
+                trialEnd = body.trialEnd,
+                cancelAtPeriodEnd = body.cancelAtPeriodEnd,
+                maxChildren = body.maxChildren
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            TamixaLog.w("SubscriptionApi", "getSubscription failed", e)
+            null
+        }
     }
 
     suspend fun getUsage(): UsageInfo? {
-        val resp = client.get("${ApiConfig.API_VERSION}/subscription/usage")
-        val body = resp.body<UsageResponse>()
-        return UsageInfo(
-            month = body.month,
-            storiesUsed = body.storiesUsed,
-            storiesLimit = body.storiesLimit,
-            voiceUsed = body.voiceUsed,
-            voiceLimit = body.voiceLimit
-        )
+        return try {
+            val body = client.get("${ApiConfig.API_VERSION}/subscription/usage").bodyIfSuccess<UsageResponse>()
+                ?: return null
+            UsageInfo(
+                month = body.month,
+                storiesUsed = body.storiesUsed,
+                storiesLimit = body.storiesLimit,
+                voiceUsed = body.voiceUsed,
+                voiceLimit = body.voiceLimit
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            TamixaLog.w("SubscriptionApi", "getUsage failed", e)
+            null
+        }
     }
 
     suspend fun cancelSubscription(): Boolean = try {
@@ -47,10 +61,9 @@ class SubscriptionApi(private val client: HttpClient) {
 
     /** Validates a referral code. Returns discount info if valid and not expired, null otherwise. */
     suspend fun validateReferralCode(code: String): ReferralCodeValidateResponse? = try {
-        val resp = client.get("${ApiConfig.API_VERSION}/subscription/referral-code/validate") {
+        client.get("${ApiConfig.API_VERSION}/subscription/referral-code/validate") {
             parameter("code", code.trim().uppercase())
-        }
-        resp.body<ReferralCodeValidateResponse>()
+        }.bodyIfSuccess()
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -69,10 +82,9 @@ class SubscriptionApi(private val client: HttpClient) {
             cancelUrl = cancelUrl,
             referralCode = referralCode?.takeIf { it.isNotBlank() }
         )
-        val resp = client.post("${ApiConfig.API_VERSION}/subscription/upgrade") {
+        client.post("${ApiConfig.API_VERSION}/subscription/upgrade") {
             setBody(body)
-        }
-        resp.body<UpgradeResponse>().checkoutUrl
+        }.bodyIfSuccess<UpgradeResponse>()?.checkoutUrl
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

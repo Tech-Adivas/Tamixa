@@ -3,6 +3,7 @@ package com.tamixa.ui.screen
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,8 +58,6 @@ import kotlinx.coroutines.withContext
 private val DEMO_TEXT = "Once upon a time, in a quiet village, there lived a curious fox. " +
     "The fox loved to explore the forest and make new friends. " +
     "One day, he discovered a magical lantern that could light up the darkest night."
-
-private val DEMO_SUBTITLE = "Once upon a time, in a quiet village, there lived a curious fox…"
 
 @Composable
 fun OnboardingDemoScreen(
@@ -157,8 +157,8 @@ fun OnboardingDemoScreen(
                 modifier = Modifier.onboardingEntrance(delayMs = 235)
             )
             OnboardingBenefitRow(
-                emoji = "👂",
-                text = Strings.onboardingDemoBenefitYoung(),
+                emoji = "🧭",
+                text = Strings.onboardingDemoBenefitInteractive(),
                 modifier = Modifier.onboardingEntrance(delayMs = 285)
             )
         }
@@ -184,11 +184,11 @@ private fun OnboardingDemoStoryCard(
                 elevation = OnboardingCardDefaults.cardShadowElevation,
                 shape = OnboardingCardDefaults.cardShape,
                 ambientColor = OnboardingCardDefaults.cardShadowAmbient,
-                spotColor = OnboardingCardDefaults.cardShadowSpot
+                spotColor = TamixaColors.deepTeal.copy(alpha = 0.2f)
             ),
         shape = OnboardingCardDefaults.cardShape,
         color = OnboardingCardColors.cardBackground,
-        border = BorderStroke(1.dp, OnboardingCardColors.cardBorder)
+        border = BorderStroke(1.dp, TamixaColors.deepTeal.copy(alpha = 0.3f))
     ) {
         Column(
             modifier = Modifier.padding(spec.cardContentPadding),
@@ -232,12 +232,28 @@ private fun OnboardingDemoStoryCard(
                         )
                     }
                     Text(
-                        text = DEMO_SUBTITLE,
+                        text = Strings.onboardingDemoCardTeaser(),
                         style = MaterialTheme.typography.bodyLarge,
                         color = OnboardingCardColors.onCardText,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 6.dp)
                     )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OnboardingLanePill(
+                            text = Strings.onboardingDemoPillFun(),
+                            accent = OnboardingCardColors.pillWarmOrange
+                        )
+                        OnboardingLanePill(
+                            text = Strings.onboardingDemoPillLearn(),
+                            accent = OnboardingCardColors.pillLearnLane
+                        )
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Center,
@@ -281,6 +297,15 @@ private fun OnboardingDemoStoryCard(
                             .padding(horizontal = 2.dp),
                         color = TamixaColors.goldAccent,
                         trackColor = TamixaColors.lavenderGlow.copy(alpha = 0.28f)
+                    )
+                    Text(
+                        text = Strings.onboardingDemoListenAlongHint(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = OnboardingCardColors.onboardingSubline.copy(alpha = 0.88f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
                     )
                 }
             }

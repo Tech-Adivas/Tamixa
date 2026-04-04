@@ -20,6 +20,7 @@ interface VoiceCloningJobJpaRepository : JpaRepository<VoiceCloningJobEntity, Lo
         SET status = :status,
             eleven_labs_voice_id = COALESCE(:elevenLabsVoiceId, eleven_labs_voice_id),
             google_voice_cloning_key = COALESCE(:googleVoiceCloningKey, google_voice_cloning_key),
+            fish_audio_model_id = COALESCE(:fishAudioModelId, fish_audio_model_id),
             error_message = :errorMessage,
             completed_at = :now
         WHERE id = :id
@@ -31,6 +32,7 @@ interface VoiceCloningJobJpaRepository : JpaRepository<VoiceCloningJobEntity, Lo
         @Param("status") status: String,
         @Param("elevenLabsVoiceId") elevenLabsVoiceId: String?,
         @Param("googleVoiceCloningKey") googleVoiceCloningKey: String?,
+        @Param("fishAudioModelId") fishAudioModelId: String?,
         @Param("errorMessage") errorMessage: String?,
         @Param("now") now: Instant
     )

@@ -1,6 +1,7 @@
 package com.tamixa.domain
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 enum class StoryStatus { PENDING, PENDING_REVIEW, GENERATING, READY, FAILED }
@@ -30,6 +31,9 @@ data class Story(
     val parentDiscussionPrompts: List<String>? = null,
     val parentContentNote: String? = null,
     val speakAlongPrompt: String? = null,
+    val interactiveGraph: JsonObject? = null,
+    val postStoryMission: String? = null,
+    val postStoryResourceUrl: String? = null,
 )
 
 /** Paginated response from GET /stories/library. */
@@ -65,6 +69,9 @@ data class LibraryStoryResponse(
     val parentDiscussionPrompts: List<String>? = null,
     val parentContentNote: String? = null,
     val speakAlongPrompt: String? = null,
+    val interactiveGraph: JsonObject? = null,
+    val postStoryMission: String? = null,
+    val postStoryResourceUrl: String? = null,
 )
 
 fun LibraryStoryResponse.toStory(): Story = Story(
@@ -89,6 +96,9 @@ fun LibraryStoryResponse.toStory(): Story = Story(
     parentDiscussionPrompts = parentDiscussionPrompts?.map { it.trim() }?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() },
     parentContentNote = parentContentNote?.trim()?.takeIf { it.isNotBlank() },
     speakAlongPrompt = speakAlongPrompt?.trim()?.takeIf { it.isNotBlank() },
+    interactiveGraph = interactiveGraph,
+    postStoryMission = postStoryMission?.trim()?.takeIf { it.isNotBlank() },
+    postStoryResourceUrl = postStoryResourceUrl?.trim()?.takeIf { it.isNotBlank() },
 )
 
 /** Response from GET /stories (parent's generated stories). */

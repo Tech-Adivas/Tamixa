@@ -20,15 +20,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useActionResult } from "@/contexts/action-result-context";
 import { usePipelineActive } from "@/contexts/pipeline-active-context";
 import { canManageStories } from "@/lib/admin-roles";
-
-const LANG_LABELS: Record<string, string> = {
-  ta: "Tamil",
-  hi: "Hindi",
-  en: "English",
-  te: "Telugu",
-  kn: "Kannada",
-  ml: "Malayalam",
-};
+import { adminStoryLanguageLabel } from "@/lib/library-story-workflow";
 
 export default function StoriesWithIssuesPage() {
   const { user } = useAuth();
@@ -163,7 +155,7 @@ export default function StoriesWithIssuesPage() {
                             className="text-sm"
                           >
                             <span className="font-medium text-destructive">
-                              {LANG_LABELS[i.language] ?? i.language}
+                              {adminStoryLanguageLabel(i.language)}
                             </span>
                             {" "}({i.status}):{" "}
                             <span className="text-muted-foreground" title={i.error}>

@@ -32,6 +32,9 @@ class VoiceProfileEntity(
     @Column(name = "elevenlabs_voice_id", length = 64)
     val elevenlabsVoiceId: String? = null,
 
+    @Column(name = "fish_audio_model_id", length = 128)
+    val fishAudioModelId: String? = null,
+
     @Column(name = "google_voice_cloning_key", columnDefinition = "TEXT")
     val googleVoiceCloningKey: String? = null,
 

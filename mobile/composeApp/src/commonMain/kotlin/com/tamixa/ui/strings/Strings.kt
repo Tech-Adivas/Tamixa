@@ -559,6 +559,20 @@ object Strings {
         else -> "Play"
     }
 
+    /** Hero / featured row: TalkBack hint when the whole row opens the story. */
+    fun openStoryAction(): String = when (languageCode) {
+        "ta" -> "திறக்க தட்டவும்"
+        "hi" -> "खोलने के लिए टैप करें"
+        else -> "Tap to open story"
+    }
+
+    /** Featured carousel: current slide index is 1-based for parents. */
+    fun featuredStoriesPager(oneBasedIndex: Int, total: Int): String = when (languageCode) {
+        "ta" -> "சிறப்பு கதைகள், $oneBasedIndex / $total"
+        "hi" -> "विशेष कहानियाँ, $oneBasedIndex में से $total"
+        else -> "Featured stories, $oneBasedIndex of $total"
+    }
+
     fun pause(): String = when (languageCode) {
         "ta" -> "இடைநிறுத்து"
         "hi" -> "रोकें"
@@ -1225,6 +1239,13 @@ object Strings {
         else -> "Audio couldn't load"
     }
 
+    /** Shown briefly when narrative scene advances on Learn stories (optional family pause). */
+    fun playerReflectionCue(): String = when (languageCode) {
+        "ta" -> "புதிய காட்சி — விரும்பினால் ஒரு நிமிடம் இடைநிறுத்தி பகிர்ந்து கொள்ளுங்கள்."
+        "hi" -> "नया दृश्य — चाहें तो रोककर एक साथ बात करें।"
+        else -> "New scene — pause if you’d like to chat together for a moment."
+    }
+
     /** Avatar video is being generated; shown while backend prepares talking-head video. */
     fun playScreenAvatarGenerating(): String = when (languageCode) {
         "ta" -> "அவதாரம் (உருவாகுகிறது...)"
@@ -1653,6 +1674,16 @@ object Strings {
         else -> "Listen to stories in your preferred language."
     }
 
+    /** First-run language screen — explains scope (library, narration, learn). */
+    fun languageSelectionSubtitle(): String = when (languageCode) {
+        "ta" -> "நூலகம், விளக்கம் மற்றும் செயல்பாடுகள் இந்த மொழியில். அமைப்புகளில் எப்போதும் மாற்றலாம்."
+        "hi" -> "लाइब्रेरी, बोलकर सुनाना और गतिविधियाँ इसी भाषा में। सेटिंग्स में कभी भी बदलें।"
+        "te" -> "లైబ్రరీ, కథనం (నేరేషన్) మరియు కార్యకలాపాలు ఈ భాషలో ఉంటాయి. సెట్టింగ్‌లలో ఎప్పుడైనా మార్చుకోవచ్చు."
+        "kn" -> "ಲೈಬ್ರರಿ, ನಿರೂಪಣೆ ಮತ್ತು ಚಟುವಟಿಕೆಗಳು ಈ ಭಾಷೆಯಲ್ಲಿರುತ್ತವೆ. ಸೆಟ್ಟಿಂಗ್‌ಗಳಲ್ಲಿ ಯಾವಾಗ ಬೇಕಾದರೂ ಬದಲಿಸಬಹುದು."
+        "ml" -> "ലൈബ്രറി, വിവരണവും പ്രവർത്തനങ്ങളും ഈ ഭാഷയിലായിരിക്കും. ക്രമീകരണങ്ങളിൽ എപ്പോൾ വേണമെങ്കിലും മാറ്റാം."
+        else -> "Library, narration, and activities follow this language. Change anytime in Settings."
+    }
+
     fun generateNewStory(): String = when (languageCode) {
         "ta" -> "புதிய கதை உருவாக்கு"
         "hi" -> "नई कहानी बनाएं"
@@ -1787,6 +1818,20 @@ object Strings {
         else -> "Fun corner"
     }
 
+    /** Library third lane: Learn-prefixed and Digital Safety stories. */
+    fun libraryLearnSafetyTab(): String = when (languageCode) {
+        "ta" -> "கற்றல் & பாதுகாப்பு"
+        "hi" -> "सीखें और सुरक्षा"
+        else -> "Learn & safety"
+    }
+
+    /** Library fourth lane: Learn · Simulator and interactive graph stories. */
+    fun librarySimulatorTab(): String = when (languageCode) {
+        "ta" -> "பயிற்சி"
+        "hi" -> "अभ्यास"
+        else -> "Practice"
+    }
+
     fun spotlightEmptyHint(): String = when (languageCode) {
         "ta" -> "நூலகக் கதைகள் தயாரானதும் இங்கே தோன்றும் — இழுத்து புதுப்பிக்கவும்."
         "hi" -> "लाइब्रेरी की कहानियाँ तैयार होते ही यहाँ दिखेंगी—खींचकर रीफ़्रेश करें।"
@@ -1799,11 +1844,30 @@ object Strings {
         else -> "Stories tagged Fun stories or Funny Stories show up here—move lighter classics to those categories in admin."
     }
 
+    fun learnSafetyEmptyHint(): String = when (languageCode) {
+        "ta" -> "இங்கே 'Learn · …' அல்லது 'Digital Safety' தலைப்புடன் கூடிய நூலகக் கதைகள் தோன்றும்."
+        "hi" -> "यहाँ 'Learn · …' या 'Digital Safety' वाली लाइब्रेरी कहानियाँ दिखेंगी।"
+        else -> "Educational and digital-safety library stories appear here (theme/category starts with Learn or mentions Digital Safety)."
+    }
+
+    fun simulatorHubEmptyHint(): String = when (languageCode) {
+        "ta" -> "இங்கே 'Learn · Simulator' தலைப்பு அல்லது தேர்வுகளுடன் கூடிய ஊடாடும் நூலகக் கதைகள் தோன்றும்."
+        "hi" -> "यहाँ 'Learn · Simulator' शीर्षक या चुनाव वाली इंटरैक्टिव लाइब्रेरी कहानियाँ दिखेंगी।"
+        else -> "Stories labeled Learn · Simulator or with interactive choices appear here—assign metadata in admin if missing."
+    }
+
     /** Small chip on poster tiles in the fun lane. */
     fun storyFunCornerBadge(): String = when (languageCode) {
         "ta" -> "சிரிப்பு"
         "hi" -> "मज़ा"
         else -> "Just for fun"
+    }
+
+    /** Library poster: branching Edu / simulator tales (Learn · Simulator or interactive graph). */
+    fun libraryInteractivePosterBadge(): String = when (languageCode) {
+        "ta" -> "நீங்கள் தேர்வு"
+        "hi" -> "आप चुनें"
+        else -> "You choose"
     }
 
     /** Home dashboard: featured library listens (every tale is built for growth). */
@@ -1819,6 +1883,62 @@ object Strings {
         else -> "Heart, vocabulary, and curiosity are woven into every Tamixa tale—tap any cover to start."
     }
 
+    /** Home: explains Library hubs (Browse, Fun, Learn · Simulator). */
+    fun dashboardLibraryMapTitle(): String = when (languageCode) {
+        "ta" -> "நூலக வரைபடம்"
+        "hi" -> "लाइब्रेरी मैप"
+        else -> "Your Library map"
+    }
+
+    fun dashboardLibraryMapSubtitle(): String = when (languageCode) {
+        "ta" -> "இன்று தேவையானது எது? — சிரிப்பு, கற்றல், அல்லது தேர்வுகளுடன் பயிற்சி."
+        "hi" -> "आज क्या चाहिए?—मज़ा, सीख या चुनाव वाला अभ्यास।"
+        else -> "Pick the lane for today—fun listens, life skills, or practice with choices."
+    }
+
+    fun dashboardLibraryBrowseBlurb(): String = when (languageCode) {
+        "ta" -> "முழு பட்டியல்; நூலகத்தில் வடிகட்டிகளைத் தட்டவும்."
+        "hi" -> "पूरी सूची—लाइब्रेरी में फ़िल्टर टैप करें।"
+        else -> "Full catalog—use filters inside Library."
+    }
+
+    fun dashboardLibraryFunLaneTitle(): String = when (languageCode) {
+        "ta" -> "சிரிப்பு மூலை"
+        "hi" -> "मज़ेदार कोना"
+        else -> "Fun corner"
+    }
+
+    fun dashboardLibraryFunLaneBlurb(): String = when (languageCode) {
+        "ta" -> "இலகுவான, சிரிப்புத் தரும் கதைகள்."
+        "hi" -> "हल्की, मज़ेदार कहानियाँ।"
+        else -> "Lighthearted listens—stories just for fun."
+    }
+
+    fun dashboardLibraryLearnLaneBlurb(): String = when (languageCode) {
+        "ta" -> "உயிர்க்கல்வி, மின்னணு பாதுகாப்பு, முழு கற்றல் வரிசை."
+        "hi" -> "जीवन कौशल, डिजिटल सुरक्षा, पूरी लर्न सूची।"
+        else -> "Life skills, digital safety, and the full Learn catalog."
+    }
+
+    fun dashboardLibraryPracticeLaneTitle(): String = when (languageCode) {
+        "ta" -> "பயிற்சி (Learn · Simulator)"
+        "hi" -> "अभ्यास (Learn · Simulator)"
+        else -> "Practice (Learn · Simulator)"
+    }
+
+    fun dashboardLibraryPracticeLaneBlurb(): String = when (languageCode) {
+        "ta" -> "தேர்வுகளுடன் ஊடாடும் நூலகக் கதைகள் — தனி மையம்."
+        "hi" -> "चुनाव वाली इंटरैक्टिव लाइब्रेरी कहानियाँ—अलग हब।"
+        else -> "Interactive library stories with choices—in their own hub."
+    }
+
+    /** Library story with interactive graph: parent-facing player cue. */
+    fun playerInteractivePracticeChip(): String = when (languageCode) {
+        "ta" -> "பயிற்சிக் கதை · தேர்வுகள்"
+        "hi" -> "अभ्यास कहानी · विकल्प"
+        else -> "Practice story · choices"
+    }
+
     fun openLibraryForMore(): String = when (languageCode) {
         "ta" -> "நூலகத்தில் மேலும்"
         "hi" -> "लाइब्रेरी में और"
@@ -1829,6 +1949,93 @@ object Strings {
         "ta" -> "சிரிப்பு மூலை"
         "hi" -> "मज़ेदार कोना"
         else -> "Open fun corner"
+    }
+
+    fun openLearnSafety(): String = when (languageCode) {
+        "ta" -> "கற்றல் & பாதுகாப்பு"
+        "hi" -> "सीखें और सुरक्षा"
+        else -> "Learn & safety"
+    }
+
+    fun interactiveStoryChoose(): String = when (languageCode) {
+        "ta" -> "அடுத்து என்ன செய்வது?"
+        "hi" -> "आगे क्या करें?"
+        else -> "What happens next?"
+    }
+
+    fun familyMissionTitle(): String = when (languageCode) {
+        "ta" -> "இன்றைய குடும்பப் பணி"
+        "hi" -> "आज का परिवार मिशन"
+        else -> "Today’s family mission"
+    }
+
+    /** Mission tone: optional challenge, not homework or a grade. */
+    fun missionCardChallengeHint(): String = when (languageCode) {
+        "ta" -> "ஒரு லேசான சவால்—பாடப்பணி அல்ல."
+        "hi" -> "एक हल्की चुनौती है—यह होमवर्क नहीं है।"
+        else -> "A light real-world challenge—not homework."
+    }
+
+    /** Guarded life-skill summary (interactive Edu stories only). */
+    fun lifeSkillPracticeTitle(): String = when (languageCode) {
+        "ta" -> "கதை தேர்வுகள் — பயிற்சி குறிப்புகள்"
+        "hi" -> "कहानी विकल्प — अभ्यास संकेत"
+        else -> "Story choices — practice signals"
+    }
+
+    fun lifeSkillPracticeDisclaimer(): String = when (languageCode) {
+        "ta" -> "இவை மதிபெண்கள் அல்ல; குழந்தையின் கதை தேர்வுகளிலிருந்து தனிப்பட்ட சுருக்கமே."
+        "hi" -> "ये अंक नहीं हैं—केवल कहानी विकल्पों से निजी संकेत।"
+        else -> "Not scores or grades—private hints from story choices only."
+    }
+
+    fun lifeSkillPracticeChooseChild(): String = when (languageCode) {
+        "ta" -> "குழந்தையைத் தேர்ந்தெடு"
+        "hi" -> "बच्चा चुनें"
+        else -> "Choose child"
+    }
+
+    /** When only stories-linked child id is known (no name from profile yet). */
+    fun lifeSkillPracticeUnnamedChild(): String = when (languageCode) {
+        "ta" -> "குழந்தை சுயவிவரம்"
+        "hi" -> "बच्चे की प्रोफ़ाइल"
+        else -> "Child profile"
+    }
+
+    fun lifeSkillPillarWisdom(): String = when (languageCode) {
+        "ta" -> "ஞானம் / டிஜிட்டல் நுண்ணறிவு"
+        "hi" -> "बुद्धिमत्ता / डिजिटल समझ"
+        else -> "Wisdom / digital judgment"
+    }
+
+    fun lifeSkillPillarSocial(): String = when (languageCode) {
+        "ta" -> "சமூகம்"
+        "hi" -> "सामाजिक"
+        else -> "Social"
+    }
+
+    fun lifeSkillPillarMoney(): String = when (languageCode) {
+        "ta" -> "பணம் / நிதி பழக்கம்"
+        "hi" -> "पैसा / वित्तीय आदतें"
+        else -> "Money habits"
+    }
+
+    fun lifeSkillPillarBalance(): String = when (languageCode) {
+        "ta" -> "சமநிலை / கவனம்"
+        "hi" -> "संतुलन / ध्यान"
+        else -> "Balance / focus"
+    }
+
+    fun openLinkedResource(): String = when (languageCode) {
+        "ta" -> "இணைப்பைத் திற"
+        "hi" -> "लिंक खोलें"
+        else -> "Open link"
+    }
+
+    fun missionCardDone(): String = when (languageCode) {
+        "ta" -> "முடிந்தது"
+        "hi" -> "हो गया"
+        else -> "Done"
     }
 
     fun curatedTopicsLabel(): String = when (languageCode) {
@@ -1993,6 +2200,20 @@ object Strings {
         else -> "Show less"
     }
 
+    /** Story player: synced read-along (streamed narration). */
+    fun playerListenAlongTitle(): String = when (languageCode) {
+        "ta" -> "கேட்டுக்கொண்டே வாசி"
+        "hi" -> "सुनते हुए पढ़ें"
+        else -> "Listen & read along"
+    }
+
+    /** Shown when playback uses on-device read-aloud (no server word timings). */
+    fun playerDeviceReadAloudHint(): String = when (languageCode) {
+        "ta" -> "சாதன வாசிப்பு — உரை ஒலியுடன் ஒத்திசைக்கப்படாது; முழு கதையை கீழே படிக்கலாம்."
+        "hi" -> "डिवाइस रीड-अलाउड — टेक्स्ट आवाज़ से मेल नहीं खा सकता; नीचे पूरी कहानी पढ़ें।"
+        else -> "Device read-aloud — text won’t track the voice; scroll to read the full story below."
+    }
+
     fun playerVoiceAndPlayMode(): String = when (languageCode) {
         "ta" -> "குரல் மற்றும் பயன்முறை"
         "hi" -> "आवाज़ और मोड"
@@ -2017,6 +2238,40 @@ object Strings {
         "ta" -> "சமீபத்திய கேட்ட கதைகள் — புதியவை முதலில்"
         "hi" -> "आपकी हाल की सुनी कहानियाँ — नई पहले"
         else -> "Your latest listens — newest first"
+    }
+
+    /** Home dashboard listening snapshot (matches web stat window). */
+    fun dashboardListeningWindow(days: Int): String = when (languageCode) {
+        "ta" -> "கடைசி $days நாட்கள்"
+        "hi" -> "पिछले $days दिन"
+        else -> "Last $days days"
+    }
+
+    /** Overflow menu on home header (search stays visible; other actions grouped). */
+    fun dashboardMenu(): String = when (languageCode) {
+        "ta" -> "மேலும்"
+        "hi" -> "और विकल्प"
+        else -> "Menu"
+    }
+
+    /** Section title for generated / saved tales (friendlier than “all stories”). */
+    fun dashboardYourStoriesTitle(): String = when (languageCode) {
+        "ta" -> "உங்கள் கதைகள்"
+        "hi" -> "आपकी कहानियाँ"
+        else -> "Your stories"
+    }
+
+    /** One line under “Your stories” — tap any card to play. */
+    fun dashboardYourStoriesSubtitle(): String = when (languageCode) {
+        "ta" -> "உருவாக்கிய மற்றும் சேமித்த கதைகள் — ஒரு அட்டையைத் தட்டி கேளுங்கள்."
+        "hi" -> "बनाई और सहेजी कहानियाँ — चलाने के लिए किसी कार्ड पर टैप करें।"
+        else -> "Stories you’ve created and saved — tap a card to listen."
+    }
+
+    fun playerShare(): String = when (languageCode) {
+        "ta" -> "பகிர்"
+        "hi" -> "शेयर करें"
+        else -> "Share"
     }
 
     fun noStoriesYet(): String = when (languageCode) {
@@ -2329,9 +2584,15 @@ object Strings {
     }
 
     fun onboardingVoiceSubline(): String = when (languageCode) {
-        "ta" -> "கதைசொல்லும் குரலை உருவாக்க குறுகிய குரல் மாதிரியை பதிவு செய்யுங்கள்"
-        "hi" -> "कहानी सुनाने की आवाज़ बनाने के लिए एक छोटा ऑडियो रिकॉर्ड करें"
-        else -> "Record a short voice sample to create a storytelling voice"
+        "ta" -> "குறுகிய மாதிரி — பின்னர் கதைகள் உங்கள் தொனியில்; விருப்பமாக அவதார் வீடியோவும்."
+        "hi" -> "छोटा सैंपल — फिर कहानियाँ आपकी आवाज़ में; चाहें तो अवतार वीडियो भी।"
+        else -> "One short sample — then stories in your tone, with optional avatar video in the player."
+    }
+
+    fun onboardingVoicePrivacyNote(): String = when (languageCode) {
+        "ta" -> "உங்கள் குடும்பத்திற்கு — நீங்கள் கட்டுப்படுத்தலாம்"
+        "hi" -> "सिर्फ आपके परिवार के लिए — आप नियंत्रित करते हैं"
+        else -> "For your family — you stay in control"
     }
 
     /** Onboarding step 3: primary CTA to continue to avatar/voice setup (not "Record voice"). */
@@ -2348,9 +2609,9 @@ object Strings {
     }
 
     fun onboardingAvatarSubline(): String = when (languageCode) {
-        "ta" -> "யாரோ ஒருவரின் புகைப்படம் பதிவேற்றுங்கள் (மூத்தவர், பெற்றோர்)"
-        "hi" -> "किसी का फोटो अपलोड करें (दादा, माता-पिता)"
-        else -> "Upload a photo of someone (grandparent, parent, etc.)"
+        "ta" -> "புகைப்படம் — 'என் குரல் + அவதார்' பயன்முறையில் சிறு வீடியோ கதைசொல்லி."
+        "hi" -> "फोटो — 'मेरी आवाज़ + अवतार' मोड में छोटा वीडियो स्टोरीटेलर।"
+        else -> "Add a photo — with My voice + avatar mode, kids see a friendly video storyteller."
     }
 
     /** Voice invitation card label (below hero image) — describes the value, not the CTA */
@@ -2386,15 +2647,28 @@ object Strings {
     }
 
     fun onboardingDemoSubline(): String = when (languageCode) {
-        "ta" -> "இயக்கு — இது கதை நேரத்தின் சிறு சுவை"
-        "hi" -> "प्ले दबाएँ — यह कहानी के समय की एक झलक है"
-        else -> "Tap play — a bite-sized taste of story night"
+        "ta" -> "இயக்கு — முழு பிளேயரில் ஒலிக்கும் வரிகள் ஒளிரும்; இங்கே சிறு டெமோ மட்டும்."
+        "hi" -> "प्ले दबाएँ — असली प्लेयर में पंक्तियाँ आवाज़ के साथ चमकती हैं; यहाँ छोटा डेमो है।"
+        else -> "Tap play — the full player highlights lines with the voice; this is just a tiny preview."
+    }
+
+    fun onboardingDemoListenAlongHint(): String = when (languageCode) {
+        "ta" -> "முழு பிளேயரில்: ஒலி + உரை ஒருங்கே"
+        "hi" -> "पूरे प्लेयर में: आवाज़ + टेक्स्ट साथ"
+        else -> "Full player: voice + text stay in sync"
+    }
+
+    /** One-line teaser inside the onboarding demo story card (above play). */
+    fun onboardingDemoCardTeaser(): String = when (languageCode) {
+        "ta" -> "ஒரு அமைதியான கிராமத்தில், ஒரு ஆர்வமுள்ள நரி வாழ்ந்தது…"
+        "hi" -> "एक शांत गाँव में एक जिज्ञासु लोमड़ी रहती थी…"
+        else -> "In a quiet village, there lived a curious fox…"
     }
 
     fun onboardingDemoBenefitHear(): String = when (languageCode) {
-        "ta" -> "கதை உயிர்பெறுவதை முன்பே கேளுங்கள்"
-        "hi" -> "कहानी जीवंत होते सुनें — साइन-इन से पहले"
-        else -> "Hear the story bloom before you sign in"
+        "ta" -> "ஸ்ட்ரீம் கதைகளில் உரை ஒலியுடன் ஒத்திசைகிறது"
+        "hi" -> "स्ट्रीम कहानियों में टेक्स्ट आवाज़ के साथ चलता है"
+        else -> "Streamed stories keep on-screen text aligned with narration"
     }
 
     fun onboardingDemoBenefitControl(): String = when (languageCode) {
@@ -2407,6 +2681,24 @@ object Strings {
         "ta" -> "சிறுவர்களுக்கு ஏற்ற மென்மையான கதைசொல்லல்"
         "hi" -> "छोटे बच्चों के लिए कोमल, साफ़ कहानी"
         else -> "Gentle pacing made for little listeners"
+    }
+
+    fun onboardingDemoBenefitInteractive(): String = when (languageCode) {
+        "ta" -> "கற்றல் நூலகத்தில் — தேர்வுகள், பின்னர் குடும்ப பணிகள்"
+        "hi" -> "लर्न लाइब्रेरी में — विकल्प, फिर परिवार के छोटे मिशन"
+        else -> "In Learn — choices, then optional family missions together"
+    }
+
+    fun onboardingDemoPillFun(): String = when (languageCode) {
+        "ta" -> "வேடிக்கை கதைகள்"
+        "hi" -> "मज़ेदार कहानियाँ"
+        else -> "Fun stories"
+    }
+
+    fun onboardingDemoPillLearn(): String = when (languageCode) {
+        "ta" -> "கற்றல் · பாதுகாப்பு"
+        "hi" -> "सीखें · सुरक्षा"
+        else -> "Learn · Safety"
     }
 
     fun onboardingVoiceBenefitKeepsake(): String = when (languageCode) {
@@ -2448,24 +2740,24 @@ object Strings {
     /** Short section title above value bullets (step 1–4 onboarding). */
     fun onboardingStripTitle(step: Int): String = when (step) {
         1 -> when (languageCode) {
-            "ta" -> "ஏன் குடும்பங்கள் தேர்வு செய்கின்றன"
-            "hi" -> "परिवार क्यों चुनते हैं"
-            else -> "Why families pick Tamixa"
+            "ta" -> "உங்கள் குடும்பத்திற்கு ஏற்றது"
+            "hi" -> "आपके परिवार के लिए बना"
+            else -> "Built for your family"
         }
         2 -> when (languageCode) {
-            "ta" -> "இதில் கவனிக்கவும்"
-            "hi" -> "इस पर ध्यान दें"
-            else -> "Listen for this"
+            "ta" -> "இந்த சிறு டெமோவில்"
+            "hi" -> "इस छोटे डेमो में"
+            else -> "In this mini demo"
         }
         3 -> when (languageCode) {
-            "ta" -> "குரல் அடுக்கு"
-            "hi" -> "आवाज़ की परत"
-            else -> "The voice magic"
+            "ta" -> "குடும்பக் குரல்"
+            "hi" -> "परिवार की आवाज़"
+            else -> "Layer in family voice"
         }
         4 -> when (languageCode) {
-            "ta" -> "முகம் + கதை"
-            "hi" -> "चेहरा + कहानी"
-            else -> "Face + story"
+            "ta" -> "விருப்பமான முகம்"
+            "hi" -> "वैकल्पिक चेहरा"
+            else -> "Optional storyteller face"
         }
         else -> when (languageCode) {
             "ta" -> "சிறப்பம்சங்கள்"
@@ -2761,9 +3053,9 @@ object Strings {
     }
 
     fun onboardingHookSubline(): String = when (languageCode) {
-        "ta" -> "உங்கள் குழந்தைக்கான தனிப்பட்ட கதைகளை உருவாக்குங்கள்"
-        "hi" -> "अपने बच्चे के लिए व्यक्तिगत कहानियाँ बनाएँ"
-        else -> "Create personalized stories for your child"
+        "ta" -> "வேடிக்கை, கற்றல் மற்றும் பாதுகாப்பு கதைகள் — ஒரே இடத்தில். ஸ்ட்ரீம் கதைகளில் உரை ஒலியுடன் ஒளிரும்; விருப்பமாக உங்கள் குரல் + அவதார் வீடியோ."
+        "hi" -> "मज़ेदार, सीखने और सुरक्षा वाली कहानियाँ — एक जगह। स्ट्रीम पर टेक्स्ट आवाज़ के साथ हाइलाइट; वैकल्पिक रूप से आपकी आवाज़ + अवतार वीडियो।"
+        else -> "Fun, learning, and safety tales in one place. Streamed stories highlight text with the voice — add your voice and optional avatar video when you’re ready."
     }
 
     /** Hook screen: value bullets (store-style clarity, Tamixa-specific copy). */
@@ -2783,6 +3075,27 @@ object Strings {
         "ta" -> "அமைதியான நேரத்திற்கு — பாதுகாப்பான, மென்மையான"
         "hi" -> "शांत समय के लिए — सुरक्षित, कोमल अनुभव"
         else -> "Made for wind-down time — safe, gentle listening"
+    }
+
+    /** Hook: Learn library + optional interactive practice (parent-facing, no grades). */
+    fun onboardingHookBenefitLearn(): String = when (languageCode) {
+        "ta" -> "கற்றல் நூலகம் — தேர்வுகளுடன் பயிற்சி அறிகுறிகள் (மதிப்பெண்கள் அல்ல)"
+        "hi" -> "लर्न लाइब्रेरी — चुनावों के साथ हल्के सिग्नल (नंबर नहीं)"
+        else -> "Learn library — gentle practice signals from choices, not scores"
+    }
+
+    /** Short chip: Learn & safety lane (matches admin category naming intent). */
+    fun onboardingHookPillLearnSafety(): String = when (languageCode) {
+        "ta" -> "கற்றல் · பாதுகாப்பு"
+        "hi" -> "सीखें · सुरक्षा"
+        else -> "Learn · Safety"
+    }
+
+    /** Ribbon under onboarding progress — positions Tamixa as edu / learn-lane stories. */
+    fun onboardingEduStoryBadgeLabel(): String = when (languageCode) {
+        "ta" -> "கற்றல் கதைகள் · பாதுகாப்பான கேட்டல்"
+        "hi" -> "सीखने वाली कहानियाँ · सुरक्षित सुनना"
+        else -> "Learn stories · Safe listening"
     }
 
     fun onboardingProgressShort(step: Int, totalSteps: Int): String = when (languageCode) {

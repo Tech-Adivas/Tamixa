@@ -2,6 +2,10 @@
 
 **Quick Navigation for Tamixa Educational Features Implementation**
 
+**Product framing (Fun vs Edu, audiences, narrative-first innovation):** [EDUSTORY_PRODUCT_VISION.md](EDUSTORY_PRODUCT_VISION.md)  
+**Content sequencing and phased rollout (pillars, flagship series, six-month spine, Phase 1–4 engineering):** [EDUSTORY_CONTENT_MATRIX_AND_ROADMAP.md](EDUSTORY_CONTENT_MATRIX_AND_ROADMAP.md) (quiz/streak APIs remain complementary after listening).  
+**Edu simulator episodes (hooks, choices, fallout, missions):** [admin/EDUSTORY_SIMULATOR_CONTENT_BLUEPRINT.md](admin/EDUSTORY_SIMULATOR_CONTENT_BLUEPRINT.md); **theme / `interactive_graph`:** [admin/EDU_METADATA_CONVENTIONS.md](admin/EDU_METADATA_CONVENTIONS.md).
+
 ---
 
 ## 📋 Start Here

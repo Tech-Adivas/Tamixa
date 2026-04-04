@@ -9,21 +9,21 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -43,27 +43,35 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tamixa.ui.components.AppScreenBackground
 import com.tamixa.ui.components.TamixaLanguageLogo
 import com.tamixa.ui.components.TamixaPrimaryButton
-import com.tamixa.ui.components.AppScreenBackground
+import com.tamixa.ui.strings.Strings
+import com.tamixa.ui.theme.OnboardingCardColors
 import com.tamixa.ui.theme.TamixaColors
 import com.tamixa.ui.theme.TamixaDesignTokens
-import com.tamixa.ui.theme.TamixaGradients
-import com.tamixa.ui.strings.Strings
 
-data class LanguageOption(val code: String, val label: String, val flag: String)
-
-private val LANGUAGES = listOf(
-    LanguageOption("en", "English", "🇬🇧"),
-    LanguageOption("ta", "தமிழ்", "🏳️"),
-    LanguageOption("hi", "हिन्दी", "🇮🇳"),
-    LanguageOption("te", "తెలుగు", "🏳️"),
-    LanguageOption("kn", "ಕನ್ನಡ", "🏳️"),
-    LanguageOption("ml", "മലയാളം", "🏳️")
+data class LanguageOption(
+    val code: String,
+    /** Primary label in the language itself (or English for English). */
+    val labelNative: String,
+    val flag: String,
+    /** Latin / English disambiguator under native script (helps parents scan the grid). */
+    val labelLatin: String
 )
 
+private val LANGUAGES = listOf(
+    LanguageOption("en", "English", "🇬🇧", "English"),
+    LanguageOption("ta", "தமிழ்", "🏳️", "Tamil"),
+    LanguageOption("hi", "हिन्दी", "🇮🇳", "Hindi"),
+    LanguageOption("te", "తెలుగు", "🏳️", "Telugu"),
+    LanguageOption("kn", "ಕನ್ನಡ", "🏳️", "Kannada"),
+    LanguageOption("ml", "മലയാളം", "🏳️", "Malayalam")
+)
 
 @Composable
 fun LanguageSelectionScreen(
@@ -73,27 +81,21 @@ fun LanguageSelectionScreen(
     val effectiveCode = selectedCode ?: com.tamixa.util.TamixaConstants.DEFAULT_LANGUAGE
     Box(modifier = Modifier.fillMaxSize()) {
         AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(TamixaGradients.splashStorybookVignetteBrush())
-        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(TamixaDesignTokens.screenPadding)
+                .padding(horizontal = TamixaDesignTokens.screenPadding)
         ) {
-            // Glass header — clean editorial panel (Vocal-style chrome on starfield)
+            Spacer(Modifier.height(TamixaDesignTokens.smallSpacing))
+            OnboardingEduStoryBadge(modifier = Modifier.align(Alignment.CenterHorizontally))
+            Spacer(Modifier.height(TamixaDesignTokens.smallSpacing + 4.dp))
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
                 color = Color.White.copy(alpha = 0.07f),
-                border = BorderStroke(
-                    1.dp,
-                    Color.White.copy(alpha = 0.2f),
-                ),
+                border = BorderStroke(1.dp, TamixaColors.deepTeal.copy(alpha = 0.32f)),
                 shadowElevation = 0.dp,
                 tonalElevation = 0.dp,
             ) {
@@ -110,44 +112,44 @@ fun LanguageSelectionScreen(
                             letterSpacing = (-0.35).sp,
                             lineHeight = 30.sp,
                         ),
-                        color = TamixaColors.cream,
+                        color = OnboardingCardColors.onboardingHeadline,
                     )
                     Spacer(Modifier.height(TamixaDesignTokens.smallSpacing - 4.dp))
                     Text(
-                        text = Strings.storiesInPreferredLanguage(),
+                        text = Strings.languageSelectionSubtitle(),
                         style = MaterialTheme.typography.bodyLarge.copy(
                             lineHeight = 22.sp,
                             letterSpacing = 0.1.sp,
                         ),
-                        color = TamixaColors.cream.copy(alpha = 0.82f),
+                        color = OnboardingCardColors.onboardingSubline,
                     )
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         text = Strings.appTagline(),
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontWeight = FontWeight.Medium,
-                            letterSpacing = 1.6.sp,
+                            letterSpacing = 1.4.sp,
                         ),
-                        color = TamixaColors.goldAccent.copy(alpha = 0.88f),
+                        color = TamixaColors.eduStoryMint.copy(alpha = 0.92f),
                     )
                 }
             }
-            Spacer(Modifier.height(TamixaDesignTokens.smallSpacing + 4.dp))
+            Spacer(Modifier.height(TamixaDesignTokens.smallSpacing + 2.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = 2.dp),
                 contentAlignment = Alignment.Center
             ) {
                 val haloShape = RoundedCornerShape(100.dp)
                 Box(
                     modifier = Modifier
-                        .size(148.dp)
+                        .size(108.dp)
                         .shadow(
                             elevation = TamixaDesignTokens.cardElevation,
                             shape = haloShape,
                             ambientColor = Color.Black.copy(alpha = 0.2f),
-                            spotColor = TamixaColors.goldAccent.copy(alpha = 0.12f),
+                            spotColor = TamixaColors.deepTeal.copy(alpha = 0.22f),
                         )
                         .clip(haloShape)
                         .background(
@@ -162,23 +164,40 @@ fun LanguageSelectionScreen(
                 ) {
                     TamixaLanguageLogo(
                         languageCode = effectiveCode,
-                        modifier = Modifier.size(124.dp),
-                        size = 124.dp
+                        modifier = Modifier.size(92.dp),
+                        size = 92.dp
                     )
                 }
             }
             Spacer(Modifier.height(TamixaDesignTokens.smallSpacing))
-            LazyColumn(
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.cardSpacing)
+                horizontalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing),
+                verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing),
             ) {
                 items(LANGUAGES, key = { it.code }) { option ->
-                    LanguageRow(
+                    LanguageGridTile(
                         option = option,
                         isSelected = selectedCode == option.code,
                         onClick = { selectedCode = option.code }
                     )
                 }
+            }
+            Spacer(Modifier.height(TamixaDesignTokens.smallSpacing))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = Color.Transparent,
+                border = BorderStroke(1.dp, TamixaColors.deepTeal.copy(alpha = 0.22f)),
+            ) {
+                Text(
+                    text = Strings.storiesInPreferredLanguage(),
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                    color = TamixaColors.cream.copy(alpha = 0.72f),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    textAlign = TextAlign.Center,
+                )
             }
             Spacer(Modifier.height(TamixaDesignTokens.smallSpacing))
             TamixaPrimaryButton(
@@ -193,102 +212,97 @@ fun LanguageSelectionScreen(
 }
 
 @Composable
-private fun LanguageRow(
+private fun LanguageGridTile(
     option: LanguageOption,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
     val scale by animateFloatAsState(
         targetValue = if (isSelected) 0.98f else 1f,
-        animationSpec = tween(120), label = "scale"
+        animationSpec = tween(120), label = "langTileScale"
     )
     val shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            .aspectRatio(1f)
             .shadow(
-                elevation = if (isSelected) TamixaDesignTokens.cardElevationHover else TamixaDesignTokens.listCardShadowElevation,
+                elevation = if (isSelected) TamixaDesignTokens.carouselCardShadowElevation else TamixaDesignTokens.listCardShadowElevation,
                 shape = shape,
                 ambientColor = TamixaDesignTokens.listCardShadowAmbient,
                 spotColor = if (isSelected) {
-                    TamixaColors.goldAccent.copy(alpha = 0.18f)
+                    TamixaColors.deepTeal.copy(alpha = 0.24f)
                 } else {
-                    TamixaDesignTokens.listCardShadowSpot
+                    TamixaColors.deepTeal.copy(alpha = 0.07f)
                 },
             )
             .scale(scale)
             .clip(shape)
             .clickable(onClick = onClick)
-            .semantics { contentDescription = "Select ${option.label}" },
+            .semantics { contentDescription = "Select ${option.labelLatin}" },
         shape = shape,
         color = if (isSelected) {
-            TamixaColors.goldAccent.copy(alpha = 0.14f)
+            TamixaColors.deepTeal.copy(alpha = 0.2f)
         } else {
             Color.White.copy(alpha = 0.06f)
         },
-        border = if (isSelected) {
-            BorderStroke(1.5.dp, TamixaColors.goldAccent.copy(alpha = 0.55f))
-        } else {
-            BorderStroke(1.dp, Color.White.copy(alpha = 0.14f))
-        },
+        border = BorderStroke(
+            width = if (isSelected) 2.dp else 1.dp,
+            color = if (isSelected) TamixaColors.eduStoryMint.copy(alpha = 0.75f)
+            else TamixaColors.deepTeal.copy(alpha = 0.28f)
+        ),
         shadowElevation = 0.dp,
         tonalElevation = 0.dp,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = TamixaDesignTokens.contentPaddingHorizontal,
-                    vertical = 14.dp,
-                ),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
                 modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(TamixaDesignTokens.inputRadius))
-                    .background(
-                        if (isSelected) {
-                            TamixaColors.deepTeal.copy(alpha = 0.22f)
-                        } else {
-                            Color.White.copy(alpha = 0.08f)
-                        },
-                    ),
-                contentAlignment = Alignment.Center
+                    .fillMaxSize()
+                    .padding(horizontal = 10.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
                 Text(
                     text = option.flag,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.headlineMedium,
                 )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = option.labelNative,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        letterSpacing = (-0.1).sp,
+                        lineHeight = 20.sp,
+                    ),
+                    color = if (isSelected) TamixaColors.cream else TamixaColors.cream.copy(alpha = 0.88f),
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (option.labelNative != option.labelLatin) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = option.labelLatin,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 0.2.sp,
+                        ),
+                        color = TamixaColors.eduStoryMint.copy(alpha = if (isSelected) 0.95f else 0.7f),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-            Spacer(Modifier.size(TamixaDesignTokens.smallSpacing))
-            Text(
-                text = option.label,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                    letterSpacing = (-0.15).sp,
-                ),
-                color = if (isSelected) {
-                    TamixaColors.cream
-                } else {
-                    TamixaColors.cream.copy(alpha = 0.78f)
-                },
-                modifier = Modifier.weight(1f)
-            )
             if (isSelected) {
                 Icon(
                     Icons.Default.Check,
                     contentDescription = Strings.selected(),
-                    tint = TamixaColors.goldAccent,
-                    modifier = Modifier.size(26.dp)
-                )
-            } else {
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = Strings.select(),
-                    tint = TamixaColors.cream.copy(alpha = 0.42f),
-                    modifier = Modifier.size(22.dp)
+                    tint = TamixaColors.eduStoryMint,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .size(22.dp)
                 )
             }
         }

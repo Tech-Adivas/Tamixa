@@ -19,10 +19,12 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.retry.annotation.Backoff
 import org.springframework.retry.annotation.Retryable
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestTemplate
 
 @Component
+@ConditionalOnProperty(name = ["app.llm.provider"], havingValue = "openai", matchIfMissing = true)
 class OpenAIClient(
     private val restTemplate: RestTemplate,
     private val objectMapper: ObjectMapper,

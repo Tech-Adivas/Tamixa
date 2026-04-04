@@ -124,29 +124,34 @@ WHERE master_story_id = 33;
 
 ---
 
-## 7. How to verify the error is from OpenAI (rewrite step)
+## 7. How to verify the error is from the LLM (rewrite step)
+
+Rewrite uses **OpenAI** when `AI_LLM_PROVIDER=openai`, or **Gemini** when `AI_LLM_PROVIDER=gemini`. Check which is active before blaming the wrong provider.
 
 **1. Call the dev verify endpoint:**
 
 ```bash
-curl -s "http://localhost:8080/api/v1/dev/verify-connections" | jq '.openaiRewrite'
+curl -s "http://localhost:8080/api/v1/dev/verify-connections" | jq '.narrationRewrite, .coverAnimation'
 ```
 
 You should see:
-- `apiKeySet`: true/false — `true` means `OPENAI_API_KEY` is set
-- `readTimeoutMs`: current HTTP read timeout (default 60000)
-- `usedBy`: explains that the rewrite step uses OpenAI
+- `narrationRewrite.llmProvider`: `openai` or `gemini`
+- `apiKeySet`: whether the key for that provider is set (`OPENAI_API_KEY` vs `GEMINI_API_KEY`)
+- `readTimeoutMs`: current HTTP read timeout
+- `coverAnimation.coverImageProvider`: `openai` (DALL·E) or `gemini` (Gemini image) for **still** covers; Veo GIF is separate (`veoEnabled`)
 
-**2. Error messages that indicate OpenAI:**
-- `"OpenAI API key not configured. Set OPENAI_API_KEY"` — key missing or empty
-- `"Rewrite failed: ..."` — from `NarrationLLMException`; the rest is the OpenAI/HTTP error (429, timeout, etc.)
-- `"Rewrite timeout after 1min"` — our CompletableFuture timeout; OpenAI may still be hanging
+**2. Error messages:**
+- `"OpenAI API key not configured. Set OPENAI_API_KEY"` — OpenAI path but key missing
+- `"Gemini API key ... Set GEMINI_API_KEY"` (exact wording varies by adapter) — Gemini path but key missing
+- `"Rewrite failed: ..."` — from `NarrationLLMException`; body is the upstream HTTP error (429, timeout, etc.)
+- `"Rewrite timeout after 1min"` — our CompletableFuture timeout; the provider may still be hanging
 
 **3. Check your .env:**
-- `OPENAI_API_KEY=sk-...` — must be set for real rewrite
-- `OPENAI_READ_TIMEOUT_MS=45000` — optional; lower value fails faster (45s)
+- `AI_LLM_PROVIDER=openai` → `OPENAI_API_KEY=sk-...` for real rewrite
+- `AI_LLM_PROVIDER=gemini` → `GEMINI_API_KEY=...` for real rewrite
+- `OPENAI_READ_TIMEOUT_MS` / `GEMINI_READ_TIMEOUT_MS` — optional; lower value fails faster
 
-**4. Backend logs:** Look for `Rewrite failed`, `Narration formatting failed`, or `Upstream rate limit (429)` — all indicate OpenAI path.
+**4. Backend logs:** Look for `Rewrite failed`, `Narration formatting failed`, or `Upstream rate limit (429)` on the active LLM path.
 
 ---
 

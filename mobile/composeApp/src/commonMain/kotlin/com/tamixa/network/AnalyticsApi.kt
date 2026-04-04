@@ -2,6 +2,29 @@ package com.tamixa.network
 
 import io.ktor.client.*
 import io.ktor.client.request.*
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import kotlinx.serialization.Serializable
+
+@Serializable
+private data class TrackAppEventRequestDto(
+    val eventType: String,
+    val screenName: String? = null,
+    val searchQueryLength: Int? = null,
+    val storyId: Long? = null,
+    val storySource: String? = null,
+    val hubKey: String? = null,
+)
+
+@Serializable
+private data class TrackStoryEventRequestDto(
+    val storyId: Long,
+    val storySource: String,
+    val language: String,
+    val eventType: String,
+    val playbackPositionSeconds: Int = 0,
+    val childId: Long? = null,
+)
 
 class AnalyticsApi(private val client: HttpClient) {
 
@@ -11,17 +34,20 @@ class AnalyticsApi(private val client: HttpClient) {
         screenName: String? = null,
         searchQueryLength: Int? = null,
         storyId: Long? = null,
-        storySource: String? = null
+        storySource: String? = null,
+        hubKey: String? = null,
     ) {
         client.post("${ApiConfig.API_VERSION}/analytics/app-events") {
+            contentType(ContentType.Application.Json)
             setBody(
-                buildMap {
-                    put("eventType", eventType)
-                    screenName?.let { put("screenName", it) }
-                    searchQueryLength?.let { put("searchQueryLength", it) }
-                    storyId?.let { put("storyId", it) }
-                    storySource?.let { put("storySource", it) }
-                }
+                TrackAppEventRequestDto(
+                    eventType = eventType,
+                    screenName = screenName,
+                    searchQueryLength = searchQueryLength,
+                    storyId = storyId,
+                    storySource = storySource,
+                    hubKey = hubKey,
+                )
             )
         }
     }
@@ -35,15 +61,16 @@ class AnalyticsApi(private val client: HttpClient) {
         childId: Long? = null
     ) {
         client.post("${ApiConfig.API_VERSION}/analytics/story-events") {
+            contentType(ContentType.Application.Json)
             setBody(
-                buildMap {
-                    put("storyId", storyId)
-                    put("storySource", storySource)
-                    put("language", language)
-                    put("eventType", eventType)
-                    put("playbackPositionSeconds", playbackPositionSeconds)
-                    childId?.let { put("childId", it) }
-                }
+                TrackStoryEventRequestDto(
+                    storyId = storyId,
+                    storySource = storySource,
+                    language = language,
+                    eventType = eventType,
+                    playbackPositionSeconds = playbackPositionSeconds,
+                    childId = childId,
+                )
             )
         }
     }

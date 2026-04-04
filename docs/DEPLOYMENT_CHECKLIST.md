@@ -53,7 +53,10 @@ Configure ` signingConfigs` in `build.gradle.kts` with your keystore, then use `
 | `DATABASE_URL` | PostgreSQL JDBC URL | Or `SPRING_DATASOURCE_URL` |
 | `DATABASE_USERNAME` | DB username | Or `SPRING_DATASOURCE_USERNAME` |
 | `DATABASE_PASSWORD` | DB password | Or `SPRING_DATASOURCE_PASSWORD` |
-| `OPENAI_API_KEY` | OpenAI API key | Story generation, DALL·E covers |
+| `AI_LLM_PROVIDER` | `openai` (default) or `gemini` | Which provider backs story generation, moderation, pipeline rewrite |
+| `OPENAI_API_KEY` | OpenAI API key | Required when `AI_LLM_PROVIDER=openai` (and when `AI_COVER_IMAGE_PROVIDER=openai` for AI covers) |
+| `GEMINI_API_KEY` | Google AI (Gemini) API key | Required when `AI_LLM_PROVIDER=gemini`, `TRANSLATION_PROVIDER=gemini`, `AI_COVER_IMAGE_PROVIDER=gemini`, and/or `COVER_ANIMATION_VEO_ENABLED=true` |
+| `AI_COVER_IMAGE_PROVIDER` | `openai` or `gemini` (default `openai`) | Still cover: DALL·E 3 vs Gemini native image |
 | `VOICE_ENCRYPTION_KEY` | Base64 32-byte AES key | Voice embedding encryption |
 
 ### Optional (feature flags / scaling)

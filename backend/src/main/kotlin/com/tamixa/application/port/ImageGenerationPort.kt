@@ -1,7 +1,7 @@
 package com.tamixa.application.port
 
 /**
- * Generates images from text prompts (e.g. DALL-E). Returns raw bytes for storage.
+ * Generates images from text prompts (e.g. OpenAI DALL·E 3 or Gemini native image). Returns raw bytes for storage.
  */
 interface ImageGenerationPort {
 

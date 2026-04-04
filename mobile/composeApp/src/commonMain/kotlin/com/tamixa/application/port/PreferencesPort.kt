@@ -69,4 +69,12 @@ interface PreferencesPort {
     suspend fun getSubscriptionWebUrlOverride(): String
 
     suspend fun setSubscriptionWebUrlOverride(value: String)
+
+    /**
+     * Profile → life-skill counters: which child id the parent last chose when multiple children exist.
+     * Null clears storage (use first available child in UI).
+     */
+    suspend fun getLifeSkillPreferredChildId(): Long?
+
+    suspend fun setLifeSkillPreferredChildId(id: Long?)
 }

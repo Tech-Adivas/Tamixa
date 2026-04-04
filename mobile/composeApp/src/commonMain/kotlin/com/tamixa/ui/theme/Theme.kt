@@ -30,6 +30,8 @@ import org.jetbrains.compose.resources.Font
 private val Terracotta = Color(0xFFC4625A)      // Warm accent: clay, storytelling, inviting
 private val DeepTeal = Color(0xFF2D5A5A)       // Primary: calm, trust, bedtime
 private val TealMuted = Color(0xFF3D6B6B)      // Lighter teal for surfaces
+/** Shared mint end-stop for edu-story / Learn-lane gradients and accents. */
+private val EduStoryMint = Color(0xFF5CBCA8)
 private val WarmSand = Color(0xFFE8DCC8)        // Cream on dark: warm, not cold
 private val WarmCharcoal = Color(0xFF141210)   // Deeper OLED-friendly base (modern depth)
 private val WarmSurface = Color(0xFF2C2822)    // Lifted card tier — clearer layering vs bg
@@ -122,10 +124,10 @@ private val LightScheme = lightColorScheme(
     onSecondary = Color(0xFF2D2310),
     secondaryContainer = Color(0xFFFEF3C7),
     onSecondaryContainer = Color(0xFF2D2310),
-    tertiary = TamixaBlue,
+    tertiary = TealMuted,
     onTertiary = Color.White,
-    tertiaryContainer = LightSurfaceVariant,
-    onTertiaryContainer = OnCream,
+    tertiaryContainer = Color(0xFFE5F2F0),
+    onTertiaryContainer = Color(0xFF1E3D3D),
     error = ErrorRed,
     onError = OnError,
     errorContainer = Color(0xFFF9DEDC),
@@ -415,14 +417,16 @@ object TamixaColors {
     val appBgBottom: Color get() = AppBgBottom
     val appHeading: Color get() = AppHeading
     val appTextSecondary: Color get() = AppTextSecondary
+    /** Mint accent from edu-story gradients — highlights on dark UIs, success-adjacent checks. */
+    val eduStoryMint: Color get() = EduStoryMint
 }
 
 /** Onboarding flow: glassy cards on starfield — high contrast, calm modern polish */
 object OnboardingCardColors {
     /** Frosted light card — higher opacity so busy starfield doesn’t read as “dirty” behind UI */
     val cardBackground = Color.White.copy(alpha = 0.68f)
-    /** Theme accent border (Storybook Dusk) */
-    val cardBorder = Terracotta.copy(alpha = 0.4f)
+    /** Frame on frosted cards — Learn / edu-story forward (teal), pairs with terracotta labels. */
+    val cardBorder = DeepTeal.copy(alpha = 0.38f)
     /** Default pill: warm white tint */
     val pillBackground = Color.White.copy(alpha = 0.62f)
     /** Text on cards and pills — strong contrast for elder readability */
@@ -441,6 +445,8 @@ object OnboardingCardColors {
     val pillWarmOrange = Terracotta.copy(alpha = 0.85f)
     val pillSoftPurple = DeepTeal.copy(alpha = 0.75f)
     val pillMint = Color(0xFF7ED9C4).copy(alpha = 0.85f)
+    /** Learn / life-skills lane chips on onboarding (distinct from Fun pills). */
+    val pillLearnLane = DeepTeal.copy(alpha = 0.88f)
     /** Progress chip on starfield */
     val progressChipFill = Color.White.copy(alpha = 0.10f)
     val progressChipBorder = Color.White.copy(alpha = 0.22f)
@@ -500,6 +506,14 @@ object TamixaDesignTokens {
     val storyIllustrationHeroHeight = 264.dp
     /** Corner radius for player hero illustration frame (cards may use [cardRadius] or [carouselCardRadius]) */
     val storyIllustrationFrameRadius = 18.dp
+    /** Full-width home hero: flat top, rounded bottom (aligned with illustration frame). */
+    val heroBannerShape: androidx.compose.foundation.shape.RoundedCornerShape
+        get() = androidx.compose.foundation.shape.RoundedCornerShape(
+            topStart = 0.dp,
+            topEnd = 0.dp,
+            bottomStart = storyIllustrationFrameRadius,
+            bottomEnd = storyIllustrationFrameRadius,
+        )
     /** Soft glow for primary CTA (gold) */
     val buttonShadowElevation = 8.dp
     val fabShadowElevation = 12.dp
@@ -563,10 +577,23 @@ object TamixaGradients {
         colorStops = arrayOf(
             0f to Terracotta.copy(alpha = 0.98f),
             0.48f to DeepTeal.copy(alpha = 0.88f),
-            1f to Color(0xFF5CBCA8).copy(alpha = 0.92f)
+            1f to EduStoryMint.copy(alpha = 0.92f)
         ),
         start = Offset.Zero,
         end = Offset(1080f, 520f)
+    )
+
+    /**
+     * Onboarding editorial cards — Learn / edu-story forward (teal spine energy, still warm).
+     */
+    fun onboardingEduStoryFrameBrush(): Brush = Brush.linearGradient(
+        colorStops = arrayOf(
+            0f to DeepTeal.copy(alpha = 0.96f),
+            0.42f to Terracotta.copy(alpha = 0.82f),
+            1f to EduStoryMint.copy(alpha = 0.9f)
+        ),
+        start = Offset.Zero,
+        end = Offset(920f, 480f)
     )
 
     /** Splash: strong bottom wash so launch feels branded and alive immediately. */

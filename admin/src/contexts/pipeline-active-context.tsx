@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { api } from "@/lib/api";
+import { adminStoryLanguageLabel } from "@/lib/library-story-workflow";
 
 const POLL_INTERVAL_MS = 4000;
 const OPTIMISTIC_BANNER_MS = 120000;
@@ -29,17 +30,8 @@ const PipelineActiveContext = createContext<PipelineActiveContextValue>({
   registerTriggered: () => {},
 });
 
-const LANGUAGE_LABELS: Record<string, string> = {
-  en: "English",
-  ta: "Tamil",
-  hi: "Hindi",
-  te: "Telugu",
-  kn: "Kannada",
-  ml: "Malayalam",
-};
-
 export function getLanguageLabel(code: string): string {
-  return LANGUAGE_LABELS[code] ?? code;
+  return adminStoryLanguageLabel(code);
 }
 
 export function PipelineActiveProvider({

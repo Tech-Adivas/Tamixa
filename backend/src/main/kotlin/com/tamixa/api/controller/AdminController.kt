@@ -27,6 +27,7 @@ import com.tamixa.api.admin.dto.UpdateParentRequest
 import com.tamixa.api.admin.dto.UpdateTranslationRequest
 import com.tamixa.api.admin.dto.AdminInvoiceDto
 import com.tamixa.api.admin.dto.DoraMetricsDto
+import com.tamixa.api.admin.dto.LifeSkillChoiceAnalyticsResponse
 import com.tamixa.api.admin.dto.FlagStoryRequest
 import com.tamixa.api.admin.dto.StoryDetailDto
 import com.tamixa.api.admin.dto.ParentDetailDto
@@ -39,6 +40,7 @@ import com.tamixa.application.analytics.CompletionMetricsDto
 import com.tamixa.application.analytics.DoraMetricsService
 import com.tamixa.application.analytics.RetentionMetricsDto
 import com.tamixa.application.analytics.VoiceCloneAnalyticsService
+import com.tamixa.application.edu.LifeSkillChoiceAnalyticsService
 import com.tamixa.application.admin.AdminParentNotFoundException
 import com.tamixa.application.admin.AdminService
 import com.tamixa.application.admin.ProcessingJobService
@@ -63,6 +65,7 @@ import com.tamixa.application.port.StoryRepositoryPort
 import com.tamixa.application.port.TtsMetadataCachePort
 import com.tamixa.application.port.VoiceRepositoryPort
 import com.tamixa.application.port.voice.ElevenLabsVoiceCloningPort
+import com.tamixa.application.port.voice.FishAudioVoiceCloningPort
 import com.tamixa.application.voice.VoiceCloningService
 import com.tamixa.application.avatar.AvatarFileTooLargeException
 import com.tamixa.application.avatar.AvatarNotFoundException
@@ -148,6 +151,7 @@ class AdminController(
     private val processingJobService: ProcessingJobService,
     @Autowired(required = false) private val voiceCloneAnalytics: VoiceCloneAnalyticsService?,
     @Autowired(required = false) private val elevenLabsVoiceCloningPort: ElevenLabsVoiceCloningPort?,
+    @Autowired(required = false) private val fishAudioVoiceCloningPort: FishAudioVoiceCloningPort?,
     private val restTemplate: RestTemplate,
     @Value("\${spring.flyway.enabled:true}") private val flywayEnabled: Boolean,
     @Value("\${spring.flyway.lock-retry-count:300}") private val flywayLockRetryCount: Int,
@@ -156,7 +160,8 @@ class AdminController(
     private val shortContentService: ShortContentService,
     private val shortContentGenerationService: ShortContentGenerationService,
     private val storyPipelineMetrics: StoryPipelineMetrics,
-    private val doraMetricsService: DoraMetricsService
+    private val doraMetricsService: DoraMetricsService,
+    private val lifeSkillChoiceAnalyticsService: LifeSkillChoiceAnalyticsService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     /** Prevent concurrent regenerate-with-prompt runs for the same story id. */
@@ -206,6 +211,17 @@ class AdminController(
             voiceCloneAnalytics?.getMetrics(days.coerceIn(1, 90))
                 ?: com.tamixa.application.analytics.VoiceCloneMetricsDto(periodDays = days, voiceCloneCreated = 0, voiceCloneUsed = 0)
         )
+
+    /**
+     * Aggregated interactive Edu episode choices (life_skill_choice_events). No per-child PII in the table;
+     * story titles are resolved for ops context only.
+     */
+    @GetMapping("/analytics/edu-life-skill-choices")
+    @PreAuthorize("@adminAuth.hasPermission('VIEW_STORIES')")
+    fun getEduLifeSkillChoiceAnalytics(
+        @RequestParam(defaultValue = "30") days: Int,
+    ): ResponseEntity<LifeSkillChoiceAnalyticsResponse> =
+        ResponseEntity.ok(lifeSkillChoiceAnalyticsService.getAggregates(days))
 
     @GetMapping("/info")
     @PreAuthorize("@adminAuth.hasPermission('VIEW_PARENTS')")
@@ -416,7 +432,7 @@ class AdminController(
 
     /**
      * Run no-consent voice cloning job for a profile that already has reference audio.
-     * Uses ElevenLabs directly when provider=elevenlabs, or ElevenLabs fallback when provider=google and fallback is enabled.
+     * Uses ElevenLabs when provider=elevenlabs (or Google+EL fallback), or Fish Audio when provider=fishaudio (or Google+Fish fallback).
      */
     @PostMapping("/parents/{parentId}/voice/{voiceProfileId}/run-job")
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','CONTENT_MANAGER','REVENUE_ANALYST','SUPPORT')")
@@ -425,10 +441,13 @@ class AdminController(
         @PathVariable voiceProfileId: Long
     ): ResponseEntity<Map<String, Any>> {
         val provider = appProperties.voiceCloning.provider.trim().lowercase()
-        val providerLabel = if (provider == "google" && appProperties.voiceCloning.allowElevenLabsFallback) {
-            "ElevenLabs fallback (Google primary)"
-        } else {
-            "ElevenLabs"
+        val providerLabel = when {
+            provider == "google" && appProperties.voiceCloning.allowElevenLabsFallback ->
+                "ElevenLabs fallback (Google primary)"
+            provider == "google" && appProperties.voiceCloning.allowFishAudioFallback ->
+                "Fish Audio fallback (Google primary)"
+            provider == "fishaudio" -> "Fish Audio"
+            else -> "ElevenLabs"
         }
         return try {
             val job = voiceCloningService.createElevenLabsVoiceCloningJobFromProfile(parentId, voiceProfileId)
@@ -484,14 +503,24 @@ class AdminController(
             .filter { it.audioStoragePath == referencePath }
             .maxByOrNull { it.createdAt }
             ?: return ResponseEntity.ok(emptyMap())
-        val providerAuthFailed = profile.elevenlabsVoiceId?.let { voiceId ->
+        val elAuthFailed = profile.elevenlabsVoiceId?.let { voiceId ->
             elevenLabsVoiceCloningPort?.hadRecentAuthFailure(voiceId) == true
         } ?: false
-        val providerQuotaFailed = profile.elevenlabsVoiceId?.let { voiceId ->
+        val elQuotaFailed = profile.elevenlabsVoiceId?.let { voiceId ->
             elevenLabsVoiceCloningPort?.hadRecentQuotaFailure(voiceId) == true
         } ?: false
+        val fishAuthFailed = profile.fishAudioModelId?.let { mid ->
+            fishAudioVoiceCloningPort?.hadRecentAuthFailure(mid) == true
+        } ?: false
+        val fishQuotaFailed = profile.fishAudioModelId?.let { mid ->
+            fishAudioVoiceCloningPort?.hadRecentQuotaFailure(mid) == true
+        } ?: false
+        val providerAuthFailed = elAuthFailed || fishAuthFailed
+        val providerQuotaFailed = elQuotaFailed || fishQuotaFailed
         val providerFailureMessage = profile.elevenlabsVoiceId?.let { voiceId ->
             elevenLabsVoiceCloningPort?.recentFailureMessage(voiceId)
+        } ?: profile.fishAudioModelId?.let { mid ->
+            fishAudioVoiceCloningPort?.recentFailureMessage(mid)
         }
         val elevenLabsKeyHealthy = isElevenLabsKeyHealthy()
         return ResponseEntity.ok(
@@ -502,16 +531,27 @@ class AdminController(
                 "audioFileSizeBytes" to latest.audioFileSizeBytes,
                 "voiceName" to latest.voiceName,
                 "elevenLabsVoiceId" to latest.elevenLabsVoiceId,
+                "fishAudioModelId" to latest.fishAudioModelId,
                 "status" to latest.status.name,
                 "errorMessage" to latest.errorMessage,
                 "providerAuthFailed" to providerAuthFailed,
                 "providerQuotaFailed" to providerQuotaFailed,
                 "providerStatusMessage" to when {
                     !providerFailureMessage.isNullOrBlank() -> providerFailureMessage
-                    providerQuotaFailed -> "ElevenLabs quota exceeded recently for this voice profile."
-                    providerAuthFailed && elevenLabsKeyHealthy ->
+                    providerQuotaFailed -> when {
+                        elQuotaFailed && fishQuotaFailed ->
+                            "Managed clone providers reported quota/credits issues recently for this voice profile."
+                        fishQuotaFailed ->
+                            "Fish Audio credits/billing issue detected recently for this voice profile."
+                        else ->
+                            "ElevenLabs quota exceeded recently for this voice profile."
+                    }
+                    providerAuthFailed && elevenLabsKeyHealthy && elAuthFailed ->
                         "ElevenLabs key is valid, but recent story synthesis failed for this voice profile (likely quota or request-size limit)."
-                    providerAuthFailed -> "ElevenLabs auth/permissions failure detected recently (401). Check ELEVENLABS_API_KEY/account permissions, then retry."
+                    providerAuthFailed && fishAuthFailed ->
+                        "Fish Audio auth or billing failure detected recently (401/402). Check FISH_AUDIO_API_KEY and account credits, then retry."
+                    providerAuthFailed ->
+                        "ElevenLabs auth/permissions failure detected recently (401). Check ELEVENLABS_API_KEY/account permissions, then retry."
                     else -> null
                 },
                 "createdAt" to latest.createdAt.toString(),
@@ -522,7 +562,7 @@ class AdminController(
 
     /**
      * Provider check for a specific voice profile.
-     * Runs a lightweight ElevenLabs synthesize probe for immediate operator feedback.
+     * Runs a lightweight synthesize probe (Fish Audio model id if present, otherwise ElevenLabs voice id).
      */
     @GetMapping("/parents/{parentId}/voice/{voiceProfileId}/provider-check")
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','CONTENT_MANAGER','REVENUE_ANALYST','SUPPORT')")
@@ -536,9 +576,77 @@ class AdminController(
                 mapOf("ok" to false, "message" to "Voice profile not found")
             )
         val provider = appProperties.voiceCloning.provider.trim().lowercase()
-        val fallbackEnabled = appProperties.voiceCloning.allowElevenLabsFallback
         val hasGoogleKey = !profile.googleVoiceCloningKey.isNullOrBlank()
         val hasElevenLabsVoiceId = !profile.elevenlabsVoiceId.isNullOrBlank()
+        val hasFishModelId = !profile.fishAudioModelId.isNullOrBlank()
+        val hasReferenceAudio = !profile.referenceAudioPath.isNullOrBlank()
+        val elevenLabsApiKeyConfigured = appProperties.voiceCloning.elevenLabsApiKey.isNotBlank()
+        val fishAudioApiKeyConfigured = appProperties.voiceCloning.fishAudioApiKey.isNotBlank()
+        val base = mutableMapOf<String, Any?>(
+            "provider" to provider,
+            "allowElevenLabsFallback" to appProperties.voiceCloning.allowElevenLabsFallback,
+            "allowFishAudioFallback" to appProperties.voiceCloning.allowFishAudioFallback,
+            "hasGoogleVoiceCloningKey" to hasGoogleKey,
+            "hasElevenLabsVoiceId" to hasElevenLabsVoiceId,
+            "hasFishAudioModelId" to hasFishModelId,
+            "hasReferenceAudio" to hasReferenceAudio,
+            "elevenLabsApiKeyConfigured" to elevenLabsApiKeyConfigured,
+            "fishAudioApiKeyConfigured" to fishAudioApiKeyConfigured
+        )
+        if (!hasFishModelId && !hasElevenLabsVoiceId) {
+            return ResponseEntity.ok(
+                base + mapOf(
+                    "ok" to false,
+                    "message" to "No Fish Audio model id or ElevenLabs voice id on this profile. Run managed clone job (no-consent path) first."
+                )
+            )
+        }
+        if (hasFishModelId) {
+            val fishAuthFailed = profile.fishAudioModelId?.let { mid ->
+                fishAudioVoiceCloningPort?.hadRecentAuthFailure(mid) == true
+            } ?: false
+            val fishQuotaFailed = profile.fishAudioModelId?.let { mid ->
+                fishAudioVoiceCloningPort?.hadRecentQuotaFailure(mid) == true
+            } ?: false
+            val fishFailureMessage = profile.fishAudioModelId?.let { mid ->
+                fishAudioVoiceCloningPort?.recentFailureMessage(mid)
+            }
+            base["providerAuthFailed"] = fishAuthFailed
+            base["providerQuotaFailed"] = fishQuotaFailed
+            base["providerStatusMessage"] = fishFailureMessage
+            val adapter = fishAudioVoiceCloningPort
+            if (adapter == null) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    base + mapOf(
+                        "ok" to false,
+                        "message" to "Fish Audio adapter is not active. Verify FISH_AUDIO_API_KEY and restart backend."
+                    )
+                )
+            }
+            val bytes = adapter.synthesize(
+                text = "Vanakkam, this is a provider check.",
+                modelId = profile.fishAudioModelId!!,
+                language = language
+            )
+            return if (bytes != null && bytes.isNotEmpty()) {
+                ResponseEntity.ok(
+                    base + mapOf(
+                        "ok" to true,
+                        "managedProvider" to "fishaudio",
+                        "sampleBytes" to bytes.size,
+                        "message" to "Fish Audio synthesize check succeeded."
+                    )
+                )
+            } else {
+                ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    base + mapOf(
+                        "ok" to false,
+                        "managedProvider" to "fishaudio",
+                        "message" to "Fish Audio synthesize returned empty. Check FISH_AUDIO_API_KEY, credits, and model id."
+                    )
+                )
+            }
+        }
         val providerAuthFailed = profile.elevenlabsVoiceId?.let { voiceId ->
             elevenLabsVoiceCloningPort?.hadRecentAuthFailure(voiceId) == true
         } ?: false
@@ -548,27 +656,9 @@ class AdminController(
         val providerFailureMessage = profile.elevenlabsVoiceId?.let { voiceId ->
             elevenLabsVoiceCloningPort?.recentFailureMessage(voiceId)
         }
-        val hasReferenceAudio = !profile.referenceAudioPath.isNullOrBlank()
-        val apiKeyConfigured = appProperties.voiceCloning.elevenLabsApiKey.isNotBlank()
-        val base = mutableMapOf<String, Any?>(
-            "provider" to provider,
-            "allowElevenLabsFallback" to fallbackEnabled,
-            "hasGoogleVoiceCloningKey" to hasGoogleKey,
-            "hasElevenLabsVoiceId" to hasElevenLabsVoiceId,
-            "hasReferenceAudio" to hasReferenceAudio,
-            "providerAuthFailed" to providerAuthFailed,
-            "providerQuotaFailed" to providerQuotaFailed,
-            "providerStatusMessage" to providerFailureMessage,
-            "elevenLabsApiKeyConfigured" to apiKeyConfigured
-        )
-        if (!hasElevenLabsVoiceId) {
-            return ResponseEntity.ok(
-                base + mapOf(
-                    "ok" to false,
-                    "message" to "No ElevenLabs voice ID on this profile. Run job (ElevenLabs path) first."
-                )
-            )
-        }
+        base["providerAuthFailed"] = providerAuthFailed
+        base["providerQuotaFailed"] = providerQuotaFailed
+        base["providerStatusMessage"] = providerFailureMessage
         val adapter = elevenLabsVoiceCloningPort
         if (adapter == null) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
@@ -578,9 +668,7 @@ class AdminController(
                 )
             )
         }
-        // Deep provider diagnostics with the same key used by runtime.
-        // This helps distinguish invalid key vs inaccessible voice vs TTS permissions.
-        if (apiKeyConfigured) {
+        if (elevenLabsApiKeyConfigured) {
             val apiKey = appProperties.voiceCloning.elevenLabsApiKey.trim()
             val userStatus = try {
                 val headers = HttpHeaders().apply { set("xi-api-key", apiKey) }
@@ -622,6 +710,7 @@ class AdminController(
             ResponseEntity.ok(
                 base + mapOf(
                     "ok" to true,
+                    "managedProvider" to "elevenlabs",
                     "sampleBytes" to bytes.size,
                     "message" to "ElevenLabs synthesize check succeeded."
                 )
@@ -630,6 +719,7 @@ class AdminController(
             ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
                 base + mapOf(
                     "ok" to false,
+                    "managedProvider" to "elevenlabs",
                     "message" to "ElevenLabs synthesize returned empty for this profile. Most common causes: invalid/expired API key, missing permissions, quota limits, or deleted voice ID."
                 )
             )
@@ -1272,7 +1362,7 @@ class AdminController(
                 )
             )
         } else {
-            log.warn("Regenerate cover failed for curated story id={} (DALL-E returned null or S3 storage failed)", id)
+            log.warn("Regenerate cover failed for curated story id={} (image generation returned null or S3 storage failed)", id)
             ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(mapOf("message" to "Regenerate cover failed (OpenAI blocked prompt, API unavailable, or storage unavailable). Try retrying with a safer story description."))
         }
@@ -2142,30 +2232,46 @@ class AdminController(
             ?.toLongOrNull()
             ?: return null
         val profile = voiceRepository.findByIdAndParentId(profileId, parentId) ?: return null
-        val providerAuthFailed = profile.elevenlabsVoiceId?.let { voiceId ->
+        val elAuth = profile.elevenlabsVoiceId?.let { voiceId ->
             elevenLabsVoiceCloningPort?.hadRecentAuthFailure(voiceId) == true
         } ?: false
-        val providerQuotaFailed = profile.elevenlabsVoiceId?.let { voiceId ->
+        val elQuota = profile.elevenlabsVoiceId?.let { voiceId ->
             elevenLabsVoiceCloningPort?.hadRecentQuotaFailure(voiceId) == true
         } ?: false
+        val fishAuth = profile.fishAudioModelId?.let { mid ->
+            fishAudioVoiceCloningPort?.hadRecentAuthFailure(mid) == true
+        } ?: false
+        val fishQuota = profile.fishAudioModelId?.let { mid ->
+            fishAudioVoiceCloningPort?.hadRecentQuotaFailure(mid) == true
+        } ?: false
+        val providerAuthFailed = elAuth || fishAuth
+        val providerQuotaFailed = elQuota || fishQuota
         if (!providerAuthFailed && !providerQuotaFailed) return null
         val providerMessage = profile.elevenlabsVoiceId?.let { voiceId ->
             elevenLabsVoiceCloningPort?.recentFailureMessage(voiceId)
+        } ?: profile.fishAudioModelId?.let { mid ->
+            fishAudioVoiceCloningPort?.recentFailureMessage(mid)
         }
         val elevenLabsKeyHealthy = isElevenLabsKeyHealthy()
         val effectiveLang = StreamLanguageUtils.normalize(language)
         if (!providerMessage.isNullOrBlank()) return "Preview blocked: $providerMessage"
+        if (providerQuotaFailed && fishQuota && !elQuota) {
+            return "Preview blocked: Fish Audio credits/billing issue detected recently for this voice profile. Top up or check FISH_AUDIO_API_KEY, then retry."
+        }
         if (providerQuotaFailed) {
             return "Preview blocked: ElevenLabs quota exceeded recently for this voice profile. Upgrade plan or wait for credits reset, then retry."
         }
-        if (providerAuthFailed && elevenLabsKeyHealthy) {
+        if (providerAuthFailed && elevenLabsKeyHealthy && elAuth) {
             return "Preview blocked: ElevenLabs key is valid, but recent story synthesis failed for this voice profile (likely quota or request-size limit). Check provider and credits, then retry."
         }
+        if (providerAuthFailed && fishAuth) {
+            return "Preview blocked: Fish Audio auth or billing failure detected recently. Check FISH_AUDIO_API_KEY and credits, run 'Check provider', then retry."
+        }
         return if (effectiveLang == "ta") {
-            "Preview blocked: ElevenLabs auth/permissions failure detected recently for this voice profile. " +
-                "Check ELEVENLABS_API_KEY/account permissions, run 'Check provider' for this row, then retry."
+            "Preview blocked: Managed clone provider auth/permissions failure detected recently for this voice profile. " +
+                "Check ELEVENLABS_API_KEY or FISH_AUDIO_API_KEY, run 'Check provider' for this row, then retry."
         } else {
-            "Preview blocked: ElevenLabs auth/permissions failure detected recently for this voice profile. " +
+            "Preview blocked: Managed clone provider auth/permissions failure detected recently for this voice profile. " +
                 "Run 'Check provider', fix provider auth, then retry."
         }
     }
@@ -2200,31 +2306,38 @@ class AdminController(
             ?.trim()
             ?.removePrefix("cloned:")
             ?.toLongOrNull()
-            ?: return "Tamil cloned voice failed: this profile has no cloned voice key. In Admin -> Voice & Avatar Studio: (1) Upload reference audio for this parent, (2) Run job (no-consent ElevenLabs path, also used as fallback when Google is primary) or upload consent + Run job (Google). Backend .env: VOICE_CLONING_ENABLED=true, VOICE_CLONING_PROVIDER=google + GOOGLE_CLOUD_TTS_API_KEY (optional fallback: VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK=true + ELEVENLABS_API_KEY). Restart backend after changing .env."
+            ?: return "Tamil cloned voice failed: this profile has no cloned voice key. In Admin -> Voice & Avatar Studio: (1) Upload reference audio for this parent, (2) Run managed clone job (ElevenLabs or Fish Audio) or upload consent + Run job (Google). Backend .env: VOICE_CLONING_ENABLED=true, VOICE_CLONING_PROVIDER=google + GOOGLE_CLOUD_TTS_API_KEY (optional: ELEVENLABS_API_KEY and/or FISH_AUDIO_API_KEY with matching fallback flags, or VOICE_CLONING_PROVIDER=fishaudio). Restart backend after changing .env."
 
         val profile = voiceRepository.findByIdAndParentId(profileId, parentId)
-            ?: return "Tamil cloned voice failed: this profile has no cloned voice key. In Admin -> Voice & Avatar Studio: (1) Upload reference audio for this parent, (2) Run job (no-consent ElevenLabs path, also used as fallback when Google is primary) or upload consent + Run job (Google). Backend .env: VOICE_CLONING_ENABLED=true, VOICE_CLONING_PROVIDER=google + GOOGLE_CLOUD_TTS_API_KEY (optional fallback: VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK=true + ELEVENLABS_API_KEY). Restart backend after changing .env."
+            ?: return "Tamil cloned voice failed: this profile has no cloned voice key. In Admin -> Voice & Avatar Studio: (1) Upload reference audio for this parent, (2) Run managed clone job (ElevenLabs or Fish Audio) or upload consent + Run job (Google). Backend .env: VOICE_CLONING_ENABLED=true, VOICE_CLONING_PROVIDER=google + GOOGLE_CLOUD_TTS_API_KEY (optional: ELEVENLABS_API_KEY and/or FISH_AUDIO_API_KEY with matching fallback flags, or VOICE_CLONING_PROVIDER=fishaudio). Restart backend after changing .env."
 
         val hasClonedVoiceData = !profile.googleVoiceCloningKey.isNullOrBlank() ||
             !profile.elevenlabsVoiceId.isNullOrBlank() ||
+            !profile.fishAudioModelId.isNullOrBlank() ||
             !profile.referenceAudioPath.isNullOrBlank()
 
         return if (hasClonedVoiceData) {
             val hasGoogleKey = !profile.googleVoiceCloningKey.isNullOrBlank()
             val hasElevenLabsVoice = !profile.elevenlabsVoiceId.isNullOrBlank()
+            val hasFishModel = !profile.fishAudioModelId.isNullOrBlank()
             val provider = appProperties.voiceCloning.provider.trim().lowercase()
             val elevenLabsFallbackEnabled = appProperties.voiceCloning.allowElevenLabsFallback
+            val fishFallbackEnabled = appProperties.voiceCloning.allowFishAudioFallback
             if (!hasGoogleKey && hasElevenLabsVoice && provider == "elevenlabs") {
                 "Tamil cloned voice preview failed: ElevenLabs could not synthesize this voice (auth/permissions/quota). Check ELEVENLABS_API_KEY and ElevenLabs account limits, then retry preview."
+            } else if (!hasGoogleKey && hasFishModel && provider == "fishaudio") {
+                "Tamil cloned voice preview failed: Fish Audio could not synthesize this voice (auth/permissions/credits). Check FISH_AUDIO_API_KEY and Fish account limits, then retry preview."
             } else if (!hasGoogleKey && hasElevenLabsVoice && provider == "google" && elevenLabsFallbackEnabled) {
                 "Tamil cloned voice preview failed: ElevenLabs fallback could not synthesize this voice (provider auth/permissions/quota). Fix ELEVENLABS_API_KEY/account limits or upload consent + Run job (Google) to generate a Google cloned key, then retry preview."
-            } else if (!hasGoogleKey && !hasElevenLabsVoice && !profile.referenceAudioPath.isNullOrBlank()) {
-                "Tamil cloned voice preview failed: this profile has reference audio but no active cloned key. Run job (ElevenLabs path) or upload consent + Run job (Google), then retry preview."
+            } else if (!hasGoogleKey && hasFishModel && provider == "google" && fishFallbackEnabled) {
+                "Tamil cloned voice preview failed: Fish Audio fallback could not synthesize this voice. Fix FISH_AUDIO_API_KEY/credits or upload consent + Run job (Google), then retry preview."
+            } else if (!hasGoogleKey && !hasElevenLabsVoice && !hasFishModel && !profile.referenceAudioPath.isNullOrBlank()) {
+                "Tamil cloned voice preview failed: this profile has reference audio but no active cloned key. Run managed clone job (ElevenLabs or Fish Audio path) or upload consent + Run job (Google), then retry preview."
             } else {
                 "Tamil cloned voice preview failed: this profile is cloned, but narration generation failed for this story/language. Check backend logs for the narration error, fix it in Story to Speech, then retry preview."
             }
         } else {
-            "Tamil cloned voice failed: this profile has no cloned voice key. In Admin -> Voice & Avatar Studio: (1) Upload reference audio for this parent, (2) Run job (no-consent ElevenLabs path, also used as fallback when Google is primary) or upload consent + Run job (Google). Backend .env: VOICE_CLONING_ENABLED=true, VOICE_CLONING_PROVIDER=google + GOOGLE_CLOUD_TTS_API_KEY (optional fallback: VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK=true + ELEVENLABS_API_KEY). Restart backend after changing .env."
+            "Tamil cloned voice failed: this profile has no cloned voice key. In Admin -> Voice & Avatar Studio: (1) Upload reference audio for this parent, (2) Run managed clone job (ElevenLabs or Fish Audio) or upload consent + Run job (Google). Backend .env: VOICE_CLONING_ENABLED=true, VOICE_CLONING_PROVIDER=google + GOOGLE_CLOUD_TTS_API_KEY (optional: VOICE_CLONING_ALLOW_ELEVENLABS_FALLBACK=true + ELEVENLABS_API_KEY, or VOICE_CLONING_ALLOW_FISH_AUDIO_FALLBACK=true + FISH_AUDIO_API_KEY, or VOICE_CLONING_PROVIDER=fishaudio). Restart backend after changing .env."
         }
     }
 
@@ -2401,6 +2514,9 @@ class AdminController(
                 parentDiscussionPrompts = request.parentDiscussionPrompts,
                 parentContentNote = request.parentContentNote,
                 speakAlongPrompt = request.speakAlongPrompt,
+                interactiveGraphJson = request.interactiveGraph,
+                postStoryMission = request.postStoryMission,
+                postStoryResourceUrl = request.postStoryResourceUrl,
             )
             if (story != null) {
             if (story.status == LibraryStoryStatus.PUBLISHED && runPipelineOnUpdate) {
@@ -2779,6 +2895,9 @@ class AdminController(
             parentDiscussionPrompts = request.parentDiscussionPrompts,
             parentContentNote = request.parentContentNote,
             speakAlongPrompt = request.speakAlongPrompt,
+            interactiveGraphJson = request.interactiveGraph,
+            postStoryMission = request.postStoryMission,
+            postStoryResourceUrl = request.postStoryResourceUrl,
         )
         if (story.status == LibraryStoryStatus.PUBLISHED && appProperties.translationPipeline.pipelineOnSubmitOnly) {
             log.info("PIPELINE >>> Create publish: triggering pipeline for storyId={} (content will be generated for all languages)", story.id)

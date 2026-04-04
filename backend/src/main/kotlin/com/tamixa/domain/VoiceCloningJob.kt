@@ -14,6 +14,7 @@ data class VoiceCloningJob(
     val audioFileSizeBytes: Long,
     val voiceName: String,
     val elevenLabsVoiceId: String?,
+    val fishAudioModelId: String? = null,
     val googleVoiceCloningKey: String? = null,
     val status: VoiceCloningStatus,
     val errorMessage: String?,

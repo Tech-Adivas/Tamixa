@@ -106,4 +106,14 @@ class LibraryStoryEntity(
 
     @Column(name = "speak_along_prompt", length = 500)
     var speakAlongPrompt: String? = null,
+
+    /** Branching narrative graph (JSON text). See docs/admin/EDU_METADATA_CONVENTIONS.md. */
+    @Column(name = "interactive_graph", columnDefinition = "TEXT")
+    var interactiveGraph: String? = null,
+
+    @Column(name = "post_story_mission", columnDefinition = "TEXT")
+    var postStoryMission: String? = null,
+
+    @Column(name = "post_story_resource_url", length = 512)
+    var postStoryResourceUrl: String? = null,
 )

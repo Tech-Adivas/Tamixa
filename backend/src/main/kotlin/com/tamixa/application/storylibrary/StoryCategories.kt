@@ -6,6 +6,7 @@ package com.tamixa.application.storylibrary
  * always use the exact strings the app expects for filtering and display.
  *
  * "Learn · …" entries are topic lanes for editorial use (theme/category may start with "Learn").
+ * "Learn · Simulator · …" marks interactive branching life-simulator content (see docs/admin/EDU_METADATA_CONVENTIONS.md).
  * "Fun stories" is the light / classic lane for tales curated mainly for laughs—move legacy rows here in admin.
  */
 object StoryCategories {
@@ -25,6 +26,8 @@ object StoryCategories {
         "Learn · Science & Nature",
         "Learn · Culture & Heritage",
         "Learn · Life Skills",
+        "Learn · Digital Safety",
+        "Learn · Simulator · Digital Safety",
     )
 
     /**

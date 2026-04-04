@@ -45,4 +45,10 @@ data class LibraryStory(
     val parentContentNote: String? = null,
     /** Optional one-line speak-along invitation. */
     val speakAlongPrompt: String? = null,
+    /** JSON graph for interactive library episodes (segment audio URLs + choices). */
+    val interactiveGraphJson: String? = null,
+    /** Post-episode family mission (plain text). */
+    val postStoryMission: String? = null,
+    /** Optional printable / external resource (e.g. decision journal PDF). */
+    val postStoryResourceUrl: String? = null,
 )

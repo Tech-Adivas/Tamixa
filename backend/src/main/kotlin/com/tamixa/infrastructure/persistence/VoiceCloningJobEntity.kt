@@ -28,6 +28,9 @@ data class VoiceCloningJobEntity(
     @Column(length = 255)
     val elevenLabsVoiceId: String?,
 
+    @Column(length = 128)
+    val fishAudioModelId: String? = null,
+
     @Column(columnDefinition = "TEXT")
     val googleVoiceCloningKey: String? = null,
 

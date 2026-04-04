@@ -7,7 +7,7 @@ export default function Home() {
         <div className="marketing-header-inner">
           <Link to="/" className="app-logo marketing-logo" aria-label="Tamixa Home">
             <span className="tamixa-app-icon">
-              <img src="/tamixa-logo.svg" alt="" className="app-logo-img" />
+              <img src="/tamixa-app-icon.png" alt="" className="app-logo-img" />
             </span>
             <span className="app-logo-text">Tamixa</span>
           </Link>

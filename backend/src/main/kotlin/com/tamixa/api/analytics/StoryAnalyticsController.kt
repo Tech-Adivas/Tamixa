@@ -28,11 +28,17 @@ class StoryAnalyticsController(
     fun trackAppEvent(@Valid @RequestBody request: TrackAppEventRequest): ResponseEntity<Unit> {
         val parentId = currentParentId()
         if (parentId == null) return ResponseEntity.status(401).build()
+        if (request.eventType == "library_hub") {
+            if (request.hubKey.isNullOrBlank()) return ResponseEntity.badRequest().build()
+        } else if (request.hubKey != null) {
+            return ResponseEntity.badRequest().build()
+        }
         log.debug(
-            "App event parentId={} type={} screen={} searchLen={} storyId={}",
+            "App event parentId={} type={} screen={} hubKey={} searchLen={} storyId={}",
             parentId,
             request.eventType,
             request.screenName,
+            request.hubKey,
             request.searchQueryLength,
             request.storyId
         )

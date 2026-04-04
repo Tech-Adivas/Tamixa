@@ -25,10 +25,10 @@ Senior review (Mobile dev, AI/ML, UI/UX) of the bulk story generation flow: gaps
 
 | Issue | Severity | Description |
 |-------|----------|-------------|
-| **No progress during generation** | Medium | User clicks Generate and waits. For 25 stories the backend can take **2–5+ minutes** (25 × OpenAI call). No progress bar or “N of 25” updates. |
-| **Client timeout risk** | High | Browser/fetch often time out (e.g. 60–120s). Backend runs 25 sequential OpenAI calls in one request; request can exceed client timeout and user sees generic failure. |
+| **No progress during generation** | Medium | User clicks Generate and waits. For 25 stories the backend can take **2–5+ minutes** (25 × LLM calls, OpenAI or Gemini per `AI_LLM_PROVIDER`). No progress bar or “N of 25” updates. |
+| **Client timeout risk** | High | Browser/fetch often time out (e.g. 60–120s). Backend runs 25 sequential LLM calls in one request; request can exceed client timeout and user sees generic failure. |
 | **No “what’s next” after success** | Low | Result card shows created/failed counts and list of created stories but no clear CTA: “View in Stories” / “Go to Story for review”. |
-| **Empty state when all fail** | Low | If `createdCount === 0` and `failedCount > 0`, message could be more helpful (“All generations failed. Check OPENAI_API_KEY and try fewer stories.”). |
+| **Empty state when all fail** | Low | **Addressed in UI:** failure copy now references `AI_LLM_PROVIDER` and `OPENAI_API_KEY` / `GEMINI_API_KEY`. |
 | **Accessibility** | Low | Number input and checkboxes are usable; ensure “All” and group labels are correctly associated (e.g. `aria-label` / `id`/`htmlFor`). |
 | **Link from result to story** | Low | Created items show id, language, category, title but are not clickable to open the story in Stories or Review. |
 
@@ -38,7 +38,7 @@ Senior review (Mobile dev, AI/ML, UI/UX) of the bulk story generation flow: gaps
 |-------|----------|-------------|
 | **Max tokens too low for long stories** | High | `generateStory()` uses `app.openai.max-tokens` (default **1024**). Prompt asks for 1500–1750 words. Output can be truncated and invalid JSON or cut-off story_text. |
 | **Duplicate title fails entire story** | Medium | `create()` checks `existsByTitle(title)`. If the model returns the same title twice (e.g. “Friendship Story 1”) the second save throws and that story is counted as failed. |
-| **No idempotency / rate limit for bulk** | Low | Two admins (or double-click) can run bulk at once; OpenAI rate limits may hit. No per-admin or global “one bulk run at a time” guard. |
+| **No idempotency / rate limit for bulk** | Low | Two admins (or double-click) can run bulk at once; LLM provider rate limits may hit. No per-admin or global “one bulk run at a time” guard. |
 | **estimated_duration_seconds parsed** | Low | Prompt asks for `estimated_duration_seconds` in JSON (legacy `estimated_duration` still supported); backend parses it into `readingTimeMinutes`. Optional improvement: display it in UI. |
 | **Single prompt = no system message** | Low | Bulk uses one user message. Tamixa system persona is only in single-story flow. Quality is acceptable but could be aligned with `StoryPromptBuilder` for consistency. |
 | **Error message to frontend** | Low | On failure (e.g. IllegalArgumentException), backend returns 400 with `message`. Some errors (e.g. “A story with this title already exists”) are user-actionable; others (e.g. “Model returned empty story_text”) are operational. |

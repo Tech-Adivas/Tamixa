@@ -1,5 +1,6 @@
 package com.tamixa.application.storylibrary
 
+import com.tamixa.api.admin.LibraryStoryMapper
 import com.tamixa.api.admin.LibraryStoryMapper.toResponse
 import com.tamixa.api.admin.dto.LibraryStoryListingResponse
 import com.tamixa.api.admin.dto.LibraryStoryResponse
@@ -337,6 +338,9 @@ class StoryLibraryService(
         parentDiscussionPrompts: List<String>? = null,
         parentContentNote: String? = null,
         speakAlongPrompt: String? = null,
+        interactiveGraphJson: String? = null,
+        postStoryMission: String? = null,
+        postStoryResourceUrl: String? = null,
     ): LibraryStory {
         // Validation: category/theme required (enforced by @NotBlank on theme)
         // Min word count
@@ -361,6 +365,10 @@ class StoryLibraryService(
             ?.mapNotNull { it.trim().takeIf { s -> s.isNotBlank() }?.take(400) }
             ?.take(10)
             ?.takeIf { it.isNotEmpty() }
+        val graphJson = StoryLibraryValidation.normalizeInteractiveGraphJson(interactiveGraphJson)
+        StoryLibraryValidation.validateInteractiveGraphThemeAlignment(theme, category, graphJson)
+        val mission = postStoryMission?.trim()?.take(8000)?.takeIf { it.isNotBlank() }
+        val resourceUrl = postStoryResourceUrl?.trim()?.take(512)?.takeIf { it.isNotBlank() }
         val story = LibraryStory(
             id = 0,
             title = title,
@@ -386,6 +394,9 @@ class StoryLibraryService(
             parentDiscussionPrompts = prompts,
             parentContentNote = parentContentNote?.trim()?.takeIf { it.isNotBlank() }?.take(4000),
             speakAlongPrompt = speakAlongPrompt?.trim()?.takeIf { it.isNotBlank() }?.take(500),
+            interactiveGraphJson = graphJson,
+            postStoryMission = mission,
+            postStoryResourceUrl = resourceUrl,
         )
         val saved = repository.save(story)
         // Create initial story_translation row for the story's language so content is visible in admin (all languages) and pipeline has a row to update
@@ -928,6 +939,9 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         parentDiscussionPrompts = master.parentDiscussionPrompts,
                         parentContentNote = master.parentContentNote,
                         speakAlongPrompt = master.speakAlongPrompt,
+                        interactiveGraph = LibraryStoryMapper.parseInteractiveGraphJson(master.interactiveGraphJson),
+                        postStoryMission = master.postStoryMission,
+                        postStoryResourceUrl = master.postStoryResourceUrl,
                     )
                 }
                 // No row or blank text: still surface script-only rows so admin sees pipeline output
@@ -1174,6 +1188,9 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         parentDiscussionPrompts = master.parentDiscussionPrompts,
                         parentContentNote = master.parentContentNote,
                         speakAlongPrompt = master.speakAlongPrompt,
+                        interactiveGraph = LibraryStoryMapper.parseInteractiveGraphJson(master.interactiveGraphJson),
+                        postStoryMission = master.postStoryMission,
+                        postStoryResourceUrl = master.postStoryResourceUrl,
                     )
                 }
                 PageImpl(content, translations.pageable, translations.totalElements)
@@ -1208,6 +1225,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         title = rejectIfTamilWhenNotTa(t.title, effectiveLang) ?: "",
                         content = t.content,
                         theme = master.theme,
+                        category = master.category,
                         language = effectiveLang,
                         age = master.age,
                         childName = master.childName,
@@ -1224,7 +1242,10 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         convertPromptUsed = master.convertPromptUsed,
                         emotionMode = master.emotionMode,
                         narrationApprovedAt = master.narrationApprovedAt,
-                        sourceContent = t.content
+                        sourceContent = t.content,
+                        interactiveGraph = LibraryStoryMapper.parseInteractiveGraphJson(master.interactiveGraphJson),
+                        postStoryMission = master.postStoryMission,
+                        postStoryResourceUrl = master.postStoryResourceUrl,
                     )
                 }
                 PageImpl(content, translations.pageable, translations.totalElements)
@@ -2111,6 +2132,10 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         parentContentNote: String? = null,
         /** When null, keep existing; when non-null (including blank), replace or clear. */
         speakAlongPrompt: String? = null,
+        /** When null, keep existing; when non-blank string, replace graph; blank clears. */
+        interactiveGraphJson: String? = null,
+        postStoryMission: String? = null,
+        postStoryResourceUrl: String? = null,
     ): LibraryStory? {
         val startedNs = System.nanoTime()
         fun elapsedMs(): Long = (System.nanoTime() - startedNs) / 1_000_000
@@ -2178,6 +2203,26 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             } else {
                 speakAlongPrompt.trim().take(500).takeIf { it.isNotBlank() }
             }
+        val resolvedGraph =
+            if (interactiveGraphJson == null) {
+                existing.interactiveGraphJson
+            } else {
+                StoryLibraryValidation.normalizeInteractiveGraphJson(interactiveGraphJson)
+            }
+        val categoryForValidation = category?.trim()?.take(100) ?: existing.category ?: theme.trim().take(100)
+        StoryLibraryValidation.validateInteractiveGraphThemeAlignment(theme.trim().take(100), categoryForValidation, resolvedGraph)
+        val resolvedMission =
+            if (postStoryMission == null) {
+                existing.postStoryMission
+            } else {
+                postStoryMission.trim().take(8000).takeIf { it.isNotBlank() }
+            }
+        val resolvedResource =
+            if (postStoryResourceUrl == null) {
+                existing.postStoryResourceUrl
+            } else {
+                postStoryResourceUrl.trim().take(512).takeIf { it.isNotBlank() }
+            }
         val updated = LibraryStory(
             id = existing.id,
             title = title?.takeIf { it.isNotBlank() },
@@ -2209,6 +2254,9 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             parentDiscussionPrompts = resolvedParentPrompts,
             parentContentNote = resolvedParentNote,
             speakAlongPrompt = resolvedSpeakAlong,
+            interactiveGraphJson = resolvedGraph,
+            postStoryMission = resolvedMission,
+            postStoryResourceUrl = resolvedResource,
         )
         val metadataChanged =
             normalizeForCompare(existing.theme) != normalizeForCompare(updated.theme) ||
@@ -2220,7 +2268,10 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                 normalizeForCompare(existing.childName) != normalizeForCompare(updated.childName) ||
                 existing.parentDiscussionPrompts != updated.parentDiscussionPrompts ||
                 normalizeForCompare(existing.parentContentNote) != normalizeForCompare(updated.parentContentNote) ||
-                normalizeForCompare(existing.speakAlongPrompt) != normalizeForCompare(updated.speakAlongPrompt)
+                normalizeForCompare(existing.speakAlongPrompt) != normalizeForCompare(updated.speakAlongPrompt) ||
+                normalizeForCompare(existing.interactiveGraphJson) != normalizeForCompare(updated.interactiveGraphJson) ||
+                normalizeForCompare(existing.postStoryMission) != normalizeForCompare(updated.postStoryMission) ||
+                normalizeForCompare(existing.postStoryResourceUrl) != normalizeForCompare(updated.postStoryResourceUrl)
         // Persist `library_stories` last: updating the master row first used to hold that row lock through
         // translation sync, S3 cleanup (submit-for-review), and LLM/TTS windows — blocking other writers and
         // matching admin client timeouts (Generate translations saves draft before rebuild).

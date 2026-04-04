@@ -11,6 +11,7 @@ data class VoiceCloningJobDto(
     val audioFileSizeBytes: Long,
     val voiceName: String,
     val elevenLabsVoiceId: String?,
+    val fishAudioModelId: String? = null,
     val status: VoiceCloningStatus,
     val errorMessage: String?,
     val createdAt: String,

@@ -10,20 +10,32 @@ class ParentRepositoryAdapter(
 ) : ParentRepositoryPort {
 
     override fun save(parent: Parent): Parent {
-        val entity = ParentEntity(
-            id = parent.id.takeIf { it > 0 } ?: 0,
-            email = parent.email,
-            passwordHash = parent.passwordHash,
-            role = parent.role,
-            createdAt = parent.createdAt,
-            phone = parent.phone,
-            nickname = parent.nickname,
-            displayName = parent.displayName,
-            suspendedAt = parent.suspendedAt,
-            storyArtPersonalizationOptIn = parent.storyArtPersonalizationOptIn
-        )
-        val saved = jpaRepository.save(entity)
-        return saved.toDomain()
+        if (parent.id <= 0) {
+            val entity = ParentEntity(
+                id = 0,
+                email = parent.email,
+                passwordHash = parent.passwordHash,
+                role = parent.role,
+                createdAt = parent.createdAt,
+                phone = parent.phone,
+                nickname = parent.nickname,
+                displayName = parent.displayName,
+                suspendedAt = parent.suspendedAt,
+                storyArtPersonalizationOptIn = parent.storyArtPersonalizationOptIn
+            )
+            return jpaRepository.save(entity).toDomain()
+        }
+        val existing = jpaRepository.findById(parent.id).orElseThrow {
+            IllegalStateException("Parent not found for save: id=${parent.id}")
+        }
+        existing.email = parent.email
+        existing.role = parent.role
+        existing.phone = parent.phone
+        existing.nickname = parent.nickname
+        existing.displayName = parent.displayName
+        existing.suspendedAt = parent.suspendedAt
+        existing.storyArtPersonalizationOptIn = parent.storyArtPersonalizationOptIn
+        return jpaRepository.save(existing).toDomain()
     }
 
     override fun findById(id: Long): Parent? =

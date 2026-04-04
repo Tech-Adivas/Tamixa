@@ -1447,8 +1447,8 @@ body.high-contrast .btn-outline {
 }
 
 .app-sidebar-logo-img {
-  max-width: 32px;
-  max-height: 32px;
+  max-width: 36px;
+  max-height: 36px;
   object-fit: contain;
 }
 
@@ -1691,14 +1691,14 @@ body.high-contrast .btn-outline {
 .tamixa-app-icon .app-logo-img {
   height: auto;
   max-height: 44px;
-  max-width: 140px;
+  max-width: 44px;
   object-position: center;
 }
 
 @media (min-width: 768px) {
   .tamixa-app-icon .app-logo-img {
     max-height: 48px;
-    max-width: 160px;
+    max-width: 48px;
   }
 }
 
@@ -1988,6 +1988,25 @@ body.high-contrast .btn-outline {
   height: 100%;
   object-fit: cover;
   border-radius: inherit;
+}
+
+.dash-poster-card-fallback {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: center / cover no-repeat url(/story-card-default.png);
+}
+
+.dash-resume-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  max-width: 100%;
+  background: linear-gradient(90deg, #d97706, #fde68a);
+  z-index: 4;
+  border-radius: 0 0 0.85rem 0.85rem;
+  pointer-events: none;
 }
 
 .dash-poster-row .poster-card {
@@ -2468,6 +2487,51 @@ body.high-contrast .btn-outline {
   letter-spacing: 0.02em;
 }
 
+.stories-library-hub-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.stories-library-hub-row {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.stories-library-hub-segment {
+  flex: 1;
+  min-width: 0;
+  padding: 0.55rem 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.92);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.05));
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 0.65rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stories-library-hub-segment:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.stories-library-hub-segment--active {
+  border-color: rgba(255, 255, 255, 0.42);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  background: linear-gradient(110deg, rgba(18, 90, 86, 0.55), rgba(180, 95, 70, 0.45));
+}
+
+.stories-hub-deeplink {
+  font-size: 0.72em;
+  padding: 0.1rem 0.25rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  word-break: break-all;
+}
+
 .stories-library-chips-shell {
   padding: 0.5rem 0.55rem 0.55rem;
   border-radius: 1rem;
@@ -2669,6 +2733,7 @@ body.high-contrast .btn-outline {
 }
 
 .story-card-tile {
+  position: relative;
   border-radius: 1.05rem;
   overflow: hidden;
   transition: transform 0.22s var(--tamixa-ease-out-expo);
@@ -3442,9 +3507,9 @@ body.high-contrast .btn-outline {
 
 .auth-shell-brand-logo-img {
   height: auto;
-  max-height: 52px;
+  max-height: 112px;
   width: auto;
-  max-width: 200px;
+  max-width: 112px;
   object-fit: contain;
   filter: drop-shadow(0 4px 24px rgba(0, 0, 0, 0.35));
 }
@@ -3964,6 +4029,192 @@ body.high-contrast .btn-outline {
   75% { transform: translate(5px, 3px); }
 }
 
+@keyframes tamixa-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Interactive library story — choice + mission overlays (above fixed player z-index 100) */
+.interactive-choice-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0));
+  animation: tamixa-fade-in var(--tamixa-duration-standard) var(--tamixa-ease-out-expo);
+}
+
+.interactive-choice-overlay--cards {
+  background: rgba(0, 0, 0, 0.62);
+  align-items: center;
+}
+
+.interactive-choice-overlay__panel {
+  width: 100%;
+  max-width: 28rem;
+}
+
+.interactive-choice-overlay__title {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.interactive-choice-overlay__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.interactive-choice-overlay__bubble {
+  width: 100%;
+  text-align: left;
+  border: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  padding: 0.85rem 1rem;
+  border-radius: 1.15rem;
+  background: #dcf8c6;
+  color: #111;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: transform var(--tamixa-duration-micro) var(--tamixa-ease-out-expo),
+    box-shadow var(--tamixa-duration-micro) ease;
+}
+
+.interactive-choice-overlay__bubble:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.interactive-choice-overlay__bubble:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.interactive-choice-overlay--cards .interactive-choice-overlay__bubble {
+  border-radius: 0.75rem;
+  background: #e8eef5;
+  color: #0d1b2a;
+}
+
+.mission-card-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 185;
+  background: rgba(0, 0, 0, 0.58);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  animation: tamixa-fade-in var(--tamixa-duration-standard) var(--tamixa-ease-out-expo);
+}
+
+.mission-card-overlay__card {
+  width: 100%;
+  max-width: 22rem;
+  background: #1e2a32;
+  border-radius: var(--tamixa-radius-xl);
+  padding: 1.25rem;
+  border: 1px solid var(--tamixa-border);
+  box-shadow: var(--tamixa-shadow-card);
+}
+
+.mission-card-overlay__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--tamixa-cream);
+}
+
+.mission-card-overlay__hint {
+  margin: 0.35rem 0 0.75rem;
+  font-size: 0.78rem;
+}
+
+.mission-card-overlay__body {
+  max-height: 40vh;
+  overflow-y: auto;
+  margin-bottom: 0.75rem;
+}
+
+.mission-card-overlay__text {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(255, 248, 240, 0.92);
+  white-space: pre-wrap;
+}
+
+.mission-card-overlay__link {
+  display: block;
+  width: 100%;
+  text-align: center;
+  margin-bottom: 0.5rem;
+  text-decoration: none;
+}
+
+.mission-card-overlay__done {
+  width: 100%;
+}
+
+/* Settings — practice signals card (pillars aligned with mobile Profile) */
+.life-skill-card__disclaimer {
+  margin: 0 0 0.75rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.life-skill-pillars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.life-skill-pillar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem 0.75rem;
+  align-items: center;
+}
+
+.life-skill-pillar__label {
+  font-size: 0.82rem;
+  color: var(--tamixa-cream);
+  opacity: 0.9;
+}
+
+.life-skill-pillar__value {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--tamixa-gold);
+  text-align: right;
+}
+
+.life-skill-pillar__track {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.life-skill-pillar__fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--tamixa-gold) 0%, var(--tamixa-orange) 100%);
+  min-width: 0;
+  transition: width var(--tamixa-duration-standard) var(--tamixa-ease-out-expo);
+}
+
 /* Global story audio player – fixed bar at bottom */
 .story-audio-player {
   position: fixed;
@@ -4000,6 +4251,101 @@ body.high-contrast .btn-outline {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.story-audio-player-practice-chip {
+  display: inline-block;
+  align-self: center;
+  margin: 0.45rem 0 0;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #fff;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  background: linear-gradient(110deg, rgba(18, 90, 86, 0.95), rgba(180, 95, 70, 0.9));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.story-audio-player-extras {
+  margin-top: 0.5rem;
+  width: 100%;
+  max-width: 100%;
+}
+
+.stories-playback-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.35rem 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 0.25rem;
+}
+
+.stories-playback-extras__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+}
+
+.stories-playback-extras__row--wrap {
+  flex-wrap: wrap;
+}
+
+.stories-playback-extras__label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--tamixa-gray);
+  min-width: 5.5rem;
+  flex-shrink: 0;
+}
+
+.stories-playback-extras__select {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid var(--tamixa-border);
+  background: var(--tamixa-surface-variant);
+  color: var(--tamixa-cream);
+}
+
+.stories-playback-karaoke {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--tamixa-cream);
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  max-height: 4.5rem;
+  overflow-y: auto;
+}
+
+.stories-onboarding-hint {
+  margin: 0 0 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--tamixa-radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(145deg, rgba(13, 148, 136, 0.18) 0%, rgba(59, 130, 246, 0.1) 55%, rgba(251, 191, 36, 0.08) 100%);
+  box-shadow: var(--tamixa-shadow-card);
+}
+
+.stories-onboarding-hint__text {
+  margin: 0 0 0.65rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--tamixa-cream);
+}
+
+.stories-onboarding-hint__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .stories-learn-badge {
@@ -4044,6 +4390,40 @@ body.high-contrast .btn-outline {
   position: absolute;
   top: 0.35rem;
   left: 0.35rem;
+  z-index: 2;
+  margin: 0;
+}
+
+.stories-interactive-badge {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.14rem 0.48rem;
+  border-radius: 999px;
+  background: linear-gradient(120deg, #0d9488 0%, #14b8a6 40%, #f59e0b 100%);
+  color: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 4px 14px -4px rgba(13, 148, 136, 0.5);
+  margin: 0;
+  max-width: calc(100% - 0.7rem);
+  text-align: center;
+  line-height: 1.2;
+}
+
+.story-card-tile .stories-interactive-badge {
+  margin: 0;
+}
+
+.dash-poster-card .stories-interactive-badge {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
   z-index: 2;
   margin: 0;
 }
@@ -4292,9 +4672,10 @@ body.high-contrast .btn-outline {
 
 .tamixa-splash__logo-img {
   display: block;
-  width: 260px;
-  height: auto;
+  width: min(260px, 42vw);
+  height: min(260px, 42vw);
   max-height: 50vh;
+  max-width: 50vh;
   object-fit: contain;
   filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.3)) drop-shadow(0 0 24px rgba(255, 255, 255, 0.08));
   animation: tamixa-logo-pulse 2.6s ease-in-out 1s infinite;

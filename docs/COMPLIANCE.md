@@ -64,7 +64,7 @@ This section maps senior/compliance feedback to current controls and remediation
 |----------|--------|-------------------------|
 | Age verification exists but no parental consent flow for under 13 | ⚠️ Partially addressed | **No child accounts:** Only parents register; child profiles (age 1–12) are created by parents. Parental consent is required before creating a child profile (`childProfileConsent` in ChildService; ConsentService records `child_profile_consent`). **Gap:** Add explicit parental attestation at registration (e.g. "I am the parent/guardian and am at least 18 years old" checkbox) and document as verifiable parental consent method. |
 | No explicit data minimization policy | ⚠️ Addressed | **Data minimization** is implied in Data Classification (Section 4) and child entity fields (name, DoB, language, optional voice). Add explicit **Data Minimization Policy** in Privacy Policy and here: we collect only what is necessary for story generation, voice, and account; no behavioural advertising; no sale of child data. See Section 7.3 (Child data for AI) below. |
-| No clear policy on how child data is used for AI generation | ⚠️ Addressed | **Child data for AI:** We send to OpenAI only: age, language, theme, and first name for personalisation. No parent email, no child ID, no persistent storage at OpenAI per DPA. Document this in Privacy Policy under "How we use your child's information" and in Section 12 (Vendor Risk Assessment). |
+| No clear policy on how child data is used for AI generation | ⚠️ Addressed | **Child data for AI:** We send to the **configured LLM provider** (OpenAI or Google Gemini per `AI_LLM_PROVIDER`): age, language, theme, and first name for personalisation. No parent email, no child ID; vendor retention and subprocessors follow the active provider’s terms/DPA. Document this in Privacy Policy under "How we use your child's information" and in Section 12 (Vendor Risk Assessment). |
 
 ### 2.3 PCI-DSS
 
@@ -364,10 +364,10 @@ Text-based data flow for Tamixa (parent and child data).
 
 | Context | Standard | Implementation note |
 |---------|----------|---------------------|
-| **Data in transit** | TLS 1.3 (prefer) or TLS 1.2 minimum | All client–backend and backend–OpenAI; disable TLS 1.0/1.1 |
+| **Data in transit** | TLS 1.3 (prefer) or TLS 1.2 minimum | All client–backend and backend–LLM/TTS providers (e.g. OpenAI, Google); disable TLS 1.0/1.1 |
 | **Data at rest – voice / sensitive binaries** | AES-256-GCM | 256-bit key; 12-byte IV; 128-bit auth tag (current: AesEncryptionService) |
 | **Passwords** | BCrypt (industry standard) | No reversible storage; Spring Security BCryptPasswordEncoder |
-| **Secrets** | Not stored in code or logs | Environment variables / secret manager (e.g. VOICE_ENCRYPTION_KEY, JWT_SECRET, OPENAI_API_KEY) |
+| **Secrets** | Not stored in code or logs | Environment variables / secret manager (e.g. VOICE_ENCRYPTION_KEY, JWT_SECRET, OPENAI_API_KEY, GEMINI_API_KEY) |
 
 ### 9.2 Key management
 
@@ -643,10 +643,10 @@ Use this checklist to align implementation with this compliance framework.
 
 ### 17.3 Encryption & transport
 
-- [ ] **TLS 1.2+** for all external connections (client, OpenAI).
+- [ ] **TLS 1.2+** for all external connections (client, LLM/TTS providers).
 - [ ] **Voice at rest:** AES-256-GCM; key from env/secret manager (current: AesEncryptionService).
 - [ ] **Passwords:** BCrypt only; no reversible storage.
-- [ ] **Secrets:** JWT_SECRET, VOICE_ENCRYPTION_KEY, OPENAI_API_KEY from environment only.
+- [ ] **Secrets:** JWT_SECRET, VOICE_ENCRYPTION_KEY, OPENAI_API_KEY and/or GEMINI_API_KEY (per configuration) from environment only.
 - [ ] **Webhook payload encryption (PCI/production):** When Stripe (or payment webhooks) is enabled in production, set `SUBSCRIPTION_WEBHOOK_ENCRYPTION_KEY` (32-byte Base64 AES key) so webhook payloads stored at rest are encrypted. Backend may enforce this at startup when `app.subscription.require-webhook-payload-encryption=true` and Stripe is enabled.
 
 ### 17.4 Audit & logging

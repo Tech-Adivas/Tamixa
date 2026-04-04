@@ -13,12 +13,14 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001}
 spring:
   jpa:
+    # Align with staging/prod when JDBC metadata is slow or unavailable at startup.
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     show-sql: false  # Use org.hibernate.SQL logger instead (show-sql writes to stdout separately = duplicate logs)
     hibernate:
       ddl-auto: update
   datasource:
-    # Keep dev aligned with Flyway/CI/staging precedence to avoid accidental split DB usage.
-    # DATABASE_* wins; else POSTGRES_*; else PG* (Railway / libpq) so deploys without SPRING_PROFILES_ACTIVE still reach linked Postgres.
+    # Same URL pattern as staging/prod. Precedence: DATABASE_URL (JDBC) → POSTGRES_* / PG* defaults.
+    # If DATABASE_URL is unset, DATABASE_PUBLIC_URL (postgresql://...) is promoted to JDBC by PostgresqlUrlEnvironmentPostProcessor.
     url: ${DATABASE_URL:jdbc:postgresql://${POSTGRES_HOST:${PGHOST:localhost}}:${POSTGRES_PORT:${PGPORT:5432}}/${POSTGRES_DB:${PGDATABASE:araro_kids}}}
     username: ${DATABASE_USERNAME:${POSTGRES_USER:${PGUSER:postgres}}}
     password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:${PGPASSWORD:postgres}}}

@@ -93,7 +93,7 @@ export default function BulkGenerateStoriesPage() {
           } else if (status.result.failedCount > 0) {
             showError(
               "No stories created",
-              "All generations failed. Check OPENAI_API_KEY and try fewer stories or different categories."
+              "All generations failed. Check AI_LLM_PROVIDER and the matching API key (OPENAI_API_KEY or GEMINI_API_KEY), then try fewer stories or different categories."
             );
           } else {
             showSuccess("Bulk generation completed", "Request completed (no stories requested).");
@@ -282,7 +282,7 @@ export default function BulkGenerateStoriesPage() {
             )}
             {result.createdCount === 0 && result.failedCount > 0 && (
               <p className="text-sm text-muted-foreground">
-                All generations failed. Check OPENAI_API_KEY and try fewer stories or different categories.
+                All generations failed. Check AI_LLM_PROVIDER and OPENAI_API_KEY or GEMINI_API_KEY, then try fewer stories or different categories.
               </p>
             )}
             {result.created.length > 0 && (
