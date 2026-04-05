@@ -1,0 +1,143 @@
+{
+  "startSegmentId": "ep12_hook",
+  "overlayStyle": "CARDS",
+  "segments": {
+    "ep12_hook": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep12/en/hook_to_node1.mp3",
+      "choices": [
+        {
+          "id": "pay_police_badge_fee",
+          "label": "Pay ₹999 now for the police verification trust badge",
+          "nextSegmentId": "ep12_mid_1",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -2,
+            "balance": -1
+          }
+        },
+        {
+          "id": "read_official_matrimonial_faq",
+          "label": "Read the matrimonial site FAQ on verified profiles and badges",
+          "nextSegmentId": "ep12_mid_2",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "discuss_match_offline_with_family",
+          "label": "Discuss the match offline with family before paying anything",
+          "nextSegmentId": "ep12_mid_3",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 1,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep12_mid_1": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep12/en/branch_pay_badge_plus_apk_kyc_trap.mp3",
+      "choices": [
+        {
+          "id": "install_video_kyc_apk",
+          "label": "Install this APK for quick video KYC",
+          "nextSegmentId": "ep12_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_apk_outside_play_store",
+          "label": "APK installs outside the Play Store are high identity risk",
+          "nextSegmentId": "ep12_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "meet_via_family_channel_only",
+          "label": "Meet new people only through a family-arranged channel we trust",
+          "nextSegmentId": "ep12_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep12_mid_2": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep12/en/branch_faq_rules_plus_apk_kyc_trap.mp3",
+      "choices": [
+        {
+          "id": "install_video_kyc_apk",
+          "label": "Install this APK for quick video KYC",
+          "nextSegmentId": "ep12_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_apk_outside_play_store",
+          "label": "APK installs outside the Play Store are high identity risk",
+          "nextSegmentId": "ep12_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "meet_via_family_channel_only",
+          "label": "Meet new people only through a family-arranged channel we trust",
+          "nextSegmentId": "ep12_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep12_mid_3": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep12/en/branch_family_discuss_plus_apk_kyc_trap.mp3",
+      "choices": [
+        {
+          "id": "install_video_kyc_apk",
+          "label": "Install this APK for quick video KYC",
+          "nextSegmentId": "ep12_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_apk_outside_play_store",
+          "label": "APK installs outside the Play Store are high identity risk",
+          "nextSegmentId": "ep12_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "meet_via_family_channel_only",
+          "label": "Meet new people only through a family-arranged channel we trust",
+          "nextSegmentId": "ep12_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep12_outcome_bad": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep12/en/outcome_matrimonial_apk_harvest.mp3",
+      "choices": []
+    },
+    "ep12_outcome_safe": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep12/en/outcome_safe_family.mp3",
+      "choices": []
+    },
+    "ep12_outcome_report": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep12/en/outcome_reported.mp3",
+      "choices": []
+    }
+  }
+}

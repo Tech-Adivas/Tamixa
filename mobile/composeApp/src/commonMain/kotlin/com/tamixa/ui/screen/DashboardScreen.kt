@@ -549,6 +549,8 @@ fun DashboardScreen(
     onNavigateToLibraryLearnSafety: () -> Unit = {},
     /** Opens Library Practice hub (Learn · Simulator / interactive graph). */
     onNavigateToLibrarySimulator: () -> Unit = {},
+    /** Opens Life readiness snapshot (radar + suggestions). */
+    onNavigateToLifeReadiness: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onNavigateToShortContent: () -> Unit = {},
     recentPlayback: List<RecentPlaybackItem> = emptyList(),
@@ -645,12 +647,16 @@ fun DashboardScreen(
                             ),
                         ) {
                             item(key = "hero") {
-                                val heroStories = remember(featuredStories, dedupedRecommended) {
-                                    (featuredStories + dedupedRecommended.mapNotNull { it.story })
+                                val heroStories = remember(featuredStories, dedupedRecommended, spotlightPreview) {
+                                    val fromSpotlight = spotlightPreview.take(4)
+                                    (fromSpotlight + featuredStories + dedupedRecommended.mapNotNull { it.story })
                                         .distinctBy { it.id }
                                         .filter { it.status == StoryStatus.READY }
                                         .take(10)
-                                        .ifEmpty { featuredStories }
+                                        .ifEmpty {
+                                            if (featuredStories.isNotEmpty()) featuredStories
+                                            else spotlightPreview.filter { it.status == StoryStatus.READY }.take(5)
+                                        }
                                 }
                                 val heroChromeBrush = remember {
                                     Brush.verticalGradient(
@@ -801,6 +807,22 @@ fun DashboardScreen(
                                             containerColor = TamixaColors.deepTeal.copy(alpha = 0.26f),
                                             borderColor = Color.White.copy(alpha = 0.3f),
                                             onClick = onNavigateToLibraryLearnSafety,
+                                        )
+                                    }
+                                    item {
+                                        DashboardSpotlightPill(
+                                            label = Strings.openPracticeHub(),
+                                            containerColor = Color(0xFF2D6A4F).copy(alpha = 0.35f),
+                                            borderColor = Color.White.copy(alpha = 0.28f),
+                                            onClick = onNavigateToLibrarySimulator,
+                                        )
+                                    }
+                                    item {
+                                        DashboardSpotlightPill(
+                                            label = Strings.lifeReadinessPillLabel(),
+                                            containerColor = TamixaColors.goldAccent.copy(alpha = 0.18f),
+                                            borderColor = TamixaColors.goldAccent.copy(alpha = 0.45f),
+                                            onClick = onNavigateToLifeReadiness,
                                         )
                                     }
                                 }

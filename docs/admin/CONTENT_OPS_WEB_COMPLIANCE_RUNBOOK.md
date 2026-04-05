@@ -59,3 +59,18 @@ Mobile uses the same hub **values** in `library?hub=…` (see `Screen.Library` i
 
 - Simulator authoring: **[EDUSTORY_SIMULATOR_CONTENT_BLUEPRINT.md](EDUSTORY_SIMULATOR_CONTENT_BLUEPRINT.md)**
 - Product vision (Edu lanes): **[EDUSTORY_PRODUCT_VISION.md](../EDUSTORY_PRODUCT_VISION.md)** §3.9
+- Digital Survival pilot (graph, scripts, seed): **[DIGITAL_SURVIVAL_GUIDE_EP01_GRAPH_AND_PILOT_SCRIPTS.md](DIGITAL_SURVIVAL_GUIDE_EP01_GRAPH_AND_PILOT_SCRIPTS.md)**
+
+## 9. Digital Survival Guide — DB seed (Flyway V86–V90)
+
+- **V86:** `backend/src/main/resources/db/migration/V86__digital_survival_guide_script_seed.sql` inserts **20** `library_stories` rows, all **`DRAFT`**, **`story_owner`** = `seed:digital-survival-guide-v1`.
+- **Episode 1:** six rows (`en`, `hi`, `ta`, `te`, `kn`, `ml`) with full **`interactive_graph`**, **`post_story_mission`**, parent prompts.
+- **V87:** `backend/src/main/resources/db/migration/V87__digital_survival_guide_ep02_kyc_graph.sql` **`UPDATE`s** the English **`[DSG Pilot] Ep02 — The KYC Countdown`** row with **`interactive_graph`**, mission, prompts. Requires V86 first.
+- **V88:** `backend/src/main/resources/db/migration/V88__digital_survival_guide_ep03_ep05_graphs.sql` **`UPDATE`s** English **Ep03–Ep05** pilot rows (courier APK, school panic, job fee).
+- **V89:** `backend/src/main/resources/db/migration/V89__digital_survival_guide_ep06_ep08_graphs.sql` **`UPDATE`s** English **Ep06–Ep08** (lottery/Telegram OTP, subsidy/Aadhaar upload, insurance screen-share).
+- **V90:** `backend/src/main/resources/db/migration/V90__digital_survival_guide_ep09_ep15_graphs.sql` **`UPDATE`s** English **Ep09–Ep15** (PAN/UPI, accidental transfer, refund remote desktop, matrimonial APK, trading tipster, society portal, hospital deposit urgency).
+- **Regenerate V86–V90 + test fixtures** after graph/label edits: `python3 backend/scripts/generate_digital_survival_guide_seed_sql.py` (writes `digital_survival_guide_ep01_en` … `ep15_en` `.graph.json` under `backend/src/test/resources/edu/`).
+- **Practice hub (mobile):** After publish + approval + audio, rows with theme **`Learn · Simulator · Digital Safety`** (or any non-empty **`interactiveGraph`**) show under **Library → Practice**. See **[DIGITAL_SURVIVAL_GUIDE_EP01_GRAPH_AND_PILOT_SCRIPTS.md](DIGITAL_SURVIVAL_GUIDE_EP01_GRAPH_AND_PILOT_SCRIPTS.md)** — section **App surfacing**.
+- **Local dev E2E (no CDN):** With **`dev`** profile, **`POST /api/v1/dev/digital-survival/prepare-e2e-seed`** then use the parent app with language **`en`**. Graph segment URLs are rewritten to **`/api/v1/dev/digital-survival/placeholder.mp3`**. See the Digital Survival doc subsection **Local dev — end-to-end**.
+- **Publish path:** Upload segment MP3s → set **`audio_file_url`** / narration pipeline as usual → **PUBLISHED** when ready. Filter or bulk-delete seed rows in admin by title prefix `[DSG]` or by **`story_owner`** if you replace them with production-owned copies.
+- **Authoring + VO scripts:** **[DIGITAL_SURVIVAL_GUIDE_EP01_GRAPH_AND_PILOT_SCRIPTS.md](DIGITAL_SURVIVAL_GUIDE_EP01_GRAPH_AND_PILOT_SCRIPTS.md)**

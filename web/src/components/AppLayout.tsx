@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { ROUTES } from "../lib/appRoutes";
 
 const navItems = [
   { to: "/stories", label: "Stories" },
   { to: "/dashboard", label: "Home" },
+  { to: ROUTES.lifeReadiness, label: "Life readiness" },
   { to: "/subscription", label: "Subscription" },
   { to: "/voice", label: "Voice" },
   { to: "/avatar", label: "Avatar" },
@@ -14,6 +16,7 @@ const navItems = [
 const ROUTE_PAGE_TITLES: Record<string, string> = {
   "/stories": "Stories",
   "/dashboard": "Home",
+  [ROUTES.lifeReadiness]: "Life readiness",
   "/subscription": "Subscription",
   "/voice": "Voice",
   "/avatar": "Avatar",

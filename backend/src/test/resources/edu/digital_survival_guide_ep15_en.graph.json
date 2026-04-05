@@ -1,0 +1,143 @@
+{
+  "startSegmentId": "ep15_hook",
+  "overlayStyle": "CARDS",
+  "segments": {
+    "ep15_hook": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep15/en/hook_to_node1.mp3",
+      "choices": [
+        {
+          "id": "transfer_hospital_deposit_upi_now",
+          "label": "Transfer the hospital deposit immediately on this UPI",
+          "nextSegmentId": "ep15_mid_1",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -2,
+            "balance": -1
+          }
+        },
+        {
+          "id": "call_relative_on_saved_number",
+          "label": "Call my relative on the number already saved in my phone",
+          "nextSegmentId": "ep15_mid_2",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "call_hospital_main_from_maps_or_bill",
+          "label": "Call the hospital main line from Google Maps or an old bill",
+          "nextSegmentId": "ep15_mid_3",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 1,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep15_mid_1": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep15/en/branch_transfer_now_plus_secrecy_trap.mp3",
+      "choices": [
+        {
+          "id": "obey_secrecy_do_not_worry_family",
+          "label": "Do not tell family — they will only worry more",
+          "nextSegmentId": "ep15_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_secrecy_urgency_signature",
+          "label": "Stop — secrecy plus urgency is a classic scam signature",
+          "nextSegmentId": "ep15_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "conference_family_known_number",
+          "label": "Start a conference call with family on a number we trust",
+          "nextSegmentId": "ep15_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep15_mid_2": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep15/en/branch_saved_relative_plus_secrecy_trap.mp3",
+      "choices": [
+        {
+          "id": "obey_secrecy_do_not_worry_family",
+          "label": "Do not tell family — they will only worry more",
+          "nextSegmentId": "ep15_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_secrecy_urgency_signature",
+          "label": "Stop — secrecy plus urgency is a classic scam signature",
+          "nextSegmentId": "ep15_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "conference_family_known_number",
+          "label": "Start a conference call with family on a number we trust",
+          "nextSegmentId": "ep15_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep15_mid_3": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep15/en/branch_hospital_main_plus_secrecy_trap.mp3",
+      "choices": [
+        {
+          "id": "obey_secrecy_do_not_worry_family",
+          "label": "Do not tell family — they will only worry more",
+          "nextSegmentId": "ep15_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_secrecy_urgency_signature",
+          "label": "Stop — secrecy plus urgency is a classic scam signature",
+          "nextSegmentId": "ep15_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "conference_family_known_number",
+          "label": "Start a conference call with family on a number we trust",
+          "nextSegmentId": "ep15_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep15_outcome_bad": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep15/en/outcome_hospital_wire_scam.mp3",
+      "choices": []
+    },
+    "ep15_outcome_safe": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep15/en/outcome_safe_family.mp3",
+      "choices": []
+    },
+    "ep15_outcome_report": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep15/en/outcome_reported.mp3",
+      "choices": []
+    }
+  }
+}

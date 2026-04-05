@@ -4,8 +4,10 @@ import com.tamixa.api.ApiVersion
 import com.tamixa.api.admin.dto.LibraryStoryResponse
 import com.tamixa.api.admin.dto.PagedResponse
 import com.tamixa.application.storylibrary.StoryLibraryService
+import com.tamixa.api.dev.DevDigitalSurvivalParentLibraryPostProcessor
 import com.tamixa.infrastructure.config.AppProperties
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.GetMapping
@@ -23,9 +25,13 @@ import org.springframework.web.bind.annotation.RestController
 @PreAuthorize("hasRole('PARENT')")
 class LibraryStoryController(
     private val storyLibraryService: StoryLibraryService,
-    private val appProperties: AppProperties
+    private val appProperties: AppProperties,
+    private val digitalSurvivalParentLibraryPostProcessor: ObjectProvider<DevDigitalSurvivalParentLibraryPostProcessor>,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+
+    private fun forParentClient(story: LibraryStoryResponse): LibraryStoryResponse =
+        digitalSurvivalParentLibraryPostProcessor.ifAvailable?.apply(story) ?: story
 
     /**
      * Lists library stories approved for delivery (human-verified in admin "Story for review").
@@ -51,7 +57,7 @@ class LibraryStoryController(
             learnHub = learnHub,
         )
         val response = PagedResponse(
-            content = result.content,
+            content = result.content.map { forParentClient(it) },
             page = result.number,
             size = result.size,
             totalElements = result.totalElements,
@@ -96,7 +102,7 @@ class LibraryStoryController(
             log.debug("LibraryStory id={} has no playable audio yet for language={}", id, language)
             return ResponseEntity.notFound().build()
         }
-        return ResponseEntity.ok(story)
+        return ResponseEntity.ok(forParentClient(story))
     }
 
     /**

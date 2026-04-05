@@ -292,6 +292,9 @@ app:
     keep-narration-approval-on-metadata-only-published-update: ${KEEP_NARRATION_APPROVAL_ON_METADATA_ONLY_PUBLISHED_UPDATE:false}
     # When true: TTS only for library_stories.language; playback + parent library + categories + admin pipeline status treat other locales as using master audio.
     master-only-narration: ${TRANSLATION_MASTER_ONLY_NARRATION:false}
+  digital-survival-dev:
+    rewrite-interactive-graph-audio-to-dev-placeholder: ${DIGITAL_SURVIVAL_DEV_REWRITE_GRAPH:false}
+    allow-prepare-e2e-seed-endpoint: ${DIGITAL_SURVIVAL_DEV_PREPARE_E2E:false}
   audio:
     base-url: ${AUDIO_BASE_URL:/audio}
     simulated-tts-delay-ms: ${AUDIO_SIMULATED_TTS_DELAY_MS:500}

@@ -34,6 +34,8 @@ sealed class Screen(val route: String) {
     data object MyVoiceAndAvatar : Screen("my-voice-avatar")
     data object Subscription : Screen("subscription")
     data object Settings : Screen("settings")
+    /** Family readiness radar + story suggestions (synced life-skill counters per child). */
+    data object LifeReadiness : Screen("life-readiness")
     /** Alias for [StorySelection]; navigates to the same browse/generate experience (legacy deep links). */
     data object Categories : Screen("categories")
     data object Favorites : Screen("favorites")

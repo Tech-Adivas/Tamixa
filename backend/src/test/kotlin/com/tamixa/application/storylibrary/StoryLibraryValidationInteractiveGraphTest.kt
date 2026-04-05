@@ -59,4 +59,36 @@ class StoryLibraryValidationInteractiveGraphTest {
             StoryLibraryValidation.validateInteractiveGraphThemeAlignment("Learn · Digital Safety", null, raw)
         }
     }
+
+    private fun assertDigitalSurvivalFixture(resourcePath: String) {
+        val raw = javaClass.getResourceAsStream(resourcePath)!!.bufferedReader().readText().trim()
+        assertEquals(raw, StoryLibraryValidation.normalizeInteractiveGraphJson(raw))
+        assertTrue(StoryLibraryValidation.interactiveGraphHasBranchingPayload(raw))
+        StoryLibraryValidation.validateInteractiveGraphThemeAlignment(
+            "Learn · Simulator · Digital Safety",
+            "Learn · Simulator · Digital Safety",
+            raw,
+        )
+    }
+
+    /**
+     * Fixtures generated with [backend/scripts/generate_digital_survival_guide_seed_sql.py]
+     * (same interactive_graph payloads as Flyway V86–V90 English pilot rows).
+     */
+    @Test
+    fun `digital survival guide ep01 english fixture graph validates and matches simulator theme`() {
+        assertDigitalSurvivalFixture("/edu/digital_survival_guide_ep01_en.graph.json")
+    }
+
+    @Test
+    fun `digital survival guide ep02 kyc english fixture graph validates and matches simulator theme`() {
+        assertDigitalSurvivalFixture("/edu/digital_survival_guide_ep02_en.graph.json")
+    }
+
+    @Test
+    fun `digital survival guide ep03 through ep15 english fixture graphs validate and match simulator theme`() {
+        for (n in 3..15) {
+            assertDigitalSurvivalFixture("/edu/digital_survival_guide_ep${String.format("%02d", n)}_en.graph.json")
+        }
+    }
 }

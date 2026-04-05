@@ -25,6 +25,8 @@ const Subscription = lazy(() => import("./pages/Subscription"));
 const Voice = lazy(() => import("./pages/Voice"));
 const Avatar = lazy(() => import("./pages/Avatar"));
 const Settings = lazy(() => import("./pages/Settings"));
+const LifeReadinessDashboard = lazy(() => import("./pages/LifeReadinessDashboard"));
+import { ROUTES } from "./lib/appRoutes";
 import "./index.css";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -110,6 +112,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <Settings />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path={ROUTES.lifeReadiness}
+        element={
+          <ProtectedRoute>
+            <LifeReadinessDashboard />
           </ProtectedRoute>
         }
       />

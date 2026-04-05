@@ -137,7 +137,7 @@ Before drafting, structure every episode in **four steps**:
 
 ## Immediate recommendation
 
-**Start with one track: “Digital survival guide.”** It matches the highest recurring demand in Indian forums and maps cleanly to **`Learn · Simulator · Digital Safety`**. Mastering **scam-theater** narrative (urgency, secrecy, tempting wrong taps) sets the template for money, leadership, and other simulators.
+**Start with one track: “Digital survival guide.”** It matches the highest recurring demand in Indian forums and maps cleanly to **`Learn · Simulator · Digital Safety`**. Mastering **scam-theater** narrative (urgency, secrecy, tempting wrong taps) sets the template for money, leadership, and other simulators. **Sample Episode 1 graph (JSON) + 15 pilot outlines:** [DIGITAL_SURVIVAL_GUIDE_EP01_GRAPH_AND_PILOT_SCRIPTS.md](DIGITAL_SURVIVAL_GUIDE_EP01_GRAPH_AND_PILOT_SCRIPTS.md).
 
 ---
 

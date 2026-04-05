@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -105,6 +106,7 @@ fun ProfileScreen(
     onNavigateToReadingStreak: () -> Unit = {},
     onNavigateToVocabulary: () -> Unit = {},
     onNavigateToClassroom: () -> Unit = {},
+    onNavigateToLifeReadiness: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val user = userState.dataOrNull()
@@ -250,6 +252,11 @@ fun ProfileScreen(
                         onChildSelected = onLifeSkillChildChange,
                     )
                 }
+                ProfileMenuItem(
+                    icon = Icons.Filled.AutoAwesome,
+                    label = Strings.lifeReadinessMenuItem(),
+                    onClick = onNavigateToLifeReadiness
+                )
                 ProfileMenuItem(
                     icon = Icons.Filled.School,
                     label = Strings.funAndLearn(),

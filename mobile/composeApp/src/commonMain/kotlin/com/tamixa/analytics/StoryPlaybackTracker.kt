@@ -6,6 +6,7 @@ import com.tamixa.network.StoryApi
 import com.tamixa.platform.currentTimeMillis
 import com.tamixa.util.TamixaConstants
 import com.tamixa.util.TamixaLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -44,13 +45,15 @@ class StoryPlaybackTracker(
     private fun savePlaybackToServer(story: Story, positionSeconds: Int) {
         val clamped = positionSeconds.coerceIn(0, MAX_POSITION_SECONDS)
         scope.launch {
-            runCatching {
+            try {
                 storyApi.savePlaybackPosition(
                     storyId = story.id,
                     storySource = storySource(story),
                     positionSeconds = clamped
                 )
-            }.onFailure { e ->
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 TamixaLog.w("StoryPlaybackTracker", "savePlaybackPosition failed storyId=${story.id}", e)
             }
         }
@@ -60,7 +63,7 @@ class StoryPlaybackTracker(
         if (started) return
         started = true
         scope.launch {
-            runCatching {
+            try {
                 analyticsApi.trackStoryEvent(
                     storyId = story.id,
                     storySource = storySource(story),
@@ -68,6 +71,10 @@ class StoryPlaybackTracker(
                     eventType = "story_started",
                     playbackPositionSeconds = positionSeconds
                 )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                TamixaLog.w("StoryPlaybackTracker", "trackStoryEvent story_started failed storyId=${story.id}", e)
             }
         }
     }
@@ -107,8 +114,12 @@ class StoryPlaybackTracker(
         emit(story, "story_completed", positionSeconds)
         savePlaybackToServer(story, positionSeconds)
         scope.launch {
-            runCatching {
+            try {
                 storyApi.reportStreamAnalytics(storyId = story.id, completed = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                TamixaLog.w("StoryPlaybackTracker", "reportStreamAnalytics failed storyId=${story.id}", e)
             }
         }
     }
@@ -122,13 +133,21 @@ class StoryPlaybackTracker(
 
     private fun emit(story: Story, eventType: String, positionSeconds: Int) {
         scope.launch {
-            runCatching {
+            try {
                 analyticsApi.trackStoryEvent(
                     storyId = story.id,
                     storySource = storySource(story),
                     language = story.language,
                     eventType = eventType,
                     playbackPositionSeconds = positionSeconds
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                TamixaLog.w(
+                    "StoryPlaybackTracker",
+                    "trackStoryEvent failed storyId=${story.id} event=$eventType",
+                    e
                 )
             }
         }

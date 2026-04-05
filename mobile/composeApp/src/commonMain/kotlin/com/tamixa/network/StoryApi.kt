@@ -65,6 +65,15 @@ data class LifeSkillCountersResponseDto(
 )
 
 @kotlinx.serialization.Serializable
+internal data class DigitalSurvivalDevPrepareResponseDto(
+    val message: String = "",
+    val storiesUpdated: Int? = null,
+    val translationsCreated: Int? = null,
+    val narrationsUpserted: Int? = null,
+    val next: String? = null,
+)
+
+@kotlinx.serialization.Serializable
 internal data class LimitReachedResponseDto(
     val status: String = "LIMIT_REACHED",
     val remaining: Int = 0,
@@ -79,6 +88,12 @@ class StoryGenerateBadRequestException(
     val apiCode: String?,
     message: String,
 ) : RuntimeException(message)
+
+/** Result of [StoryApi.prepareDigitalSurvivalDevE2eSeed] (dev backend only). */
+data class PrepareDigitalSurvivalDevE2eResult(
+    val success: Boolean,
+    val message: String,
+)
 
 class StoryApi(private val client: HttpClient) {
     suspend fun generate(request: GenerateStoryRequest): Story {
@@ -218,6 +233,48 @@ class StoryApi(private val client: HttpClient) {
             null
         }
     }
+
+    /**
+     * Dev backend only: publishes Digital Survival Flyway seeds for parent library E2E.
+     * No auth (Spring dev profile): /api/v1/dev/ routes are permitAll.
+     */
+    suspend fun prepareDigitalSurvivalDevE2eSeed(): PrepareDigitalSurvivalDevE2eResult =
+        try {
+            val resp = client.post("${ApiConfig.API_VERSION}/dev/digital-survival/prepare-e2e-seed") { }
+            val parsed = runCatching { resp.body<DigitalSurvivalDevPrepareResponseDto>() }.getOrNull()
+            if (resp.status.value in 200..299) {
+                val body = parsed ?: DigitalSurvivalDevPrepareResponseDto(message = "OK")
+                val detail =
+                    listOfNotNull(
+                        body.storiesUpdated?.let { "stories=$it" },
+                        body.translationsCreated?.let { "translations=$it" },
+                        body.narrationsUpserted?.let { "narrations=$it" },
+                    ).joinToString(", ")
+                val msg =
+                    if (detail.isNotEmpty() && body.message.isNotBlank()) {
+                        "${body.message} ($detail)"
+                    } else if (body.message.isNotBlank()) {
+                        body.message
+                    } else {
+                        "OK"
+                    }
+                PrepareDigitalSurvivalDevE2eResult(success = true, message = msg)
+            } else {
+                val fallback =
+                    parsed?.message?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: runCatching { resp.body<ApiErrorResponse>().message.trim() }
+                            .getOrNull()
+                            ?.takeIf { it.isNotEmpty() }
+                        ?: "HTTP ${resp.status.value}"
+                PrepareDigitalSurvivalDevE2eResult(success = false, message = fallback)
+            }
+        } catch (e: Exception) {
+            TamixaLog.w("StoryApi", "prepareDigitalSurvivalDevE2eSeed failed", e)
+            PrepareDigitalSurvivalDevE2eResult(
+                success = false,
+                message = e.message?.take(200)?.trim()?.ifEmpty { null } ?: "Request failed",
+            )
+        }
 
     /** Records a choice from an interactive library episode (soft stats / audit; no scores returned). */
     suspend fun recordLifeSkillChoice(

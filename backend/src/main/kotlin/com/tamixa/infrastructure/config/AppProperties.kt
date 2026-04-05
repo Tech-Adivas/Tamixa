@@ -43,6 +43,11 @@ data class AppProperties(
     val push: PushProperties = PushProperties(),
     /** Soft-deleted library stories: retention before permanent DB delete. */
     val libraryStorySoftDelete: LibraryStorySoftDeleteProperties = LibraryStorySoftDeleteProperties(),
+    /**
+     * Local E2E helpers for Digital Survival Guide seeds (`story_owner = seed:digital-survival-guide-v1`).
+     * All flags default false; enable only in dev profile. See DigitalSurvivalDevController.
+     */
+    val digitalSurvivalDev: DigitalSurvivalDevProperties = DigitalSurvivalDevProperties(),
     /** Optional reusable Python guardrails HTTP service (separate repo / container). */
     val guardrailsService: GuardrailsServiceProperties = GuardrailsServiceProperties(),
     /** AI control plane (governance registry + workflow runs). */
@@ -73,6 +78,18 @@ data class AppProperties(
         val storyProjectCode: String = "tamixa",
         /** Workflow key for story runs (seed default: `story.create_with_narration`). */
         val storyWorkflowKey: String = "story.create_with_narration",
+    )
+
+    data class DigitalSurvivalDevProperties(
+        /**
+         * When true (dev): parent library API responses rewrite interactive graph segment `audioUrl` values
+         * from `https://cdn.tamixa.app/library/sim/digital-survival-guide/...` to the local dev placeholder MP3 path.
+         */
+        val rewriteInteractiveGraphAudioToDevPlaceholder: Boolean = false,
+        /**
+         * When true (dev): `POST .../dev/digital-survival/prepare-e2e-seed` may run (still requires `dev` profile).
+         */
+        val allowPrepareE2eSeedEndpoint: Boolean = false,
     )
 
     data class LibraryStorySoftDeleteProperties(

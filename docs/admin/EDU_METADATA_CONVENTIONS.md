@@ -56,6 +56,7 @@ These strings are **canonical** in code: [StoryCategories.kt](../../backend/src/
 1. **New safety content:** tag **`Learn · Digital Safety`** until branching ships; then migrate pilot to **`Learn · Simulator · Digital Safety`**.
 2. **Bulk generation:** only use categories from the canonical list (admin bulk UI).
 3. **Custom / legacy strings:** backend `StoryCategories.toCanonical` maps known aliases; unknown strings still save—avoid one-off typos like `Learn-` without `·`.
+4. **Digital Survival Guide seed (optional reference catalog):** Flyway **V86** inserts DRAFT `library_stories` rows (`story_owner` = `seed:digital-survival-guide-v1`) — Episode 1 in six languages with `interactive_graph`, plus English outlines for Episodes 2–15. **V87–V90** attach `interactive_graph` to English **Ep02–Ep15** pilot rows (see **[DIGITAL_SURVIVAL_GUIDE_EP01_GRAPH_AND_PILOT_SCRIPTS.md](DIGITAL_SURVIVAL_GUIDE_EP01_GRAPH_AND_PILOT_SCRIPTS.md)**). See **[CONTENT_OPS_WEB_COMPLIANCE_RUNBOOK.md](CONTENT_OPS_WEB_COMPLIANCE_RUNBOOK.md)** §9. Regenerate: `python3 backend/scripts/generate_digital_survival_guide_seed_sql.py`.
 
 ---
 

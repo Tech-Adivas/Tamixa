@@ -1,5 +1,10 @@
 import { lintInteractiveGraphJson } from "./interactive-graph-lint";
 
+/** Parsed segment object inside `segments` (before normalization). */
+type InteractiveGraphSegmentJson = {
+  choices?: { id: string; label: string; nextSegmentId: string }[];
+};
+
 export type InteractiveGraphOutlineSegment = {
   id: string;
   choiceCount: number;
@@ -15,15 +20,13 @@ export function outlineInteractiveGraphJson(raw: string): InteractiveGraphOutlin
   if (!lint.ok) return null;
   let root: {
     startSegmentId?: string;
-    segments?: Record<
-      string,
-      {
-        choices?: { id: string; label: string; nextSegmentId: string }[];
-      }
-    >;
+    segments?: Record<string, InteractiveGraphSegmentJson>;
   };
   try {
-    root = JSON.parse(raw) as typeof root;
+    root = JSON.parse(raw) as {
+      startSegmentId?: string;
+      segments?: Record<string, InteractiveGraphSegmentJson>;
+    };
   } catch {
     return null;
   }
@@ -41,9 +44,9 @@ export function outlineInteractiveGraphJson(raw: string): InteractiveGraphOutlin
     const id = queue.shift()!;
     if (seen.has(id)) continue;
     seen.add(id);
-    const seg = segments[id];
+    const seg: InteractiveGraphSegmentJson | undefined = segments[id];
     if (!seg || typeof seg !== "object") continue;
-    const choices = Array.isArray(seg.choices)
+    const choices: InteractiveGraphOutlineSegment["choices"] = Array.isArray(seg.choices)
       ? seg.choices.map((c) => ({
           id: String(c.id ?? ""),
           label: String(c.label ?? ""),
@@ -66,9 +69,9 @@ export function outlineInteractiveGraphJson(raw: string): InteractiveGraphOutlin
     .filter((k) => !seen.has(k))
     .sort();
   for (const id of rest) {
-    const seg = segments[id];
+    const seg: InteractiveGraphSegmentJson | undefined = segments[id];
     if (!seg || typeof seg !== "object") continue;
-    const choices = Array.isArray(seg.choices)
+    const choices: InteractiveGraphOutlineSegment["choices"] = Array.isArray(seg.choices)
       ? seg.choices.map((c) => ({
           id: String(c.id ?? ""),
           label: String(c.label ?? ""),

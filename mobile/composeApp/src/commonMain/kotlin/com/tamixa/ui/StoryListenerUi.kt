@@ -29,8 +29,11 @@ fun isLearnStory(story: Story): Boolean = isLearnStory(story.theme, story.catego
 fun isLearnOrDigitalSafetyStory(story: Story): Boolean {
     if (isLearnStory(story)) return true
     val needle = "digital safety"
-    return story.theme.contains(needle, ignoreCase = true) ||
-        story.category?.contains(needle, ignoreCase = true) == true
+    if (story.theme.contains(needle, ignoreCase = true)) return true
+    if (story.category?.contains(needle, ignoreCase = true) == true) return true
+    val title = story.title?.trim().orEmpty()
+    if (title.contains("[dsg]", ignoreCase = true)) return true
+    return isInteractivePracticeLibraryStory(story)
 }
 
 /** Interactive life-simulator series (branching); theme/category starts with "Learn · Simulator". */
@@ -48,7 +51,12 @@ fun isSimulatorStory(story: Story): Boolean = isSimulatorStory(story.theme, stor
 fun isInteractivePracticeLibraryStory(story: Story): Boolean {
     if (isSimulatorStory(story)) return true
     val g = story.interactiveGraph
-    return g != null && g.isNotEmpty()
+    if (g != null && g.isNotEmpty()) return true
+    val title = story.title?.trim().orEmpty()
+    if (title.contains("[dsg]", ignoreCase = true)) return true
+    val mission = story.postStoryMission?.trim().orEmpty()
+    return mission.contains("edustory", ignoreCase = true) ||
+        mission.contains("simulator", ignoreCase = true)
 }
 
 private const val MAX_CONTEXT = 120

@@ -1,0 +1,143 @@
+{
+  "startSegmentId": "ep10_hook",
+  "overlayStyle": "CARDS",
+  "segments": {
+    "ep10_hook": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep10/en/hook_to_node1.mp3",
+      "choices": [
+        {
+          "id": "return_5000_to_stranger_upi",
+          "label": "Return ₹5000 to this UPI ID now — they said it was a mistake",
+          "nextSegmentId": "ep10_mid_1",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -2,
+            "balance": -1
+          }
+        },
+        {
+          "id": "check_upi_actually_credited",
+          "label": "Check my UPI app to see if money actually credited first",
+          "nextSegmentId": "ep10_mid_2",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "ignore_accidental_transfer_script",
+          "label": "Ignore it — this accidental-transfer script is very common",
+          "nextSegmentId": "ep10_mid_3",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 1,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep10_mid_1": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep10/en/branch_return_now_plus_test1_trap.mp3",
+      "choices": [
+        {
+          "id": "send_one_rupee_test_payment",
+          "label": "Send ₹1 as the test payment they asked for",
+          "nextSegmentId": "ep10_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_test_trains_trust",
+          "label": "Stop — even ₹1 tests train me to trust a stranger's story",
+          "nextSegmentId": "ep10_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "use_bank_dispute_not_stranger",
+          "label": "If money really arrived, use the bank dispute path — not their UPI",
+          "nextSegmentId": "ep10_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep10_mid_2": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep10/en/branch_check_credit_plus_test1_trap.mp3",
+      "choices": [
+        {
+          "id": "send_one_rupee_test_payment",
+          "label": "Send ₹1 as the test payment they asked for",
+          "nextSegmentId": "ep10_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_test_trains_trust",
+          "label": "Stop — even ₹1 tests train me to trust a stranger's story",
+          "nextSegmentId": "ep10_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "use_bank_dispute_not_stranger",
+          "label": "If money really arrived, use the bank dispute path — not their UPI",
+          "nextSegmentId": "ep10_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep10_mid_3": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep10/en/branch_ignore_script_plus_test1_trap.mp3",
+      "choices": [
+        {
+          "id": "send_one_rupee_test_payment",
+          "label": "Send ₹1 as the test payment they asked for",
+          "nextSegmentId": "ep10_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_test_trains_trust",
+          "label": "Stop — even ₹1 tests train me to trust a stranger's story",
+          "nextSegmentId": "ep10_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "use_bank_dispute_not_stranger",
+          "label": "If money really arrived, use the bank dispute path — not their UPI",
+          "nextSegmentId": "ep10_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep10_outcome_bad": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep10/en/outcome_upi_refund_trap.mp3",
+      "choices": []
+    },
+    "ep10_outcome_safe": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep10/en/outcome_safe_family.mp3",
+      "choices": []
+    },
+    "ep10_outcome_report": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep10/en/outcome_reported.mp3",
+      "choices": []
+    }
+  }
+}

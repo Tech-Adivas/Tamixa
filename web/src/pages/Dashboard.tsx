@@ -19,6 +19,7 @@ import {
   funCornerBadgeLabel,
   interactivePracticeBadgeLabel,
 } from "../lib/storyListenerUi";
+import { ROUTES } from "../lib/appRoutes";
 
 function formatResumeMeta(positionSeconds: number): string {
   if (positionSeconds < 60) {
@@ -159,6 +160,9 @@ export default function Dashboard() {
               </Link>
               <Link to="/stories" className="btn btn-outline btn-hero-secondary">
                 Browse tales
+              </Link>
+              <Link to={ROUTES.lifeReadiness} className="btn btn-outline btn-hero-secondary">
+                Life readiness
               </Link>
             </div>
           </header>

@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Link, useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import StoryAudioPlayer from "../components/StoryAudioPlayer";
-import InteractiveChoiceOverlay from "../components/InteractiveChoiceOverlay";
+import TamixaSimulatorPlayer from "../components/TamixaSimulatorPlayer";
 import MissionCardOverlay from "../components/MissionCardOverlay";
+import FinancialRealityHud from "../components/FinancialRealityHud";
+import ScamDetectionHud from "../components/ScamDetectionHud";
+import TimePassageSummaryModal from "../components/TimePassageSummaryModal";
 import {
   getLibraryStories,
   getLibraryCategories,
@@ -32,6 +35,7 @@ import {
   getNarrationScript,
   recordLifeSkillChoice,
   getProfile,
+  prepareDigitalSurvivalDevE2eSeed,
   trackAppEventLibraryHub,
   trackStoryInteractiveBranch,
   reportStreamAnalytics,
@@ -43,7 +47,9 @@ import {
   type GenerationTopic,
   type VoiceOption,
   type PlaybackManifest,
+  type ProfileChildDto,
 } from "../lib/api";
+import { ROUTES } from "../lib/appRoutes";
 import type { StreamUrlResponse } from "../lib/api";
 import { stripNarrationMarkers } from "../lib/narrationTextUtils";
 
@@ -68,10 +74,42 @@ import {
   parseInteractiveStoryGraph,
   resolveInteractiveSegmentAudioUrl,
   libraryRowForInteractivePlayback,
-  prefetchInteractiveAudio,
+  impactFromInteractiveChoice,
+  resolveInteractiveChoiceNavigation,
   type InteractiveStoryGraph,
   type InteractiveChoice,
 } from "../lib/interactiveStoryGraph";
+import {
+  clampMeter,
+  consumeEthicsShortcutPending,
+  getSimulatorPlaybook,
+  peekEthicsShortcutPending,
+  setEthicsShortcutPending,
+  type SimulatorPlaybookKind,
+} from "../lib/categoryLogicFactory";
+import {
+  applyImpactStats,
+  createWebLocalStorageStore,
+  DEFAULT_USER_LIFE_PROFILE,
+  loadUserLifeProfileFromStore,
+  saveUserLifeProfileToStore,
+} from "../lib/branchingEduStory";
+import type { FamilyEconomy } from "../lib/financialRealityEngine";
+import {
+  applyFinancialChoice,
+  applyMonthlyBurn,
+  DEFAULT_FAMILY_ECONOMY,
+  graphUsesFinancialReality,
+  isLiquidityCrisis,
+  simulateTimePassage,
+} from "../lib/financialRealityEngine";
+import { profileToLifeReadinessSnapshot } from "../lib/lifeReadinessModel";
+import {
+  getPerspective,
+  segmentContentBodyForRole,
+  setPerspective,
+  type FamilyPerspectiveRole,
+} from "../lib/tamixaFamilyBridge";
 import { useAuth } from "../contexts/AuthContext";
 import { EmptyState } from "../components/EmptyState";
 import {
@@ -253,6 +291,7 @@ export default function Stories() {
   const [generationTopics, setGenerationTopics] = useState<GenerationTopic[]>([]);
   const [genGenerationTopicId, setGenGenerationTopicId] = useState("");
   const [parentPanelStory, setParentPanelStory] = useState<LibraryStory | null>(null);
+  const parentPanelStoryRef = useRef<LibraryStory | null>(null);
   const [mine, setMine] = useState<Story[]>([]);
   const [, setMinePage] = useState({ page: 0, totalPages: 0, last: true });
   const [favorites, setFavorites] = useState<{ storyId: number; storySource: string }[]>([]);
@@ -331,10 +370,114 @@ export default function Stories() {
   const interactivePlaybackRef = useRef<typeof interactivePlayback>(null);
   const [interactiveChoiceOpen, setInteractiveChoiceOpen] = useState(false);
   const [interactiveMissionOpen, setInteractiveMissionOpen] = useState(false);
+  const [simulatorMeters, setSimulatorMeters] = useState({
+    authority: 50,
+    harmony: 50,
+    confidence: 38,
+  });
+  const lastInteractiveStoryIdRef = useRef<number | null>(null);
+  const [profileChildren, setProfileChildren] = useState<ProfileChildDto[]>([]);
+  const [dsgDevPrepareBusy, setDsgDevPrepareBusy] = useState(false);
+  const [dsgDevPrepareHint, setDsgDevPrepareHint] = useState<string | null>(null);
+  const [familyPerspectiveRole, setFamilyPerspectiveRole] = useState<FamilyPerspectiveRole>(() =>
+    typeof window !== "undefined" ? getPerspective() : "Child"
+  );
+  const [scamProofUnlocked, setScamProofUnlocked] = useState(false);
+  const [familyEconomy, setFamilyEconomy] = useState<FamilyEconomy | null>(null);
+  const familyEconomyRef = useRef<FamilyEconomy | null>(null);
+  const [timePassageModal, setTimePassageModal] = useState<{ title: string; lines: string[] } | null>(null);
+
+  const libraryLanguageCode = useMemo(() => {
+    const first = profileChildren.find((c) => c.languagePreference?.trim());
+    const lp = first?.languagePreference?.trim().toLowerCase();
+    if (lp) {
+      if (lp.startsWith("en")) return "en";
+      if (lp.startsWith("ta")) return "ta";
+      const two = lp.slice(0, 2);
+      if (/^[a-z]{2}$/.test(two)) return two;
+    }
+    if (typeof navigator !== "undefined" && navigator.language?.toLowerCase().startsWith("en")) {
+      return "en";
+    }
+    return "ta";
+  }, [profileChildren]);
 
   useEffect(() => {
     interactivePlaybackRef.current = interactivePlayback;
   }, [interactivePlayback]);
+
+  useEffect(() => {
+    parentPanelStoryRef.current = parentPanelStory;
+  }, [parentPanelStory]);
+
+  useEffect(() => {
+    familyEconomyRef.current = familyEconomy;
+  }, [familyEconomy]);
+
+  useEffect(() => {
+    const store = createWebLocalStorageStore();
+    loadUserLifeProfileFromStore(store)
+      .then((s) => {
+        const p = s?.profile ?? DEFAULT_USER_LIFE_PROFILE;
+        setScamProofUnlocked(profileToLifeReadinessSnapshot(p).tech >= 70);
+      })
+      .catch(() => setScamProofUnlocked(false));
+  }, []);
+
+  useEffect(() => {
+    if (!interactiveMissionOpen) return;
+    const store = createWebLocalStorageStore();
+    loadUserLifeProfileFromStore(store)
+      .then((s) => {
+        const p = s?.profile ?? DEFAULT_USER_LIFE_PROFILE;
+        setScamProofUnlocked(profileToLifeReadinessSnapshot(p).tech >= 70);
+      })
+      .catch(() => {});
+  }, [interactiveMissionOpen]);
+
+  const familyBridgeSegmentCaption = useMemo(() => {
+    if (!interactivePlayback) return null;
+    const seg = interactivePlayback.graph.segments[interactivePlayback.currentSegmentId];
+    const cap = segmentContentBodyForRole(seg, familyPerspectiveRole);
+    return cap.trim() ? cap : null;
+  }, [interactivePlayback, familyPerspectiveRole]);
+
+  useEffect(() => {
+    const sid = interactivePlayback?.storyId;
+    if (sid == null) {
+      lastInteractiveStoryIdRef.current = null;
+      return;
+    }
+    if (lastInteractiveStoryIdRef.current !== sid) {
+      lastInteractiveStoryIdRef.current = sid;
+      setSimulatorMeters({ authority: 50, harmony: 50, confidence: 38 });
+    }
+  }, [interactivePlayback]);
+
+  const simulatorPlaybook: SimulatorPlaybookKind = useMemo(() => {
+    if (!interactivePlayback || !parentPanelStory) return "default";
+    return getSimulatorPlaybook(
+      parentPanelStory.theme ?? "",
+      parentPanelStory.category ?? null,
+      interactivePlayback.graph.eduCategory
+    );
+  }, [interactivePlayback, parentPanelStory]);
+
+  const interactiveChoicePrefetchUrls = useMemo(() => {
+    if (!interactiveChoiceOpen || !interactivePlayback) return [];
+    const seg = interactivePlayback.graph.segments[interactivePlayback.currentSegmentId];
+    const urls: (string | null)[] = [];
+    for (const choice of seg?.choices ?? []) {
+      const next = interactivePlayback.graph.segments[choice.nextSegmentId];
+      if (next) urls.push(resolveInteractiveSegmentAudioUrl(next.audioUrl));
+      const alt = choice.consequenceSegmentId?.trim();
+      if (alt) {
+        const cons = interactivePlayback.graph.segments[alt];
+        if (cons) urls.push(resolveInteractiveSegmentAudioUrl(cons.audioUrl));
+      }
+    }
+    return urls.filter((u): u is string => Boolean(u));
+  }, [interactiveChoiceOpen, interactivePlayback]);
 
   /** Keep `?tab=` in sync when the user picks a tab (shareable / back button). */
   const setTabAndUrl = useCallback(
@@ -410,14 +553,17 @@ export default function Stories() {
   useEffect(() => {
     if (!user) {
       profileChildIdFallbackRef.current = null;
+      setProfileChildren([]);
       return;
     }
     getProfile()
       .then((p) => {
+        setProfileChildren(p.children ?? []);
         const first = (p.children ?? []).map((c) => c.id).find((id) => id > 0);
         profileChildIdFallbackRef.current = first ?? null;
       })
       .catch(() => {
+        setProfileChildren([]);
         profileChildIdFallbackRef.current = null;
       });
   }, [user]);
@@ -449,13 +595,13 @@ export default function Stories() {
   }, [searchParams, setTabAndUrl]);
 
   useEffect(() => {
-    getLibraryCategories("ta")
+    getLibraryCategories(libraryLanguageCode)
       .then(setLibraryCategories)
       .catch(() => setLibraryCategories([]));
     getGenerationTopics()
       .then(setGenerationTopics)
       .catch(() => setGenerationTopics([]));
-  }, []);
+  }, [libraryLanguageCode]);
 
   useEffect(() => {
     if (tab !== "library") return;
@@ -465,7 +611,7 @@ export default function Stories() {
     const hub = normalizeLibraryHub(libraryHubParam);
     const themeForApi = hub === "browse" ? libraryThemeFilter : null;
     const pageSize = hub === "browse" ? 50 : 100;
-    getLibraryStories("ta", 0, pageSize, themeForApi, false)
+    getLibraryStories(libraryLanguageCode, 0, pageSize, themeForApi, false)
       .then((rows) => {
         if (!cancelled) {
           setLibrary(rows);
@@ -484,7 +630,7 @@ export default function Stories() {
     return () => {
       cancelled = true;
     };
-  }, [tab, libraryThemeFilter, libraryRetryKey, libraryHubParam]);
+  }, [tab, libraryThemeFilter, libraryRetryKey, libraryHubParam, libraryLanguageCode]);
 
   const displayLibrary = useMemo(() => {
     if (tab !== "library") return [];
@@ -722,15 +868,32 @@ export default function Stories() {
     setInteractivePlayback(null);
     setInteractiveChoiceOpen(false);
     setInteractiveMissionOpen(false);
+    familyEconomyRef.current = null;
+    setFamilyEconomy(null);
+    setTimePassageModal(null);
     streamRequestStartMsRef.current = null;
     streamAnalyticsLatencySentRef.current = false;
     streamAnalyticsBufferSentRef.current = false;
+  }, []);
+
+  const persistLifeBarFromChoice = useCallback(async (ch: InteractiveChoice) => {
+    const impact = impactFromInteractiveChoice(ch);
+    if (Object.keys(impact).length === 0) return;
+    try {
+      const store = createWebLocalStorageStore();
+      const prev = await loadUserLifeProfileFromStore(store);
+      const base = prev?.profile ?? DEFAULT_USER_LIFE_PROFILE;
+      await saveUserLifeProfileToStore(store, applyImpactStats(base, impact));
+    } catch {
+      /* best-effort offline Life Bar */
+    }
   }, []);
 
   const handleInteractiveChoice = useCallback(
     async (ch: InteractiveChoice) => {
       const prev = interactivePlayback;
       if (!prev) return;
+      void persistLifeBarFromChoice(ch);
       void trackStoryInteractiveBranch(prev.storyId, "library", "ta");
       const cid = resolveLifeSkillChildIdForWeb(mine, profileChildIdFallbackRef.current);
       if (cid != null) {
@@ -743,11 +906,51 @@ export default function Stories() {
         });
         if (ok) bumpLifeSkillCountersRefresh();
       }
+      let nextSegmentId = resolveInteractiveChoiceNavigation(ch);
+      const econRef = familyEconomyRef.current;
+      if (econRef && graphUsesFinancialReality(prev.graph)) {
+        let e = applyMonthlyBurn(econRef);
+        e = applyFinancialChoice(e, ch.financialImpact, ch.id);
+        familyEconomyRef.current = e;
+        setFamilyEconomy(e);
+        if (isLiquidityCrisis(e)) {
+          const crisis =
+            ch.financialImpact?.crisisChapterSegmentId?.trim() ||
+            prev.graph.defaultCrisisSegmentId?.trim();
+          if (crisis && prev.graph.segments[crisis]) {
+            nextSegmentId = crisis;
+          }
+        }
+      }
+      if (ch.isShortcut === true && !ch.consequenceSegmentId?.trim()) {
+        setEthicsShortcutPending(prev.storyId);
+      }
+      setSimulatorMeters((m) => ({
+        authority: clampMeter(m.authority + (ch.authorityDelta ?? 0)),
+        harmony: clampMeter(m.harmony + (ch.harmonyDelta ?? 0)),
+        confidence: clampMeter(
+          m.confidence +
+            (ch.dialogueStyle === "simple_clear"
+              ? 10
+              : ch.dialogueStyle === "complex_or_performative"
+                ? 3
+                : 0)
+        ),
+      }));
       setInteractiveChoiceOpen(false);
-      setInteractivePlayback({ ...prev, currentSegmentId: ch.nextSegmentId });
+      setInteractivePlayback({ ...prev, currentSegmentId: nextSegmentId });
     },
-    [interactivePlayback, mine]
+    [interactivePlayback, mine, persistLifeBarFromChoice]
   );
+
+  const handleSimulateThreeMonths = useCallback(() => {
+    const e = familyEconomyRef.current;
+    if (!e) return;
+    const r = simulateTimePassage(e, 3);
+    familyEconomyRef.current = r.economy;
+    setFamilyEconomy(r.economy);
+    setTimePassageModal({ title: "Three months later", lines: r.summaryLines });
+  }, []);
 
   const dismissInteractiveMission = useCallback(() => {
     setInteractiveMissionOpen(false);
@@ -757,6 +960,16 @@ export default function Stories() {
   useEffect(() => {
     if (!interactivePlayback) return;
     const { graph, currentSegmentId, storyId } = interactivePlayback;
+    const gate = graph.segments[currentSegmentId]?.ethicsConsequenceRedirectIfShortcut?.trim();
+    if (gate && peekEthicsShortcutPending(storyId)) {
+      const targetSeg = graph.segments[gate];
+      if (targetSeg) {
+        consumeEthicsShortcutPending(storyId);
+        setInteractivePlayback((p) => (p ? { ...p, currentSegmentId: gate } : null));
+        return;
+      }
+      consumeEthicsShortcutPending(storyId);
+    }
     const seg = graph.segments[currentSegmentId];
     if (!seg) {
       setError("This episode’s interactive segment is missing.");
@@ -838,16 +1051,17 @@ export default function Stories() {
     const t = audioCurrentTime;
     if (d <= 0 || !Number.isFinite(d)) return;
     const frac = t / d;
-    if (seg.choices && seg.choices.length > 0 && frac >= 0.97) {
+    const ps = parentPanelStoryRef.current;
+    const hasMission =
+      ps != null &&
+      ((ps.postStoryMission?.trim() ?? "") !== "" || (ps.postStoryResourceUrl?.trim() ?? "") !== "");
+    /* Primary: audio `ended` opens choices; this covers browsers that omit `ended` near EOF */
+    if (seg.choices && seg.choices.length > 0 && frac >= 0.999) {
       setInteractiveChoiceOpen(true);
       audioRef.current?.pause();
       return;
     }
-    const hasMission =
-      parentPanelStory != null &&
-      ((parentPanelStory.postStoryMission?.trim() ?? "") !== "" ||
-        (parentPanelStory.postStoryResourceUrl?.trim() ?? "") !== "");
-    if ((!seg.choices || seg.choices.length === 0) && hasMission && frac >= 0.98) {
+    if ((!seg.choices || seg.choices.length === 0) && hasMission && frac >= 0.995) {
       setInteractiveMissionOpen(true);
       audioRef.current?.pause();
     }
@@ -860,21 +1074,7 @@ export default function Stories() {
     playingStoryId,
     playbackUsesBrowserTts,
     playingAvatarVideoUrl,
-    parentPanelStory,
   ]);
-
-  useEffect(() => {
-    if (!interactiveChoiceOpen || !interactivePlayback) return;
-    const seg = interactivePlayback.graph.segments[interactivePlayback.currentSegmentId];
-    const urls = (seg?.choices ?? [])
-      .map((choice) => {
-        const next = interactivePlayback.graph.segments[choice.nextSegmentId];
-        if (!next) return null;
-        return resolveInteractiveSegmentAudioUrl(next.audioUrl);
-      })
-      .filter((u): u is string => Boolean(u));
-    void prefetchInteractiveAudio(urls);
-  }, [interactiveChoiceOpen, interactivePlayback]);
 
   type StreamLoadResult = "ok" | "upgrade" | "no_audio" | "aborted";
 
@@ -1136,6 +1336,9 @@ export default function Stories() {
     setInteractivePlayback(null);
     setInteractiveChoiceOpen(false);
     setInteractiveMissionOpen(false);
+    familyEconomyRef.current = null;
+    setFamilyEconomy(null);
+    setTimePassageModal(null);
     streamRequestStartMsRef.current = null;
     streamAnalyticsLatencySentRef.current = false;
     streamAnalyticsBufferSentRef.current = false;
@@ -1205,6 +1408,14 @@ export default function Stories() {
           currentSegmentId: graph.startSegmentId,
           overlayStyle: graph.overlayStyle ?? null,
         });
+        if (graphUsesFinancialReality(graph)) {
+          const init = { ...DEFAULT_FAMILY_ECONOMY };
+          familyEconomyRef.current = init;
+          setFamilyEconomy(init);
+        } else {
+          familyEconomyRef.current = null;
+          setFamilyEconomy(null);
+        }
         playingStoryRef.current = { id: storyId, source: storySource };
         setPlayingTitle(titleOverride ?? getTitleForStory(storyId, storySource));
         const subSrcI =
@@ -1379,6 +1590,31 @@ export default function Stories() {
     const audio = audioRef.current;
     const video = videoRef.current;
     const handleEnded = () => {
+      const ipc = interactivePlaybackRef.current;
+      if (ipc) {
+        const seg = ipc.graph.segments[ipc.currentSegmentId];
+        if (seg?.choices && seg.choices.length > 0) {
+          setInteractiveChoiceOpen(true);
+          return;
+        }
+        const ps = parentPanelStoryRef.current;
+        const hasMission =
+          ps != null &&
+          ((ps.postStoryMission?.trim() ?? "") !== "" || (ps.postStoryResourceUrl?.trim() ?? "") !== "");
+        if (hasMission) {
+          setInteractiveMissionOpen(true);
+          return;
+        }
+      }
+      const psLinear = parentPanelStoryRef.current;
+      const hasMissionLinear =
+        psLinear != null &&
+        ((psLinear.postStoryMission?.trim() ?? "") !== "" ||
+          (psLinear.postStoryResourceUrl?.trim() ?? "") !== "");
+      if (hasMissionLinear && !ipc) {
+        setInteractiveMissionOpen(true);
+        return;
+      }
       const p = playingStoryRef.current;
       if (p && interactivePlaybackRef.current == null) {
         void reportStreamAnalytics({ storyId: p.id, completed: true });
@@ -1730,12 +1966,64 @@ export default function Stories() {
         onDurationChange={setAudioDuration}
         onSeek={handleSeek}
       />
+      {interactivePlayback ? (
+        <div className="family-bridge-bar" role="region" aria-label="Family co-listening">
+          <span className="family-bridge-bar__label">Listening lens</span>
+          <div className="family-bridge-bar__toggle" role="group" aria-label="Story viewpoint">
+            <button
+              type="button"
+              className={`family-bridge-bar__seg${familyPerspectiveRole === "Child" ? " family-bridge-bar__seg--on" : ""}`}
+              onClick={() => {
+                setPerspective("Child");
+                setFamilyPerspectiveRole("Child");
+              }}
+            >
+              Child
+            </button>
+            <button
+              type="button"
+              className={`family-bridge-bar__seg${familyPerspectiveRole === "Parent" ? " family-bridge-bar__seg--on" : ""}`}
+              onClick={() => {
+                setPerspective("Parent");
+                setFamilyPerspectiveRole("Parent");
+              }}
+            >
+              Parent
+            </button>
+          </div>
+          <span className="family-bridge-bar__hint muted">
+            Two-sided lines appear when the episode includes them in the graph.
+          </span>
+        </div>
+      ) : null}
+      {familyBridgeSegmentCaption ? (
+        <div className="family-bridge-caption" role="note">
+          <p className="family-bridge-caption__text">{familyBridgeSegmentCaption}</p>
+        </div>
+      ) : null}
+      {interactivePlayback && familyEconomy ? (
+        <FinancialRealityHud economy={familyEconomy} onSimulateThreeMonths={handleSimulateThreeMonths} />
+      ) : null}
+      {interactivePlayback && simulatorPlaybook === "digitalSafety" ? (
+        <ScamDetectionHud
+          signals={interactivePlayback.graph.segments[interactivePlayback.currentSegmentId]?.scamSignals}
+        />
+      ) : null}
       {interactiveChoiceOpen && interactivePlayback ? (
-        <InteractiveChoiceOverlay
+        <TamixaSimulatorPlayer
+          open
+          segmentKey={`${interactivePlayback.storyId}:${interactivePlayback.currentSegmentId}`}
+          reflectionPoint={
+            interactivePlayback.graph.segments[interactivePlayback.currentSegmentId]?.reflectionPoint ??
+            false
+          }
           choices={
             interactivePlayback.graph.segments[interactivePlayback.currentSegmentId]?.choices ?? []
           }
           overlayStyle={interactivePlayback.overlayStyle}
+          branchPrefetchUrls={interactiveChoicePrefetchUrls}
+          playbook={simulatorPlaybook}
+          meters={simulatorMeters}
           onChoice={(ch) => void handleInteractiveChoice(ch)}
         />
       ) : null}
@@ -1743,9 +2031,17 @@ export default function Stories() {
         <MissionCardOverlay
           missionText={parentPanelStory.postStoryMission}
           resourceUrl={parentPanelStory.postStoryResourceUrl}
+          storyTitle={parentPanelStory.title}
+          scamProofUnlocked={scamProofUnlocked}
           onDismiss={dismissInteractiveMission}
         />
       ) : null}
+      <TimePassageSummaryModal
+        open={timePassageModal != null}
+        title={timePassageModal?.title ?? ""}
+        lines={timePassageModal?.lines ?? []}
+        onClose={() => setTimePassageModal(null)}
+      />
       {parentPanelStory &&
       (parentPanelStory.parentContentNote?.trim() ||
         (parentPanelStory.parentDiscussionPrompts?.filter(Boolean).length ?? 0) > 0 ||
@@ -1812,6 +2108,9 @@ export default function Stories() {
             New tale
           </a>
         </div>
+        <p className="muted stories-page-top__hint">
+          <Link to={ROUTES.lifeReadiness}>Life readiness</Link> — gentle snapshot from interactive practice on this device.
+        </p>
       </header>
 
       {searchQuery.trim().length >= 2 && (
@@ -1990,6 +2289,33 @@ export default function Stories() {
                 </button>
               </div>
             </div>
+            {import.meta.env.DEV ? (
+              <div className="muted" style={{ marginTop: 8, fontSize: "0.85rem" }}>
+                <button
+                  type="button"
+                  className="stories-chip stories-chip--compact"
+                  disabled={dsgDevPrepareBusy}
+                  onClick={async () => {
+                    setDsgDevPrepareBusy(true);
+                    setDsgDevPrepareHint(null);
+                    try {
+                      const r = await prepareDigitalSurvivalDevE2eSeed();
+                      setDsgDevPrepareHint(r.ok ? r.message : `Failed: ${r.message}`);
+                      if (r.ok) setLibraryRetryKey((k) => k + 1);
+                    } finally {
+                      setDsgDevPrepareBusy(false);
+                    }
+                  }}
+                >
+                  {dsgDevPrepareBusy ? "Preparing DSG seed…" : "Dev: prepare Digital Survival E2E seed"}
+                </button>
+                {dsgDevPrepareHint ? (
+                  <span style={{ marginLeft: 8 }} role="status">
+                    {dsgDevPrepareHint}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             {libraryHub === "browse" && libraryCategories.length > 0 ? (
               <div className="stories-library-chips-shell">
                 <div className="stories-chips stories-chips--compact stories-chips--library" role="group" aria-label="Filter by theme">

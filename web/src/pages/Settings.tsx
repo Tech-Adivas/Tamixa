@@ -21,6 +21,7 @@ import {
   type LifeSkillCountersResponse,
   type ProfileChildDto,
 } from "../lib/api";
+import { ROUTES } from "../lib/appRoutes";
 import {
   LIFE_SKILL_CHILD_STORAGE_KEY,
   subscribeLifeSkillCountersRefresh,
@@ -346,7 +347,9 @@ export default function Settings() {
               <h2 className="page-section-title">Practice signals from story choices</h2>
               <div className="page-section-card life-skill-card">
                 <p className="muted" style={{ marginTop: 0, marginBottom: "0.65rem" }}>
-                  Same summary as the Tamixa app Profile card — updates after interactive Learn episodes on web or mobile.
+                  Same summary as the Tamixa app Profile card — updates after interactive Learn episodes on web or mobile.{" "}
+                  <Link to={ROUTES.lifeReadiness}>Open the life readiness view</Link> for a family-friendly chart and story
+                  ideas (web practice snapshot).
                 </p>
                 {lifeSkillChildren.length > 1 ? (
                   <div className="field" style={{ marginBottom: "0.75rem" }}>

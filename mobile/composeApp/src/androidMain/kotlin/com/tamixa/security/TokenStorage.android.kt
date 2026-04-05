@@ -29,15 +29,17 @@ class AndroidTokenStorage(context: Context) : TokenStorage {
 
     override fun saveTokens(accessToken: String, refreshToken: String, expiresInSeconds: Long) {
         val expiryMs = com.tamixa.platform.currentTimeMillis() + (expiresInSeconds * 1000)
+        // commit() so the next HTTP request (often immediate after login) always sees tokens;
+        // apply() only guarantees in-memory update, not necessarily visibility across threads.
         prefs.edit()
             .putString(KEY_ACCESS_TOKEN, accessToken)
             .putString(KEY_REFRESH_TOKEN, refreshToken)
             .putLong(KEY_EXPIRY_MS, expiryMs)
-            .apply()
+            .commit()
     }
 
     override fun clear() {
-        prefs.edit().clear().apply()
+        prefs.edit().clear().commit()
     }
 
     companion object {

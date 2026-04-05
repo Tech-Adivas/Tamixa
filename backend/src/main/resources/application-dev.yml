@@ -5,6 +5,10 @@ SEED_ADMIN_ENABLED: "true"
 # Dev passwordless: use code "123456" for web app login with any email (no email send needed)
 # Narration: longer TTS timeout for dev
 app:
+  digital-survival-dev:
+    # After Flyway V86–V90, POST /api/v1/dev/digital-survival/prepare-e2e-seed (no auth) then open mobile Library → Practice (language=en).
+    rewrite-interactive-graph-audio-to-dev-placeholder: true
+    allow-prepare-e2e-seed-endpoint: true
   auth:
     dev-otp-code: ${DEV_OTP_CODE:123456}
     dev-passwordless-code: ${DEV_PASSWORDLESS_CODE:123456}

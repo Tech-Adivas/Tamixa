@@ -67,6 +67,56 @@ export function resolveCoverUrl(url: string | null | undefined): string | null {
 }
 
 /**
+ * Resolve library / interactive-segment audio URLs the same way as mobile `ApiConfig.resolveAudioUrl`:
+ * `stories/…` → `{origin}/audio/stories/…`, `/api/…` paths → `{origin}/api/…`, localhost/127/10.0.2.2 rewritten to current API origin.
+ */
+export function resolveLibraryAudioUrl(url: string | null | undefined): string | null {
+  if (!url?.trim()) return null;
+  const base = getApiOrigin().replace(/\/$/, "");
+  if (!base) return null;
+  const audioFileUrl = url.trim();
+  if (audioFileUrl.startsWith("http://") || audioFileUrl.startsWith("https://")) {
+    if (
+      audioFileUrl.includes("localhost") ||
+      audioFileUrl.includes("127.0.0.1") ||
+      audioFileUrl.includes("10.0.2.2")
+    ) {
+      return audioFileUrl
+        .replace(/^https?:\/\/localhost(?::\d+)?/i, base)
+        .replace(/^https?:\/\/127\.0\.0\.1(?::\d+)?/i, base)
+        .replace(/^https?:\/\/10\.0\.2\.2(?::\d+)?/i, base);
+    }
+    return audioFileUrl;
+  }
+  if (audioFileUrl.startsWith("/audio/")) return base + audioFileUrl;
+  if (audioFileUrl.startsWith("/")) return base + audioFileUrl;
+  if (audioFileUrl.startsWith("stories/")) return `${base}/audio/${audioFileUrl}`;
+  return `${base}/${audioFileUrl}`;
+}
+
+/** Dev backend only: publish Digital Survival Flyway seeds for parent library E2E. No auth (permitAll on /api/v1/dev/ in dev profile). */
+export async function prepareDigitalSurvivalDevE2eSeed(): Promise<{ ok: boolean; message: string }> {
+  const origin = getApiOrigin();
+  const url = `${origin}/api/v1/dev/digital-survival/prepare-e2e-seed`;
+  try {
+    const res = await fetch(url, { method: "POST", credentials: "omit" });
+    let parsed: { message?: string } = {};
+    const text = await res.text();
+    try {
+      parsed = JSON.parse(text) as { message?: string };
+    } catch {
+      parsed = { message: text.slice(0, 200) };
+    }
+    if (!res.ok) {
+      return { ok: false, message: parsed.message?.trim() || `HTTP ${res.status}` };
+    }
+    return { ok: true, message: parsed.message?.trim() || "OK" };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Request failed" };
+  }
+}
+
+/**
  * Fetch a stream URL with auth and return a blob URL so the browser can play it.
  * Use when the stream URL is same-origin (backend returns e.g. http://localhost:8080/audio/...)
  * so the audio element can play without CORS issues. Caller must revoke the returned URL when done.

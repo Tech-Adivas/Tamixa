@@ -13,6 +13,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -181,6 +182,10 @@ fun LibraryScreen(
     apiBaseUrl: String? = null,
     /** Fires when the visible library lane changes (incl. initial deep link). No PII. */
     onHubTabChange: (LibraryHubTab) -> Unit = {},
+    /** When true (e.g. Koin `tamixaBuildEnvironment` == dev), show a one-shot DSG E2E seed control. */
+    showDevDigitalSurvivalPrepare: Boolean = false,
+    devDigitalSurvivalPrepareBusy: Boolean = false,
+    onPrepareDevDigitalSurvivalSeed: (() -> Unit)? = null,
 ) {
     var hubTab by rememberSaveable(initialHubTab) { mutableStateOf(initialHubTab) }
     LaunchedEffect(hubTab) {
@@ -221,6 +226,27 @@ fun LibraryScreen(
                     onLearnSafety = { hubTab = LibraryHubTab.LearnSafety },
                     onSimulator = { hubTab = LibraryHubTab.Simulator },
                 )
+                if (showDevDigitalSurvivalPrepare) {
+                    val seedHandler = onPrepareDevDigitalSurvivalSeed
+                    if (seedHandler != null) {
+                        TextButton(
+                            onClick = seedHandler,
+                            enabled = !devDigitalSurvivalPrepareBusy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text =
+                                    if (devDigitalSurvivalPrepareBusy) {
+                                        "Preparing Digital Survival seed…"
+                                    } else {
+                                        "Dev: prepare Digital Survival E2E seed"
+                                    },
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Color.White.copy(alpha = 0.92f),
+                            )
+                        }
+                    }
+                }
                 Text(
                     text = Strings.dashboardSpotlightSubtitle(),
                     style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),

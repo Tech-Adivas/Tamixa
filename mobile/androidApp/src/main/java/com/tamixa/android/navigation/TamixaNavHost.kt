@@ -14,6 +14,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.tamixa.ui.data.SampleData
+import com.tamixa.ui.isInteractivePracticeLibraryStory
+import com.tamixa.ui.isLearnOrDigitalSafetyStory
 import com.tamixa.util.TamixaConstants
 import com.tamixa.ui.state.UiState
 import androidx.navigation.NavType
@@ -33,6 +35,9 @@ import com.tamixa.ui.viewmodel.SubscriptionViewModel
 import com.tamixa.ui.viewmodel.AvatarViewModel
 import com.tamixa.ui.viewmodel.VoiceViewModel
 import com.tamixa.analytics.AppAnalytics
+import com.tamixa.application.port.PreferencesPort
+import com.tamixa.network.AuthApi
+import com.tamixa.network.StoryApi
 import org.koin.compose.koinInject
 import org.koin.core.qualifier.named
 import androidx.compose.foundation.layout.Box
@@ -309,7 +314,18 @@ fun TamixaNavHost(
                 settingsViewModel.loadListeningStreak()
             }
             val stories = storyViewModel.allStories().ifEmpty { SampleData.sampleStories() }
-            val spotlightPreviewRows = remember(curated) { curated.take(8) }
+            val spotlightPreviewRows = remember(curated) {
+                val practice =
+                    curated.filter { isInteractivePracticeLibraryStory(it) }
+                        .sortedByDescending { it.createdAt }
+                val learnOnly =
+                    curated.filter { isLearnOrDigitalSafetyStory(it) && !isInteractivePracticeLibraryStory(it) }
+                        .sortedByDescending { it.createdAt }
+                val rest =
+                    curated.filter { !isLearnOrDigitalSafetyStory(it) }
+                        .sortedByDescending { it.createdAt }
+                (practice + learnOnly + rest).distinctBy { it.id }.take(8)
+            }
             val spotlightSectionLoading = libraryLoading && curated.isEmpty()
             DashboardScreen(
                 greeting = Strings.goodEvening(),
@@ -331,6 +347,7 @@ fun TamixaNavHost(
                 onNavigateToLibraryFunCorner = { navController.navigate(Screen.Library.withHub(Screen.Library.HUB_FUN)) },
                 onNavigateToLibraryLearnSafety = { navController.navigate(Screen.Library.withHub(Screen.Library.HUB_LEARN_SAFETY)) },
                 onNavigateToLibrarySimulator = { navController.navigate(Screen.Library.withHub(Screen.Library.HUB_SIMULATOR)) },
+                onNavigateToLifeReadiness = { navController.navigate(Screen.LifeReadiness.route) },
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                 spotlightPreview = spotlightPreviewRows,
@@ -361,6 +378,11 @@ fun TamixaNavHost(
         ) { libEntry ->
             val apiBaseUrl: String = koinInject(named("apiBaseUrl"))
             val appAnalyticsLib: AppAnalytics = koinInject()
+            val storyApiLib: StoryApi = koinInject()
+            val buildEnv: String = koinInject(named("tamixaBuildEnvironment"))
+            val libraryPrepareScope = rememberCoroutineScope()
+            var devDsgPrepareBusy by remember { mutableStateOf(false) }
+            val showDevDsgPrepare = buildEnv == "dev"
             val hubArg = libEntry.arguments?.getString("hub") ?: Screen.Library.HUB_BROWSE
             val initialLibraryHub = when (hubArg) {
                 Screen.Library.HUB_FUN -> com.tamixa.ui.screen.LibraryHubTab.FunCorner
@@ -386,6 +408,26 @@ fun TamixaNavHost(
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                 apiBaseUrl = apiBaseUrl,
                 onHubTabChange = { tab -> appAnalyticsLib.trackLibraryHub(tab.toAnalyticsHubKey()) },
+                showDevDigitalSurvivalPrepare = showDevDsgPrepare,
+                devDigitalSurvivalPrepareBusy = devDsgPrepareBusy,
+                onPrepareDevDigitalSurvivalSeed =
+                    if (showDevDsgPrepare) {
+                        {
+                            libraryPrepareScope.launch {
+                                devDsgPrepareBusy = true
+                                val r = storyApiLib.prepareDigitalSurvivalDevE2eSeed()
+                                devDsgPrepareBusy = false
+                                if (r.success) {
+                                    appMessageNotifier.show(r.message, tag = "dev_dsg_seed")
+                                    storyViewModel.loadLibraryScreen(prefLangLib)
+                                } else {
+                                    appMessageNotifier.show("DSG seed failed: ${r.message}", tag = "dev_dsg_seed")
+                                }
+                            }
+                        }
+                    } else {
+                        null
+                    },
             )
         }
         composable(Screen.Profile.route) {
@@ -406,7 +448,89 @@ fun TamixaNavHost(
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                 onNavigateToHome = { navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
                 onNavigateToLibrary = { navController.navigate(Screen.Library.withHub()) },
+                onNavigateToLifeReadiness = { navController.navigate(Screen.LifeReadiness.route) },
                 onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.LifeReadiness.route) {
+            val storyApiLr: StoryApi = koinInject()
+            val authApiLr: AuthApi = koinInject()
+            val preferencesPortLr: PreferencesPort = koinInject()
+            val profilePrefsScopeLr = rememberCoroutineScope()
+            val appAnalyticsLr: AppAnalytics = koinInject()
+            LaunchedEffect(Unit) {
+                authViewModel.loadCurrentUser()
+                storyViewModel.loadMyStories()
+                appAnalyticsLr.trackScreenView("life_readiness")
+            }
+            val myStoriesLr by storyViewModel.myStories.collectAsState()
+            val lifeSkillRefreshVersionLr by storyViewModel.lifeSkillCountersRefreshVersion.collectAsState()
+            val educationChildIdLr = remember(myStoriesLr) { storyViewModel.firstEducationChildId() }
+            var profileChildrenLr by remember { mutableStateOf<List<com.tamixa.network.ProfileChildJson>>(emptyList()) }
+            LaunchedEffect(myStoriesLr) {
+                profileChildrenLr = authApiLr.getProfile()?.children.orEmpty()
+            }
+            val lifeSkillChildOptionsLr = remember(profileChildrenLr, educationChildIdLr) {
+                when {
+                    profileChildrenLr.isNotEmpty() -> profileChildrenLr.map { it.id to it.name }
+                    educationChildIdLr != null && educationChildIdLr > 0L ->
+                        listOf(educationChildIdLr to Strings.lifeSkillPracticeUnnamedChild())
+                    else -> emptyList()
+                }
+            }
+            var selectedLifeSkillChildIdLr by remember { mutableStateOf<Long?>(null) }
+            LaunchedEffect(lifeSkillChildOptionsLr) {
+                if (lifeSkillChildOptionsLr.isEmpty()) {
+                    selectedLifeSkillChildIdLr = null
+                    return@LaunchedEffect
+                }
+                val currentValid =
+                    selectedLifeSkillChildIdLr?.let { id -> lifeSkillChildOptionsLr.any { it.first == id } } == true
+                if (currentValid) return@LaunchedEffect
+                val preferred = preferencesPortLr.getLifeSkillPreferredChildId()
+                val preferredValid =
+                    preferred != null && lifeSkillChildOptionsLr.any { it.first == preferred }
+                selectedLifeSkillChildIdLr =
+                    if (preferredValid) preferred else lifeSkillChildOptionsLr.first().first
+            }
+            var lifeSkillCountersLr by remember { mutableStateOf<com.tamixa.network.LifeSkillCountersResponseDto?>(null) }
+            var lifeSkillCountersLoadingLr by remember { mutableStateOf(false) }
+            LaunchedEffect(selectedLifeSkillChildIdLr, lifeSkillRefreshVersionLr) {
+                lifeSkillCountersLr = null
+                val cid = selectedLifeSkillChildIdLr ?: return@LaunchedEffect
+                if (cid <= 0L) return@LaunchedEffect
+                lifeSkillCountersLoadingLr = true
+                try {
+                    lifeSkillCountersLr = storyApiLr.getLifeSkillCounters(cid)
+                } finally {
+                    lifeSkillCountersLoadingLr = false
+                }
+            }
+            LifeReadinessScreen(
+                counters = lifeSkillCountersLr,
+                countersLoading = lifeSkillCountersLoadingLr,
+                lifeSkillChildOptions = lifeSkillChildOptionsLr,
+                selectedLifeSkillChildId = selectedLifeSkillChildIdLr,
+                onLifeSkillChildChange = { id ->
+                    selectedLifeSkillChildIdLr = id
+                    profilePrefsScopeLr.launch {
+                        preferencesPortLr.setLifeSkillPreferredChildId(id)
+                    }
+                },
+                onBack = { navController.popBackStack() },
+                onNavigateToHome = {
+                    navController.navigate(Screen.Dashboard.route) {
+                        popUpTo(Screen.Dashboard.route) { inclusive = true }
+                    }
+                },
+                onNavigateToLibrary = { navController.navigate(Screen.Library.withHub()) },
+                onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
+                onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                onNavigateToLibraryHub = { hub ->
+                    navController.navigate(Screen.Library.withHub(hub)) {
+                        launchSingleTop = true
+                    }
+                },
             )
         }
         composable(Screen.StorySelection.route) {

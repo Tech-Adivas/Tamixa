@@ -1,0 +1,143 @@
+{
+  "startSegmentId": "ep09_hook",
+  "overlayStyle": "CARDS",
+  "segments": {
+    "ep09_hook": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep09/en/hook_to_node1.mp3",
+      "choices": [
+        {
+          "id": "panic_open_pan_sms_link",
+          "label": "Panic and open the PAN link in this SMS right now",
+          "nextSegmentId": "ep09_mid_1",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -2,
+            "balance": -1
+          }
+        },
+        {
+          "id": "type_incometax_gov_url_only",
+          "label": "Open incometax.gov.in by typing the URL — not from the message",
+          "nextSegmentId": "ep09_mid_2",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "ask_ca_or_family_reader",
+          "label": "Ask our CA or a literate family member before I act",
+          "nextSegmentId": "ep09_mid_3",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 1,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep09_mid_1": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep09/en/branch_panic_link_plus_100_fee_trap.mp3",
+      "choices": [
+        {
+          "id": "pay_100_processing_upi",
+          "label": "Pay ₹100 processing on this UPI ID they sent",
+          "nextSegmentId": "ep09_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_random_gov_sms_fee",
+          "label": "Stop — real government sites do not collect random ₹100 from SMS",
+          "nextSegmentId": "ep09_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "verify_deadline_official_site_only",
+          "label": "Verify any PAN–Aadhaar deadline only on the official Income Tax website",
+          "nextSegmentId": "ep09_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep09_mid_2": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep09/en/branch_typed_itr_plus_100_fee_trap.mp3",
+      "choices": [
+        {
+          "id": "pay_100_processing_upi",
+          "label": "Pay ₹100 processing on this UPI ID they sent",
+          "nextSegmentId": "ep09_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_random_gov_sms_fee",
+          "label": "Stop — real government sites do not collect random ₹100 from SMS",
+          "nextSegmentId": "ep09_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "verify_deadline_official_site_only",
+          "label": "Verify any PAN–Aadhaar deadline only on the official Income Tax website",
+          "nextSegmentId": "ep09_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep09_mid_3": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep09/en/branch_ca_family_plus_100_fee_trap.mp3",
+      "choices": [
+        {
+          "id": "pay_100_processing_upi",
+          "label": "Pay ₹100 processing on this UPI ID they sent",
+          "nextSegmentId": "ep09_outcome_bad",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": -3
+          }
+        },
+        {
+          "id": "refuse_random_gov_sms_fee",
+          "label": "Stop — real government sites do not collect random ₹100 from SMS",
+          "nextSegmentId": "ep09_outcome_safe",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 2,
+            "balance": 1
+          }
+        },
+        {
+          "id": "verify_deadline_official_site_only",
+          "label": "Verify any PAN–Aadhaar deadline only on the official Income Tax website",
+          "nextSegmentId": "ep09_outcome_report",
+          "skillDeltas": {
+            "DIGITAL_WISDOM": 3,
+            "balance": 1
+          }
+        }
+      ]
+    },
+    "ep09_outcome_bad": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep09/en/outcome_fake_itr_harvest.mp3",
+      "choices": []
+    },
+    "ep09_outcome_safe": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep09/en/outcome_safe_family.mp3",
+      "choices": []
+    },
+    "ep09_outcome_report": {
+      "audioUrl": "https://cdn.tamixa.app/library/sim/digital-survival-guide/ep09/en/outcome_reported.mp3",
+      "choices": []
+    }
+  }
+}

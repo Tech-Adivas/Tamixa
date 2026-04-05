@@ -1957,6 +1957,13 @@ object Strings {
         else -> "Learn & safety"
     }
 
+    /** Dashboard spotlight: library Practice hub (Learn · Simulator). */
+    fun openPracticeHub(): String = when (languageCode) {
+        "ta" -> "பயிற்சி (சிமுலேட்டர்)"
+        "hi" -> "अभ्यास (सिम्युलेटर)"
+        else -> "Practice (simulator)"
+    }
+
     fun interactiveStoryChoose(): String = when (languageCode) {
         "ta" -> "அடுத்து என்ன செய்வது?"
         "hi" -> "आगे क्या करें?"
@@ -3311,6 +3318,311 @@ object Strings {
                 .joinToString(" ") { word ->
                     word.lowercase().replaceFirstChar { c -> c.titlecase() }
                 }
+        }
+    }
+
+    // --- Life readiness (family radar; synced soft counters per child) ---
+
+    fun lifeReadinessScreenTitle(): String = when (languageCode) {
+        "ta" -> "வாழ்க்கைத் தயார்நிலை"
+        "hi" -> "जीवन तैयारी"
+        else -> "Life readiness"
+    }
+
+    fun lifeReadinessHeroEyebrow(): String = when (languageCode) {
+        "ta" -> "குடும்பப் பார்வை"
+        "hi" -> "परिवार के लिए"
+        else -> "Family view"
+    }
+
+    fun lifeReadinessSubtitle(): String = when (languageCode) {
+        "ta" ->
+            "ஐந்து மென்மையான பரிமாணங்கள் — பள்ளி மதிப்பெண்கள் அல்ல. கதை தேர்வுகளிலிருந்து உங்கள் கணக்கில் ஒத்திசைகிறது."
+        "hi" ->
+            "पाँच कोमल आयाम — स्कूल के अंक नहीं। कहानी विकल्पों से आपके खाते में समन्वयित।"
+        else ->
+            "Five gentle dimensions — not school marks. Synced from interactive story choices on your Tamixa account."
+    }
+
+    fun lifeReadinessLoading(): String = when (languageCode) {
+        "ta" -> "ஏற்றுகிறது…"
+        "hi" -> "लोड हो रहा है…"
+        else -> "Loading your snapshot…"
+    }
+
+    fun lifeReadinessSectionHowFeels(): String = when (languageCode) {
+        "ta" -> "இப்போதைய உணர்வு"
+        "hi" -> "अभी कैसा लगता है"
+        else -> "How things feel right now"
+    }
+
+    fun lifeReadinessSectionBadges(): String = when (languageCode) {
+        "ta" -> "திறந்த பேட்ஜ்கள்"
+        "hi" -> "अनलॉक बैज"
+        else -> "Badges your family unlocked"
+    }
+
+    fun lifeReadinessSectionNext(): String = when (languageCode) {
+        "ta" -> "அடுத்த கேட்பு யோசனை"
+        "hi" -> "अगली सुनने की सलाह"
+        else -> "Suggested next listen"
+    }
+
+    fun lifeReadinessPickStory(): String = when (languageCode) {
+        "ta" -> "கதையைத் தேர்ந்தெடு"
+        "hi" -> "कहानी चुनें"
+        else -> "Pick a story"
+    }
+
+    fun lifeReadinessOpenPracticeHub(): String = when (languageCode) {
+        "ta" -> "பயிற்சி மையத்தைத் திற"
+        "hi" -> "अभ्यास हब खोलें"
+        else -> "Open practice hub"
+    }
+
+    fun lifeReadinessEmptyTitle(): String = when (languageCode) {
+        "ta" -> "குறுகிய பயிற்சிக் கதையுடன் தொடங்கவும்"
+        "hi" -> "एक छोटी अभ्यास कहानी से शुरू करें"
+        else -> "Start with a short practice tale"
+    }
+
+    fun lifeReadinessEmptyBody(): String = when (languageCode) {
+        "ta" ->
+            "இன்டராக்டிவ் கற்றல் கதைகளை முடிக்கும்போது, இங்கே மென்மையான சுருக்கம் தோன்றும். குழந்தையைத் தேர்ந்தெடுத்து நூலகத்தில் பயிற்சி மையத்தை முயற்சிக்கவும்."
+        "hi" ->
+            "इंटरैक्टिव सीख वाली कहानियाँ पूरी करने पर यहाँ कोमल सार दिखेगा। बच्चा चुनकर लाइब्रेरी में अभ्यास हब आज़माएँ।"
+        else ->
+            "When you finish interactive Learn tales, a soft summary appears here. Choose a child below and try the library practice hub."
+    }
+
+    fun lifeReadinessPillLabel(): String = when (languageCode) {
+        "ta" -> "வாழ்க்கைத் தயார்நிலை"
+        "hi" -> "जीवन तैयारी"
+        else -> "Life readiness"
+    }
+
+    fun lifeReadinessMenuItem(): String = when (languageCode) {
+        "ta" -> "வாழ்க்கைத் தயார்நிலை (விளக்கப்படம்)"
+        "hi" -> "जीवन तैयारी (चार्ट)"
+        else -> "Life readiness snapshot"
+    }
+
+    fun lifeReadinessAxisTech(): String = when (languageCode) {
+        "ta" -> "தொழில்நுட்பம்"
+        "hi" -> "टेक"
+        else -> "Tech"
+    }
+
+    fun lifeReadinessAxisBusiness(): String = when (languageCode) {
+        "ta" -> "வணிகம் / பணம்"
+        "hi" -> "व्यवसाय / पैसा"
+        else -> "Business"
+    }
+
+    fun lifeReadinessAxisLeadership(): String = when (languageCode) {
+        "ta" -> "தலைமை"
+        "hi" -> "नेतृत्व"
+        else -> "Leadership"
+    }
+
+    fun lifeReadinessAxisEthics(): String = when (languageCode) {
+        "ta" -> "நெறிமுறைகள்"
+        "hi" -> "नैतिकता"
+        else -> "Ethics"
+    }
+
+    fun lifeReadinessAxisCommunication(): String = when (languageCode) {
+        "ta" -> "தொடர்பு"
+        "hi" -> "संवाद"
+        else -> "Communication"
+    }
+
+    fun lifeReadinessAxisNoteTech(): String = when (languageCode) {
+        "ta" -> "பாதுகாப்பான டிஜிட்டல் பழக்கங்கள்"
+        "hi" -> "सुरक्षित डिजिटल आदतें"
+        else -> "Safe, smart technology habits"
+    }
+
+    fun lifeReadinessAxisNoteBusiness(): String = when (languageCode) {
+        "ta" -> "பண உணர்வு மற்றும் திட்டமிடல்"
+        "hi" -> "पैसे की समझ और योजना"
+        else -> "Money sense and planning"
+    }
+
+    fun lifeReadinessAxisNoteLeadership(): String = when (languageCode) {
+        "ta" -> "மற்றவர்களுடன் வழிநடத்துதல்"
+        "hi" -> "दूसरों के साथ नेतृत्व"
+        else -> "Guiding and working with others"
+    }
+
+    fun lifeReadinessAxisNoteEthics(): String = when (languageCode) {
+        "ta" -> "நேர்மை மற்றும் யோசித்தல்"
+        "hi" -> "ईमानदारी और सोच"
+        else -> "Honesty and careful thinking"
+    }
+
+    fun lifeReadinessAxisNoteCommunication(): String = when (languageCode) {
+        "ta" -> "அமைதியான, தெளிவான பேச்சு"
+        "hi" -> "शांत, स्पष्ट बातचीत"
+        else -> "Calm, clear expression"
+    }
+
+    fun lifeReadinessStatusLabel(tier: Int): String = when (languageCode) {
+        "ta" -> when (tier) {
+            0 -> "தொடக்கம்"
+            1 -> "வளர்ச்சி"
+            2 -> "நிலையானது"
+            3 -> "நெகிழ்வு"
+            4 -> "வலிமை"
+            else -> "முழுமை"
+        }
+        "hi" -> when (tier) {
+            0 -> "शुरुआत"
+            1 -> "बढ़त"
+            2 -> "स्थिर"
+            3 -> "लचीला"
+            4 -> "मज़बूत"
+            else -> "शीर्ष"
+        }
+        else -> when (tier) {
+            0 -> "Starting out"
+            1 -> "Growing"
+            2 -> "Building steady"
+            3 -> "Resilient"
+            4 -> "Strong"
+            else -> "Master"
+        }
+    }
+
+    fun lifeReadinessBadgeTitle(badgeId: String): String = when (languageCode) {
+        "ta" -> when (badgeId) {
+            "scam-proof-senior" -> "மோசடி-எதிர் மூத்தோர்"
+            "kirana-king" -> "கிராணா ராஜா"
+            "team-captain" -> "குழு கேப்டன்"
+            "truth-seeker" -> "உண்மை தேடுபவர்"
+            "clear-voice" -> "தெளிவான குரல்"
+            else -> badgeId
+        }
+        "hi" -> when (badgeId) {
+            "scam-proof-senior" -> "घोटाला-सुरक्षित"
+            "kirana-king" -> "किराना किंग"
+            "team-captain" -> "टीम कप्तान"
+            "truth-seeker" -> "सच के खोजी"
+            "clear-voice" -> "स्पष्ट आवाज़"
+            else -> badgeId
+        }
+        else -> when (badgeId) {
+            "scam-proof-senior" -> "Scam-Proof Senior"
+            "kirana-king" -> "Kirana King"
+            "team-captain" -> "Team Captain"
+            "truth-seeker" -> "Truth Seeker"
+            "clear-voice" -> "Clear Voice"
+            else -> badgeId
+        }
+    }
+
+    fun lifeReadinessBadgeLine(badgeId: String): String = when (languageCode) {
+        "ta" -> when (badgeId) {
+            "scam-proof-senior" -> "டிஜிட்டல் பாதுகாப்பில் கூர்மையான உணர்வு வளர்கிறது."
+            "kirana-king" -> "மதிப்பு, சேமிப்பு, சிறு வணிக நுண்ணறிவு."
+            "team-captain" -> "நியாயத்துடனும் தொடர்ச்சியுடனும் முன்வருதல்."
+            "truth-seeker" -> "நேர்மையைத் தேர்வு செய்து சரிபார்க்கிறது."
+            "clear-voice" -> "அமைதியாகவும் தெளிவாகவும் பேசவும் கேட்கவும்."
+            else -> ""
+        }
+        "hi" -> when (badgeId) {
+            "scam-proof-senior" -> "डिजिटल सुरक्षा में तेज़ समझ बन रही है।"
+            "kirana-king" -> "कीमत, बचत और छोटे व्यवसाय की समझ।"
+            "team-captain" -> "निष्पक्षता और जिम्मेदारी के साथ आगे आना।"
+            "truth-seeker" -> "ईमानदारी चुनना और जाँच करना।"
+            "clear-voice" -> "शांति और स्पष्टता से बोलना और सुनना।"
+            else -> ""
+        }
+        else -> when (badgeId) {
+            "scam-proof-senior" -> "Your child is building sharp instincts for digital safety."
+            "kirana-king" -> "Great nose for value, saving, and small-business smarts."
+            "team-captain" -> "Stepping up with fairness and follow-through."
+            "truth-seeker" -> "Chooses honesty and checks facts before acting."
+            "clear-voice" -> "Growing calm, clear ways to speak up and listen."
+            else -> ""
+        }
+    }
+
+    fun lifeReadinessRecHeadline(axis: com.tamixa.domain.LifeReadinessAxisId): String = when (languageCode) {
+        "ta" -> when (axis) {
+            com.tamixa.domain.LifeReadinessAxisId.TECH ->
+                "ஒன்றாக டிஜிட்டல் நியாயத்தை பயிற்சி செய்யுங்கள்"
+            com.tamixa.domain.LifeReadinessAxisId.BUSINESS ->
+                "பணக் கதைகளை ஒன்றாக கேளுங்கள்"
+            com.tamixa.domain.LifeReadinessAxisId.LEADERSHIP ->
+                "குழு மற்றும் நியாயம் பற்றிய கதைகள்"
+            com.tamixa.domain.LifeReadinessAxisId.ETHICS ->
+                "நேர்மை மற்றும் மெதுவான யோசனை கதைகள்"
+            com.tamixa.domain.LifeReadinessAxisId.COMMUNICATION ->
+                "அமைதியான உரையாடல் பயிற்சி"
+        }
+        "hi" -> when (axis) {
+            com.tamixa.domain.LifeReadinessAxisId.TECH ->
+                "साथ में डिजिटल समझ अभ्यास करें"
+            com.tamixa.domain.LifeReadinessAxisId.BUSINESS ->
+                "पैसे वाली कहानियाँ साथ सुनें"
+            com.tamixa.domain.LifeReadinessAxisId.LEADERSHIP ->
+                "टीमवर्क और निष्पक्षता की कहानियाँ"
+            com.tamixa.domain.LifeReadinessAxisId.ETHICS ->
+                "ईमानदारी और धीमी सोच वाली कहानियाँ"
+            com.tamixa.domain.LifeReadinessAxisId.COMMUNICATION ->
+                "शांत बातचीत का अभ्यास"
+        }
+        else -> when (axis) {
+            com.tamixa.domain.LifeReadinessAxisId.TECH ->
+                "Lean into digital judgment together"
+            com.tamixa.domain.LifeReadinessAxisId.BUSINESS ->
+                "Practice money stories side by side"
+            com.tamixa.domain.LifeReadinessAxisId.LEADERSHIP ->
+                "Stories about teamwork and fairness"
+            com.tamixa.domain.LifeReadinessAxisId.ETHICS ->
+                "Honesty and \"slow thinking\" tales"
+            com.tamixa.domain.LifeReadinessAxisId.COMMUNICATION ->
+                "Calm conversation practice"
+        }
+    }
+
+    fun lifeReadinessRecMessage(axis: com.tamixa.domain.LifeReadinessAxisId): String = when (languageCode) {
+        "ta" -> when (axis) {
+            com.tamixa.domain.LifeReadinessAxisId.TECH ->
+                "நூலகத்தில் Learn · Simulator அல்லது டிஜிட்டல் பாதுகாப்புக் கதைகளைத் தேர்ந்தெடுங்கள்."
+            com.tamixa.domain.LifeReadinessAxisId.BUSINESS ->
+                "சேமிப்பு அல்லது குடும்ப பட்ஜெட் பற்றிய கதைகளைத் தேடுங்கள்."
+            com.tamixa.domain.LifeReadinessAxisId.LEADERSHIP ->
+                "கருணையுடன் மோதலைத் தீர்க்கும் கதைகளைத் தேர்ந்தெடுங்கள்."
+            com.tamixa.domain.LifeReadinessAxisId.ETHICS ->
+                "உண்மை மற்றும் விளைவுகள் பற்றிய கதைகளை விரும்புங்கள்."
+            com.tamixa.domain.LifeReadinessAxisId.COMMUNICATION ->
+                "உணர்வுகளை எளிய சொற்களில் பகிர்ந்து கொள்ளுங்கள்."
+        }
+        "hi" -> when (axis) {
+            com.tamixa.domain.LifeReadinessAxisId.TECH ->
+                "लाइब्रेरी में Learn · Simulator या डिजिटल सुरक्षा कहानियाँ चुनें।"
+            com.tamixa.domain.LifeReadinessAxisId.BUSINESS ->
+                "बचत या परिवार बजट वाली कहानियाँ खोजें।"
+            com.tamixa.domain.LifeReadinessAxisId.LEADERSHIP ->
+                "दया से विवाद सुलझाने वाली कहानियाँ चुनें।"
+            com.tamixa.domain.LifeReadinessAxisId.ETHICS ->
+                "सच्चाई और परिणामों वाली कहानियाँ पसंद करें।"
+            com.tamixa.domain.LifeReadinessAxisId.COMMUNICATION ->
+                "भावनाओं को सरल शब्दों में साझा करें।"
+        }
+        else -> when (axis) {
+            com.tamixa.domain.LifeReadinessAxisId.TECH ->
+                "Pick a Learn · Simulator or digital safety tale next — short episodes with choices help spot scams and kind boundaries online."
+            com.tamixa.domain.LifeReadinessAxisId.BUSINESS ->
+                "Look for library tales about saving, earning, or family budgets — chat about what you’d do in each scene."
+            com.tamixa.domain.LifeReadinessAxisId.LEADERSHIP ->
+                "Choose adventures where characters resolve conflict or lead with empathy — pause and ask what they’d try next."
+            com.tamixa.domain.LifeReadinessAxisId.ETHICS ->
+                "Favor stories about telling the truth, research, and consequences — celebrate small honest wins at home."
+            com.tamixa.domain.LifeReadinessAxisId.COMMUNICATION ->
+                "Use stories with dialogue prompts; take turns naming feelings in plain words — no pressure to perform."
         }
     }
 }

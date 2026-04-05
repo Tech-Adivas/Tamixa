@@ -10,6 +10,9 @@ import org.springframework.data.repository.query.Param
 
 interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
 
+    @Query("SELECT c FROM LibraryStoryEntity c WHERE c.storyOwner = :owner AND c.deletedAt IS NULL")
+    fun findAllActiveByStoryOwner(@Param("owner") owner: String): List<LibraryStoryEntity>
+
     @Modifying
     @Query("UPDATE LibraryStoryEntity c SET c.audioFileUrl = null WHERE c.audioFileUrl IS NOT NULL AND c.deletedAt IS NULL")
     fun clearAllAudioUrls(): Int

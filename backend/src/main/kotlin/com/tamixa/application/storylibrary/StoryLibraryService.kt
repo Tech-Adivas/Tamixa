@@ -39,6 +39,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Pageable
 import com.tamixa.application.library.LibraryStoryIllustrationService
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Autowired
@@ -95,6 +96,12 @@ class StoryLibraryService(
             "tamil" to "ta", "english" to "en", "hindi" to "hi",
             "telugu" to "te", "kannada" to "kn", "malayalam" to "ml", "bengali" to "bn"
         )
+        /**
+         * Non-primary locales list via [story_translations]; standalone [LibraryStory] rows in that same language
+         * (e.g. English DSG pilots) must be merged in. Cap avoids unbounded memory on huge catalogs.
+         */
+        private const val NON_PRIMARY_TRANSLATION_MERGE_CAP = 15_000
+        private const val NON_PRIMARY_NATIVE_LANGUAGE_CAP = 1_000
         /** Tamil Unicode U+0B80–U+0BFF. When serving non-Tamil, reject title/moral that contain Tamil (wrong-language data). */
         private val TAMIL_SCRIPT = Regex("[\u0B80-\u0BFF]")
         /** Devanagari (Hindi, etc.) U+0900–U+097F. */
@@ -1102,6 +1109,96 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         return presentFun + rest
     }
 
+    private fun toLibraryResponseFromApprovedNativeMaster(effectiveLang: String, story: LibraryStory): LibraryStoryResponse {
+        val canonicalAudio = resolvePlayableAudioUrl(story.id, effectiveLang)
+            ?: (story.audioFileUrl?.takeIf { u -> u.isNotBlank() }
+                ?.let { p -> if (p.startsWith("stories/")) pathToPlayableUrl(p, story.id, effectiveLang) else p })
+        return story.toResponse(
+            coverImageUrlResolver.resolveCoverPath(story.coverImageUrl),
+            coverImageUrlResolver.resolveCoverVideoPath(story.coverVideoUrl),
+        ).copy(audioFileUrl = canonicalAudio)
+    }
+
+    private fun toLibraryResponseFromTranslation(effectiveLang: String, t: StoryTranslation): LibraryStoryResponse {
+        val master = repository.findById(t.masterStoryId)!!
+        return LibraryStoryResponse(
+            id = master.id,
+            title = rejectIfTamilWhenNotTa(t.title, effectiveLang) ?: "",
+            content = t.content,
+            theme = master.theme,
+            category = master.category,
+            language = effectiveLang,
+            age = master.age,
+            childName = master.childName,
+            wordCount = t.wordCount,
+            readingTimeMinutes = t.readingTimeMinutes,
+            moral = rejectIfTamilWhenNotTa(t.moral, effectiveLang) ?: "",
+            audioFileUrl = resolvePlayableAudioUrl(t.masterStoryId, effectiveLang),
+            status = master.status,
+            coverImageUrl = coverImageUrlResolver.resolveCoverPath(master.coverImageUrl),
+            coverVideoUrl = coverImageUrlResolver.resolveCoverVideoPath(master.coverVideoUrl),
+            createdAt = master.createdAt,
+            modifiedAt = master.updatedAt,
+            storyOwner = master.storyOwner,
+            convertPromptUsed = master.convertPromptUsed,
+            emotionMode = master.emotionMode,
+            narrationApprovedAt = master.narrationApprovedAt,
+            sourceContent = t.content,
+            parentDiscussionPrompts = master.parentDiscussionPrompts,
+            parentContentNote = master.parentContentNote,
+            speakAlongPrompt = master.speakAlongPrompt,
+            interactiveGraph = LibraryStoryMapper.parseInteractiveGraphJson(master.interactiveGraphJson),
+            postStoryMission = master.postStoryMission,
+            postStoryResourceUrl = master.postStoryResourceUrl,
+        )
+    }
+
+    /**
+     * Merges [library_stories] rows whose language already matches [effectiveLang] into the translation-based listing.
+     * Without this, English-native pilots (e.g. Digital Survival) never appear when the primary catalog language is Tamil.
+     */
+    private fun mergeNonPrimaryLibraryListingWithNativeMasters(
+        effectiveLang: String,
+        page: Int,
+        size: Int,
+        pageable: Pageable,
+        translationPagedFetcher: (Pageable) -> Page<StoryTranslation>,
+        nativePagedFetcher: (Pageable) -> Page<LibraryStory>,
+    ): Page<LibraryStoryResponse> {
+        val head = translationPagedFetcher(PageRequest.of(0, NON_PRIMARY_TRANSLATION_MERGE_CAP))
+        if (!head.isLast) {
+            log.warn(
+                "Non-primary library translations for language={} exceed merge cap {}; native-language library masters not merged",
+                effectiveLang,
+                NON_PRIMARY_TRANSLATION_MERGE_CAP,
+            )
+            val paged = translationPagedFetcher(pageable)
+            return PageImpl(
+                paged.content.map { toLibraryResponseFromTranslation(effectiveLang, it) },
+                paged.pageable,
+                paged.totalElements,
+            )
+        }
+        val nativeHead = nativePagedFetcher(PageRequest.of(0, NON_PRIMARY_NATIVE_LANGUAGE_CAP))
+        if (!nativeHead.isLast) {
+            log.warn(
+                "Native-language library rows for language={} exceed cap {}; some native masters omitted from merge",
+                effectiveLang,
+                NON_PRIMARY_NATIVE_LANGUAGE_CAP,
+            )
+        }
+        val fromTranslations = head.content.map { toLibraryResponseFromTranslation(effectiveLang, it) }
+        val fromNative = nativeHead.content.map { toLibraryResponseFromApprovedNativeMaster(effectiveLang, it) }
+        val seen = LinkedHashSet<Long>()
+        val merged = (fromNative.asSequence() + fromTranslations.asSequence())
+            .filter { seen.add(it.id) }
+            .sortedByDescending { it.createdAt }
+            .toList()
+        val fromIndex = page.coerceAtLeast(0) * size.coerceIn(1, 100)
+        val slice = merged.drop(fromIndex).take(size.coerceIn(1, 100))
+        return PageImpl(slice, pageable, merged.size.toLong())
+    }
+
     /**
      * Same as [findByLanguage] but only stories approved for delivery (`narrationApprovedAt` set)
      * **and** with ready default-voice narration audio for the requested language (or legacy master `audioFileUrl` on primary-catalog masters).
@@ -1140,60 +1237,81 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                 }
             }
             else -> {
-                val translations = when {
+                when {
                     learnHub && appProperties.translationPipeline.masterOnlyNarration ->
-                        storyTranslationRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudioAndLearnPrefix(
-                            effectiveLang, learnPrefix, pageable
+                        mergeNonPrimaryLibraryListingWithNativeMasters(
+                            effectiveLang, page, size, pageable,
+                            translationPagedFetcher = { p ->
+                                storyTranslationRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudioAndLearnPrefix(
+                                    effectiveLang, learnPrefix, p,
+                                )
+                            },
+                            nativePagedFetcher = { p ->
+                                repository.findByLanguageAndNarrationApprovedLearnPrefix(effectiveLang, learnPrefix, p)
+                            },
                         )
                     learnHub ->
-                        storyTranslationRepository.findByLanguageAndMasterNarrationApprovedAndLearnPrefix(
-                            effectiveLang, learnPrefix, pageable
+                        mergeNonPrimaryLibraryListingWithNativeMasters(
+                            effectiveLang, page, size, pageable,
+                            translationPagedFetcher = { p ->
+                                storyTranslationRepository.findByLanguageAndMasterNarrationApprovedAndLearnPrefix(
+                                    effectiveLang, learnPrefix, p,
+                                )
+                            },
+                            nativePagedFetcher = { p ->
+                                repository.findByLanguageAndNarrationApprovedLearnPrefix(effectiveLang, learnPrefix, p)
+                            },
                         )
                     appProperties.translationPipeline.masterOnlyNarration && effectiveTheme != null ->
-                        storyTranslationRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudioAndTheme(
-                            effectiveLang, effectiveTheme, pageable
+                        mergeNonPrimaryLibraryListingWithNativeMasters(
+                            effectiveLang, page, size, pageable,
+                            translationPagedFetcher = { p ->
+                                storyTranslationRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudioAndTheme(
+                                    effectiveLang, effectiveTheme, p,
+                                )
+                            },
+                            nativePagedFetcher = { p ->
+                                repository.findByLanguageAndNarrationApprovedAndTheme(effectiveLang, effectiveTheme, p)
+                            },
                         )
                     appProperties.translationPipeline.masterOnlyNarration ->
-                        storyTranslationRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudio(effectiveLang, pageable)
+                        mergeNonPrimaryLibraryListingWithNativeMasters(
+                            effectiveLang, page, size, pageable,
+                            translationPagedFetcher = { p ->
+                                storyTranslationRepository.findByLanguageAndMasterNarrationApprovedWithMasterAudio(
+                                    effectiveLang,
+                                    p,
+                                )
+                            },
+                            nativePagedFetcher = { p ->
+                                repository.findByLanguageAndNarrationApproved(effectiveLang, p)
+                            },
+                        )
                     effectiveTheme != null ->
-                        storyTranslationRepository.findByLanguageAndMasterNarrationApprovedAndTheme(effectiveLang, effectiveTheme, pageable)
+                        mergeNonPrimaryLibraryListingWithNativeMasters(
+                            effectiveLang, page, size, pageable,
+                            translationPagedFetcher = { p ->
+                                storyTranslationRepository.findByLanguageAndMasterNarrationApprovedAndTheme(
+                                    effectiveLang,
+                                    effectiveTheme,
+                                    p,
+                                )
+                            },
+                            nativePagedFetcher = { p ->
+                                repository.findByLanguageAndNarrationApprovedAndTheme(effectiveLang, effectiveTheme, p)
+                            },
+                        )
                     else ->
-                        storyTranslationRepository.findByLanguageAndMasterNarrationApproved(effectiveLang, pageable)
+                        mergeNonPrimaryLibraryListingWithNativeMasters(
+                            effectiveLang, page, size, pageable,
+                            translationPagedFetcher = { p ->
+                                storyTranslationRepository.findByLanguageAndMasterNarrationApproved(effectiveLang, p)
+                            },
+                            nativePagedFetcher = { p ->
+                                repository.findByLanguageAndNarrationApproved(effectiveLang, p)
+                            },
+                        )
                 }
-                val content = translations.content.map { t ->
-                    val master = repository.findById(t.masterStoryId)!!
-                    LibraryStoryResponse(
-                        id = master.id,
-                        title = rejectIfTamilWhenNotTa(t.title, effectiveLang) ?: "",
-                        content = t.content,
-                        theme = master.theme,
-                        category = master.category,
-                        language = effectiveLang,
-                        age = master.age,
-                        childName = master.childName,
-                        wordCount = t.wordCount,
-                        readingTimeMinutes = t.readingTimeMinutes,
-                        moral = rejectIfTamilWhenNotTa(t.moral, effectiveLang) ?: "",
-                        audioFileUrl = resolvePlayableAudioUrl(t.masterStoryId, effectiveLang),
-                        status = master.status,
-                        coverImageUrl = coverImageUrlResolver.resolveCoverPath(master.coverImageUrl),
-                        coverVideoUrl = coverImageUrlResolver.resolveCoverVideoPath(master.coverVideoUrl),
-                        createdAt = master.createdAt,
-                        modifiedAt = master.updatedAt,
-                        storyOwner = master.storyOwner,
-                        convertPromptUsed = master.convertPromptUsed,
-                        emotionMode = master.emotionMode,
-                        narrationApprovedAt = master.narrationApprovedAt,
-                        sourceContent = t.content,
-                        parentDiscussionPrompts = master.parentDiscussionPrompts,
-                        parentContentNote = master.parentContentNote,
-                        speakAlongPrompt = master.speakAlongPrompt,
-                        interactiveGraph = LibraryStoryMapper.parseInteractiveGraphJson(master.interactiveGraphJson),
-                        postStoryMission = master.postStoryMission,
-                        postStoryResourceUrl = master.postStoryResourceUrl,
-                    )
-                }
-                PageImpl(content, translations.pageable, translations.totalElements)
             }
         }
     }
