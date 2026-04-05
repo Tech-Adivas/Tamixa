@@ -206,13 +206,13 @@ class GlobalExceptionHandler {
     }
 
     /**
-     * Client disconnected while response was streaming/writing (e.g. browser navigation or timeout).
-     * Not a server business failure; avoid noisy "unhandled exception" error logs.
+     * Client disconnected while response was streaming/writing (e.g. navigation, emulator rotation, Ktor cancel).
+     * Not a server failure; DEBUG only (see application.yml note on Broken pipe noise).
      */
     @ExceptionHandler(AsyncRequestNotUsableException::class)
     fun handleClientAbort(e: AsyncRequestNotUsableException): ResponseEntity<Void> {
         val traceId = MDC.get(RequestTracingFilter.TRACE_ID_MDC_KEY).orEmpty()
-        log.warn("Client connection closed before response completed traceId={} message={}", traceId, e.message)
+        log.debug("Client connection closed before response completed traceId={} message={}", traceId, e.message)
         return ResponseEntity.noContent().build()
     }
 
