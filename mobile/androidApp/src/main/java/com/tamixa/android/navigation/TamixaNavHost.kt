@@ -273,13 +273,6 @@ fun TamixaNavHost(
             )
         }
         composable(Screen.LanguageSelection.route) {
-            LaunchedEffect(settingsState.settingsLoaded, settingsState.hasCompletedLanguageSelection) {
-                if (settingsState.settingsLoaded && settingsState.hasCompletedLanguageSelection) {
-                    navController.navigate(Screen.Dashboard.route) {
-                        popUpTo(Screen.LanguageSelection.route) { inclusive = true }
-                    }
-                }
-            }
             val scope = rememberCoroutineScope()
             LanguageSelectionScreen(
                 onLanguageSelected = { code ->

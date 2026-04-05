@@ -414,11 +414,6 @@ fun TamixaNavHost(
                     }
                 }
             )
-            LaunchedEffect(settingsState.settingsLoaded, settingsState.hasCompletedLanguageSelection) {
-                if (settingsState.settingsLoaded && settingsState.hasCompletedLanguageSelection) {
-                    navController.navigate(Screen.Dashboard.route) { popUpTo(Screen.LanguageSelection.route) { inclusive = true } }
-                }
-            }
         }
         composable(Screen.Dashboard.route) {
             var selectedCategory by remember { mutableStateOf(SampleData.categories.first()) }
