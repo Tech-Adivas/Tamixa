@@ -11,6 +11,7 @@ import io.jsonwebtoken.security.SignatureException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import java.time.Instant
 import java.util.Date
 import javax.crypto.SecretKey
 
@@ -61,7 +62,11 @@ class JwtService(
                 log.debug("Access token missing or invalid role claim")
                 return null
             }
-            TokenClaims(email = claims.subject, role = role)
+            val issuedAt = claims.issuedAt?.toInstant() ?: run {
+                log.debug("Access token missing issuedAt claim")
+                return null
+            }
+            TokenClaims(email = claims.subject, role = role, issuedAt = issuedAt)
         } catch (e: ExpiredJwtException) {
             log.debug("Access token expired")
             null
@@ -83,10 +88,13 @@ class JwtService(
         return try {
             val claims = parseToken(token)
             if (claims[CLAIM_TYPE] != TYPE_REFRESH) return null
-            TokenClaims(
-                email = claims.subject,
-                role = (claims[CLAIM_ROLE] as? String) ?: com.tamixa.domain.Role.PARENT.name
-            )
+            val role = (claims[CLAIM_ROLE] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+                ?: run { log.debug("Refresh token missing role claim — rejecting"); return null }
+            val issuedAt = claims.issuedAt?.toInstant() ?: run {
+                log.debug("Refresh token missing issuedAt claim")
+                return null
+            }
+            TokenClaims(email = claims.subject, role = role, issuedAt = issuedAt)
         } catch (e: ExpiredJwtException) {
             log.debug("Refresh token expired")
             null
@@ -105,6 +113,16 @@ class JwtService(
             .build()
             .parseSignedClaims(token)
             .payload
+    }
+
+    override fun getTokenExpiration(token: String): Instant? {
+        return try {
+            val claims = parseToken(token)
+            claims.expiration?.toInstant()
+        } catch (e: Exception) {
+            log.debug("Failed to extract token expiration: {}", e.message)
+            null
+        }
     }
 
     companion object {

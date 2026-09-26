@@ -159,6 +159,16 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
         }
     }
 
+    override suspend fun getCrisisSafetyVaultText(): String =
+        context.dataStore.data.first()[CRISIS_SAFETY_VAULT_KEY]?.trim().orEmpty()
+
+    override suspend fun setCrisisSafetyVaultText(text: String) {
+        context.dataStore.edit { prefs ->
+            val t = text.trim()
+            if (t.isEmpty()) prefs.remove(CRISIS_SAFETY_VAULT_KEY) else prefs[CRISIS_SAFETY_VAULT_KEY] = t
+        }
+    }
+
     companion object {
         private val USE_SYSTEM_THEME_KEY = booleanPreferencesKey("use_system_theme")
         private val DARK_MODE_KEY = booleanPreferencesKey("dark_mode")
@@ -174,5 +184,6 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
         private val API_BASE_URL_OVERRIDE_KEY = stringPreferencesKey("api_base_url_override")
         private val SUBSCRIPTION_WEB_URL_OVERRIDE_KEY = stringPreferencesKey("subscription_web_url_override")
         private val LIFE_SKILL_PREFERRED_CHILD_ID_KEY = stringPreferencesKey("life_skill_preferred_child_id")
+        private val CRISIS_SAFETY_VAULT_KEY = stringPreferencesKey("crisis_safety_vault_text")
     }
 }

@@ -1,8 +1,11 @@
 package com.tamixa.application.port
 
+import java.time.Instant
+
 data class TokenClaims(
     val email: String,
-    val role: String
+    val role: String,
+    val issuedAt: Instant
 )
 
 interface JwtPort {
@@ -16,4 +19,9 @@ interface JwtPort {
     fun validateRefreshToken(token: String): TokenClaims?
 
     fun getAccessExpirationSeconds(): Long
+
+    /**
+     * Extract token expiration time. Used for setting TTL on revoked tokens.
+     */
+    fun getTokenExpiration(token: String): Instant?
 }

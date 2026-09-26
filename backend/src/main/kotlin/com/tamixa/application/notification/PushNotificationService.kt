@@ -8,6 +8,9 @@ import org.springframework.stereotype.Service
 /**
  * Service for sending push notifications to parents.
  * Routes to appropriate adapter (FCM/APNs) based on device platform.
+ *
+ * Seasonal / “cultural clock” campaigns: copy and enablement live in [com.tamixa.infrastructure.config.AppProperties.seasonalHighlight];
+ * scheduled fan-out is not implemented yet—parent apps can poll [com.tamixa.api.content.SeasonalHighlightController] for banner text.
  */
 @Service
 class PushNotificationService(

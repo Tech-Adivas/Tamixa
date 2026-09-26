@@ -57,6 +57,11 @@ data class LibraryStoryResponse(
     val speakAlongPrompt: String? = null,
     /** Parsed branching graph for interactive library episodes (null if unset or invalid JSON in DB). */
     val interactiveGraph: JsonNode? = null,
+    /**
+     * When non-null, this locale has its own full graph JSON in `story_translations.interactive_graph`
+     * (admin editing). Parent clients should use [interactiveGraph] only; this field is stripped in the parent API.
+     */
+    val translationInteractiveGraphOverlay: JsonNode? = null,
     val postStoryMission: String? = null,
     val postStoryResourceUrl: String? = null,
 )

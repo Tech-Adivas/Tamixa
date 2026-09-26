@@ -41,7 +41,10 @@ class GeminiTranslationClient(
     )
 
     override fun translate(sourceLang: String, targetLang: String, text: String, timeoutMs: Long): String {
-        val result = translateStructured(sourceLang, targetLang, null, text, null, timeoutMs)
+        val result = translateStructured(
+            sourceLang, targetLang, null, text, null, timeoutMs,
+            null, null, null,
+        )
         return result.content
     }
 
@@ -58,6 +61,9 @@ class GeminiTranslationClient(
         content: String,
         moral: String?,
         timeoutMs: Long,
+        parentContentNote: String?,
+        parentDiscussionPrompts: List<String>?,
+        speakAlongPrompt: String?,
     ): TranslatedContent {
         log.info("Gemini translation start {}->{} contentLen={}", sourceLang, targetLang, content.length)
         if (appProperties.llm.gemini.apiKey.isBlank()) {
@@ -66,6 +72,7 @@ class GeminiTranslationClient(
         val srcName = langNames[sourceLang] ?: sourceLang
         val tgtName = langNames[targetLang] ?: targetLang
         val wordCap = maxStoryWords.coerceIn(200, 2500)
+        val hasParent = hasParentSourceForTranslation(parentContentNote, parentDiscussionPrompts, speakAlongPrompt)
         val systemPrompt = """
             You are a translator and storyteller for children's stories. Translate from $srcName to $tgtName.
             Output valid JSON only with keys:
@@ -74,7 +81,7 @@ class GeminiTranslationClient(
               moral (or null),
               title_before_paraphrase (or null),
               content_before_paraphrase,
-              moral_before_paraphrase (or null).
+              moral_before_paraphrase (or null)${if (hasParent) ",\n              parent_content_note (or null),\n              parent_discussion_prompts (JSON array or null),\n              speak_along_prompt (or null)" else ""}.
             CRITICAL: title and moral MUST be translated to $tgtName. Never return them in $srcName when target is $tgtName.
             When TITLE and/or MORAL appear in the user message, you MUST return non-null JSON strings for "title" and "moral" in native $tgtName script (Telugu/Kannada/Malayalam: use Telugu/Kannada/Malayalam script—never leave title or moral in Tamil when translating from Tamil).
             Preserve the story's meaning, emotional arc, and cultural context. Use clear, age-appropriate vocabulary in $tgtName—everyday words a caregiver would use aloud—not overly formal or literal word-for-word calques when a natural native phrase exists.
@@ -86,17 +93,36 @@ class GeminiTranslationClient(
             Length (critical): The "content" field must be at most $wordCap words (count in $tgtName). If the source is already at or under $wordCap words, translate the full text—do NOT summarize, shorten, or tighten for brevity; keep comparable length and richness. Only when the source clearly exceeds $wordCap words should you compress, preserving every major scene and the moral in order. When the source is shorter than $wordCap words, expand freely with natural dialogue, sensory detail, and oral storytelling color within the same scenes and facts—aim to use much of the available word budget up to $wordCap so the story feels full for narration, without changing what happens or who is in the story.
             CRITICAL: Preserve all inline narration markers exactly as-is in the content_before_paraphrase and content. These include [Pause 500ms], [Pause 1s], [Happy tone], [Soft voice], [Warm tone], [Calm], [Whisper], [Excited]. Do NOT remove, translate, or alter them—they are TTS instructions.
             Do NOT use bullets (•), asterisks (*), em-dashes (—), or other special symbols at the start of lines or paragraphs. Output plain text suitable for text-to-speech.
+            ${if (hasParent) parentFacingKeysSystemPromptBlock(tgtName) else ""}
         """.trimIndent()
         val parts = buildList {
             title?.let { add("TITLE: $it") }
             add("CONTENT:\n$content")
             moral?.let { add("MORAL: $it") }
         }
+        val parentAppendix = buildParentFacingUserAppendix(parentContentNote, parentDiscussionPrompts, speakAlongPrompt)
+        val keyList = buildString {
+            append("\"title\", \"content\", \"moral\", \"title_before_paraphrase\", \"content_before_paraphrase\", \"moral_before_paraphrase\"")
+            if (hasParent) {
+                append(", \"parent_content_note\", \"parent_discussion_prompts\", \"speak_along_prompt\"")
+            }
+        }
         val userPrompt =
-            "Translate the following story. Return JSON with keys exactly: \"title\", \"content\", \"moral\", \"title_before_paraphrase\", \"content_before_paraphrase\", \"moral_before_paraphrase\" (use null only if the source truly had no title/moral). All string values in $tgtName.\n\n${parts.joinToString("\n\n")}"
+            "Translate the following story. Return JSON with keys exactly: $keyList (use null only if the source truly had no title/moral${if (hasParent) " or no parent-facing field" else ""}). All string values in $tgtName.\n\n${parts.joinToString("\n\n")}" +
+                (if (parentAppendix != null) "\n\n$parentAppendix" else "")
         val rawCompletion = completeJsonChat(systemPrompt, userPrompt, maxTokens = 12288, temperature = 0.5)
         val result = fillMissingTitleMoral(
-            parseTranslationResponse(rawCompletion, title, content, moral, sourceLang, targetLang),
+            parseTranslationResponse(
+                rawCompletion,
+                title,
+                content,
+                moral,
+                sourceLang,
+                targetLang,
+                parentContentNote,
+                parentDiscussionPrompts,
+                speakAlongPrompt,
+            ),
             originalTitle = title,
             originalMoral = moral,
             sourceLang = sourceLang,
@@ -151,6 +177,12 @@ class GeminiTranslationClient(
             title = t ?: parsed.title,
             content = parsed.content,
             moral = m ?: parsed.moral,
+            titleBeforeParaphrase = parsed.titleBeforeParaphrase,
+            contentBeforeParaphrase = parsed.contentBeforeParaphrase,
+            moralBeforeParaphrase = parsed.moralBeforeParaphrase,
+            parentContentNote = parsed.parentContentNote,
+            parentDiscussionPrompts = parsed.parentDiscussionPrompts,
+            speakAlongPrompt = parsed.speakAlongPrompt,
         )
     }
 
@@ -211,6 +243,9 @@ class GeminiTranslationClient(
         originalMoral: String?,
         sourceLang: String,
         targetLang: String,
+        originalParentContentNote: String?,
+        originalParentDiscussionPrompts: List<String>?,
+        originalSpeakAlong: String?,
     ): TranslatedContent {
         return try {
             val json = normalizeJsonPayload(raw)
@@ -293,6 +328,24 @@ class GeminiTranslationClient(
             val afterContent = sanitizeTranslationText(rawContent) ?: rawContent
             val beforeContent = rawContentBefore?.let { sanitizeTranslationText(it) ?: it } ?: afterContent
 
+            val parentFacing = if (hasParentSourceForTranslation(
+                    originalParentContentNote,
+                    originalParentDiscussionPrompts,
+                    originalSpeakAlong,
+                )
+            ) {
+                mergeParentFacingWithSourceTarget(
+                    parseParentFacingFromTranslationJson(node),
+                    sourceLang,
+                    targetLang,
+                    originalParentContentNote,
+                    originalParentDiscussionPrompts,
+                    originalSpeakAlong,
+                )
+            } else {
+                ParsedParentFacingFields(null, null, null)
+            }
+
             TranslatedContent(
                 title = finalTitle,
                 content = afterContent,
@@ -300,17 +353,43 @@ class GeminiTranslationClient(
                 titleBeforeParaphrase = beforeTitle,
                 contentBeforeParaphrase = beforeContent,
                 moralBeforeParaphrase = beforeMoral,
+                parentContentNote = parentFacing.parentContentNote,
+                parentDiscussionPrompts = parentFacing.parentDiscussionPrompts,
+                speakAlongPrompt = parentFacing.speakAlongPrompt,
             )
         } catch (e: Exception) {
             log.warn("Translation JSON parse failed, extracting from raw: {}", e.message)
             val extracted = extractContentFromRaw(raw).ifBlank { raw }
+            val src = sourceLang.trim().lowercase()
+            val tgt = targetLang.trim().lowercase()
+            val same = src == tgt
+            val pf = if (same && hasParentSourceForTranslation(
+                    originalParentContentNote,
+                    originalParentDiscussionPrompts,
+                    originalSpeakAlong,
+                )
+            ) {
+                ParsedParentFacingFields(
+                    parentContentNote = originalParentContentNote?.trim()?.takeIf { it.isNotBlank() },
+                    parentDiscussionPrompts = originalParentDiscussionPrompts
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        ?.takeIf { it.isNotEmpty() },
+                    speakAlongPrompt = originalSpeakAlong?.trim()?.takeIf { it.isNotBlank() },
+                )
+            } else {
+                ParsedParentFacingFields(null, null, null)
+            }
             TranslatedContent(
-                title = if (sourceLang == targetLang) sanitizeTranslationText(originalTitle) else null,
+                title = if (same) sanitizeTranslationText(originalTitle) else null,
                 content = sanitizeTranslationText(extracted) ?: extracted,
-                moral = if (sourceLang == targetLang) sanitizeTranslationText(originalMoral) else null,
+                moral = if (same) sanitizeTranslationText(originalMoral) else null,
                 titleBeforeParaphrase = null,
                 contentBeforeParaphrase = null,
                 moralBeforeParaphrase = null,
+                parentContentNote = pf.parentContentNote,
+                parentDiscussionPrompts = pf.parentDiscussionPrompts,
+                speakAlongPrompt = pf.speakAlongPrompt,
             )
         }
     }

@@ -6,6 +6,7 @@ import com.tamixa.api.admin.dto.LibraryStoryListingResponse
 import com.tamixa.api.admin.dto.LibraryStoryResponse
 import com.tamixa.api.admin.dto.TranslationContentEntryDto
 import com.tamixa.application.narration.StoryProcessingService
+import com.tamixa.application.port.ProxyStoragePort
 import com.tamixa.application.port.StoryLibraryEventPublisherPort
 import com.tamixa.application.port.StoryLibraryRepositoryPort
 import com.tamixa.application.port.StoryTranslationRepositoryPort
@@ -56,6 +57,7 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 
 @Service
@@ -85,7 +87,9 @@ class StoryLibraryService(
     @Lazy private val libraryStoryIllustrationService: LibraryStoryIllustrationService,
     private val storyPipelineMetrics: StoryPipelineMetrics,
     /** Resolves this service lazily so [applyAdminTranslationEditsInNewTransaction] runs through the Spring proxy (REQUIRES_NEW). */
-    private val storyLibrarySelf: ObjectProvider<StoryLibraryService>
+    private val storyLibrarySelf: ObjectProvider<StoryLibraryService>,
+    /** Used to verify interactive segment objects exist before rewriting graph URLs to a non-master locale. */
+    private val proxyStorage: ObjectProvider<ProxyStoragePort>,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val updateSlowWarnMs = 10_000L
@@ -120,6 +124,27 @@ class StoryLibraryService(
             TELUGU_SCRIPT to "te",
             DEVANAGARI_SCRIPT to "hi"
         )
+
+        /**
+         * Library locales exposed in admin (Other languages + graph locale). Keep aligned with admin
+         * `LIBRARY_TAB_LANGUAGES` so per-locale payloads are never dropped when env `TRANSLATION_TARGET_LANGUAGES` is trimmed.
+         */
+        private val LIBRARY_CATALOG_LANGUAGE_CODES = listOf("ta", "en", "hi", "te", "kn", "ml")
+    }
+
+    /**
+     * Languages admin may send for translation rows and per-locale interactive graphs.
+     * Union of catalog, configured pipeline source/targets, and the story master language.
+     */
+    private fun libraryAdminAllowedLanguageCodes(effectiveMasterLang: String): List<String> {
+        val pipelineSource =
+            appProperties.translationPipeline.sourceLanguage.trim().lowercase().take(10).ifBlank { "ta" }
+        val pipelineTargets =
+            appProperties.translationPipeline.targetLanguages.split(",")
+                .map { it.trim().lowercase().take(10) }
+                .filter { it.isNotBlank() }
+        val master = effectiveMasterLang.trim().lowercase().take(10).ifBlank { "ta" }
+        return (LIBRARY_CATALOG_LANGUAGE_CODES + listOf(pipelineSource, master) + pipelineTargets).distinct()
     }
 
     /** Infers language from content script when a supported Indic script is detected. Returns null for English or ambiguous. */
@@ -139,6 +164,41 @@ class StoryLibraryService(
             null
         } else text
     }
+
+    /**
+     * Prefer per-locale parent metadata on [StoryTranslation] when present; otherwise master fields,
+     * stripping Tamil script when the playback locale is not Tamil ([rejectIfTamilWhenNotTa]).
+     */
+    private fun resolvedParentDiscussionPromptsForPlayback(
+        translation: StoryTranslation?,
+        masterPrompts: List<String>?,
+        effectiveLang: String,
+    ): List<String>? {
+        val fromTr = translation?.parentDiscussionPrompts
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?.takeIf { it.isNotEmpty() }
+        if (!fromTr.isNullOrEmpty()) return fromTr
+        return masterPrompts
+            ?.mapNotNull { p -> rejectIfTamilWhenNotTa(p, effectiveLang)?.trim()?.takeIf { it.isNotBlank() } }
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun resolvedParentContentNoteForPlayback(
+        translation: StoryTranslation?,
+        masterNote: String?,
+        effectiveLang: String,
+    ): String? =
+        translation?.parentContentNote?.trim()?.takeIf { it.isNotBlank() }
+            ?: rejectIfTamilWhenNotTa(masterNote, effectiveLang)
+
+    private fun resolvedSpeakAlongForPlayback(
+        translation: StoryTranslation?,
+        masterSpeak: String?,
+        effectiveLang: String,
+    ): String? =
+        translation?.speakAlongPrompt?.trim()?.takeIf { it.isNotBlank() }
+            ?: rejectIfTamilWhenNotTa(masterSpeak, effectiveLang)
 
     private fun effectiveLanguage(language: String): String {
         val normalized = language.trim().lowercase()
@@ -200,12 +260,20 @@ class StoryLibraryService(
                 listOf(
                     normalizeForCompare(t.title),
                     normalizeForCompare(t.content),
-                    normalizeForCompare(t.moral)
+                    normalizeForCompare(t.moral),
+                    normalizeForCompare(t.parentContentNote),
+                    normalizeForCompare(t.speakAlongPrompt),
+                    normalizeForCompare(t.parentDiscussionPrompts?.joinToString("|")),
                 ).joinToString("\u001e")
             } else {
                 ""
             }
-            listOf(masterBundle, transBundle, normalizeForCompare(scriptText)).joinToString("\u001f")
+            val masterParent = listOf(
+                normalizeForCompare(story.parentContentNote),
+                normalizeForCompare(story.speakAlongPrompt),
+                normalizeForCompare(story.parentDiscussionPrompts?.joinToString("|")),
+            ).joinToString("\u001e")
+            listOf(masterBundle, transBundle, normalizeForCompare(scriptText), masterParent).joinToString("\u001f")
         } else {
             val title: String?
             val content: String
@@ -223,7 +291,10 @@ class StoryLibraryService(
                 normalizeForCompare(title),
                 normalizeForCompare(content),
                 normalizeForCompare(moral),
-                normalizeForCompare(scriptText)
+                normalizeForCompare(scriptText),
+                normalizeForCompare(t?.parentContentNote),
+                normalizeForCompare(t?.speakAlongPrompt),
+                normalizeForCompare(t?.parentDiscussionPrompts?.joinToString("|")),
             ).joinToString("\u001e")
         }
         return sha256Hex(raw.toByteArray(StandardCharsets.UTF_8))
@@ -348,6 +419,9 @@ class StoryLibraryService(
         interactiveGraphJson: String? = null,
         postStoryMission: String? = null,
         postStoryResourceUrl: String? = null,
+        coverVideoUrl: String? = null,
+        translationContentEntries: Map<String, TranslationContentEntryDto>? = null,
+        translationInteractiveGraphEntries: Map<String, String>? = null,
     ): LibraryStory {
         // Validation: category/theme required (enforced by @NotBlank on theme)
         // Min word count
@@ -362,10 +436,17 @@ class StoryLibraryService(
         }
 
         val wordCount = content.split(Regex("\\s+")).filter { it.isNotBlank() }.size
-        val readingTimeMinutes = (estimatedReadingMinutes?.coerceIn(0.5, 30.0))
-            ?: (wordCount / 150.0).coerceIn(1.0, 30.0)
+        val readingTimeMinutes =
+            (estimatedReadingMinutes?.coerceIn(0.5, StoryLibraryValidation.LIBRARY_STORY_READING_TIME_MAX_MINUTES))
+                ?: StoryLibraryValidation.readingTimeMinutesFromWordCount(wordCount)
         val now = java.time.Instant.now()
-        val effectiveStatus = status?.take(20)?.uppercase()?.let { if (it in listOf("DRAFT", "PUBLISHED")) it else "DRAFT" } ?: "DRAFT"
+        val effectiveStatus = status?.take(20)?.uppercase()?.let { 
+            when (it) {
+                "DRAFT" -> com.tamixa.domain.LibraryStoryStatus.DRAFT
+                "PUBLISHED" -> com.tamixa.domain.LibraryStoryStatus.PUBLISHED
+                else -> com.tamixa.domain.LibraryStoryStatus.DRAFT
+            }
+        } ?: com.tamixa.domain.LibraryStoryStatus.DRAFT
         val effectiveEmotion = emotionMode?.trim()?.uppercase()?.take(20)
             ?.let { if (it in listOf("CALM", "SOOTHING", "ADVENTUROUS")) it else "CALM" } ?: "CALM"
         val prompts = parentDiscussionPrompts
@@ -383,7 +464,7 @@ class StoryLibraryService(
             theme = theme,
             category = category?.trim()?.take(100) ?: theme,
             language = language.trim().lowercase().take(10).ifEmpty { "ta" },
-            age = age.coerceIn(1, 99),
+            age = StoryLibraryValidation.coerceLibraryStoryAge(age),
             childName = childName.ifBlank { "Child" }.take(255),
             wordCount = wordCount,
             readingTimeMinutes = readingTimeMinutes,
@@ -391,6 +472,7 @@ class StoryLibraryService(
             audioFileUrl = null,  // System generates via TTS pipeline
             status = effectiveStatus,
             coverImageUrl = coverImageUrl?.take(512),
+            coverVideoUrl = coverVideoUrl?.takeIf { it.isNotBlank() }?.take(512),
             createdAt = now,
             updatedAt = now,
             storyOwner = storyOwner?.trim()?.takeIf { it.isNotBlank() }?.take(255),
@@ -420,11 +502,58 @@ class StoryLibraryService(
             status = TranslationPipelineStatus.PENDING,
             retryCount = 0,
             lastError = null,
-            narrationApprovedAt = null
+            narrationApprovedAt = null,
+            parentContentNote = saved.parentContentNote?.trim()?.takeIf { it.isNotBlank() }?.take(4000),
+            speakAlongPrompt = saved.speakAlongPrompt?.trim()?.takeIf { it.isNotBlank() }?.take(500),
+            parentDiscussionPrompts = saved.parentDiscussionPrompts
+                ?.map { it.trim() }
+                ?.filter { it.isNotBlank() }
+                ?.takeIf { it.isNotEmpty() },
         )
         storyTranslationRepository.save(initialTranslation)
-        eventPublisher.publishLibraryStoryCreated(saved.id, saved.content, saved.status)
+        seedSecondaryLocalesAfterLibraryStoryCreate(saved, translationContentEntries, translationInteractiveGraphEntries)
+        eventPublisher.publishLibraryStoryCreated(saved.id, saved.content, saved.status.name)
+        log.info("Library story created id={} language={} status={}", saved.id, saved.language, saved.status)
         return saved
+    }
+
+    /**
+     * After master + primary translation row exist, optionally create other locale rows / graphs from admin create payload.
+     */
+    private fun seedSecondaryLocalesAfterLibraryStoryCreate(
+        saved: LibraryStory,
+        translationContentEntries: Map<String, TranslationContentEntryDto>?,
+        translationInteractiveGraphEntries: Map<String, String>?,
+    ) {
+        if (translationContentEntries.isNullOrEmpty() && translationInteractiveGraphEntries.isNullOrEmpty()) return
+        val masterLang = saved.language.trim().lowercase().take(10)
+        val allowedLangs = libraryAdminAllowedLanguageCodes(masterLang)
+        val category = saved.category ?: saved.theme
+        if (!translationContentEntries.isNullOrEmpty()) {
+            for ((lang, entry) in translationContentEntries) {
+                val langNorm = lang.trim().lowercase().take(10)
+                if (langNorm.isBlank() || langNorm !in allowedLangs || langNorm == masterLang) continue
+                val hasText = entry.content.isNotBlank() || !entry.title.isNullOrBlank() || !entry.moral.isNullOrBlank()
+                if (hasText) {
+                    updateTranslationContent(saved.id, langNorm, entry.title, entry.content.takeIf { it.isNotBlank() }, entry.moral)
+                }
+                patchTranslationPostEpisode(saved.id, langNorm, entry.postStoryMission, entry.postStoryResourceUrl)
+                patchTranslationParentFacing(
+                    saved.id,
+                    langNorm,
+                    entry.parentContentNote,
+                    entry.parentDiscussionPrompts,
+                    entry.speakAlongPrompt,
+                )
+            }
+        }
+        if (!translationInteractiveGraphEntries.isNullOrEmpty()) {
+            for ((lang, raw) in translationInteractiveGraphEntries) {
+                val langNorm = lang.trim().lowercase().take(10)
+                if (langNorm.isBlank() || langNorm !in allowedLangs || langNorm == masterLang) continue
+                updateTranslationInteractiveGraphForAdmin(saved.id, langNorm, raw, saved.theme, category)
+            }
+        }
     }
 
     fun findById(id: Long): LibraryStory? = repository.findById(id)
@@ -443,8 +572,8 @@ class StoryLibraryService(
             val result = repository.findAll(PageRequest.of(page, pageSize.coerceIn(20, 500)))
             scanned += result.numberOfElements
             result.content.forEach { story ->
-                if (story.narrationApprovedAt != null && story.status != StoryStatus.PUBLISHED) {
-                    repository.updateStatus(story.id, StoryStatus.PUBLISHED)
+                if (story.narrationApprovedAt != null && story.status != com.tamixa.domain.LibraryStoryStatus.PUBLISHED) {
+                    repository.updateStatus(story.id, com.tamixa.domain.LibraryStoryStatus.PUBLISHED)
                     changed++
                     changedIds += story.id
                 }
@@ -500,6 +629,7 @@ class StoryLibraryService(
             .filter { it.isNotBlank() && it != sourceLang }
         if (targets.isEmpty()) return
         val now = java.time.Instant.now()
+        val masterRow = repository.findById(masterStoryId)
         for (targetLang in targets) {
             try {
                 if (storyTranslationRepository.existsByMasterStoryIdAndLanguage(masterStoryId, targetLang)) {
@@ -510,7 +640,10 @@ class StoryLibraryService(
                     targetLang = targetLang,
                     title = title,
                     content = content,
-                    moral = moral
+                    moral = moral,
+                    parentContentNote = masterRow?.parentContentNote,
+                    parentDiscussionPrompts = masterRow?.parentDiscussionPrompts,
+                    speakAlongPrompt = masterRow?.speakAlongPrompt,
                 )
                 if (result.content.isBlank()) {
                     log.warn("Bulk seed translation returned empty content masterStoryId={} lang={}", masterStoryId, targetLang)
@@ -532,7 +665,10 @@ class StoryLibraryService(
                         status = TranslationPipelineStatus.PENDING,
                         retryCount = 0,
                         lastError = null,
-                        narrationApprovedAt = null
+                        narrationApprovedAt = null,
+                        parentContentNote = result.parentContentNote?.take(4000),
+                        speakAlongPrompt = result.speakAlongPrompt?.take(500),
+                        parentDiscussionPrompts = result.parentDiscussionPrompts,
                     )
                 )
                 log.debug("Bulk seed translation saved masterStoryId={} lang={}", masterStoryId, targetLang)
@@ -568,6 +704,7 @@ class StoryLibraryService(
         val safeCategories = StoryCategories.normalize(categories)
             .ifEmpty { StoryCategories.canonical }
         val requestedTotal = totalStories.coerceIn(1, 25)
+        val bulkMaxTokens = appProperties.openai.bulkMaxTokens.coerceIn(512, 8192)
 
         val status = if (publish) StoryStatus.PUBLISHED else StoryStatus.DRAFT
         val created = mutableListOf<Map<String, Any?>>()
@@ -586,9 +723,9 @@ class StoryLibraryService(
             log.info("Bulk story generation {}/{} lang={} category={}", idx + 1, requestedTotal, language, category)
             val prompt = buildBulkGenerationPrompt(language, category, idx, learningFocus)
             try {
-                val raw = openAI.generateStory(prompt, 2048)
+                val raw = openAI.generateStory(prompt, bulkMaxTokens)
                 val json = objectMapper.readTree(raw)
-                var title = json.path("title").asText("").trim().ifBlank { "$category Story ${idx + 1}" }
+                val title = json.path("title").asText("").trim().ifBlank { "$category Story ${idx + 1}" }
                 val themeFromJson = json.path("theme").asText("").trim().ifBlank { category }
                 // Use the requested category (what we sent in the prompt) so saved stories match the user's selection; do not use AI-returned category which may be translated or wrong.
                 val categoryToSave = category.take(100)
@@ -602,26 +739,18 @@ class StoryLibraryService(
                     ModerationContext(promptId = "bulk-$idx", language = language, age = 7)
                 )
 
-                val saved = try {
-                    create(
-                        title = title.take(255),
-                        content = storyText.take(50_000),
-                        theme = themeFromJson.take(100),
-                        category = categoryToSave,
-                        language = language,
-                        age = 7,
-                        childName = "Child",
-                        moral = moral?.take(500),
-                        status = status,
-                        storyOwner = storyOwner,
-                        convertPromptUsed = prompt,
-                        estimatedReadingMinutes = estimatedMinutes
-                    )
-                } catch (e: IllegalArgumentException) {
-                    if (e.message?.contains("already exists") == true && title.isNotBlank()) {
-                        val uniqueTitle = "${title.take(250)} (${idx + 1})"
-                        create(
-                            title = uniqueTitle,
+                val titleCandidates = buildList {
+                    add(title.take(255))
+                    add("${title.take(220)} (${idx + 1})".take(255))
+                    val stamp = System.currentTimeMillis() % 1_000_000L
+                    add("${title.take(180)} (${idx + 1}) #$stamp".take(255))
+                }.distinct()
+                var saved: LibraryStory? = null
+                var duplicateError: IllegalArgumentException? = null
+                for (candidate in titleCandidates) {
+                    try {
+                        saved = create(
+                            title = candidate,
                             content = storyText.take(50_000),
                             theme = themeFromJson.take(100),
                             category = categoryToSave,
@@ -634,15 +763,25 @@ class StoryLibraryService(
                             convertPromptUsed = prompt,
                             estimatedReadingMinutes = estimatedMinutes
                         )
-                    } else throw e
+                        break
+                    } catch (e: IllegalArgumentException) {
+                        if (e.message?.contains("already exists") == true) {
+                            duplicateError = e
+                            continue
+                        }
+                        throw e
+                    }
                 }
-                seedTranslationsForPipelineTargets(saved.id, saved.language, saved.title, saved.content, saved.moral)
+                val resolved = saved ?: throw (duplicateError
+                    ?: IllegalStateException("Bulk story save failed after duplicate-title retries"))
+                seedTranslationsForPipelineTargets(resolved.id, resolved.language, resolved.title, resolved.content, resolved.moral)
                 created.add(
                     mapOf(
-                        "id" to saved.id,
+                        "id" to resolved.id,
                         "language" to language,
                         "category" to categoryToSave,
-                        "title" to (saved.title ?: "")
+                        "title" to (resolved.title ?: ""),
+                        "readingTimeMinutes" to resolved.readingTimeMinutes
                     )
                 )
             } catch (e: ContentModerationException) {
@@ -864,12 +1003,152 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         }
     }
 
-    fun findByIdAndLanguage(id: Long, language: String): LibraryStoryResponse? {
+    /** Effective graph JSON for playback: per-translation overlay when set, otherwise master. */
+    private fun resolvedInteractiveGraphJson(master: LibraryStory, translation: StoryTranslation?): String? {
+        val overlay = translation?.interactiveGraphJson?.trim()?.takeIf { it.isNotBlank() }
+        val base = master.interactiveGraphJson?.trim()?.takeIf { it.isNotBlank() }
+        return overlay ?: base
+    }
+
+    private fun overlayInteractiveGraphNode(translation: StoryTranslation?) =
+        LibraryStoryMapper.parseInteractiveGraphJson(translation?.interactiveGraphJson)
+
+    private fun resolvedPostStoryMission(translation: StoryTranslation?, master: LibraryStory): String? =
+        translation?.postStoryMission?.trim()?.takeIf { it.isNotBlank() } ?: master.postStoryMission
+
+    private fun resolvedPostStoryResourceUrl(translation: StoryTranslation?, master: LibraryStory): String? =
+        translation?.postStoryResourceUrl?.trim()?.takeIf { it.isNotBlank() } ?: master.postStoryResourceUrl
+
+    /**
+     * Updates per-locale post-episode fields only. Does not reset translation pipeline or narration approval.
+     * Null mission or url means leave that column unchanged; a non-null value (including blank after trim) updates or clears the override.
+     */
+    private fun patchTranslationPostEpisode(masterStoryId: Long, language: String, mission: String?, url: String?) {
+        if (mission == null && url == null) return
+        val tr = storyTranslationRepository.findByMasterStoryIdAndLanguage(masterStoryId, language) ?: run {
+            log.warn("Skipping translation post-episode patch: no row masterStoryId={} lang={}", masterStoryId, language)
+            return
+        }
+        val newMission =
+            if (mission == null) tr.postStoryMission
+            else mission.trim().take(8000).takeIf { it.isNotBlank() }
+        val newUrl =
+            if (url == null) tr.postStoryResourceUrl
+            else url.trim().take(512).takeIf { it.isNotBlank() }
+        if (normalizeForCompare(newMission) == normalizeForCompare(tr.postStoryMission) &&
+            normalizeForCompare(newUrl) == normalizeForCompare(tr.postStoryResourceUrl)
+        ) {
+            return
+        }
+        storyTranslationRepository.save(tr.copy(postStoryMission = newMission, postStoryResourceUrl = newUrl))
+        log.info("Updated translation post-episode fields masterStoryId={} lang={}", masterStoryId, language)
+    }
+
+    /**
+     * Updates per-locale parent-facing fields only. Null = leave unchanged; blank after trim clears string fields;
+     * [parentDiscussionPrompts] empty list clears prompts.
+     */
+    private fun patchTranslationParentFacing(
+        masterStoryId: Long,
+        language: String,
+        parentContentNote: String?,
+        parentDiscussionPrompts: List<String>?,
+        speakAlongPrompt: String?,
+    ) {
+        if (parentContentNote == null && parentDiscussionPrompts == null && speakAlongPrompt == null) return
+        val tr = storyTranslationRepository.findByMasterStoryIdAndLanguage(masterStoryId, language) ?: run {
+            log.warn("Skipping parent-facing patch: no translation row masterStoryId={} lang={}", masterStoryId, language)
+            return
+        }
+        val newNote =
+            if (parentContentNote == null) tr.parentContentNote
+            else parentContentNote.trim().take(4000).takeIf { it.isNotBlank() }
+        val newSpeak =
+            if (speakAlongPrompt == null) tr.speakAlongPrompt
+            else speakAlongPrompt.trim().take(500).takeIf { it.isNotBlank() }
+        val newPrompts = when {
+            parentDiscussionPrompts == null -> tr.parentDiscussionPrompts
+            parentDiscussionPrompts.isEmpty() -> null
+            else -> parentDiscussionPrompts.map { it.trim() }.filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }
+        }
+        if (normalizeForCompare(newNote) == normalizeForCompare(tr.parentContentNote) &&
+            normalizeForCompare(newSpeak) == normalizeForCompare(tr.speakAlongPrompt) &&
+            normalizeForCompare(newPrompts?.joinToString("|")) == normalizeForCompare(tr.parentDiscussionPrompts?.joinToString("|"))
+        ) {
+            return
+        }
+        storyTranslationRepository.save(
+            tr.copy(
+                parentContentNote = newNote,
+                speakAlongPrompt = newSpeak,
+                parentDiscussionPrompts = newPrompts,
+            )
+        )
+        log.info("Updated translation parent-facing fields masterStoryId={} lang={}", masterStoryId, language)
+    }
+
+    private fun interactiveSegmentStorageKeyExists(): (String) -> Boolean {
+        val port = proxyStorage.getIfAvailable() ?: return { false }
+        return { key -> port.getContentLength(key) != null }
+    }
+
+    /**
+     * When a locale has translated text but no [StoryTranslation.interactiveGraphJson], we reuse the master's graph.
+     * Segment [audioUrl] values then still point at the master's language prefix (e.g. .../stories/{id}/ta/...).
+     *
+     * @param requireExistingSegmentAudioForRewrite when true (parent playback), rewrite to [localeLang] only if the
+     * target storage key exists so clients do not 404. When false (admin editor), always rewrite paths so the JSON
+     * matches the selected source language even before English (etc.) segment TTS is uploaded.
+     */
+    private fun interactiveGraphJsonNodeForLocale(
+        master: LibraryStory,
+        translation: StoryTranslation?,
+        localeLang: String,
+        requireExistingSegmentAudioForRewrite: Boolean,
+    ): JsonNode? {
+        val raw = resolvedInteractiveGraphJson(master, translation) ?: return null
+        val parsed = LibraryStoryMapper.parseInteractiveGraphJson(raw) ?: return null
+        val masterLang = master.language.trim().lowercase().take(10).ifEmpty {
+            appProperties.translationPipeline.sourceLanguage.trim().lowercase().take(10)
+        }
+        val target = effectiveLanguage(localeLang).trim().lowercase().take(10)
+        val hasTranslationOverlay = translation?.interactiveGraphJson?.trim()?.isNotBlank() == true
+        if (hasTranslationOverlay || target == masterLang) {
+            return parsed
+        }
+        val exists: (String) -> Boolean =
+            if (requireExistingSegmentAudioForRewrite) {
+                interactiveSegmentStorageKeyExists()
+            } else {
+                { true }
+            }
+        return InteractiveGraphPlaybackPathRewrite.rewriteSegmentAudioStorageLanguage(
+            parsed,
+            master.id,
+            masterLang,
+            target,
+            exists,
+        )
+    }
+
+    private fun interactiveGraphJsonNodeForPlayback(
+        master: LibraryStory,
+        translation: StoryTranslation?,
+        playbackLang: String,
+    ): JsonNode? = interactiveGraphJsonNodeForLocale(master, translation, playbackLang, requireExistingSegmentAudioForRewrite = true)
+
+    fun findByIdAndLanguage(
+        id: Long,
+        language: String,
+        /** When true (admin GET), segment audio URLs are rewritten to [language] even if files are not in storage yet. */
+        interactiveGraphForAdminEditor: Boolean = false,
+    ): LibraryStoryResponse? {
         val effectiveLang = effectiveLanguage(language)
         val master = repository.findById(id) ?: return null
         val masterLang = master.language.trim().lowercase().take(10).ifEmpty {
             appProperties.translationPipeline.sourceLanguage.trim().lowercase().take(10)
         }
+        val igRequireStorage = !interactiveGraphForAdminEditor
         return when {
             effectiveLang.equals(masterLang, ignoreCase = true) -> {
                 val masterTranslation = storyTranslationRepository.findByMasterStoryIdAndLanguage(id, effectiveLang)
@@ -901,7 +1180,31 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                     audioFileUrl = canonicalAudio,
                     narratedContent = narratedContent,
                     sourceContent = sourceContent,
-                    preferNarratedContentForEditor = preferNarrated
+                    preferNarratedContentForEditor = preferNarrated,
+                    interactiveGraph = interactiveGraphJsonNodeForLocale(
+                        master,
+                        masterTranslation,
+                        effectiveLang,
+                        igRequireStorage,
+                    ),
+                    translationInteractiveGraphOverlay = overlayInteractiveGraphNode(masterTranslation),
+                    postStoryMission = resolvedPostStoryMission(masterTranslation, master),
+                    postStoryResourceUrl = resolvedPostStoryResourceUrl(masterTranslation, master),
+                    parentDiscussionPrompts = resolvedParentDiscussionPromptsForPlayback(
+                        masterTranslation,
+                        master.parentDiscussionPrompts,
+                        effectiveLang,
+                    ),
+                    parentContentNote = resolvedParentContentNoteForPlayback(
+                        masterTranslation,
+                        master.parentContentNote,
+                        effectiveLang,
+                    ),
+                    speakAlongPrompt = resolvedSpeakAlongForPlayback(
+                        masterTranslation,
+                        master.speakAlongPrompt,
+                        effectiveLang,
+                    ),
                 )
             }
             else -> {
@@ -928,7 +1231,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         readingTimeMinutes = translation.readingTimeMinutes,
                         moral = rejectIfTamilWhenNotTa(translation.moral, effectiveLang) ?: "",
                         audioFileUrl = resolvePlayableAudioUrl(id, effectiveLang),
-                        status = master.status,
+                        status = master.status.name,
                         coverImageUrl = coverImageUrlResolver.resolveCoverPath(master.coverImageUrl),
                         coverVideoUrl = coverImageUrlResolver.resolveCoverVideoPath(master.coverVideoUrl),
                         createdAt = master.createdAt,
@@ -943,12 +1246,30 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         regeneratePromptLocked = master.regeneratePromptLocked,
                         regeneratePromptLockApproved = master.regeneratePromptLockApproved,
                         regeneratePromptUnlockRequestedAt = master.regeneratePromptUnlockRequestedAt,
-                        parentDiscussionPrompts = master.parentDiscussionPrompts,
-                        parentContentNote = master.parentContentNote,
-                        speakAlongPrompt = master.speakAlongPrompt,
-                        interactiveGraph = LibraryStoryMapper.parseInteractiveGraphJson(master.interactiveGraphJson),
-                        postStoryMission = master.postStoryMission,
-                        postStoryResourceUrl = master.postStoryResourceUrl,
+                        parentDiscussionPrompts = resolvedParentDiscussionPromptsForPlayback(
+                            translation,
+                            master.parentDiscussionPrompts,
+                            effectiveLang,
+                        ),
+                        parentContentNote = resolvedParentContentNoteForPlayback(
+                            translation,
+                            master.parentContentNote,
+                            effectiveLang,
+                        ),
+                        speakAlongPrompt = resolvedSpeakAlongForPlayback(
+                            translation,
+                            master.speakAlongPrompt,
+                            effectiveLang,
+                        ),
+                        interactiveGraph = interactiveGraphJsonNodeForLocale(
+                            master,
+                            translation,
+                            effectiveLang,
+                            igRequireStorage,
+                        ),
+                        translationInteractiveGraphOverlay = overlayInteractiveGraphNode(translation),
+                        postStoryMission = resolvedPostStoryMission(translation, master),
+                        postStoryResourceUrl = resolvedPostStoryResourceUrl(translation, master),
                     )
                 }
                 // No row or blank text: still surface script-only rows so admin sees pipeline output
@@ -969,7 +1290,31 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                     audioFileUrl = null,
                     narratedContent = narratedContent,
                     sourceContent = sourceContent,
-                    preferNarratedContentForEditor = preferNarrated
+                    preferNarratedContentForEditor = preferNarrated,
+                    parentDiscussionPrompts = resolvedParentDiscussionPromptsForPlayback(
+                        translation,
+                        master.parentDiscussionPrompts,
+                        effectiveLang,
+                    ),
+                    parentContentNote = resolvedParentContentNoteForPlayback(
+                        translation,
+                        master.parentContentNote,
+                        effectiveLang,
+                    ),
+                    speakAlongPrompt = resolvedSpeakAlongForPlayback(
+                        translation,
+                        master.speakAlongPrompt,
+                        effectiveLang,
+                    ),
+                    interactiveGraph = interactiveGraphJsonNodeForLocale(
+                        master,
+                        translation,
+                        effectiveLang,
+                        igRequireStorage,
+                    ),
+                    translationInteractiveGraphOverlay = overlayInteractiveGraphNode(translation),
+                    postStoryMission = resolvedPostStoryMission(translation, master),
+                    postStoryResourceUrl = resolvedPostStoryResourceUrl(translation, master),
                 )
             }
         }
@@ -1113,10 +1458,24 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         val canonicalAudio = resolvePlayableAudioUrl(story.id, effectiveLang)
             ?: (story.audioFileUrl?.takeIf { u -> u.isNotBlank() }
                 ?.let { p -> if (p.startsWith("stories/")) pathToPlayableUrl(p, story.id, effectiveLang) else p })
+        val tr = storyTranslationRepository.findByMasterStoryIdAndLanguage(story.id, effectiveLang)
         return story.toResponse(
             coverImageUrlResolver.resolveCoverPath(story.coverImageUrl),
             coverImageUrlResolver.resolveCoverVideoPath(story.coverVideoUrl),
-        ).copy(audioFileUrl = canonicalAudio)
+        ).copy(
+            audioFileUrl = canonicalAudio,
+            interactiveGraph = interactiveGraphJsonNodeForPlayback(story, tr, effectiveLang),
+            translationInteractiveGraphOverlay = overlayInteractiveGraphNode(tr),
+            postStoryMission = resolvedPostStoryMission(tr, story),
+            postStoryResourceUrl = resolvedPostStoryResourceUrl(tr, story),
+            parentDiscussionPrompts = resolvedParentDiscussionPromptsForPlayback(
+                tr,
+                story.parentDiscussionPrompts,
+                effectiveLang,
+            ),
+            parentContentNote = resolvedParentContentNoteForPlayback(tr, story.parentContentNote, effectiveLang),
+            speakAlongPrompt = resolvedSpeakAlongForPlayback(tr, story.speakAlongPrompt, effectiveLang),
+        )
     }
 
     private fun toLibraryResponseFromTranslation(effectiveLang: String, t: StoryTranslation): LibraryStoryResponse {
@@ -1134,7 +1493,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             readingTimeMinutes = t.readingTimeMinutes,
             moral = rejectIfTamilWhenNotTa(t.moral, effectiveLang) ?: "",
             audioFileUrl = resolvePlayableAudioUrl(t.masterStoryId, effectiveLang),
-            status = master.status,
+            status = master.status.name,
             coverImageUrl = coverImageUrlResolver.resolveCoverPath(master.coverImageUrl),
             coverVideoUrl = coverImageUrlResolver.resolveCoverVideoPath(master.coverVideoUrl),
             createdAt = master.createdAt,
@@ -1144,12 +1503,17 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             emotionMode = master.emotionMode,
             narrationApprovedAt = master.narrationApprovedAt,
             sourceContent = t.content,
-            parentDiscussionPrompts = master.parentDiscussionPrompts,
-            parentContentNote = master.parentContentNote,
-            speakAlongPrompt = master.speakAlongPrompt,
-            interactiveGraph = LibraryStoryMapper.parseInteractiveGraphJson(master.interactiveGraphJson),
-            postStoryMission = master.postStoryMission,
-            postStoryResourceUrl = master.postStoryResourceUrl,
+            parentDiscussionPrompts = resolvedParentDiscussionPromptsForPlayback(
+                t,
+                master.parentDiscussionPrompts,
+                effectiveLang,
+            ),
+            parentContentNote = resolvedParentContentNoteForPlayback(t, master.parentContentNote, effectiveLang),
+            speakAlongPrompt = resolvedSpeakAlongForPlayback(t, master.speakAlongPrompt, effectiveLang),
+            interactiveGraph = interactiveGraphJsonNodeForPlayback(master, t, effectiveLang),
+            translationInteractiveGraphOverlay = overlayInteractiveGraphNode(t),
+            postStoryMission = resolvedPostStoryMission(t, master),
+            postStoryResourceUrl = resolvedPostStoryResourceUrl(t, master),
         )
     }
 
@@ -1228,11 +1592,21 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                     val canonicalAudio = resolvePlayableAudioUrl(it.id, effectiveLang)
                         ?: (it.audioFileUrl?.takeIf { u -> u.isNotBlank() }
                             ?.let { p -> if (p.startsWith("stories/")) pathToPlayableUrl(p, it.id, effectiveLang) else p })
+                    val tr = storyTranslationRepository.findByMasterStoryIdAndLanguage(it.id, effectiveLang)
                     it.toResponse(
                         coverImageUrlResolver.resolveCoverPath(it.coverImageUrl),
                         coverImageUrlResolver.resolveCoverVideoPath(it.coverVideoUrl)
                     ).copy(
-                        audioFileUrl = canonicalAudio
+                        audioFileUrl = canonicalAudio,
+                        interactiveGraph = interactiveGraphJsonNodeForPlayback(it, tr, effectiveLang),
+                        translationInteractiveGraphOverlay = overlayInteractiveGraphNode(tr),
+                        parentDiscussionPrompts = resolvedParentDiscussionPromptsForPlayback(
+                            tr,
+                            it.parentDiscussionPrompts,
+                            effectiveLang,
+                        ),
+                        parentContentNote = resolvedParentContentNoteForPlayback(tr, it.parentContentNote, effectiveLang),
+                        speakAlongPrompt = resolvedSpeakAlongForPlayback(tr, it.speakAlongPrompt, effectiveLang),
                     )
                 }
             }
@@ -1327,11 +1701,21 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                 val canonicalAudio = resolvePlayableAudioUrl(it.id, effectiveLang)
                     ?: (it.audioFileUrl?.takeIf { u -> u.isNotBlank() }
                         ?.let { p -> if (p.startsWith("stories/")) pathToPlayableUrl(p, it.id, effectiveLang) else p })
+                val tr = storyTranslationRepository.findByMasterStoryIdAndLanguage(it.id, effectiveLang)
                 it.toResponse(
                     coverImageUrlResolver.resolveCoverPath(it.coverImageUrl),
                     coverImageUrlResolver.resolveCoverVideoPath(it.coverVideoUrl)
                 ).copy(
-                    audioFileUrl = canonicalAudio
+                    audioFileUrl = canonicalAudio,
+                    interactiveGraph = interactiveGraphJsonNodeForPlayback(it, tr, effectiveLang),
+                    translationInteractiveGraphOverlay = overlayInteractiveGraphNode(tr),
+                    parentDiscussionPrompts = resolvedParentDiscussionPromptsForPlayback(
+                        tr,
+                        it.parentDiscussionPrompts,
+                        effectiveLang,
+                    ),
+                    parentContentNote = resolvedParentContentNoteForPlayback(tr, it.parentContentNote, effectiveLang),
+                    speakAlongPrompt = resolvedSpeakAlongForPlayback(tr, it.speakAlongPrompt, effectiveLang),
                 )
             }
             else -> {
@@ -1351,7 +1735,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         readingTimeMinutes = t.readingTimeMinutes,
                         moral = rejectIfTamilWhenNotTa(t.moral, effectiveLang) ?: "",
                         audioFileUrl = resolvePlayableAudioUrl(t.masterStoryId, effectiveLang),
-                        status = master.status,
+                        status = master.status.name,
                         coverImageUrl = coverImageUrlResolver.resolveCoverPath(master.coverImageUrl),
                         coverVideoUrl = coverImageUrlResolver.resolveCoverVideoPath(master.coverVideoUrl),
                         createdAt = master.createdAt,
@@ -1361,9 +1745,17 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                         emotionMode = master.emotionMode,
                         narrationApprovedAt = master.narrationApprovedAt,
                         sourceContent = t.content,
-                        interactiveGraph = LibraryStoryMapper.parseInteractiveGraphJson(master.interactiveGraphJson),
-                        postStoryMission = master.postStoryMission,
-                        postStoryResourceUrl = master.postStoryResourceUrl,
+                        interactiveGraph = interactiveGraphJsonNodeForPlayback(master, t, effectiveLang),
+                        translationInteractiveGraphOverlay = overlayInteractiveGraphNode(t),
+                        postStoryMission = resolvedPostStoryMission(t, master),
+                        postStoryResourceUrl = resolvedPostStoryResourceUrl(t, master),
+                        parentDiscussionPrompts = resolvedParentDiscussionPromptsForPlayback(
+                            t,
+                            master.parentDiscussionPrompts,
+                            effectiveLang,
+                        ),
+                        parentContentNote = resolvedParentContentNoteForPlayback(t, master.parentContentNote, effectiveLang),
+                        speakAlongPrompt = resolvedSpeakAlongForPlayback(t, master.speakAlongPrompt, effectiveLang),
                     )
                 }
                 PageImpl(content, translations.pageable, translations.totalElements)
@@ -1424,9 +1816,13 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
     }
 
     fun bulkPublish(ids: List<Long>): Int =
-        repository.updateStatusBulk(ids, StoryStatus.PUBLISHED)
+        repository.updateStatusBulk(ids, com.tamixa.domain.LibraryStoryStatus.PUBLISHED)
 
-    private val reviewQueueStatuses = StoryStatus.REVIEW_QUEUE
+    private val reviewQueueStatuses = listOf(
+        com.tamixa.domain.LibraryStoryStatus.CONTENT_REVIEW,
+        com.tamixa.domain.LibraryStoryStatus.TRANSLATING,
+        com.tamixa.domain.LibraryStoryStatus.SUBMITTED
+    )
 
     /**
      * Request changes: send story back to author. Valid when in review queue (PUBLISHED, PROCESSING, READY) and narrationApprovedAt=null.
@@ -1435,7 +1831,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
     fun requestChanges(id: Long, notes: String?): Boolean {
         val story = repository.findById(id) ?: return false
         if (story.status !in reviewQueueStatuses || story.narrationApprovedAt != null) return false
-        repository.updateStatusAndReviewNotes(id, StoryStatus.CHANGES_REQUESTED, notes?.take(2000))
+        repository.updateStatusAndReviewNotes(id, com.tamixa.domain.LibraryStoryStatus.CHANGES_REQUESTED, notes?.take(2000))
         // Reset review-cycle markers so a future submit/review starts fresh.
         repository.updateRejectMarkedAt(id, null)
         libraryStoryLanguageReviewJpaRepository.deleteByLibraryStoryId(id)
@@ -1453,7 +1849,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
     fun reject(id: Long, notes: String?): Boolean {
         val story = repository.findById(id) ?: return false
         if (story.status !in reviewQueueStatuses || story.narrationApprovedAt != null) return false
-        repository.updateStatusAndReviewNotes(id, StoryStatus.REJECTED, notes?.take(2000))
+        repository.updateStatusAndReviewNotes(id, com.tamixa.domain.LibraryStoryStatus.REJECTED, notes?.take(2000))
         repository.updateRejectMarkedAt(id, null)
         libraryStoryLanguageReviewJpaRepository.deleteByLibraryStoryId(id)
         resetPipelineStateAfterReviewTerminalDecision(id)
@@ -1487,7 +1883,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             return false
         }
         repository.updateNarrationApprovedAt(id, java.time.Instant.now())
-        repository.updateStatus(id, StoryStatus.PUBLISHED)
+        repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.PUBLISHED)
         repository.updateRejectMarkedAt(id, null)
         log.info("Narration approved for story id={}; story is now published and visible on the app", id)
         if (appProperties.translationPipeline.autoTtsOnApprove &&
@@ -1683,7 +2079,25 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                 status = TranslationPipelineStatus.PENDING,
                 retryCount = 0,
                 lastError = null,
-                narrationApprovedAt = null
+                narrationApprovedAt = null,
+                parentContentNote = if (effectiveLang == sourceLang) {
+                    master.parentContentNote?.trim()?.takeIf { it.isNotBlank() }?.take(4000)
+                } else {
+                    null
+                },
+                speakAlongPrompt = if (effectiveLang == sourceLang) {
+                    master.speakAlongPrompt?.trim()?.takeIf { it.isNotBlank() }?.take(500)
+                } else {
+                    null
+                },
+                parentDiscussionPrompts = if (effectiveLang == sourceLang) {
+                    master.parentDiscussionPrompts
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        ?.takeIf { it.isNotEmpty() }
+                } else {
+                    null
+                },
             )
             storyTranslationRepository.save(newTranslation)
             log.info("Translation created for language masterStoryId={} language={}", masterStoryId, effectiveLang)
@@ -1719,7 +2133,13 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             status = if (translationChanged) TranslationPipelineStatus.PENDING else existing.status,
             retryCount = if (translationChanged) 0 else existing.retryCount,
             lastError = if (translationChanged) null else existing.lastError,
-            narrationApprovedAt = if (translationChanged) null else existing.narrationApprovedAt
+            narrationApprovedAt = if (translationChanged) null else existing.narrationApprovedAt,
+            interactiveGraphJson = existing.interactiveGraphJson,
+            postStoryMission = existing.postStoryMission,
+            postStoryResourceUrl = existing.postStoryResourceUrl,
+            parentContentNote = existing.parentContentNote,
+            speakAlongPrompt = existing.speakAlongPrompt,
+            parentDiscussionPrompts = existing.parentDiscussionPrompts,
         )
         storyTranslationRepository.save(updated)
         narrationScriptRepository.deleteByTranslationId(existing.id)
@@ -2207,20 +2627,75 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         moral: String?,
         toApply: Map<String, TranslationContentEntryDto>,
         allowedLangs: List<String>,
-        narratedContentPatch: String?
+        narratedContentPatch: String?,
+        translationInteractiveGraphEntries: Map<String, String>?,
+        graphTheme: String,
+        graphCategory: String?,
     ) {
         updateTranslationContent(id, effectiveLang, title, content, moral)
         if (toApply.isNotEmpty()) {
             for ((lang, entry) in toApply) {
                 val toApplyLang = lang.trim().lowercase().take(10)
                 if (toApplyLang.isBlank() || toApplyLang !in allowedLangs || toApplyLang == effectiveLang) continue
-                if (entry.content.isBlank() && entry.title.isNullOrBlank() && entry.moral.isNullOrBlank()) continue
-                val contentToPersist = entry.content.takeIf { it.isNotBlank() }
-                updateTranslationContent(id, toApplyLang, entry.title, contentToPersist, entry.moral)
-                log.info("Updated translation content for story id={} lang={}", id, toApplyLang)
+                val hasText = entry.content.isNotBlank() || !entry.title.isNullOrBlank() || !entry.moral.isNullOrBlank()
+                if (hasText) {
+                    val contentToPersist = entry.content.takeIf { it.isNotBlank() }
+                    updateTranslationContent(id, toApplyLang, entry.title, contentToPersist, entry.moral)
+                    log.info("Updated translation content for story id={} lang={}", id, toApplyLang)
+                }
+                patchTranslationPostEpisode(id, toApplyLang, entry.postStoryMission, entry.postStoryResourceUrl)
+                patchTranslationParentFacing(
+                    id,
+                    toApplyLang,
+                    entry.parentContentNote,
+                    entry.parentDiscussionPrompts,
+                    entry.speakAlongPrompt,
+                )
+            }
+        }
+        if (!translationInteractiveGraphEntries.isNullOrEmpty()) {
+            for ((lang, raw) in translationInteractiveGraphEntries) {
+                val langNorm = lang.trim().lowercase().take(10)
+                if (langNorm.isBlank() || langNorm !in allowedLangs || langNorm == effectiveLang) continue
+                updateTranslationInteractiveGraphForAdmin(id, langNorm, raw, graphTheme, graphCategory)
             }
         }
         applyNarratedContentPatch(id, effectiveLang, narratedContentPatch)
+    }
+
+    /**
+     * Persists [StoryTranslation.interactiveGraphJson] for a non-master locale.
+     * Blank [raw] clears the overlay (inherit master). Graph identical to master normalized JSON is stored as null.
+     */
+    private fun updateTranslationInteractiveGraphForAdmin(
+        masterStoryId: Long,
+        language: String,
+        raw: String,
+        theme: String,
+        category: String?,
+    ) {
+        val tr = storyTranslationRepository.findByMasterStoryIdAndLanguage(masterStoryId, language) ?: run {
+            log.warn("Skipping translation interactive graph: no translation row masterStoryId={} lang={}", masterStoryId, language)
+            return
+        }
+        val master = repository.findById(masterStoryId) ?: return
+        val normalized =
+            if (raw.trim().isEmpty()) {
+                null
+            } else {
+                StoryLibraryValidation.normalizeInteractiveGraphJson(raw)
+            }
+        val masterNorm = StoryLibraryValidation.normalizeInteractiveGraphJson(master.interactiveGraphJson)
+        val toStore =
+            if (normalized != null && masterNorm != null && normalizeForCompare(normalized) == normalizeForCompare(masterNorm)) {
+                null
+            } else {
+                normalized
+            }
+        StoryLibraryValidation.validateInteractiveGraphThemeAlignment(theme, category, toStore)
+        if (normalizeForCompare(tr.interactiveGraphJson) == normalizeForCompare(toStore)) return
+        storyTranslationRepository.save(tr.copy(interactiveGraphJson = toStore))
+        log.info("Updated translation interactive graph masterStoryId={} lang={} cleared={}", masterStoryId, language, toStore == null)
     }
 
     @Transactional
@@ -2241,6 +2716,8 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         updateNarratedOnly: Boolean = false,
         translationContents: Map<String, String>? = null,
         translationContentEntries: Map<String, TranslationContentEntryDto>? = null,
+        /** Per non-master locale: full interactive graph JSON; blank value clears locale overlay (inherit master). */
+        translationInteractiveGraphEntries: Map<String, String>? = null,
         convertPromptUsed: String? = null,
         /** When non-null (JSON property present), updates narration script for [language] after save. */
         narratedContentPatch: String? = null,
@@ -2261,8 +2738,14 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         try {
             val existing = repository.findById(id) ?: return null
             val requestedLang = language.trim().lowercase().take(10).ifEmpty { "ta" }
-            val effectiveStatus = status.take(20).uppercase().let { if (it in StoryStatus.ALLOWED_FROM_REQUEST) it else existing.status }
-            if (effectiveStatus == StoryStatus.PUBLISHED) {
+            val effectiveStatus = status.take(20).uppercase().let { statusStr ->
+                when (statusStr) {
+                    "DRAFT" -> com.tamixa.domain.LibraryStoryStatus.DRAFT
+                    "PUBLISHED" -> com.tamixa.domain.LibraryStoryStatus.PUBLISHED
+                    else -> existing.status
+                }
+            }
+            if (effectiveStatus == com.tamixa.domain.LibraryStoryStatus.PUBLISHED) {
                 StoryLibraryValidation.validateMinWordCount(content).getOrElse { throw it }
                 StoryLibraryValidation.validateScriptForLanguage(content, requestedLang).getOrElse { throw it }
             } else {
@@ -2282,7 +2765,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                 }
             }
         val wordCount = content.split(Regex("\\s+")).filter { it.isNotBlank() }.size
-        val readingTimeMinutes = (wordCount / 150.0).coerceAtMost(5.0)
+        val readingTimeMinutes = StoryLibraryValidation.readingTimeMinutesFromWordCount(wordCount)
         // When content has an Indic script that differs from requested language, migrate master language so edit form
         // loads correctly on next open. Supports ta, hi, te, kn, ml. English has no distinctive script; keep requested.
         val inferredLang = inferLanguageFromScript(content)
@@ -2348,7 +2831,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             theme = theme.trim().take(100),
             category = category?.trim()?.take(100) ?: existing.category ?: theme.trim().take(100),
             language = effectiveLang,
-            age = age.coerceIn(1, 12),
+            age = StoryLibraryValidation.coerceLibraryStoryAge(age),
             childName = childName.ifBlank { "Child" }.take(255),
             wordCount = wordCount,
             readingTimeMinutes = readingTimeMinutes,
@@ -2393,8 +2876,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         // Persist `library_stories` last: updating the master row first used to hold that row lock through
         // translation sync, S3 cleanup (submit-for-review), and LLM/TTS windows — blocking other writers and
         // matching admin client timeouts (Generate translations saves draft before rebuild).
-        val sourceLang = appProperties.translationPipeline.sourceLanguage.trim().lowercase()
-        val allowedLangs = listOf(sourceLang) + appProperties.translationPipeline.targetLanguages.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
+        val allowedLangs = libraryAdminAllowedLanguageCodes(effectiveLang)
         val existingTranslationsByLang = storyTranslationRepository.findByMasterStoryId(id).associateBy { it.language }
         // When submitted for review: preserve existing other-language content if request did not send translationContents/translationContentEntries
         val toApply: Map<String, TranslationContentEntryDto> = when {
@@ -2402,10 +2884,13 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                 TranslationContentEntryDto(
                     v.content.trim().take(50_000),
                     v.title?.trim()?.takeIf { it.isNotBlank() },
-                    v.moral?.trim()?.takeIf { it.isNotBlank() }
+                    v.moral?.trim()?.takeIf { it.isNotBlank() },
+                    v.postStoryMission?.trim()?.take(8000),
+                    v.postStoryResourceUrl?.trim()?.take(512),
                 )
             }.filter { (_, v) ->
-                v.content.isNotBlank() || !v.title.isNullOrBlank() || !v.moral.isNullOrBlank()
+                v.content.isNotBlank() || !v.title.isNullOrBlank() || !v.moral.isNullOrBlank() ||
+                    v.postStoryMission != null || v.postStoryResourceUrl != null
             }
             // Legacy: translationContents has only content per lang; do NOT use master title/moral for other languages
             !translationContents.isNullOrEmpty() -> translationContents.mapValues { (lang, c) ->
@@ -2433,7 +2918,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             if (compareContent.isBlank() && entry.title.isNullOrBlank() && entry.moral.isNullOrBlank()) return@mapNotNull null
             if (hasTranslationContentChanged(existingTranslation, compareContent, entry.title, entry.moral)) normalizedLang else null
         }.distinct()
-        val shouldClearNarrationApproval = effectiveStatus == StoryStatus.PUBLISHED &&
+        val shouldClearNarrationApproval = effectiveStatus == com.tamixa.domain.LibraryStoryStatus.PUBLISHED &&
             existing.narrationApprovedAt != null &&
             (
                 !appProperties.translationPipeline.keepNarrationApprovalOnMetadataOnlyPublishedUpdate ||
@@ -2444,7 +2929,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             updated.copy(narrationApprovedAt = null)
         } else updated
         // When submitted for review: block if pipeline running or content unchanged
-        if (effectiveStatus == StoryStatus.PUBLISHED) {
+        if (effectiveStatus == com.tamixa.domain.LibraryStoryStatus.PUBLISHED) {
             val claimMaxAge = appProperties.translationPipeline.claimMaxAgeMinutes.coerceIn(5, 60)
             if (progressTracker.clearStuckIfOlderThan(id, claimMaxAge)) {
                 log.info(
@@ -2456,14 +2941,14 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             progressTracker.getProcessingLanguage(id)?.let { lang ->
                 throw PipelineRunningException("Pipeline is already running for this story (currently processing $lang). Please wait for it to complete before submitting again.", lang)
             }
-            if (existing.status in StoryStatus.CONTENT_SAME_CHECK) {
+            if (existing.status in listOf(com.tamixa.domain.LibraryStoryStatus.CONTENT_REVIEW, com.tamixa.domain.LibraryStoryStatus.TRANSLATING, com.tamixa.domain.LibraryStoryStatus.SUBMITTED)) {
                 if (!sourceContentChanged && changedTargetLanguages.isEmpty() && !metadataChanged) {
                     throw ContentUnchangedException()
                 }
             }
             // New review cycle: clear "Have reviewed" per-language flags from the prior cycle.
             libraryStoryLanguageReviewJpaRepository.deleteByLibraryStoryId(id)
-            val requiresFullReset = existing.status == StoryStatus.DRAFT || sourceContentChanged
+            val requiresFullReset = existing.status == com.tamixa.domain.LibraryStoryStatus.DRAFT || sourceContentChanged
             val audioAfterApproval = appProperties.translationPipeline.audioAfterApproval
             when {
                 requiresFullReset && !audioAfterApproval -> {
@@ -2508,7 +2993,10 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             moral = moral,
             toApply = toApply,
             allowedLangs = allowedLangs,
-            narratedContentPatch = narratedContentPatch
+            narratedContentPatch = narratedContentPatch,
+            translationInteractiveGraphEntries = translationInteractiveGraphEntries?.takeIf { it.isNotEmpty() },
+            graphTheme = updated.theme,
+            graphCategory = updated.category,
         )
         log.info(
             "Library story update id={} translation-sync complete in {}ms (effectiveLang={} toApply={})",
@@ -2519,7 +3007,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         )
             val saved = repository.update(updatedWithApprovalPolicy)
             val totalMs = elapsedMs()
-            storyPipelineMetrics.recordAdminStoryUpdateLatency(totalMs, scope = "service", outcome = "success", status = effectiveStatus)
+            storyPipelineMetrics.recordAdminStoryUpdateLatency(totalMs, scope = "service", outcome = "success", status = effectiveStatus.name)
             when {
                 totalMs >= updateSlowErrorMs -> log.error(
                     "Library story update id={} VERY_SLOW total={}ms status={} effectiveLang={} toApply={} changedTargetLanguages={}",
@@ -2546,20 +3034,34 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
     }
 
     /**
-     * Search library stories by theme or title (case-insensitive).
-     * Language filter applied on master `library_stories.language` (works for any catalogue primary language).
+     * Search library stories by theme, title, content, or moral (case-insensitive).
+     * Returns stories that have content available in the requested language (via master or translation).
+     * Language-agnostic: finds stories regardless of master language if they have translations.
      */
     fun search(query: String, language: String, page: Int, size: Int): Page<LibraryStoryResponse> {
         if (query.isBlank()) return PageImpl(emptyList(), PageRequest.of(0, size.coerceIn(1, 50)), 0)
         val effectiveLang = effectiveLanguage(language)
         val pageable = PageRequest.of(page.coerceAtLeast(0), size.coerceIn(1, 50))
-        val results = repository.searchByThemeOrTitle(query, effectiveLang, pageable)
-        return results.map {
+        
+        // Search in translations for the requested language (primary search)
+        // This finds stories that have content in the requested language
+        val translationResults = storyTranslationRepository.searchByContent(query, effectiveLang, pageable)
+        
+        // Get master stories for the found translations
+        val masterStoryIds = translationResults.content.map { it.masterStoryId }.toSet()
+        val stories = masterStoryIds.mapNotNull { repository.findById(it) }
+        
+        // Map to responses with cover URLs and audio for the requested language
+        val responses = stories.map {
             val coverPath = coverImageUrlResolver.resolveCoverPath(it.coverImageUrl)
             val audioUrl = resolvePlayableAudioUrl(it.id, effectiveLang)
             it.toResponse(coverPath, coverImageUrlResolver.resolveCoverVideoPath(it.coverVideoUrl))
                 .copy(audioFileUrl = it.audioFileUrl?.takeIf { u -> u.isNotBlank() } ?: audioUrl)
         }
+        
+        log.info("Search query='{}' language='{}' returned {} results", query, effectiveLang, responses.size)
+        
+        return PageImpl(responses, pageable, translationResults.totalElements)
     }
 
     /**
@@ -2857,7 +3359,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                 storyId = masterId,
                 title = story.title?.take(80) ?: "Story #$masterId",
                 theme = story.theme ?: "",
-                status = story.status,
+                status = story.status.name,
                 issues = issues.distinctBy { it.language }
             )
         }.sortedBy { it.storyId }
@@ -2907,4 +3409,461 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                 "hasContent" to t.content.isNotBlank()
             )
         }
+
+    // ========================================
+    // Story Management Workflow Operations
+    // ========================================
+
+    /**
+     * Submit story for review: transition from DRAFT to SUBMITTED and trigger translation pipeline.
+     * Valid only when story is in DRAFT status.
+     * 
+     * Workflow:
+     * 1. Validate story is in DRAFT status
+     * 2. Update status to SUBMITTED
+     * 3. Trigger parallel translation pipeline asynchronously
+     * 4. Pipeline will transition to TRANSLATING → CONTENT_REVIEW
+     * 
+     * @param id Story ID to submit
+     * @return true if submitted successfully, false if story not found or invalid status
+     */
+    @Transactional
+    fun submitForReview(id: Long): Boolean {
+        val story = repository.findById(id) ?: return false
+        
+        // Validate current status
+        if (story.status != com.tamixa.domain.LibraryStoryStatus.DRAFT) {
+            log.warn("Cannot submit story id={} for review: current status={}", id, story.status)
+            return false
+        }
+        
+        // Validate story has required content
+        if (story.content.isBlank()) {
+            log.warn("Cannot submit story id={} for review: content is blank", id)
+            return false
+        }
+        
+        // Update status to SUBMITTED
+        repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.SUBMITTED)
+        log.info("Story id={} submitted for review, status updated to SUBMITTED", id)
+        
+        // Trigger translation pipeline asynchronously
+        triggerPipelineExecutor.execute {
+            try {
+                log.info("Starting translation pipeline for story id={}", id)
+                // Pipeline will handle status transitions: SUBMITTED → TRANSLATING → CONTENT_REVIEW
+                eventPublisher.publishLibraryStoryCreated(id, story.content, "SUBMITTED")
+                log.info("Translation pipeline triggered for story id={}", id)
+            } catch (e: Exception) {
+                log.error("Failed to trigger translation pipeline for story id={}", id, e)
+                // Update status to TRANSLATION_FAILED on error
+                repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.TRANSLATION_FAILED)
+            }
+        }
+        
+        return true
+    }
+
+    /**
+     * Approve story content: transition from CONTENT_REVIEW to APPROVED.
+     * Valid only when story is in CONTENT_REVIEW status.
+     * 
+     * After approval, story is ready for audio generation.
+     * Admin must then use Narration → Generate audio to produce TTS.
+     * 
+     * @param id Story ID to approve
+     * @return true if approved successfully, false if story not found or invalid status
+     */
+    @Transactional
+    fun approveStoryContent(id: Long): Boolean {
+        val story = repository.findById(id) ?: return false
+        
+        // Validate current status
+        if (story.status != com.tamixa.domain.LibraryStoryStatus.CONTENT_REVIEW) {
+            log.warn("Cannot approve story id={}: current status={}", id, story.status)
+            return false
+        }
+        
+        // Validate all languages are reviewed
+        if (!allPipelineLanguagesReviewed(id, story)) {
+            log.warn("Cannot approve story id={}: not all languages are reviewed", id)
+            return false
+        }
+        
+        // Update status to APPROVED
+        repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.APPROVED)
+        repository.updateRejectMarkedAt(id, null)
+        log.info("Story id={} content approved, status updated to APPROVED (ready for audio generation)", id)
+        
+        return true
+    }
+
+    /**
+     * Request changes to story: transition from CONTENT_REVIEW to CHANGES_REQUESTED.
+     * Valid only when story is in CONTENT_REVIEW status.
+     * 
+     * Sends story back to author with feedback notes.
+     * Author must edit content and resubmit (DRAFT → SUBMITTED).
+     * 
+     * @param id Story ID
+     * @param notes Optional feedback notes for the author
+     * @return true if successful, false if story not found or invalid status
+     */
+    @Transactional
+    fun requestStoryChanges(id: Long, notes: String?): Boolean {
+        val story = repository.findById(id) ?: return false
+        
+        // Validate current status
+        if (story.status != com.tamixa.domain.LibraryStoryStatus.CONTENT_REVIEW) {
+            log.warn("Cannot request changes for story id={}: current status={}", id, story.status)
+            return false
+        }
+        
+        // Update status and notes
+        repository.updateStatusAndReviewNotes(id, com.tamixa.domain.LibraryStoryStatus.CHANGES_REQUESTED, notes?.take(2000))
+        repository.updateRejectMarkedAt(id, null)
+        
+        // Reset review markers
+        libraryStoryLanguageReviewJpaRepository.deleteByLibraryStoryId(id)
+        
+        // Reset pipeline state
+        resetPipelineStateAfterReviewTerminalDecision(id)
+        
+        log.info("Story id={} sent back for changes (pipeline statuses reset)", id)
+        return true
+    }
+
+    /**
+     * Reject story: transition from CONTENT_REVIEW to REJECTED.
+     * Valid only when story is in CONTENT_REVIEW status.
+     * 
+     * Story remains in database but is marked as rejected.
+     * Author can edit and resubmit if desired.
+     * 
+     * @param id Story ID
+     * @param notes Optional rejection reason
+     * @return true if successful, false if story not found or invalid status
+     */
+    @Transactional
+    fun rejectStoryContent(id: Long, notes: String?): Boolean {
+        val story = repository.findById(id) ?: return false
+        
+        // Validate current status
+        if (story.status != com.tamixa.domain.LibraryStoryStatus.CONTENT_REVIEW) {
+            log.warn("Cannot reject story id={}: current status={}", id, story.status)
+            return false
+        }
+        
+        // Update status and notes
+        repository.updateStatusAndReviewNotes(id, com.tamixa.domain.LibraryStoryStatus.REJECTED, notes?.take(2000))
+        repository.updateRejectMarkedAt(id, null)
+        
+        // Reset review markers
+        libraryStoryLanguageReviewJpaRepository.deleteByLibraryStoryId(id)
+        
+        // Reset pipeline state
+        resetPipelineStateAfterReviewTerminalDecision(id)
+        
+        log.info("Story id={} rejected (pipeline statuses reset)", id)
+        return true
+    }
+
+    /**
+     * Publish approved story: transition from AUDIO_REVIEW to PUBLISHED.
+     * Valid only when story is in AUDIO_REVIEW status (audio generated and reviewed).
+     * 
+     * Makes story visible to users on the mobile app.
+     * 
+     * @param id Story ID to publish
+     * @return true if published successfully, false if story not found or invalid status
+     */
+    @Transactional
+    fun publishStory(id: Long): Boolean {
+        val story = repository.findById(id) ?: return false
+        
+        // Validate current status
+        if (story.status != com.tamixa.domain.LibraryStoryStatus.AUDIO_REVIEW) {
+            log.warn("Cannot publish story id={}: current status={}", id, story.status)
+            return false
+        }
+        
+        // Validate audio is ready for at least one language
+        val hasAudio = resolveAudioFileUrl(id, story.language) != null
+        if (!hasAudio) {
+            log.warn("Cannot publish story id={}: no audio available", id)
+            return false
+        }
+        
+        // Update status to PUBLISHED
+        repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.PUBLISHED)
+        repository.updateNarrationApprovedAt(id, java.time.Instant.now())
+        log.info("Story id={} published and visible on app", id)
+        
+        return true
+    }
+
+    /**
+     * Unpublish story: transition from PUBLISHED to DRAFT.
+     * Removes story from user-facing app.
+     * 
+     * @param id Story ID to unpublish
+     * @return true if unpublished successfully, false if story not found or invalid status
+     */
+    @Transactional
+    fun unpublishStory(id: Long): Boolean {
+        val story = repository.findById(id) ?: return false
+        
+        // Validate current status
+        if (story.status != com.tamixa.domain.LibraryStoryStatus.PUBLISHED) {
+            log.warn("Cannot unpublish story id={}: current status={}", id, story.status)
+            return false
+        }
+        
+        // Update status to DRAFT
+        repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.DRAFT)
+        repository.updateNarrationApprovedAt(id, null)
+        log.info("Story id={} unpublished and removed from app", id)
+        
+        return true
+    }
+
+    /**
+     * Approve audio for a specific language.
+     * 
+     * Updates narration_approved_at timestamp for the translation row.
+     * When all required languages have approved audio, story transitions to AUDIO_REVIEW status.
+     * 
+     * Valid only when story is in APPROVED status and audio exists for the language.
+     * 
+     * @param id Story ID
+     * @param language Language code (ta, en, hi, te, kn, ml)
+     * @return true if approved successfully, false if validation fails
+     */
+    @Transactional
+    fun approveAudioForLanguage(id: Long, language: String): Boolean {
+        val story = repository.findById(id) ?: return false
+        
+        // Validate story status
+        if (story.status != com.tamixa.domain.LibraryStoryStatus.APPROVED) {
+            log.warn("Cannot approve audio for story id={}: current status={}", id, story.status)
+            return false
+        }
+        
+        val effectiveLang = effectiveLanguage(language)
+        
+        // Validate audio exists for this language
+        val translation = storyTranslationRepository.findByMasterStoryIdAndLanguage(id, effectiveLang)
+        if (translation == null) {
+            log.warn("Cannot approve audio for story id={} language={}: translation not found", id, effectiveLang)
+            return false
+        }
+        
+        val hasAudio = narrationAudioRepository.existsByTranslationIdAndVoiceProfileAndStatus(
+            translation.id, "default", NarrationAudioStatus.READY
+        )
+        if (!hasAudio) {
+            log.warn("Cannot approve audio for story id={} language={}: no READY audio found", id, effectiveLang)
+            return false
+        }
+        
+        // Update narration_approved_at for this language
+        storyTranslationRepository.updateNarrationApprovedAt(id, effectiveLang, java.time.Instant.now())
+        log.info("Audio approved for story id={} language={}", id, effectiveLang)
+        
+        // Check if all required languages are now approved
+        if (allRequiredLanguagesHaveApprovedAudio(id)) {
+            repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.AUDIO_REVIEW)
+            log.info("All languages approved for story id={}, transitioned to AUDIO_REVIEW", id)
+        }
+        
+        return true
+    }
+
+    /**
+     * Reject audio for a specific language and optionally trigger regeneration.
+     * 
+     * Clears narration_approved_at timestamp and optionally deletes audio to force regeneration.
+     * 
+     * Valid only when story is in APPROVED or AUDIO_REVIEW status.
+     * 
+     * @param id Story ID
+     * @param language Language code (ta, en, hi, te, kn, ml)
+     * @param forceRegenerate If true, deletes existing audio to trigger regeneration
+     * @return true if rejected successfully, false if validation fails
+     */
+    @Transactional
+    fun rejectAudioForLanguage(id: Long, language: String, forceRegenerate: Boolean = true): Boolean {
+        val story = repository.findById(id) ?: return false
+        
+        // Validate story status
+        if (story.status !in listOf(
+                com.tamixa.domain.LibraryStoryStatus.APPROVED,
+                com.tamixa.domain.LibraryStoryStatus.AUDIO_REVIEW
+            )
+        ) {
+            log.warn("Cannot reject audio for story id={}: current status={}", id, story.status)
+            return false
+        }
+        
+        val effectiveLang = effectiveLanguage(language)
+        
+        // Validate translation exists
+        val translation = storyTranslationRepository.findByMasterStoryIdAndLanguage(id, effectiveLang)
+        if (translation == null) {
+            log.warn("Cannot reject audio for story id={} language={}: translation not found", id, effectiveLang)
+            return false
+        }
+        
+        // Clear approval timestamp
+        storyTranslationRepository.updateNarrationApprovedAt(id, effectiveLang, null)
+        log.info("Audio rejected for story id={} language={}", id, effectiveLang)
+        
+        // Optionally delete audio to force regeneration
+        if (forceRegenerate) {
+            val audioRecords = narrationAudioRepository.findAllByTranslationId(translation.id)
+            audioRecords.forEach { audio ->
+                if (audio.voiceProfile == "default") {
+                    // Delete from S3 if applicable
+                    if (audio.audioUrl.startsWith("stories/") && s3Client != null) {
+                        try {
+                            val bucketName = appProperties.storage.effectiveS3Bucket
+                            s3Client.deleteObject(
+                                DeleteObjectRequest.builder()
+                                    .bucket(bucketName)
+                                    .key(audio.audioUrl)
+                                    .build()
+                            )
+                            log.info("Deleted audio from S3: {}", audio.audioUrl)
+                        } catch (e: Exception) {
+                            log.warn("Failed to delete audio from S3: {}", audio.audioUrl, e)
+                        }
+                    }
+                    // Delete database record
+                    narrationAudioRepository.deleteByTranslationIdAndVoiceProfile(translation.id, "default")
+                    log.info("Deleted audio record for translation id={}", translation.id)
+                }
+            }
+            
+            // Clear TTS metadata cache
+            if (ttsMetadataCache != null) {
+                ttsMetadataCache.invalidateForStory(id, listOf(effectiveLang))
+            }
+        }
+        
+        // If story was in AUDIO_REVIEW, move back to APPROVED
+        if (story.status == com.tamixa.domain.LibraryStoryStatus.AUDIO_REVIEW) {
+            repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.APPROVED)
+            log.info("Story id={} moved back to APPROVED after audio rejection", id)
+        }
+        
+        return true
+    }
+
+    /**
+     * Approve audio for all languages that have READY audio.
+     * 
+     * Bulk operation that approves all languages with available audio.
+     * Transitions story to AUDIO_REVIEW when all required languages are approved.
+     * 
+     * Valid only when story is in APPROVED status.
+     * 
+     * @param id Story ID
+     * @return Map of language to approval success status
+     */
+    @Transactional
+    fun approveAudioForAllLanguages(id: Long): Map<String, Boolean> {
+        val story = repository.findById(id) ?: return emptyMap()
+        
+        // Validate story status
+        if (story.status != com.tamixa.domain.LibraryStoryStatus.APPROVED) {
+            log.warn("Cannot approve audio for story id={}: current status={}", id, story.status)
+            return emptyMap()
+        }
+        
+        val sourceLang = appProperties.translationPipeline.sourceLanguage.trim().lowercase()
+        val supportedLangs = (listOf(sourceLang) + appProperties.translationPipeline.targetLanguages
+            .split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }).distinct()
+        
+        val results = mutableMapOf<String, Boolean>()
+        
+        for (lang in supportedLangs) {
+            val translation = storyTranslationRepository.findByMasterStoryIdAndLanguage(id, lang)
+            if (translation == null) {
+                results[lang] = false
+                continue
+            }
+            
+            val hasAudio = narrationAudioRepository.existsByTranslationIdAndVoiceProfileAndStatus(
+                translation.id, "default", NarrationAudioStatus.READY
+            )
+            
+            if (hasAudio) {
+                storyTranslationRepository.updateNarrationApprovedAt(id, lang, java.time.Instant.now())
+                results[lang] = true
+                log.info("Audio approved for story id={} language={}", id, lang)
+            } else {
+                results[lang] = false
+                log.debug("Skipped approval for story id={} language={}: no READY audio", id, lang)
+            }
+        }
+        
+        // Check if all required languages are now approved
+        if (allRequiredLanguagesHaveApprovedAudio(id)) {
+            repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.AUDIO_REVIEW)
+            log.info("All languages approved for story id={}, transitioned to AUDIO_REVIEW", id)
+        }
+        
+        return results
+    }
+
+    /**
+     * Check if all required languages have approved audio.
+     * 
+     * @param id Story ID
+     * @return true if all required languages have narration_approved_at set
+     */
+    private fun allRequiredLanguagesHaveApprovedAudio(id: Long): Boolean {
+        val sourceLang = appProperties.translationPipeline.sourceLanguage.trim().lowercase()
+        val supportedLangs = (listOf(sourceLang) + appProperties.translationPipeline.targetLanguages
+            .split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }).distinct()
+        
+        if (supportedLangs.isEmpty()) return false
+        
+        val translations = storyTranslationRepository.findByMasterStoryId(id)
+        
+        for (lang in supportedLangs) {
+            val translation = translations.find { it.language.equals(lang, ignoreCase = true) }
+            if (translation == null || translation.narrationApprovedAt == null) {
+                return false
+            }
+            
+            // Also verify audio exists
+            val hasAudio = narrationAudioRepository.existsByTranslationIdAndVoiceProfileAndStatus(
+                translation.id, "default", NarrationAudioStatus.READY
+            )
+            if (!hasAudio) {
+                return false
+            }
+        }
+        
+        return true
+    }
+
+    /**
+     * Get audio approval status for all languages.
+     * 
+     * @param id Story ID
+     * @return Map of language to approval status (approved timestamp or null)
+     */
+    fun getAudioApprovalStatus(id: Long): Map<String, java.time.Instant?> {
+        val sourceLang = appProperties.translationPipeline.sourceLanguage.trim().lowercase()
+        val supportedLangs = (listOf(sourceLang) + appProperties.translationPipeline.targetLanguages
+            .split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }).distinct()
+        
+        val translations = storyTranslationRepository.findByMasterStoryId(id)
+        
+        return supportedLangs.associateWith { lang ->
+            translations.find { it.language.equals(lang, ignoreCase = true) }?.narrationApprovedAt
+        }
+    }
 }

@@ -17,13 +17,19 @@ class NoOpTranslationClient : TranslationClientPort {
         title: String?,
         content: String,
         moral: String?,
-        timeoutMs: Long
+        timeoutMs: Long,
+        parentContentNote: String?,
+        parentDiscussionPrompts: List<String>?,
+        speakAlongPrompt: String?,
     ): TranslatedContent = TranslatedContent(
         title = title,
         content = content,
         moral = moral,
         titleBeforeParaphrase = null,
         contentBeforeParaphrase = null,
-        moralBeforeParaphrase = null
+        moralBeforeParaphrase = null,
+        parentContentNote = parentContentNote,
+        parentDiscussionPrompts = parentDiscussionPrompts,
+        speakAlongPrompt = speakAlongPrompt,
     )
 }

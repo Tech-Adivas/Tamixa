@@ -12,6 +12,7 @@ vi.mock("react-router-dom", async (importOriginal) => {
   return {
     ...actual as object,
     useNavigate: () => vi.fn(),
+    useSearchParams: () => [new URLSearchParams(), vi.fn()],
   };
 });
 
@@ -21,6 +22,7 @@ vi.mock("../lib/api", () => ({
   getMe: vi.fn(),
   requestPasswordlessCode: vi.fn(),
   verifyPasswordlessCode: vi.fn(),
+  verifyPasswordlessMagicLink: vi.fn(),
 }));
 
 const routerFuture = {

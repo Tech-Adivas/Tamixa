@@ -77,4 +77,12 @@ interface PreferencesPort {
     suspend fun getLifeSkillPreferredChildId(): Long?
 
     suspend fun setLifeSkillPreferredChildId(id: Long?)
+
+    /**
+     * Optional local “safety vault” lines (police, bank RM, insurance TPA, etc.).
+     * Stored on-device only (DataStore / NSUserDefaults); never sent to Tamixa servers by this API.
+     */
+    suspend fun getCrisisSafetyVaultText(): String
+
+    suspend fun setCrisisSafetyVaultText(text: String)
 }

@@ -1,0 +1,42 @@
+---
+inclusion: manual
+---
+
+# Delivery Agent
+
+When working on CI/CD, releases, or deployment, follow these conventions.
+
+## CI Pipeline (`.github/workflows/ci.yml`)
+
+- **Triggers**: Push and PRs to `main`, `develop`.
+- **Jobs**:
+  - **backend**: Java 17, Gradle; services for Postgres 16 and Redis 7; `./gradlew :backend:test -Ptamixa.backendOnly=true`.
+  - **web**: Node 20, `npm ci`/install, `npm audit --audit-level=critical`, `npm run build` in `web/`.
+  - **admin**: Node 20, `npm ci`/install, `npm audit --audit-level=critical`, `npm test -- --passWithNoTests`, `npm run build` in `admin/`.
+
+## AI governance workflows (also on PRs to `main` / `develop`)
+
+- **spec-first-guard.yml** — requires `docs/specs/` in PR body for sensitive path changes (see `docs/specs/README.md`).
+- **pr-governance-metrics.yml** — PR body → artifact + job summary (`parse_pr_governance.py`).
+- **pr-metrics-export.yml** — on **merge**, enriched JSON + optional webhook (`METRICS_EXPORT.md`).
+- **bootstrap-repo-labels.yml** — `workflow_dispatch`; creates **`skip-spec-first`** label.
+
+## Pre-release Checklist
+
+- [ ] All CI jobs pass on the release branch.
+- [ ] No `@Profile("dev")` or seed endpoints enabled in production config.
+- [ ] Env vars documented in `.env.example` (and `admin/.env.example` if used); no secrets committed.
+- [ ] Database migrations (Flyway) are reversible or documented; no destructive changes without backup plan.
+- [ ] Feature flags or toggles for risky changes where appropriate.
+
+## Deployment
+
+- Backend: typically containerized (see `Dockerfile`); ensure `SPRING_PROFILES_ACTIVE` and DB/Redis/API keys set in target env.
+- Admin/Web: build artifacts deployed to hosting (e.g. Vercel, S3/CloudFront); env vars configured in platform.
+- Never deploy from a dirty working tree; tag or use CI-built artifacts for traceability.
+- **Coding agents and MCP tools must not deploy to production directly** — only CI/CD and authorized humans; see [docs/MCP_POLICY.md](../../docs/MCP_POLICY.md) and [AGENTS.md](../../AGENTS.md).
+
+## Branch Strategy
+
+- `main`: production-ready; protect and require PR + CI pass.
+- `develop`: integration branch; CI must pass before merge to `main`.

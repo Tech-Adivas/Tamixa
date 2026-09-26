@@ -29,6 +29,9 @@ import com.tamixa.api.admin.dto.AdminInvoiceDto
 import com.tamixa.api.admin.dto.DoraMetricsDto
 import com.tamixa.api.admin.dto.LifeSkillChoiceAnalyticsResponse
 import com.tamixa.api.admin.dto.FlagStoryRequest
+import com.tamixa.api.admin.dto.InteractiveGraphFromStoryRequest
+import com.tamixa.api.admin.dto.InteractiveSegmentAudioGenerateRequest
+import com.tamixa.api.admin.dto.InteractiveSegmentScriptsFillRequest
 import com.tamixa.api.admin.dto.StoryDetailDto
 import com.tamixa.api.admin.dto.ParentDetailDto
 import com.tamixa.api.admin.dto.PagedResponse
@@ -57,8 +60,10 @@ import com.tamixa.application.storylibrary.BulkJobStatus
 import com.tamixa.application.port.BulkJobStorePort
 import com.tamixa.application.storylibrary.StoryCategories
 import com.tamixa.application.storylibrary.StoryLibraryService
-import com.tamixa.application.storylibrary.StoryStatus as LibraryStoryStatus
+import com.tamixa.domain.LibraryStoryStatus
 import com.tamixa.application.narration.AdminTtsPreviewService
+import com.tamixa.application.narration.InteractiveEpisodeAdminService
+import com.tamixa.infrastructure.narration.NarrationLLMException
 import com.tamixa.application.narration.StoryProcessingService
 import com.tamixa.application.port.ProcessingJobRecord
 import com.tamixa.application.port.StoryRepositoryPort
@@ -146,6 +151,7 @@ class AdminController(
     private val voiceRepository: VoiceRepositoryPort,
     private val referralCodeService: ReferralCodeService,
     private val adminTtsPreviewService: AdminTtsPreviewService,
+    private val interactiveEpisodeAdminService: InteractiveEpisodeAdminService,
     private val storyPromptBuilder: StoryPromptBuilder,
     @Autowired(required = false) private val ttsMetadataCache: TtsMetadataCachePort?,
     private val processingJobService: ProcessingJobService,
@@ -623,9 +629,12 @@ class AdminController(
                     )
                 )
             }
+            val fishModelId = profile.fishAudioModelId ?: return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                base + mapOf("ok" to false, "message" to "Fish Audio model ID not set on this profile.")
+            )
             val bytes = adapter.synthesize(
                 text = "Vanakkam, this is a provider check.",
-                modelId = profile.fishAudioModelId!!,
+                modelId = fishModelId,
                 language = language
             )
             return if (bytes != null && bytes.isNotEmpty()) {
@@ -701,9 +710,12 @@ class AdminController(
             base["userApiStatus"] = userStatus
             base["voiceApiStatus"] = voiceStatus
         }
+        val elevenLabsVoiceId = profile.elevenlabsVoiceId ?: return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+            base + mapOf("ok" to false, "message" to "ElevenLabs voice ID not set on this profile.")
+        )
         val bytes = adapter.synthesize(
             text = "Vanakkam, this is a provider check.",
-            voiceId = profile.elevenlabsVoiceId!!,
+            voiceId = elevenLabsVoiceId,
             language = language
         )
         return if (bytes != null && bytes.isNotEmpty()) {
@@ -1268,7 +1280,11 @@ class AdminController(
             null, "" -> normalizeLanguageForAdmin(storyLibraryService.resolveLanguageForAdminEdit(story))
             else -> normalizeLanguageForAdmin(requested)
         }
-        val response = storyLibraryService.findByIdAndLanguage(id, effectiveLang)
+        val response = storyLibraryService.findByIdAndLanguage(
+            id,
+            effectiveLang,
+            interactiveGraphForAdminEditor = true,
+        )
         if (response != null) {
             return ResponseEntity.ok(response)
         }
@@ -2071,7 +2087,7 @@ class AdminController(
             familyAvatarService?.getAvatarUrl(parentId)?.let { body["avatarUrl"] = it }
             avatarVideoService?.getAvatarVideoUrl(id, "library", parentId, language, voice)?.let { body["avatarVideoUrl"] = it }
             avatarVideoService?.getAvatarVideoStatus(id, "library", parentId, language, voice)?.let { (status, errorMsg) ->
-                body["avatarVideoStatus"] = status!!.name
+                body["avatarVideoStatus"] = status?.name ?: "UNKNOWN"
                 if (errorMsg != null) body["avatarVideoError"] = errorMsg
             }
             avatarVideoService?.getAvatarVideoProviderInfo()?.let { body["avatarVideoProvider"] = it }
@@ -2113,7 +2129,8 @@ class AdminController(
         @RequestParam(required = false) voiceProfile: String?,
         @RequestParam(required = false) parentId: Long?
     ): ResponseEntity<Any> {
-        val useCloned = voiceProfile != null && voiceProfile.isNotBlank() && parentId != null
+        val clonedVoiceProfile = voiceProfile?.takeIf { it.isNotBlank() }
+        val useCloned = clonedVoiceProfile != null && parentId != null
         if (useCloned) {
             val precheckMessage = clonedVoiceProviderPrecheckFailureMessage(voiceProfile, parentId, language)
             if (precheckMessage != null) {
@@ -2127,8 +2144,8 @@ class AdminController(
         }
         val key = try {
             when {
-                useCloned ->
-                    audioStreamService.getLibraryNarrationStoragePath(id, language, voiceProfile!!.trim(), parentId!!)
+                useCloned && clonedVoiceProfile != null && parentId != null ->
+                    audioStreamService.getLibraryNarrationStoragePath(id, language, clonedVoiceProfile.trim(), parentId)
                 else ->
                     storyLibraryService.getNarrationStoragePath(id, language)
             }
@@ -2143,7 +2160,7 @@ class AdminController(
                 log.warn("Admin stream: cloned voice audio not ready for story {} lang={} voiceProfile={} parentId={}", id, language, voiceProfile, parentId)
                 val effectiveLang = com.tamixa.application.stream.StreamLanguageUtils.normalize(language)
                 val msg = if (effectiveLang == "ta") {
-                    resolveTamilClonedPreviewFailureMessage(voiceProfile, parentId!!)
+                    resolveTamilClonedPreviewFailureMessage(voiceProfile, parentId ?: 0L)
                 } else {
                     "Cloned voice audio not ready for this language. Republish the story and try again."
                 }
@@ -2384,6 +2401,142 @@ class AdminController(
     }
 
     /**
+     * Generate interactive graph JSON from story content.
+     * Uses LLM with strict JSON schema and returns normalized graph for admin editing.
+     */
+    @PostMapping("/stories/{id}/interactive-graph/generate")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
+    fun generateInteractiveGraphFromStory(
+        @PathVariable id: Long,
+        @Valid @RequestBody(required = false) request: InteractiveGraphFromStoryRequest?,
+    ): ResponseEntity<Any> {
+        return try {
+            val language = request?.language?.trim()?.ifBlank { "ta" } ?: "ta"
+            val graph = interactiveEpisodeAdminService.generateInteractiveGraphFromStory(
+                storyId = id,
+                language = language,
+                storyText = request?.storyText,
+            )
+            ResponseEntity.ok(
+                mapOf(
+                    "interactiveGraph" to graph,
+                    "message" to "Interactive graph generated. Review and adjust branches before saving.",
+                )
+            )
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.badRequest()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(mapOf("message" to (e.message ?: "Invalid request")))
+        } catch (e: NarrationLLMException) {
+            log.warn("Interactive graph LLM error storyId={}: {}", id, e.message)
+            ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(
+                    mapOf(
+                        "message" to (e.message?.replace("\n", " ")?.take(2000) ?: "LLM request failed"),
+                    ),
+                )
+        } catch (e: Exception) {
+            log.error("Interactive graph generation failed storyId={}: {}", id, e.message, e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(mapOf("message" to "Could not generate interactive graph. Please retry."))
+        }
+    }
+
+    /**
+     * Fill blank segment `text` fields (spoken narration for TTS) using story context and the LLM.
+     */
+    @PostMapping("/stories/{id}/interactive-segments/fill-scripts")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
+    fun fillInteractiveSegmentScripts(
+        @PathVariable id: Long,
+        @Valid @RequestBody request: InteractiveSegmentScriptsFillRequest,
+    ): ResponseEntity<Any> {
+        return try {
+            val result = interactiveEpisodeAdminService.fillMissingSegmentNarrationScripts(
+                storyId = id,
+                language = request.language,
+                interactiveGraphJson = request.interactiveGraph,
+                storyText = request.storyText,
+            )
+            val msg = if (result.filledSegmentIds.isEmpty()) {
+                "All segments already have narration text."
+            } else {
+                "Filled ${result.filledSegmentIds.size} segment script(s): ${result.filledSegmentIds.joinToString(", ")}."
+            }
+            ResponseEntity.ok(
+                mapOf(
+                    "interactiveGraph" to result.interactiveGraph,
+                    "filledSegmentIds" to result.filledSegmentIds,
+                    "message" to msg,
+                ),
+            )
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.badRequest()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(mapOf("message" to (e.message ?: "Invalid request")))
+        } catch (e: NarrationLLMException) {
+            log.warn("Interactive segment script fill LLM error storyId={}: {}", id, e.message)
+            ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(
+                    mapOf(
+                        "message" to (e.message?.replace("\n", " ")?.take(2000) ?: "LLM request failed"),
+                    ),
+                )
+        } catch (e: Exception) {
+            log.error("Interactive segment script fill failed storyId={}: {}", id, e.message, e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(mapOf("message" to "Could not fill segment scripts. Check LLM configuration and retry."))
+        }
+    }
+
+    /**
+     * Generate segment audio for one or many interactive graph segments, then return updated graph JSON.
+     */
+    @PostMapping("/stories/{id}/interactive-segments/generate-audio")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
+    fun generateInteractiveSegmentAudio(
+        @PathVariable id: Long,
+        @Valid @RequestBody request: InteractiveSegmentAudioGenerateRequest,
+    ): ResponseEntity<Any> {
+        return try {
+            val result = interactiveEpisodeAdminService.generateSegmentAudio(
+                storyId = id,
+                language = request.language,
+                voiceProfile = request.voiceProfile ?: "default",
+                interactiveGraphJson = request.interactiveGraph,
+                segments = request.segments.map {
+                    InteractiveEpisodeAdminService.SegmentAudioInput(
+                        segmentId = it.segmentId,
+                        text = it.text,
+                        overwriteExisting = it.overwriteExisting,
+                    )
+                },
+            )
+            ResponseEntity.ok(
+                mapOf(
+                    "interactiveGraph" to result.updatedGraphJson,
+                    "generated" to result.generated,
+                    "skipped" to result.skipped,
+                    "failed" to result.failed,
+                )
+            )
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.badRequest()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(mapOf("message" to (e.message ?: "Invalid request")))
+        } catch (e: Exception) {
+            log.error("Interactive segment audio generation failed storyId={}: {}", id, e.message, e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(mapOf("message" to "Could not generate segment audio. Check TTS/storage configuration and retry."))
+        }
+    }
+
+    /**
      * Deletes stored narration for a curated story + language + voice so the next preview regenerates it.
      * For cloned voice pass voiceProfile (e.g. cloned:1) and parentId. Requires MANAGE_STORIES (story library).
      */
@@ -2502,13 +2655,14 @@ class AdminController(
                 age = request.age,
                 childName = request.childName.ifBlank { "Child" },
                 moral = request.moral,
-                status = request.status.ifBlank { LibraryStoryStatus.DRAFT },
+                status = request.status.ifBlank { "DRAFT" },
                 coverImageUrl = request.coverImageUrl?.takeIf { it.isNotBlank() }?.let { coverImageUrlResolver.normalizeForStorage(it) ?: it },
                 coverVideoUrl = request.coverVideoUrl?.takeIf { it.isNotBlank() }?.let { coverImageUrlResolver.normalizeForStorage(it) ?: it },
                 emotionMode = request.emotionMode,
-                updateNarratedOnly = request.status == LibraryStoryStatus.PUBLISHED && !runPipelineOnUpdate,
+                updateNarratedOnly = request.status == "PUBLISHED" && !runPipelineOnUpdate,
                 translationContents = request.translationContents?.takeIf { it.isNotEmpty() },
                 translationContentEntries = request.translationContentEntries?.takeIf { it.isNotEmpty() },
+                translationInteractiveGraphEntries = request.translationInteractiveGraphEntries?.takeIf { it.isNotEmpty() },
                 convertPromptUsed = null,
                 narratedContentPatch = request.narratedContent,
                 parentDiscussionPrompts = request.parentDiscussionPrompts,
@@ -2877,6 +3031,18 @@ class AdminController(
     @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
     fun createLibraryStory(@Valid @RequestBody request: CreateLibraryStoryRequest): ResponseEntity<*> {
         val adminEmail = SecurityContextHolder.getContext().authentication?.name ?: "system"
+        val translationEntries = request.translationContentEntries?.takeIf { it.isNotEmpty() }?.mapValues { (_, v) ->
+            com.tamixa.api.admin.dto.TranslationContentEntryDto(
+                v.content.trim().take(50_000),
+                v.title?.trim()?.takeIf { t -> t.isNotBlank() },
+                v.moral?.trim()?.takeIf { m -> m.isNotBlank() },
+                v.postStoryMission?.trim()?.take(8000),
+                v.postStoryResourceUrl?.trim()?.take(512),
+            )
+        }?.filter { (_, v) ->
+            v.content.isNotBlank() || !v.title.isNullOrBlank() || !v.moral.isNullOrBlank() ||
+                v.postStoryMission != null || v.postStoryResourceUrl != null
+        }
         val story = storyLibraryService.create(
             title = request.title,
             content = request.content,
@@ -2898,6 +3064,10 @@ class AdminController(
             interactiveGraphJson = request.interactiveGraph,
             postStoryMission = request.postStoryMission,
             postStoryResourceUrl = request.postStoryResourceUrl,
+            coverVideoUrl = request.coverVideoUrl?.takeIf { it.isNotBlank() }
+                ?.let { coverImageUrlResolver.normalizeForStorage(it) ?: it },
+            translationContentEntries = translationEntries,
+            translationInteractiveGraphEntries = request.translationInteractiveGraphEntries?.takeIf { it.isNotEmpty() },
         )
         if (story.status == LibraryStoryStatus.PUBLISHED && appProperties.translationPipeline.pipelineOnSubmitOnly) {
             log.info("PIPELINE >>> Create publish: triggering pipeline for storyId={} (content will be generated for all languages)", story.id)

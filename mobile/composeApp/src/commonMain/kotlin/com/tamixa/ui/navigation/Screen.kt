@@ -6,6 +6,7 @@ sealed class Screen(val route: String) {
     data object Splash : Screen("splash")
     data object OnboardingHook : Screen("onboarding/hook")
     data object OnboardingDemo : Screen("onboarding/demo")
+    data object OnboardingInteractivePreview : Screen("onboarding/interactive-preview")
     data object Login : Screen("login")
     data object Register : Screen("register")
     data object LanguageSelection : Screen("language")
@@ -34,6 +35,23 @@ sealed class Screen(val route: String) {
     data object MyVoiceAndAvatar : Screen("my-voice-avatar")
     data object Subscription : Screen("subscription")
     data object Settings : Screen("settings")
+    /**
+     * Verified helplines, cyber first-hour steps, on-device safety vault (no server sync).
+     * Query [FROM_ARG]: [FROM_LIB_SIM], [FROM_SETTINGS], [FROM_PLAYER], or [FROM_UNKNOWN] (analytics only, no PII).
+     */
+    data object CrisisHelp : Screen("crisis-help?from={from}") {
+        const val FROM_ARG = "from"
+        const val FROM_UNKNOWN = "unknown"
+        const val FROM_LIB_SIM = "lib_sim"
+        const val FROM_SETTINGS = "settings"
+        const val FROM_PLAYER = "player"
+        fun route(from: String = FROM_UNKNOWN): String = "crisis-help?from=$from"
+    }
+    /**
+     * Offline-first emergency workflow (money/cyber, police, medical checklists + NGO signposts).
+     * No query args; all copy is bundled in the app.
+     */
+    data object CrisisNavigator : Screen("crisis-navigator")
     /** Family readiness radar + story suggestions (synced life-skill counters per child). */
     data object LifeReadiness : Screen("life-readiness")
     /** Alias for [StorySelection]; navigates to the same browse/generate experience (legacy deep links). */

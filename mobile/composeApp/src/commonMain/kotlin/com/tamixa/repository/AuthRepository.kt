@@ -55,6 +55,26 @@ class AuthRepository(
         tokens
     }
 
+    suspend fun verifyPasswordlessMagicLink(
+        loginToken: String,
+        acceptedTerms: Boolean,
+        acceptedPrivacy: Boolean,
+        acceptedParentalAttestation: Boolean
+    ): Result<AuthTokens> = runCatching {
+        val tokens = api.verifyPasswordlessMagicLink(
+            loginToken,
+            acceptedTerms,
+            acceptedPrivacy,
+            acceptedParentalAttestation
+        )
+        tokenStorage.saveTokens(
+            tokens.accessToken,
+            tokens.refreshToken,
+            tokens.expiresInSeconds
+        )
+        tokens
+    }
+
     suspend fun sendOtp(phone: String): Result<AuthApi.OtpSendResult> = runCatching {
         api.sendOtp(phone)
     }

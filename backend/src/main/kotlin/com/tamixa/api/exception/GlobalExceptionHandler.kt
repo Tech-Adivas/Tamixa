@@ -27,6 +27,7 @@ import com.tamixa.application.avatar.AvatarNotFoundException
 import com.tamixa.api.exception.LimitReachedResponse
 import com.tamixa.domain.narration.NarrationJobCapacityExceededException
 import com.tamixa.domain.subscription.UpgradeRequiredException
+import com.tamixa.infrastructure.narration.NarrationLLMException
 import com.tamixa.infrastructure.openai.OpenAIException
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
@@ -203,6 +204,15 @@ class GlobalExceptionHandler {
         log.warn("OpenAI API error: {}", e.message)
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
             .body(errorBody(e.message ?: "AI service temporarily unavailable", HttpStatus.BAD_GATEWAY))
+    }
+
+    /** Narration / custom-prompt LLM errors (Gemini/OpenAI via [com.tamixa.application.port.narration.NarrationLLMPort]). */
+    @ExceptionHandler(NarrationLLMException::class)
+    fun handleNarrationLlm(e: NarrationLLMException): ResponseEntity<Map<String, Any>> {
+        val msg = e.message?.replace("\n", " ")?.take(2000) ?: "LLM request failed"
+        log.warn("Narration LLM error: {}", msg)
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+            .body(errorBody(msg, HttpStatus.BAD_GATEWAY))
     }
 
     /**

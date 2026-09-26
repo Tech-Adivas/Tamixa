@@ -29,7 +29,7 @@ export default function Subscription() {
         setSub(s);
         setUsage(u);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load subscription"))
       .finally(() => setLoading(false));
   }, []);
 

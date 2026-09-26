@@ -246,8 +246,18 @@ fun AudioPlayerScreen(
     playbackSubtitle: String? = null,
     /** Library interactive graph: small parent-facing cue near the title. */
     showInteractivePracticeChip: Boolean = false,
+    /** Current interactive segment narration; when set, transcript matches segment audio instead of [Story.content]. */
+    interactiveSceneTranscript: String? = null,
     /** On-device TTS file playback — no server word timings; hide voice-synced highlight. */
     playbackUsesDeviceTts: Boolean = false,
+    /** Playback speed (0.75x, 1x, 1.25x, 1.5x) */
+    playbackSpeed: Float = 1.0f,
+    /** Callback when speed is changed */
+    onSpeedChange: ((Float) -> Unit)? = null,
+    /** Related stories for recommendations */
+    relatedStories: List<Story> = emptyList(),
+    /** Callback when related story is tapped */
+    onRelatedStoryClick: ((Story) -> Unit)? = null,
 ) {
     var showVoicePremiumDialog by remember { mutableStateOf(false) }
     var playMenuExpanded by remember { mutableStateOf(false) }
@@ -367,8 +377,13 @@ fun AudioPlayerScreen(
                                 onDownload = onDownload,
                                 playbackSubtitle = playbackSubtitle,
                                 showInteractivePracticeChip = showInteractivePracticeChip,
+                                interactiveSceneTranscript = interactiveSceneTranscript,
                                 playbackUsesDeviceTts = playbackUsesDeviceTts,
                                 onShare = onShare,
+                                playbackSpeed = playbackSpeed,
+                                onSpeedChange = onSpeedChange,
+                                relatedStories = relatedStories,
+                                onRelatedStoryClick = onRelatedStoryClick,
                             )
                         }
                     }
@@ -716,16 +731,55 @@ private fun PlayerContent(
     onDownload: (() -> Unit)? = null,
     playbackSubtitle: String? = null,
     showInteractivePracticeChip: Boolean = false,
+    interactiveSceneTranscript: String? = null,
     playbackUsesDeviceTts: Boolean = false,
     onShare: (() -> Unit)? = null,
+    playbackSpeed: Float = 1.0f,
+    onSpeedChange: ((Float) -> Unit)? = null,
+    relatedStories: List<Story> = emptyList(),
+    onRelatedStoryClick: ((Story) -> Unit)? = null,
 ) {
     val storyTextForDisplay = remember(story.id, story.content) {
         NarrationTextUtils.stripRemainingMarkers(story.content)
     }
+    val sceneTranscriptStripped = remember(interactiveSceneTranscript) {
+        interactiveSceneTranscript?.trim()?.takeIf { it.isNotBlank() }?.let {
+            NarrationTextUtils.stripRemainingMarkers(it)
+        }.orEmpty()
+    }
+    val transcriptForDisplay =
+        if (showInteractivePracticeChip && sceneTranscriptStripped.isNotBlank()) {
+            sceneTranscriptStripped
+        } else {
+            storyTextForDisplay
+        }
+    // Interactive episodes: no server word timings; we approximate read-along from segment text + estimated duration
+    // while [progress] is driven by the real segment MP3 (see interactiveApproximateWordTimings).
     val showSyncedReadAlong =
-        storyTextForDisplay.isNotBlank() && !playbackUsesDeviceTts
-    val totalSec = (durationSeconds?.takeIf { it > 0 }
-        ?: (story.readingTimeMinutes * 60).toInt()).coerceAtLeast(1)
+        storyTextForDisplay.isNotBlank() && !playbackUsesDeviceTts && !showInteractivePracticeChip
+    val totalSec = remember(durationSeconds, showInteractivePracticeChip, sceneTranscriptStripped, story.readingTimeMinutes) {
+        when {
+            durationSeconds != null && durationSeconds > 0 -> durationSeconds
+            showInteractivePracticeChip && sceneTranscriptStripped.isNotBlank() -> {
+                val words = sceneTranscriptStripped.split(Regex("\\s+")).count { it.isNotBlank() }
+                (words * 3 + 8).coerceIn(12, 180)
+            }
+            else -> (story.readingTimeMinutes * 60).toInt().coerceAtLeast(1)
+        }
+    }
+    /** Approximate word windows for interactive segment MP3s (no server timings); spaced evenly over [totalSec]. */
+    val interactiveApproximateWordTimings = remember(
+        transcriptForDisplay,
+        totalSec,
+        showInteractivePracticeChip,
+        sceneTranscriptStripped,
+    ) {
+        if (showInteractivePracticeChip && sceneTranscriptStripped.isNotBlank() && totalSec > 0) {
+            buildUniformWordTimingsForReadAlong(transcriptForDisplay, totalSec)
+        } else {
+            null
+        }
+    }
     val accent = com.tamixa.ui.theme.TamixaColors.goldAccent
     var showRemixDialog by remember(story.id) { mutableStateOf(false) }
     var remixInstruction by remember(story.id) { mutableStateOf("") }
@@ -1029,18 +1083,33 @@ private fun PlayerContent(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(10.dp))
-                KaraokeFlowingCaption(
-                    wordTimings = wordTimings,
-                    progress = progress,
-                    durationSeconds = totalSec,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(12.dp))
                 StoryTranscriptSection(
                     content = storyTextForDisplay,
                     progress = progress,
                     wordTimings = wordTimings,
                     durationSeconds = totalSec,
+                )
+            } else if (showInteractivePracticeChip && transcriptForDisplay.isNotBlank()) {
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    text = if (sceneTranscriptStripped.isNotBlank()) {
+                        Strings.playerInteractiveSceneTranscriptTitle()
+                    } else {
+                        Strings.transcript()
+                    },
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = PlayerScreenInk,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(10.dp))
+                StoryTranscriptSection(
+                    content = transcriptForDisplay,
+                    progress = progress,
+                    wordTimings = interactiveApproximateWordTimings,
+                    durationSeconds = totalSec,
+                    wordWeightedHeuristic = interactiveApproximateWordTimings == null && sceneTranscriptStripped.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             } else if (playbackUsesDeviceTts && storyTextForDisplay.isNotBlank()) {
                 Spacer(Modifier.height(18.dp))
@@ -1135,6 +1204,100 @@ private fun PlayerContent(
                     }
                 }
             }
+            
+            // Related Stories Section
+            if (relatedStories.isNotEmpty() && onRelatedStoryClick != null) {
+                Spacer(Modifier.height(24.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                ) {
+                    Text(
+                        text = Strings.playerRelatedStories(),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = PlayerScreenInk,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    relatedStories.take(3).forEach { relatedStory ->
+                        Surface(
+                            onClick = { onRelatedStoryClick(relatedStory) },
+                            shape = RoundedCornerShape(TamixaDesignTokens.cardRadius),
+                            color = snippetSurface,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, PlayerCardStroke),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Cover image
+                                Box(
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(TamixaColors.warmSurfaceVariant)
+                                ) {
+                                    StoryCoverImage(
+                                        story = relatedStory,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                        apiBaseUrl = apiBaseUrl
+                                    )
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = relatedStory.title?.takeIf { it.isNotBlank() } ?: relatedStory.theme,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = PlayerScreenInk,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        relatedStory.category?.let { category ->
+                                            Text(
+                                                text = category,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = PlayerScreenMuted
+                                            )
+                                        }
+                                        if (relatedStory.readingTimeMinutes > 0) {
+                                            Text(
+                                                text = "•",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = PlayerScreenMuted
+                                            )
+                                            Text(
+                                                text = "${relatedStory.readingTimeMinutes} min",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = PlayerScreenMuted
+                                            )
+                                        }
+                                    }
+                                }
+                                Icon(
+                                    Icons.Default.PlayArrow,
+                                    contentDescription = Strings.play(),
+                                    tint = accent,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
             Spacer(Modifier.height(20.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1362,6 +1525,80 @@ private fun PlayerContent(
                         }
                     }
                 }
+                
+                // Speed control
+                if (onSpeedChange != null) {
+                    Spacer(Modifier.height(12.dp))
+                    var speedMenuExpanded by remember { mutableStateOf(false) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            onClick = { speedMenuExpanded = true },
+                            shape = RoundedCornerShape(16.dp),
+                            color = TamixaColors.nightSkySurfaceVariant.copy(alpha = 0.7f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, PlayerCardStroke),
+                            modifier = Modifier.wrapContentSize()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = Strings.playerSpeed(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = PlayerScreenMuted
+                                )
+                                Text(
+                                    text = "${playbackSpeed}x",
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    color = PlayerScreenInk
+                                )
+                                Icon(
+                                    Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = PlayerScreenInk,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = speedMenuExpanded,
+                            onDismissRequest = { speedMenuExpanded = false },
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ) {
+                            listOf(0.75f, 1.0f, 1.25f, 1.5f).forEach { speed ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("${speed}x")
+                                            if (speed == playbackSpeed) {
+                                                Icon(
+                                                    Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        onSpeedChange(speed)
+                                        speedMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                
                 if (showRemixDialog && remixHandler != null) {
                     androidx.compose.material3.AlertDialog(
                         onDismissRequest = {
@@ -1415,41 +1652,21 @@ private fun PlayerContent(
 /** Nudge highlight earlier so it tracks perceived speech (output / decoder latency). */
 private const val READ_ALONG_TIMING_OFFSET_SEC = 0.08
 
-/** Web parity: window of words around the current time (Stories.tsx captionFromWordTimings). */
-private fun captionFromWordTimings(timings: List<WordTiming>, t: Double): String? {
-    if (timings.isEmpty()) return null
-    val idx = timings.indexOfFirst { w -> t >= w.startSec && t < w.endSec }
-    val i = if (idx >= 0) idx else timings.indexOfFirst { w -> t < w.startSec }
-    val center = if (i >= 0) i else kotlin.math.max(0, timings.size - 1)
-    val from = kotlin.math.max(0, center - 5)
-    val to = kotlin.math.min(timings.size, center + 8)
-    return timings.subList(from, to).joinToString(" ") { it.word }.trim().takeIf { it.isNotBlank() }
-}
-
-@Composable
-private fun KaraokeFlowingCaption(
-    wordTimings: List<WordTiming>?,
-    progress: Float,
-    durationSeconds: Int,
-    modifier: Modifier = Modifier,
-) {
-    if (wordTimings.isNullOrEmpty() || durationSeconds <= 0) return
-    val t = (progress * durationSeconds.toDouble() + READ_ALONG_TIMING_OFFSET_SEC)
-        .coerceIn(0.0, durationSeconds.toDouble())
-    val line = captionFromWordTimings(wordTimings, t) ?: return
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        color = TamixaColors.nightSkySurfaceVariant.copy(alpha = 0.58f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, PlayerCardStroke),
-    ) {
-        Text(
-            text = line,
-            style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 26.sp, fontWeight = FontWeight.Medium),
-            color = TamixaColors.goldAccent,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-        )
+/**
+ * Evenly spaces [WordTiming] across [durationSeconds] using the same tokenization as [StoryTranscriptSection].
+ * Used for interactive segment clips without server-side alignment; [progress] still comes from real audio duration.
+ */
+private fun buildUniformWordTimingsForReadAlong(content: String, durationSeconds: Int): List<WordTiming>? {
+    if (durationSeconds <= 0 || content.isBlank()) return null
+    val sentences = splitIntoSentences(content.trim())
+    val words = sentences.flatMap { splitIntoWords(it) }
+    if (words.isEmpty()) return null
+    val dur = durationSeconds.toDouble()
+    val n = words.size
+    return words.mapIndexed { i, w ->
+        val start = dur * i / n
+        val end = dur * (i + 1) / n
+        WordTiming(word = w, startSec = start, endSec = end)
     }
 }
 
@@ -1560,9 +1777,34 @@ private fun sentenceStartWordIndices(sentences: List<String>): List<Int> {
 private const val TRANSCRIPT_HIGHLIGHT_DELAY = 0.42f
 
 /**
+ * Maps 0..1 playback progress to (sentenceIndex, fractionWithinSentence 0..1) using word counts per sentence.
+ * Better for interactive segment clips than equal time per sentence.
+ */
+private fun progressToSentenceFractionByWordWeight(
+    progress: Float,
+    sentences: List<String>,
+): Pair<Int, Float> {
+    if (sentences.isEmpty()) return 0 to 0f
+    val wordCounts = sentences.map { splitIntoWords(it).size.coerceAtLeast(1) }
+    val total = wordCounts.sum().coerceAtLeast(1)
+    val target = progress.coerceIn(0f, 1f) * total
+    var acc = 0f
+    for ((i, c) in wordCounts.withIndex()) {
+        val end = acc + c
+        if (target < end || i == wordCounts.lastIndex) {
+            val frac = ((target - acc) / c.toFloat()).coerceIn(0f, 1f)
+            return i to frac
+        }
+        acc = end
+    }
+    return sentences.lastIndex.coerceAtLeast(0) to 1f
+}
+
+/**
  * Karaoke-style transcript: one sentence at a time, word-by-word highlight synced to playback.
  * When [wordTimings] and [durationSeconds] are provided (from backend/voice transcription),
  * highlight is driven by current time for exact sync. Otherwise uses sentence-based heuristic.
+ * When [wordWeightedHeuristic] is true (interactive segment, no timings), progress is mapped by word count per sentence.
  */
 @Composable
 private fun StoryTranscriptSection(
@@ -1570,6 +1812,7 @@ private fun StoryTranscriptSection(
     progress: Float,
     wordTimings: List<WordTiming>? = null,
     durationSeconds: Int = 0,
+    wordWeightedHeuristic: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val surfaceColor = com.tamixa.ui.theme.TamixaColors.nightSkySurfaceVariant.copy(alpha = 0.6f)
@@ -1609,15 +1852,28 @@ private fun StoryTranscriptSection(
             sentIdx to wordInSent
         }
     } else {
-        val sentenceProgress = if (sentenceCount > 0) (progress * sentenceCount).toFloat().coerceIn(0f, (sentenceCount - 0.001f)) else 0f
-        val sentIdx = sentenceProgress.toInt().coerceIn(0, (sentenceCount - 1).coerceAtLeast(0))
-        val progressInSentence = (sentenceProgress - sentIdx).coerceIn(0f, 1f)
+        val (sentIdx, progressInSentence) =
+            if (wordWeightedHeuristic && sentenceCount > 0) {
+                progressToSentenceFractionByWordWeight(progress, sentences)
+            } else {
+                val sentenceProgress =
+                    if (sentenceCount > 0) {
+                        (progress * sentenceCount).toFloat().coerceIn(0f, (sentenceCount - 0.001f))
+                    } else {
+                        0f
+                    }
+                val si = sentenceProgress.toInt().coerceIn(0, (sentenceCount - 1).coerceAtLeast(0))
+                val pis = (sentenceProgress - si).coerceIn(0f, 1f)
+                si to pis
+            }
         val sentenceWords = splitIntoWords(sentences.getOrNull(sentIdx) ?: "")
         val wordCountInSentence = sentenceWords.size
         val wordProgressInSentence = if (wordCountInSentence > 0) progressInSentence * wordCountInSentence else 0f
         val hi = if (wordCountInSentence > 0) {
             (wordProgressInSentence - TRANSCRIPT_HIGHLIGHT_DELAY).toInt().coerceIn(0, wordCountInSentence - 1)
-        } else 0
+        } else {
+            0
+        }
         sentIdx to hi
     }
 

@@ -32,6 +32,7 @@ object LifeSkillPillarNormalization {
         "fiscal_muscle",
         "fiscalmuscle",
         "financial",
+        "wallet",
     )
     private val balanceKeys = setOf(
         "balance",
@@ -47,9 +48,13 @@ object LifeSkillPillarNormalization {
         if (k.isBlank()) return null
         return when {
             k in wisdomKeys || k.startsWith("wisdom") || k.endsWith("_wisdom") -> LifeSkillPillar.WISDOM
+            k.contains("integrity") || k.contains("clarity") || k == "skill" || k.endsWith("_skill") -> LifeSkillPillar.WISDOM
+            k.contains("leadership") || k.contains("authority") || k.contains("status") -> LifeSkillPillar.SOCIAL
             k in socialKeys || k.contains("social") -> LifeSkillPillar.SOCIAL
-            k in moneyKeys || k.contains("fiscal") || k.contains("money") -> LifeSkillPillar.MONEY
-            k in balanceKeys || k.contains("cognitive") || k.contains("balance") -> LifeSkillPillar.BALANCE
+            k in moneyKeys || k.contains("fiscal") || k.contains("money") || k.contains("debt") || k.contains("business_health") ->
+                LifeSkillPillar.MONEY
+            k in balanceKeys || k.contains("cognitive") || k.contains("balance") || k.contains("confidence") ||
+                k.contains("harmony") || k == "risk" || k.contains("emotional") -> LifeSkillPillar.BALANCE
             else -> null
         }
     }

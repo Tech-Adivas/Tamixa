@@ -54,4 +54,22 @@ class AuthValidationTest {
         assertTrue(AuthValidation.isOtpCodeValid("12345678"))
         assertTrue(AuthValidation.isOtpCodeValid("  5678  "))
     }
+
+    @Test
+    fun isPasswordlessEmailCodeValid_requiresSixDigits() {
+        assertFalse(AuthValidation.isPasswordlessEmailCodeValid("12345"))
+        assertFalse(AuthValidation.isPasswordlessEmailCodeValid("1234567"))
+        assertFalse(AuthValidation.isPasswordlessEmailCodeValid("12a456"))
+        assertTrue(AuthValidation.isPasswordlessEmailCodeValid("123456"))
+    }
+
+    @Test
+    fun extractPasswordlessLoginTokenFromUri_parsesQuery() {
+        val t = "a".repeat(32)
+        assertTrue(
+            AuthValidation.extractPasswordlessLoginTokenFromUri("https://app.example/login?token=$t&x=1") == t
+        )
+        assertTrue(AuthValidation.extractPasswordlessLoginTokenFromUri("https://app.example/login?foo=1") == null)
+        assertTrue(AuthValidation.extractPasswordlessLoginTokenFromUri(null) == null)
+    }
 }

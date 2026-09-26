@@ -51,7 +51,8 @@ class OpenAIClient(
         if (apiKey.isBlank()) {
             throw IllegalStateException("OpenAI API key is not configured. Set OPENAI_API_KEY environment variable.")
         }
-        val effectiveMax = maxTokens.coerceIn(256, 4096)
+        // Upper bound 8192 matches Gemini path; bulk JSON + long story_text needs headroom (config via app.openai.bulk-max-tokens).
+        val effectiveMax = maxTokens.coerceIn(256, 8192)
         val request = ChatRequest(
             model = model,
             messages = listOf(ChatMessage(role = "user", content = prompt)),

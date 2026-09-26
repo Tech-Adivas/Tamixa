@@ -292,6 +292,8 @@ fun StorySelectionScreen(
     bottomBar: @Composable () -> Unit = {},
     loading: Boolean = false,
     loadError: String? = null,
+    /** Extra line under [loadError] (e.g. connection / language hint). */
+    loadErrorHint: String? = null,
     onRetry: (() -> Unit)? = null,
     /** Optional row below the generate button (e.g. Library browse vs fun corner). */
     filterRow: (@Composable () -> Unit)? = null,
@@ -326,31 +328,15 @@ fun StorySelectionScreen(
             ) {
                 when (listLayout) {
                     StorySelectionListLayout.LibraryPosterGrid -> {
-                        TamixaStarfieldSection {
-                            LibraryGenerateCta(onClick = onGenerateStory)
-                            if (filterRow != null) {
+                        if (filterRow != null) {
+                            TamixaStarfieldSection {
                                 filterRow()
                             }
                         }
                     }
                     StorySelectionListLayout.CompactRows -> {
-                        TamixaStarfieldSection {
-                            FilledTonalButton(
-                                onClick = onGenerateStory,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius),
-                                contentPadding = PaddingValues(vertical = 14.dp, horizontal = 20.dp),
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.MenuBook,
-                                    contentDescription = Strings.generateStory(),
-                                    modifier = Modifier.size(22.dp),
-                                    tint = TamixaColors.goldAccent,
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                Text(Strings.generateStory())
-                            }
-                            if (filterRow != null) {
+                        if (filterRow != null) {
+                            TamixaStarfieldSection {
                                 filterRow()
                             }
                         }
@@ -397,6 +383,15 @@ fun StorySelectionScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = TamixaColors.cream.copy(alpha = 0.9f),
                                 )
+                                if (!loadErrorHint.isNullOrBlank()) {
+                                    Spacer(Modifier.height(10.dp))
+                                    Text(
+                                        loadErrorHint,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TamixaColors.cream.copy(alpha = 0.72f),
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
                                 if (onRetry != null) {
                                     Spacer(Modifier.height(16.dp))
                                     TextButton(onClick = onRetry) {

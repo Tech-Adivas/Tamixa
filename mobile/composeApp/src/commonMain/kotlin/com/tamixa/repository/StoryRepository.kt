@@ -75,11 +75,13 @@ class StoryRepository(
     suspend fun getLibraryStoryById(id: Long, language: String = TamixaConstants.DEFAULT_LANGUAGE): Story? =
         api.getLibraryStoryById(id, language)?.toStory()
 
-    /** Fetch story by id and source (curated or generated). If source is generated and not found, tries curated so mixed navigation (e.g. deep link with id only) still resolves. */
+    /** Fetch story by id and source (curated or generated). If source is generated and not found, tries curated so mixed navigation (e.g. deep link with id only) still resolves.
+     *  Checks the in-memory cache first for generated stories to avoid redundant network calls during fast navigation. */
     suspend fun getStoryById(id: Long, storySource: String, language: String = TamixaConstants.DEFAULT_LANGUAGE): Story? =
         when (storySource.lowercase()) {
             TamixaConstants.STORY_SOURCE_LIBRARY -> api.getLibraryStoryById(id, language)?.toStory()
-            else -> api.getGeneratedStoryById(id)
+            else -> cache?.getCachedStories()?.find { it.id == id }
+                ?: api.getGeneratedStoryById(id)
                 ?: api.getLibraryStoryById(id, language)?.toStory()
         }
 

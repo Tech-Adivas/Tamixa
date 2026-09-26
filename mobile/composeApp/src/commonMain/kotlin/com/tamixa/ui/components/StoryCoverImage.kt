@@ -26,6 +26,7 @@ import com.tamixa.domain.Story
 import com.tamixa.network.ApiConfig
 import com.tamixa.platform.CoverVideoSurface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.remember
 import com.tamixa.ui.strings.Strings
 import org.jetbrains.compose.resources.painterResource
 
@@ -58,25 +59,32 @@ fun StoryCoverImage(
 ) {
     val reduceMotion = platformIsReduceMotionEnabled()
     val rawUrl = story.coverImageUrl?.takeIf { it.isNotBlank() }
-    val baseImageUrl = when {
-        rawUrl != null && (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) -> rawUrl
-        rawUrl != null && rawUrl.startsWith("/") && apiBaseUrl != null -> ApiConfig.resolveCoverUrl(apiBaseUrl, rawUrl)
-        rawUrl != null && apiBaseUrl != null -> ApiConfig.resolveCoverUrl(apiBaseUrl, rawUrl)
-        else -> null
-    }
-    val imageUrl = baseImageUrl?.let { url ->
-        if (coverRefreshKey != null) "$url?t=$coverRefreshKey" else url
+    
+    // If no cover image URL, show default placeholder immediately
+    if (rawUrl == null) {
+        DefaultStoryCoverPlaceholder(modifier = modifier)
+        return
     }
 
-    val rawVideoUrl = story.coverVideoUrl?.takeIf { it.isNotBlank() }
-    val baseVideoUrl = when {
-        rawVideoUrl == null -> null
-        rawVideoUrl.startsWith("http://") || rawVideoUrl.startsWith("https://") -> rawVideoUrl
-        apiBaseUrl != null -> ApiConfig.resolveCoverUrl(apiBaseUrl, rawVideoUrl)
-        else -> null
+    val imageUrl = remember(story.coverImageUrl, apiBaseUrl, coverRefreshKey) {
+        val baseImageUrl = when {
+            rawUrl.startsWith("http://") || rawUrl.startsWith("https://") -> rawUrl
+            rawUrl.startsWith("/") && apiBaseUrl != null -> ApiConfig.resolveCoverUrl(apiBaseUrl, rawUrl)
+            apiBaseUrl != null -> ApiConfig.resolveCoverUrl(apiBaseUrl, rawUrl)
+            else -> null
+        }
+        baseImageUrl?.let { url -> if (coverRefreshKey != null) "$url?t=$coverRefreshKey" else url }
     }
-    val videoUrl = baseVideoUrl?.let { url ->
-        if (coverRefreshKey != null) "$url?t=$coverRefreshKey" else url
+
+    val videoUrl = remember(story.coverVideoUrl, apiBaseUrl, coverRefreshKey) {
+        val rawVideoUrl = story.coverVideoUrl?.takeIf { it.isNotBlank() }
+        val baseVideoUrl = when {
+            rawVideoUrl == null -> null
+            rawVideoUrl.startsWith("http://") || rawVideoUrl.startsWith("https://") -> rawVideoUrl
+            apiBaseUrl != null -> ApiConfig.resolveCoverUrl(apiBaseUrl, rawVideoUrl)
+            else -> null
+        }
+        baseVideoUrl?.let { url -> if (coverRefreshKey != null) "$url?t=$coverRefreshKey" else url }
     }
 
     val (bgStart, bgEnd) = themeGradient(story.theme)
@@ -134,8 +142,9 @@ fun StoryCoverImage(
                         contentDescription = coverContentDescription,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = contentScale,
-                        loading = { StoryCoverLoadingSlot(story.theme, Modifier.fillMaxSize()) },
-                        error = { DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize()) }
+                        error = { 
+                            DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize()) 
+                        }
                     )
                 } else {
                     DefaultStoryCoverPlaceholder(modifier = Modifier.fillMaxSize())

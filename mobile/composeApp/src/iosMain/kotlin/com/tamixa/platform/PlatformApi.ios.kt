@@ -23,6 +23,10 @@ import platform.posix.fopen
 import platform.posix.fwrite
 import com.tamixa.ios.IosBuildTimeEnvironment
 import com.tamixa.runtime.ServerEnvironmentCache
+import platform.AVFAudio.AVSpeechBoundary
+import platform.AVFAudio.AVSpeechSynthesisVoice
+import platform.AVFAudio.AVSpeechSynthesizer
+import platform.AVFAudio.AVSpeechUtterance
 import platform.UIKit.UIApplication
 
 @OptIn(ExperimentalForeignApi::class)
@@ -156,6 +160,41 @@ actual fun FamilyVoiceRecordDialog(
 
 actual fun playSplashRevealSound() {
     // Optional: Add AVAudioPlayer with bundled splash_reveal.mp3 for premium experience
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private val iosPlainSpeechSynth = AVSpeechSynthesizer()
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun speakPlainText(text: String, languageCode: String) {
+    val utteranceText = text.trim().replace(Regex("\\s+"), " ")
+    if (utteranceText.isEmpty()) return
+    try {
+        val u = AVSpeechUtterance.speechUtteranceWithString(utteranceText)
+        u.rate = 0.48f
+        val lang = when (languageCode.lowercase().take(2)) {
+            "ta" -> "ta-IN"
+            "hi" -> "hi-IN"
+            "te" -> "te-IN"
+            "kn" -> "kn-IN"
+            "ml" -> "ml-IN"
+            else -> "en-US"
+        }
+        AVSpeechSynthesisVoice.voiceWithLanguage(lang)?.let { v -> u.voice = v }
+        iosPlainSpeechSynth.stopSpeakingAtBoundary(AVSpeechBoundary.AVSpeechBoundaryImmediate)
+        iosPlainSpeechSynth.speakUtterance(u)
+    } catch (e: Throwable) {
+        TamixaLog.w("PlatformIOS", "speakPlainText failed: ${e.message}", e)
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun stopPlainTextSpeech() {
+    try {
+        iosPlainSpeechSynth.stopSpeakingAtBoundary(AVSpeechBoundary.AVSpeechBoundaryImmediate)
+    } catch (e: Throwable) {
+        TamixaLog.w("PlatformIOS", "stopPlainTextSpeech failed: ${e.message}", e)
+    }
 }
 
 @Composable

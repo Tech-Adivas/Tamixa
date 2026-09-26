@@ -143,4 +143,18 @@ class NsUserDefaultsPreferences : PreferencesPort {
         }
         defaults.synchronize()
     }
+
+    override suspend fun getCrisisSafetyVaultText(): String =
+        defaults.stringForKey("${prefix}crisis_safety_vault")?.trim().orEmpty()
+
+    override suspend fun setCrisisSafetyVaultText(text: String) {
+        val key = "${prefix}crisis_safety_vault"
+        val t = text.trim()
+        if (t.isEmpty()) {
+            defaults.removeObjectForKey(key)
+        } else {
+            defaults.setObject(t, forKey = key)
+        }
+        defaults.synchronize()
+    }
 }

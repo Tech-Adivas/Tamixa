@@ -108,7 +108,7 @@ export default function Settings() {
         setExportJobs(e);
         setProgress(p);
       })
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load settings"))
       .finally(() => setLoading(false));
   }, []);
 

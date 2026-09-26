@@ -36,7 +36,10 @@ class SimulatedTranslationClient(
         title: String?,
         content: String,
         moral: String?,
-        timeoutMs: Long
+        timeoutMs: Long,
+        parentContentNote: String?,
+        parentDiscussionPrompts: List<String>?,
+        speakAlongPrompt: String?,
     ): TranslatedContent {
         if (simulatedDelayMs > 0) Thread.sleep(simulatedDelayMs)
         return TranslatedContent(
@@ -46,7 +49,10 @@ class SimulatedTranslationClient(
             // Simulated client doesn't model paraphrase; snapshot is unavailable.
             titleBeforeParaphrase = null,
             contentBeforeParaphrase = null,
-            moralBeforeParaphrase = null
+            moralBeforeParaphrase = null,
+            parentContentNote = parentContentNote?.let { "[$targetLang] $it" },
+            parentDiscussionPrompts = parentDiscussionPrompts?.map { "[$targetLang] $it" },
+            speakAlongPrompt = speakAlongPrompt?.let { "[$targetLang] $it" },
         )
     }
 }

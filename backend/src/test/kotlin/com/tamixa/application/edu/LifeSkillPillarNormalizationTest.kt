@@ -26,4 +26,13 @@ class LifeSkillPillarNormalizationTest {
         assertEquals(LifeSkillPillar.MONEY, LifeSkillPillarNormalization.pillarForDeltaKey("fiscal_muscle"))
         assertEquals(LifeSkillPillar.BALANCE, LifeSkillPillarNormalization.pillarForDeltaKey("cognitive_agency"))
     }
+
+    @Test
+    fun `pillarForDeltaKey maps interactive story author keys`() {
+        assertEquals(LifeSkillPillar.WISDOM, LifeSkillPillarNormalization.pillarForDeltaKey("integrity"))
+        assertEquals(LifeSkillPillar.SOCIAL, LifeSkillPillarNormalization.pillarForDeltaKey("leadership"))
+        assertEquals(LifeSkillPillar.BALANCE, LifeSkillPillarNormalization.pillarForDeltaKey("harmony"))
+        assertEquals(LifeSkillPillar.MONEY, LifeSkillPillarNormalization.pillarForDeltaKey("wallet"))
+        assertEquals(LifeSkillPillar.MONEY, LifeSkillPillarNormalization.pillarForDeltaKey("business_health"))
+    }
 }

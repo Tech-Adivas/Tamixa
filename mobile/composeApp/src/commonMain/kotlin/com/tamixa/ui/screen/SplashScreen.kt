@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -54,6 +55,7 @@ private const val TICK_MS = 16L
 private const val HERO_DELAY_MS = 200L
 private const val SPARKLE_START_MS = 780L
 private const val TAGLINE_DELAY_MS = 1680L
+private const val BRAND_NAME_DELAY_MS = 1100L
 
 @Composable
 fun SplashScreen(
@@ -255,53 +257,85 @@ fun SplashScreen(
         }
 
         if (elapsed >= HERO_DELAY_MS) {
-            Box(
+            // Logo + brand name column — centered on screen
+            val brandNameProgress = ((elapsed - BRAND_NAME_DELAY_MS) / 380f).coerceIn(0f, 1f)
+            val brandNameAlpha = brandNameProgress * brandNameProgress * (3f - 2f * brandNameProgress)
+            val brandNameOffsetY = 14f * (1f - brandNameAlpha)
+
+            Column(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .graphicsLayer {
-                        scaleX = heroScale * logoPulse
-                        scaleY = heroScale * logoPulse
                         translationY = heroOffsetY + idleFloat
-                        rotationZ = heroRotationRad + idleRotation
                         alpha = heroAlpha
                     },
-                contentAlignment = Alignment.Center
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                Canvas(modifier = Modifier.size(glowSize)) {
-                    val c = Offset(size.width / 2f, size.height / 2f)
-                    val r = size.maxDimension / 2f * 0.92f
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                TamixaColors.goldAccent.copy(alpha = 0.5f),
-                                TamixaColors.deepTeal.copy(alpha = 0.28f),
-                                Color.Transparent
+                Box(
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = heroScale * logoPulse
+                        scaleY = heroScale * logoPulse
+                        rotationZ = heroRotationRad + idleRotation
+                    },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(modifier = Modifier.size(glowSize)) {
+                        val c = Offset(size.width / 2f, size.height / 2f)
+                        val r = size.maxDimension / 2f * 0.92f
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    TamixaColors.goldAccent.copy(alpha = 0.5f),
+                                    TamixaColors.deepTeal.copy(alpha = 0.28f),
+                                    Color.Transparent
+                                ),
+                                center = c,
+                                radius = r
                             ),
-                            center = c,
-                            radius = r
-                        ),
-                        radius = r,
-                        center = c
-                    )
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = 0.14f),
-                                Color.Transparent
+                            radius = r,
+                            center = c
+                        )
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.14f),
+                                    Color.Transparent
+                                ),
+                                center = c,
+                                radius = r * 0.45f
                             ),
-                            center = c,
-                            radius = r * 0.45f
-                        ),
-                        radius = r * 0.45f,
-                        center = c
+                            radius = r * 0.45f,
+                            center = c
+                        )
+                    }
+                    Image(
+                        painter = painterResource(Res.drawable.tamixa_app_icon),
+                        contentDescription = "Tamixa",
+                        modifier = Modifier.size(logoSize),
+                        contentScale = ContentScale.Fit
                     )
                 }
-                Image(
-                    painter = painterResource(Res.drawable.tamixa_app_icon),
-                    contentDescription = "Tamixa",
-                    modifier = Modifier.size(logoSize),
-                    contentScale = ContentScale.Fit
-                )
+
+                // Brand name — fades in after logo settles
+                if (brandNameAlpha > 0f) {
+                    Text(
+                        text = "Tamixa",
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .graphicsLayer {
+                                alpha = brandNameAlpha
+                                translationY = brandNameOffsetY
+                            },
+                        style = MaterialTheme.typography.displaySmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-1).sp,
+                            lineHeight = 40.sp
+                        ),
+                        color = TamixaColors.cream,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
 

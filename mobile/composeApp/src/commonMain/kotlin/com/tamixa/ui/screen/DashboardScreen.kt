@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -393,16 +394,6 @@ private fun DashboardHeroTopBar(
                     onDismissRequest = { menuExpanded = false },
                     containerColor = MaterialTheme.colorScheme.surface,
                 ) {
-                    DropdownMenuItem(
-                        text = { Text(Strings.createStory()) },
-                        onClick = {
-                            menuExpanded = false
-                            onNewStory()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.AutoMirrored.Outlined.MenuBook, contentDescription = null)
-                        },
-                    )
                     DropdownMenuItem(
                         text = { Text(Strings.tabMyVoiceAndAvatar()) },
                         onClick = {

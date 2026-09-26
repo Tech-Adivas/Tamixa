@@ -2,7 +2,13 @@ package com.tamixa.platform
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.speech.tts.TextToSpeech
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +22,7 @@ import com.tamixa.android.component.FamilyVoiceRecordDialog as AndroidFamilyVoic
 import com.tamixa.android.component.AvatarVideoSurface as AndroidAvatarVideoSurface
 import com.tamixa.android.player.synthesizeStoryToFile as androidSynthesizeStoryToFile
 import com.tamixa.util.TamixaLog
+import java.util.Locale
 
 actual fun openUrl(url: String) {
     val ctx = getApplicationContext()
@@ -146,3 +153,74 @@ fun tamixaApplicationContextOrNull(): Context? = _appContext
 
 private fun getApplicationContext(): Context =
     _appContext ?: error("Platform not initialized: call setPlatformAppContext in Application.onCreate")
+
+private val plainTextTtsMainHandler = Handler(Looper.getMainLooper())
+private var plainTextTtsEngine: TextToSpeech? = null
+
+private fun languageCodeToLocaleForPlainTts(code: String): Locale = when (code.lowercase()) {
+    "ta" -> Locale("ta", "IN")
+    "hi" -> Locale("hi", "IN")
+    "te" -> Locale("te", "IN")
+    "kn" -> Locale("kn", "IN")
+    "ml" -> Locale("ml", "IN")
+    "mr" -> Locale("mr", "IN")
+    "bn" -> Locale("bn", "IN")
+    "en" -> Locale.ENGLISH
+    else -> {
+        val parts = code.split("-", "_")
+        if (parts.size >= 2) Locale(parts[0], parts[1])
+        else Locale.forLanguageTag(code)
+    }
+}
+
+private fun speakPlainTextOnEngine(engine: TextToSpeech, languageCode: String, utterance: String) {
+    val locale = languageCodeToLocaleForPlainTts(languageCode)
+    val langResult = engine.setLanguage(locale)
+    if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+        engine.language = Locale.ENGLISH
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        engine.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build(),
+        )
+    }
+    engine.setSpeechRate(0.92f)
+    engine.setPitch(1.0f)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        engine.speak(utterance, TextToSpeech.QUEUE_FLUSH, Bundle(), "tamixa_plain_tts")
+    } else {
+        @Suppress("DEPRECATION")
+        engine.speak(utterance, TextToSpeech.QUEUE_FLUSH, null)
+    }
+}
+
+actual fun speakPlainText(text: String, languageCode: String) {
+    val utterance = text.trim().replace(Regex("\\s+"), " ")
+    if (utterance.isEmpty()) return
+    val ctx = getApplicationContext()
+    plainTextTtsMainHandler.post {
+        val existing = plainTextTtsEngine
+        if (existing != null) {
+            speakPlainTextOnEngine(existing, languageCode, utterance)
+            return@post
+        }
+        plainTextTtsEngine = TextToSpeech(ctx) { status ->
+            if (status != TextToSpeech.SUCCESS) {
+                TamixaLog.w("PlatformAndroid", "PlainText TTS init failed status=$status")
+                return@TextToSpeech
+            }
+            plainTextTtsMainHandler.post {
+                plainTextTtsEngine?.let { speakPlainTextOnEngine(it, languageCode, utterance) }
+            }
+        }
+    }
+}
+
+actual fun stopPlainTextSpeech() {
+    plainTextTtsMainHandler.post {
+        plainTextTtsEngine?.stop()
+    }
+}

@@ -48,7 +48,7 @@ class GeminiImageGenerationClient(
             return null
         }
         val keyParam = URLEncoder.encode(apiKey, StandardCharsets.UTF_8)
-        val url = "$base/v1beta/models/$model:generateContent?key=$keyParam"
+        val url = GeminiUrlBuilder.generateContentUrl(base, model, keyParam, g.apiUrlStyle)
         val userPrompt = CoverIllustrationPrompts.buildChildSafeCoverPrompt(prompt)
         val aspect = img.aspectRatio.trim().ifBlank { "1:1" }
         val size = img.imageSize.trim().ifBlank { "1K" }

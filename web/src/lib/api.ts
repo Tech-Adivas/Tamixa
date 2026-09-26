@@ -1,18 +1,23 @@
 /**
  * Tamixa Web API client.
- * In the browser we use the full backend URL so the Authorization header is sent
- * (Vite proxy can strip it, causing "Unauthorized. Please log in.").
+ * Local Vite uses same-origin `/api/v1` (proxied to the backend). Deployed builds call `VITE_API_BASE_URL`.
  */
-import { API_PATH, DEFAULT_API_BASE_URL } from "../config/api.config";
+import {
+  API_PATH,
+  DEFAULT_API_BASE_URL,
+  shouldUseSameOriginApi,
+} from "../config/api.config";
 import { logger } from "./logger";
 
 const API_BASE =
-  typeof window !== "undefined"
-    ? `${DEFAULT_API_BASE_URL}${API_PATH}`
-    : API_PATH;
+  typeof window !== "undefined" && shouldUseSameOriginApi(window.location.hostname, DEFAULT_API_BASE_URL)
+    ? API_PATH
+    : typeof window !== "undefined"
+      ? `${DEFAULT_API_BASE_URL}${API_PATH}`
+      : API_PATH;
 
 /**
- * Base URL for `/api/v1` requests. Matches `fetchWithAuth` (full backend origin in the browser).
+ * Base URL for `/api/v1` requests. Local Vite is same-origin `/api/v1`; production is the full API origin.
  * Use for calls that bypass `fetchWithAuth` (for example proactive refresh on the deployed site).
  */
 export function getApiV1Base(): string {
@@ -51,9 +56,30 @@ function buildTracingHeaders(): Record<string, string> {
 /** Origin of the backend API (e.g. http://localhost:8080). Used to detect same-origin stream URLs for blob fetch. */
 export function getApiOrigin(): string {
   try {
-    return new URL(API_BASE).origin;
+    if (API_BASE.startsWith("http://") || API_BASE.startsWith("https://")) {
+      return new URL(API_BASE).origin;
+    }
+    return DEFAULT_API_BASE_URL;
   } catch {
-    return "";
+    return DEFAULT_API_BASE_URL;
+  }
+}
+
+function mapNetworkError(err: unknown): Error {
+  const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(message)) {
+    return new Error(
+      `Can't reach the Tamixa API (${DEFAULT_API_BASE_URL}). Start the backend on port 8080, keep this page on npm run dev (it proxies /api), then try again.`
+    );
+  }
+  return err instanceof Error ? err : new Error(message);
+}
+
+async function fetchPublic(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(`${API_BASE}${path}`, init);
+  } catch (err) {
+    throw mapNetworkError(err);
   }
 }
 
@@ -207,6 +233,29 @@ export interface AuthResponse {
   refreshToken: string;
   tokenType?: string;
   expiresInSeconds: number;
+}
+
+/**
+ * Attempts a token refresh using the stored refresh token.
+ * Stores the new tokens on success and returns the new access token,
+ * or returns null if there is no refresh token or the server rejects it.
+ */
+export async function performTokenRefresh(): Promise<string | null> {
+  const refresh = getStoredRefreshToken();
+  if (!refresh) return null;
+  try {
+    const res = await fetchPublic("/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
+      body: JSON.stringify({ refreshToken: refresh }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as AuthResponse;
+    setStoredTokens(data.accessToken, data.refreshToken, data.expiresInSeconds);
+    return data.accessToken;
+  } catch {
+    return null;
+  }
 }
 
 export interface CurrentUser {
@@ -474,39 +523,39 @@ async function fetchWithAuth(path: string, options: RequestInit = {}, retry = tr
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  let res = await fetch(url, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch (err) {
+    throw mapNetworkError(err);
+  }
 
   if (res.status === 401 && retry) {
-    const refresh = getStoredRefreshToken();
-    if (refresh) {
-      try {
-        const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
-          body: JSON.stringify({ refreshToken: refresh }),
-        });
-        if (refreshRes.ok) {
-          const data = (await refreshRes.json()) as AuthResponse;
-          setStoredTokens(data.accessToken, data.refreshToken);
-          headers["Authorization"] = `Bearer ${data.accessToken}`;
+    try {
+      const newToken = await performTokenRefresh();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
+        try {
           res = await fetch(url, { ...options, headers });
-        } else {
-          logger.warn("api", "Token refresh failed, session expired", { status: refreshRes.status });
-          clearStoredTokens();
-          throw new Error("Session expired. Please log in again.");
+        } catch (err) {
+          throw mapNetworkError(err);
         }
-      } catch (err) {
-        logger.error("api", "Token refresh request failed", err, { path });
+      } else {
+        logger.warn("api", "Token refresh failed, session expired", { path });
         clearStoredTokens();
-        throw err instanceof Error ? err : new Error("Session expired. Please log in again.");
+        throw new Error("Session expired. Please log in again.");
       }
+    } catch (err) {
+      logger.error("api", "Token refresh request failed", err, { path });
+      clearStoredTokens();
+      throw err instanceof Error ? err : new Error("Session expired. Please log in again.");
     }
   }
   return res;
 }
 
 export async function login(email: string, password: string): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE}/auth/login`, {
+  const res = await fetchPublic("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
     body: JSON.stringify({ email, password }),
@@ -527,7 +576,7 @@ export async function register(
   acceptedPrivacy = false,
   acceptedParentalAttestation = false
 ): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE}/auth/register`, {
+  const res = await fetchPublic("/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
     body: JSON.stringify({
@@ -1093,7 +1142,7 @@ export async function getListeningProgress(days = 30): Promise<ListeningProgress
 
 // Legacy compatibility: old callers ask for "magic link" but backend now supports passwordless code flow only.
 export async function requestMagicLink(email: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/auth/passwordless`, {
+  const res = await fetchPublic("/auth/passwordless", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
     body: JSON.stringify({ email }),
@@ -1105,7 +1154,7 @@ export async function requestMagicLink(email: string): Promise<void> {
 
 // Passwordless email code (Option A: works for new and existing users)
 export async function requestPasswordlessCode(email: string): Promise<boolean> {
-  const res = await fetch(`${API_BASE}/auth/passwordless`, {
+  const res = await fetchPublic("/auth/passwordless", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
     body: JSON.stringify({ email }),
@@ -1125,7 +1174,7 @@ export async function verifyPasswordlessCode(
   acceptedPrivacy = false,
   acceptedParentalAttestation = false
 ): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE}/auth/passwordless/verify`, {
+  const res = await fetchPublic("/auth/passwordless/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
     body: JSON.stringify({ email, code, acceptedTerms, acceptedPrivacy, acceptedParentalAttestation }),
@@ -1133,6 +1182,30 @@ export async function verifyPasswordlessCode(
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { message?: string };
     throw new Error(err?.message ?? "Invalid code or consent required");
+  }
+  return res.json();
+}
+
+/** Magic-link URL token (32 hex chars) from email — completes sign-in without typing the 6-digit code. */
+export async function verifyPasswordlessMagicLink(params: {
+  loginToken: string;
+  acceptedTerms: boolean;
+  acceptedPrivacy: boolean;
+  acceptedParentalAttestation: boolean;
+}): Promise<AuthResponse> {
+  const res = await fetchPublic("/auth/passwordless/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...buildTracingHeaders() },
+    body: JSON.stringify({
+      loginToken: params.loginToken,
+      acceptedTerms: params.acceptedTerms,
+      acceptedPrivacy: params.acceptedPrivacy,
+      acceptedParentalAttestation: params.acceptedParentalAttestation,
+    }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err?.message ?? "Invalid or expired sign-in link");
   }
   return res.json();
 }

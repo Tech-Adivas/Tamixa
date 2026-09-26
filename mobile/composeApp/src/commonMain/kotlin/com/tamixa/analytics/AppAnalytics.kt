@@ -2,6 +2,7 @@ package com.tamixa.analytics
 
 import com.tamixa.network.AnalyticsApi
 import com.tamixa.util.TamixaConstants
+import com.tamixa.util.TamixaLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -14,46 +15,32 @@ class AppAnalytics(
     fun trackScreenView(screenName: String) {
         scope.launch {
             runCatching {
-                analyticsApi.trackAppEvent(
-                    eventType = "screen_view",
-                    screenName = screenName
-                )
-            }
+                analyticsApi.trackAppEvent(eventType = "screen_view", screenName = screenName)
+            }.onFailure { TamixaLog.w("AppAnalytics", "trackAppEvent screen_view failed screen=$screenName", it) }
         }
     }
 
     fun trackSearch(queryLength: Int) {
         scope.launch {
             runCatching {
-                analyticsApi.trackAppEvent(
-                    eventType = "search",
-                    searchQueryLength = queryLength
-                )
-            }
+                analyticsApi.trackAppEvent(eventType = "search", searchQueryLength = queryLength)
+            }.onFailure { TamixaLog.w("AppAnalytics", "trackAppEvent search failed", it) }
         }
     }
 
     fun trackFavoriteAdd(storyId: Long, storySource: String) {
         scope.launch {
             runCatching {
-                analyticsApi.trackAppEvent(
-                    eventType = "favorite_add",
-                    storyId = storyId,
-                    storySource = storySource
-                )
-            }
+                analyticsApi.trackAppEvent(eventType = "favorite_add", storyId = storyId, storySource = storySource)
+            }.onFailure { TamixaLog.w("AppAnalytics", "trackAppEvent favorite_add failed storyId=$storyId", it) }
         }
     }
 
     fun trackFavoriteRemove(storyId: Long, storySource: String) {
         scope.launch {
             runCatching {
-                analyticsApi.trackAppEvent(
-                    eventType = "favorite_remove",
-                    storyId = storyId,
-                    storySource = storySource
-                )
-            }
+                analyticsApi.trackAppEvent(eventType = "favorite_remove", storyId = storyId, storySource = storySource)
+            }.onFailure { TamixaLog.w("AppAnalytics", "trackAppEvent favorite_remove failed storyId=$storyId", it) }
         }
     }
 
@@ -61,12 +48,8 @@ class AppAnalytics(
     fun trackHostStoryClipImpression(storyId: Long, storySource: String) {
         scope.launch {
             runCatching {
-                analyticsApi.trackAppEvent(
-                    eventType = "host_story_clip_impression",
-                    storyId = storyId,
-                    storySource = storySource
-                )
-            }
+                analyticsApi.trackAppEvent(eventType = "host_story_clip_impression", storyId = storyId, storySource = storySource)
+            }.onFailure { TamixaLog.w("AppAnalytics", "trackAppEvent host_story_clip_impression failed storyId=$storyId", it) }
         }
     }
 
@@ -74,11 +57,8 @@ class AppAnalytics(
     fun trackLibraryHub(hubKey: String) {
         scope.launch {
             runCatching {
-                analyticsApi.trackAppEvent(
-                    eventType = "library_hub",
-                    hubKey = hubKey
-                )
-            }
+                analyticsApi.trackAppEvent(eventType = "library_hub", hubKey = hubKey)
+            }.onFailure { TamixaLog.w("AppAnalytics", "trackAppEvent library_hub failed hub=$hubKey", it) }
         }
     }
 
@@ -87,14 +67,29 @@ class AppAnalytics(
         scope.launch {
             runCatching {
                 val src = if (storySource == TamixaConstants.STORY_SOURCE_LIBRARY) "library" else "generated"
-                analyticsApi.trackStoryEvent(
-                    storyId = storyId,
-                    storySource = src,
-                    language = language,
-                    eventType = "interactive_branch",
-                    playbackPositionSeconds = 0
-                )
-            }
+                analyticsApi.trackStoryEvent(storyId = storyId, storySource = src, language = language, eventType = "interactive_branch", playbackPositionSeconds = 0)
+            }.onFailure { TamixaLog.w("AppAnalytics", "trackStoryEvent interactive_branch failed storyId=$storyId", it) }
+        }
+    }
+
+    /**
+     * Crisis help screen opened. [entrySource] must be one of: lib_sim, settings, player, unknown (sent as screenName; no PII).
+     */
+    fun trackCrisisHelpOpen(entrySource: String) {
+        scope.launch {
+            runCatching {
+                analyticsApi.trackAppEvent(eventType = "crisis_help_open", screenName = entrySource.take(64))
+            }.onFailure { TamixaLog.w("AppAnalytics", "trackAppEvent crisis_help_open failed", it) }
+        }
+    }
+
+    /** User tapped in-player SOS during an interactive library story (no choice text). */
+    fun trackCrisisHelpSosTap(storyId: Long, storySource: String, language: String) {
+        scope.launch {
+            runCatching {
+                val src = if (storySource == TamixaConstants.STORY_SOURCE_LIBRARY) "library" else "generated"
+                analyticsApi.trackStoryEvent(storyId = storyId, storySource = src, language = language, eventType = "crisis_help_sos_tap", playbackPositionSeconds = 0)
+            }.onFailure { TamixaLog.w("AppAnalytics", "trackStoryEvent crisis_help_sos_tap failed storyId=$storyId", it) }
         }
     }
 }

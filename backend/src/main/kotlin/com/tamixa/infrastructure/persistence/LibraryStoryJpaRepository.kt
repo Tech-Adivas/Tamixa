@@ -249,8 +249,11 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
 
     @Query(
         "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.deletedAt IS NULL " +
+            "AND c.status = 'PUBLISHED' " +
             "AND (LOWER(c.theme) LIKE LOWER(CONCAT('%', :q, '%')) " +
-            "OR (c.title IS NOT NULL AND LOWER(c.title) LIKE LOWER(CONCAT('%', :q, '%'))))"
+            "OR (c.title IS NOT NULL AND LOWER(c.title) LIKE LOWER(CONCAT('%', :q, '%'))) " +
+            "OR (c.content IS NOT NULL AND LOWER(c.content) LIKE LOWER(CONCAT('%', :q, '%'))) " +
+            "OR (c.moral IS NOT NULL AND LOWER(c.moral) LIKE LOWER(CONCAT('%', :q, '%'))))"
     )
     fun searchByThemeOrTitle(
         @Param("q") query: String,

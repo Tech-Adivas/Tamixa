@@ -208,6 +208,11 @@ export interface LibraryStorySummary {
   speakAlongPrompt?: string | null;
   /** Branching episode graph (JSON object from API; edit as JSON string in admin). */
   interactiveGraph?: unknown;
+  /**
+   * When set, this locale has a stored override in `story_translations.interactive_graph`
+   * (full graph JSON). Parent API responses still use merged `interactiveGraph` only.
+   */
+  translationInteractiveGraphOverlay?: unknown;
   postStoryMission?: string | null;
   postStoryResourceUrl?: string | null;
 }
@@ -233,8 +238,22 @@ export interface CreateLibraryStoryRequest {
   regenerateNarration?: boolean | null;
   /** Optional per-language content (e.g. { hi: "...", en: "..." }). Deprecated: prefer translationContentEntries. */
   translationContents?: Record<string, string> | null;
-  /** Per-language content with optional title and moral for each language. */
-  translationContentEntries?: Record<string, { content: string; title?: string | null; moral?: string | null }> | null;
+  /** Per-language content with optional title, moral, and post-episode parent fields. */
+  translationContentEntries?: Record<
+    string,
+    {
+      content: string;
+      title?: string | null;
+      moral?: string | null;
+      postStoryMission?: string | null;
+      postStoryResourceUrl?: string | null;
+    }
+  > | null;
+  /**
+   * Per non-master locale: full interactive graph JSON string.
+   * Omit a language to leave unchanged. Empty string clears overlay (inherit master graph).
+   */
+  translationInteractiveGraphEntries?: Record<string, string> | null;
   /**
    * When sent on PUT, updates the narration script for the story’s current language.
    * Omit on create or when leaving the script unchanged; send "" to clear the script.
@@ -248,6 +267,55 @@ export interface CreateLibraryStoryRequest {
   interactiveGraph?: string | null;
   postStoryMission?: string | null;
   postStoryResourceUrl?: string | null;
+}
+
+export interface InteractiveSegmentScriptInput {
+  segmentId: string;
+  text: string;
+  overwriteExisting?: boolean;
+}
+
+export interface InteractiveSegmentAudioGenerateRequest {
+  language?: string;
+  voiceProfile?: string;
+  interactiveGraph: string;
+  segments: InteractiveSegmentScriptInput[];
+}
+
+export interface InteractiveSegmentAudioResult {
+  segmentId: string;
+  audioUrl?: string | null;
+  status: "GENERATED" | "SKIPPED" | "FAILED";
+  message?: string | null;
+}
+
+export interface InteractiveSegmentAudioGenerateResponse {
+  interactiveGraph: string;
+  generated: InteractiveSegmentAudioResult[];
+  skipped: InteractiveSegmentAudioResult[];
+  failed: InteractiveSegmentAudioResult[];
+}
+
+export interface InteractiveGraphFromStoryRequest {
+  language?: string;
+  storyText?: string | null;
+}
+
+export interface InteractiveGraphFromStoryResponse {
+  interactiveGraph: string;
+  message?: string;
+}
+
+export interface InteractiveSegmentScriptsFillRequest {
+  language?: string;
+  interactiveGraph: string;
+  storyText?: string | null;
+}
+
+export interface InteractiveSegmentScriptsFillResponse {
+  interactiveGraph: string;
+  filledSegmentIds: string[];
+  message?: string;
 }
 
 export interface BulkGenerateStoriesRequest {
@@ -406,6 +474,15 @@ export const STORY_CATEGORIES = [
   "Learn · Life Skills",
   "Learn · Digital Safety",
   "Learn · Simulator · Digital Safety",
+  "Learn · Simulator · Money",
+  "Learn · Simulator · Leadership",
+  "Learn · Simulator · Business",
+  "Learn · Simulator · Ethics",
+  "Learn · Simulator · Life Skills",
+  "Learn · Simulator · Mental Health",
+  "Learn · Simulator · Communication",
+  "Learn · Simulator · Adulting & Survival",
+  "Learn · Simulator · Civic Survival",
 ] as const;
 
 export const AGE_GROUPS = [

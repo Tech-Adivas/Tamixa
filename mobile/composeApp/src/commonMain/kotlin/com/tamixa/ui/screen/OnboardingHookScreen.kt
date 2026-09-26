@@ -135,7 +135,7 @@ fun OnboardingHookScreen(
 ) {
     OnboardingShell(
         step = 1,
-        totalSteps = 4,
+        totalSteps = 5,
         modifier = modifier,
         onSwipeToNext = onSwipeToNext,
         onSwipeToPrevious = onSwipeToPrevious,
@@ -159,56 +159,25 @@ fun OnboardingHookScreen(
         }
     ) {
         val spec = LocalOnboardingLayoutSpec.current
-        // Store-quality hero first — halo tint unique to this step.
+        
+        // Large hero visual - the main focus
         OnboardingHeroSpotlight(
             kind = OnboardingHeroHaloKind.HookWarmth,
-            haloHeight = 268.dp,
+            haloHeight = 340.dp,
             modifier = Modifier.onboardingEntrance(delayMs = 70)
         ) {
             HookVisualPreviewCard()
         }
+        
         Spacer(Modifier.height(spec.gapLg))
+        
+        // Simple headline only - no subline
         OnboardingEditorialTextCard(
             modifier = Modifier.onboardingEntrance(delayMs = 130)
         ) {
             OnboardingHeadline(
                 text = Strings.onboardingHookHeadline(),
                 modifier = Modifier.fillMaxWidth()
-            )
-            OnboardingSubline(
-                text = Strings.onboardingHookSubline(),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        Spacer(Modifier.height(spec.gapMd))
-        OnboardingValueStripTitle(
-            text = Strings.onboardingStripTitle(1),
-            modifier = Modifier.onboardingEntrance(delayMs = 165)
-        )
-        Spacer(Modifier.height(spec.gapSm))
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(spec.benefitRowSpacing)
-        ) {
-            OnboardingBenefitRow(
-                emoji = "🎧",
-                text = Strings.onboardingHookBenefitVoice(),
-                modifier = Modifier.onboardingEntrance(delayMs = 190)
-            )
-            OnboardingBenefitRow(
-                emoji = "📖",
-                text = Strings.onboardingHookBenefitPersonal(),
-                modifier = Modifier.onboardingEntrance(delayMs = 240)
-            )
-            OnboardingBenefitRow(
-                emoji = "🌙",
-                text = Strings.onboardingHookBenefitCalm(),
-                modifier = Modifier.onboardingEntrance(delayMs = 290)
-            )
-            OnboardingBenefitRow(
-                emoji = "🛡️",
-                text = Strings.onboardingHookBenefitLearn(),
-                modifier = Modifier.onboardingEntrance(delayMs = 340)
             )
         }
     }

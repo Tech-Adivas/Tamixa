@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.security.SecureRandom
 import java.time.Instant
 import java.util.UUID
 
@@ -39,6 +40,15 @@ class AuthService(
 
     companion object {
         private const val MAGIC_LINK_EXPIRY_SECONDS = 15L * 60L // 15 minutes
+        private val LOGIN_TOKEN_REGEX = Regex("^[a-f0-9]{32}$")
+        private val codeRandom = SecureRandom()
+    }
+
+    private fun normalizeEmail(email: String): String = email.trim().lowercase()
+
+    private fun randomSixDigitCode(): String {
+        val n = codeRandom.nextInt(900_000) + 100_000
+        return n.toString()
     }
 
     /**
@@ -112,39 +122,45 @@ class AuthService(
     /** Sends a 6-digit code to the email for passwordless login. Always returns success to avoid email enumeration. */
     @Transactional
     fun requestPasswordless(email: String): Boolean {
-        val token = UUID.randomUUID().toString().replace("-", "")
-        val shortCode = (100000..999999).random().toString()
+        val normalizedEmail = normalizeEmail(email)
+        val token = UUID.randomUUID().toString().replace("-", "").lowercase()
+        val shortCode = randomSixDigitCode()
         val expiresAt = Instant.now().plusSeconds(MAGIC_LINK_EXPIRY_SECONDS) // 15 minutes
-        magicLinkTokenRepository.save(email, token, expiresAt, shortCode)
+        magicLinkTokenRepository.save(normalizedEmail, token, expiresAt, shortCode)
         val webBase = appProperties.auth.webBaseUrl.trim().removeSuffix("/")
         val magicLink = "$webBase/login?token=$token"
-        val sent = emailSender.sendMagicLinkOrCode(email, magicLink, shortCode)
+        val sent = emailSender.sendMagicLinkOrCode(normalizedEmail, magicLink, shortCode)
         return sent
     }
 
-    /** Verifies the email code and returns tokens. Creates parent if new; requires consent for new users. */
+    /**
+     * Verifies passwordless login using either:
+     * - [loginToken]: opaque token from the magic-link URL, or
+     * - [email] + [code]: 6-digit code from the email.
+     * Creates parent if new; requires consent for new users.
+     */
     @Transactional
     fun verifyPasswordless(
-        email: String,
-        code: String,
+        email: String?,
+        code: String?,
+        loginToken: String?,
         acceptedTerms: Boolean = false,
         acceptedPrivacy: Boolean = false,
         acceptedParentalAttestation: Boolean = false
     ): AuthTokens {
-        val devCode = appProperties.auth.devPasswordlessCode
-        val isDevBypass = !devCode.isNullOrBlank() && code == devCode
-        if (isDevBypass) {
-            // Dev bypass: only permitted when explicitly configured; must never be set in production
-            check(appProperties.auth.devPasswordlessCode?.isNotBlank() == true) {
-                "Dev passwordless code must not be used in production"
-            }
-            log.warn("Passwordless dev bypass used for email verification - ensure PASSWORDLESS_DEV_CODE is unset in production")
-        } else {
-            val magicToken = magicLinkTokenRepository.findValidByEmailAndCode(email, code)
-                ?: throw InvalidCredentialsException()
-            magicLinkTokenRepository.markUsed(magicToken.id)
+        val devCode = appProperties.auth.devPasswordlessCode?.trim()?.takeIf { it.isNotEmpty() }
+        val tokenRaw = loginToken?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val emailNorm = email?.let { normalizeEmail(it) }
+        val codeRaw = code?.trim()?.takeIf { it.isNotEmpty() }
+
+        val resolvedEmail: String = when {
+            !tokenRaw.isNullOrEmpty() -> verifyPasswordlessWithLoginToken(tokenRaw)
+            !emailNorm.isNullOrEmpty() && !codeRaw.isNullOrEmpty() ->
+                verifyPasswordlessWithShortCode(emailNorm, codeRaw!!, devCode)
+            else -> throw InvalidCredentialsException()
         }
-        var parent = parentRepository.findByEmail(email)
+
+        var parent = parentRepository.findByEmail(resolvedEmail)
         if (parent == null) {
             if (!acceptedTerms || !acceptedPrivacy) {
                 throw ConsentRequiredException("Terms of Service and Privacy Policy consent are required")
@@ -156,7 +172,7 @@ class AuthService(
             parent = parentRepository.save(
                 Parent(
                     id = 0,
-                    email = email,
+                    email = resolvedEmail,
                     passwordHash = hash,
                     role = Role.PARENT,
                     createdAt = Instant.now()
@@ -167,8 +183,33 @@ class AuthService(
             consentService.record(parent.email, "parental_attestation", 1)
         }
         if (parent.suspendedAt != null) throw AccountSuspendedException()
-        auditLog.logLoginAttempt(email, success = true, traceId = null)
+        auditLog.logLoginAttempt(resolvedEmail, success = true, traceId = null)
         return issueTokens(parent.email, parent.role.name)
+    }
+
+    private fun verifyPasswordlessWithLoginToken(tokenRaw: String): String {
+        if (!LOGIN_TOKEN_REGEX.matches(tokenRaw)) {
+            throw InvalidCredentialsException()
+        }
+        val magicToken = magicLinkTokenRepository.findValidByLoginToken(tokenRaw)
+            ?: throw InvalidCredentialsException()
+        magicLinkTokenRepository.markUsed(magicToken.id)
+        return normalizeEmail(magicToken.email)
+    }
+
+    private fun verifyPasswordlessWithShortCode(emailNorm: String, codeRaw: String, devCode: String?): String {
+        val isDevBypass = devCode != null && codeRaw == devCode
+        if (isDevBypass) {
+            check(appProperties.auth.devPasswordlessCode?.isNotBlank() == true) {
+                "Dev passwordless code must not be used in production"
+            }
+            log.warn("Passwordless dev bypass used for email verification - ensure DEV_PASSWORDLESS_CODE is unset in production")
+            return emailNorm
+        }
+        val magicToken = magicLinkTokenRepository.findValidByEmailAndCode(emailNorm, codeRaw)
+            ?: throw InvalidCredentialsException()
+        magicLinkTokenRepository.markUsed(magicToken.id)
+        return emailNorm
     }
 
     fun issueTokens(email: String, role: String): AuthTokens {

@@ -1,6 +1,8 @@
 package com.tamixa.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,6 +39,7 @@ import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -144,8 +149,7 @@ fun ProfileScreen(
                     )
                     .verticalScroll(rememberScrollState())
                     .padding(bottom = TamixaDesignTokens.screenPaddingBottomWithNav),
-                verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing),
-                horizontalAlignment = Alignment.CenterHorizontally
+                verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.sectionSpacing),
             ) {
                 when (userState) {
                     is UiState.Loading -> {
@@ -172,73 +176,62 @@ fun ProfileScreen(
                         }
                     }
                     else -> {
-                        Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = TamixaColors.cream
+                        // User info section with premium styling
+                        user?.let { 
+                            ProfileHeaderCard(
+                                user = it, 
+                                onUpdateProfile = onUpdateProfile
+                            ) 
+                        }
+                    }
+                }
+                
+                // Learning Progress Section
+                if (educationChildId != null && educationChildId > 0L) {
+                    ProfileSectionCard(
+                        title = Strings.profileLearningProgressSection(),
+                        icon = Icons.AutoMirrored.Filled.MenuBook
+                    ) {
+                        ProfileMenuItem(
+                            icon = Icons.AutoMirrored.Filled.MenuBook,
+                            label = Strings.readingLevelTitle(),
+                            onClick = onNavigateToReadingLevel,
+                            compact = true
+                        )
+                        Divider(
+                            modifier = Modifier.padding(horizontal = TamixaDesignTokens.contentPaddingHorizontal),
+                            color = TamixaContentColors.cardPrimary().copy(alpha = 0.1f)
+                        )
+                        ProfileMenuItem(
+                            icon = Icons.Filled.LocalFireDepartment,
+                            label = Strings.readingStreakTitle(),
+                            onClick = onNavigateToReadingStreak,
+                            compact = true
+                        )
+                        Divider(
+                            modifier = Modifier.padding(horizontal = TamixaDesignTokens.contentPaddingHorizontal),
+                            color = TamixaContentColors.cardPrimary().copy(alpha = 0.1f)
+                        )
+                        ProfileMenuItem(
+                            icon = Icons.Filled.Abc,
+                            label = Strings.vocabularyTitle(),
+                            onClick = onNavigateToVocabulary,
+                            compact = true
+                        )
+                        Divider(
+                            modifier = Modifier.padding(horizontal = TamixaDesignTokens.contentPaddingHorizontal),
+                            color = TamixaContentColors.cardPrimary().copy(alpha = 0.1f)
+                        )
+                        ProfileMenuItem(
+                            icon = Icons.Filled.Groups,
+                            label = Strings.myClassrooms(),
+                            onClick = onNavigateToClassroom,
+                            compact = true
                         )
                     }
                 }
-                user?.let { ProfileDetailsCard(user = it, onUpdateProfile = onUpdateProfile) }
-                ProfileMenuItem(
-                    icon = Icons.Filled.Mic,
-                    label = Strings.tabMyVoiceAndAvatar(),
-                    onClick = onNavigateToMyVoiceAndAvatar
-                )
-                ProfileMenuItem(
-                    icon = Icons.AutoMirrored.Filled.Send,
-                    label = Strings.sendStory(),
-                    onClick = onNavigateToSendStory
-                )
-                ProfileMenuItem(
-                    icon = Icons.Filled.Favorite,
-                    label = Strings.favorites(),
-                    onClick = onNavigateToFavorites
-                )
-                ProfileMenuItem(
-                    icon = Icons.Filled.History,
-                    label = Strings.listeningHistory(),
-                    onClick = onNavigateToListeningHistory
-                )
-                Text(
-                    text = Strings.profileLearningProgressSection(),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = TamixaColors.cream.copy(alpha = 0.9f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp, bottom = 4.dp)
-                )
-                if (educationChildId != null && educationChildId > 0L) {
-                    ProfileMenuItem(
-                        icon = Icons.AutoMirrored.Filled.MenuBook,
-                        label = Strings.readingLevelTitle(),
-                        onClick = onNavigateToReadingLevel
-                    )
-                    ProfileMenuItem(
-                        icon = Icons.Filled.LocalFireDepartment,
-                        label = Strings.readingStreakTitle(),
-                        onClick = onNavigateToReadingStreak
-                    )
-                    ProfileMenuItem(
-                        icon = Icons.Filled.Abc,
-                        label = Strings.vocabularyTitle(),
-                        onClick = onNavigateToVocabulary
-                    )
-                    ProfileMenuItem(
-                        icon = Icons.Filled.Groups,
-                        label = Strings.myClassrooms(),
-                        onClick = onNavigateToClassroom
-                    )
-                } else {
-                    Text(
-                        text = Strings.addChildToCreateStories(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TamixaColors.cream.copy(alpha = 0.72f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp)
-                    )
-                }
+                
+                // Life Skills Practice Section
                 if (lifeSkillChildOptions.isNotEmpty() &&
                     selectedLifeSkillChildId != null &&
                     selectedLifeSkillChildId > 0L &&
@@ -252,33 +245,286 @@ fun ProfileScreen(
                         onChildSelected = onLifeSkillChildChange,
                     )
                 }
-                ProfileMenuItem(
-                    icon = Icons.Filled.AutoAwesome,
-                    label = Strings.lifeReadinessMenuItem(),
-                    onClick = onNavigateToLifeReadiness
-                )
-                ProfileMenuItem(
-                    icon = Icons.Filled.School,
-                    label = Strings.funAndLearn(),
-                    onClick = onNavigateToShortContent
-                )
-                ProfileMenuItem(
-                    icon = Icons.Filled.EmojiEvents,
-                    label = Strings.achievements(),
-                    onClick = onNavigateToAchievements
-                )
-                ProfileMenuItem(
-                    icon = Icons.Filled.WorkspacePremium,
-                    label = Strings.premiumSubscription(),
-                    onClick = onNavigateToSubscription
-                )
-                ProfileMenuItem(
-                    icon = Icons.Filled.Settings,
-                    label = Strings.settings(),
-                    onClick = onNavigateToSettings
-                )
+                
+                // Quick Actions Section
+                ProfileSectionCard(
+                    title = Strings.quickActions(),
+                    icon = Icons.Filled.AutoAwesome
+                ) {
+                    ProfileMenuItem(
+                        icon = Icons.Filled.Mic,
+                        label = Strings.tabMyVoiceAndAvatar(),
+                        onClick = onNavigateToMyVoiceAndAvatar,
+                        compact = true
+                    )
+                    Divider(
+                        modifier = Modifier.padding(horizontal = TamixaDesignTokens.contentPaddingHorizontal),
+                        color = TamixaContentColors.cardPrimary().copy(alpha = 0.1f)
+                    )
+                    ProfileMenuItem(
+                        icon = Icons.Filled.Favorite,
+                        label = Strings.favorites(),
+                        onClick = onNavigateToFavorites,
+                        compact = true
+                    )
+                    Divider(
+                        modifier = Modifier.padding(horizontal = TamixaDesignTokens.contentPaddingHorizontal),
+                        color = TamixaContentColors.cardPrimary().copy(alpha = 0.1f)
+                    )
+                    ProfileMenuItem(
+                        icon = Icons.Filled.History,
+                        label = Strings.listeningHistory(),
+                        onClick = onNavigateToListeningHistory,
+                        compact = true
+                    )
+                    Divider(
+                        modifier = Modifier.padding(horizontal = TamixaDesignTokens.contentPaddingHorizontal),
+                        color = TamixaContentColors.cardPrimary().copy(alpha = 0.1f)
+                    )
+                    ProfileMenuItem(
+                        icon = Icons.Filled.EmojiEvents,
+                        label = Strings.achievements(),
+                        onClick = onNavigateToAchievements,
+                        compact = true
+                    )
+                }
+                
+                // Settings & Subscription Section
+                ProfileSectionCard(
+                    title = Strings.settingsAndMore(),
+                    icon = Icons.Filled.Settings
+                ) {
+                    ProfileMenuItem(
+                        icon = Icons.Filled.WorkspacePremium,
+                        label = Strings.premiumSubscription(),
+                        onClick = onNavigateToSubscription,
+                        compact = true
+                    )
+                    Divider(
+                        modifier = Modifier.padding(horizontal = TamixaDesignTokens.contentPaddingHorizontal),
+                        color = TamixaContentColors.cardPrimary().copy(alpha = 0.1f)
+                    )
+                    ProfileMenuItem(
+                        icon = Icons.Filled.AutoAwesome,
+                        label = Strings.lifeReadinessMenuItem(),
+                        onClick = onNavigateToLifeReadiness,
+                        compact = true
+                    )
+                    Divider(
+                        modifier = Modifier.padding(horizontal = TamixaDesignTokens.contentPaddingHorizontal),
+                        color = TamixaContentColors.cardPrimary().copy(alpha = 0.1f)
+                    )
+                    ProfileMenuItem(
+                        icon = Icons.Filled.Settings,
+                        label = Strings.settings(),
+                        onClick = onNavigateToSettings,
+                        compact = true
+                    )
+                }
+                
                 Spacer(Modifier.height(TamixaDesignTokens.cardSpacing))
             }
+        }
+    }
+}
+
+@Composable
+private fun ProfileSectionCard(
+    title: String,
+    icon: ImageVector,
+    content: @Composable () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = TamixaColors.deepTeal.copy(alpha = 0.38f),
+                shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge)
+            ),
+        shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White.copy(alpha = 0.68f),
+            contentColor = TamixaContentColors.cardPrimary()
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Section header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = TamixaDesignTokens.contentPaddingHorizontal,
+                        vertical = TamixaDesignTokens.smallSpacing
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            color = TamixaColors.deepTeal.copy(alpha = 0.15f),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = TamixaColors.deepTeal
+                    )
+                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = TamixaContentColors.cardPrimary()
+                )
+            }
+            
+            // Section content
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ProfileHeaderCard(
+    user: CurrentUser,
+    onUpdateProfile: (nickname: String?, displayName: String?) -> Unit
+) {
+    val hasProfileData = user.nickname?.trim()?.isNotBlank() == true ||
+        user.displayName?.trim()?.isNotBlank() == true
+    var isEditing by remember { mutableStateOf(!hasProfileData) }
+    var nickname by remember(user.nickname, isEditing) { mutableStateOf(user.nickname ?: "") }
+    var displayName by remember(user.displayName, isEditing) { mutableStateOf(user.displayName ?: "") }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = TamixaColors.deepTeal.copy(alpha = 0.38f),
+                shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge)
+            ),
+        shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White.copy(alpha = 0.68f),
+            contentColor = TamixaContentColors.cardPrimary()
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(TamixaDesignTokens.contentPaddingHorizontal),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
+        ) {
+            Spacer(Modifier.height(4.dp))
+            
+            // Avatar placeholder
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(
+                        color = TamixaColors.deepTeal.copy(alpha = 0.2f),
+                        shape = CircleShape
+                    )
+                    .border(
+                        width = 3.dp,
+                        color = TamixaColors.deepTeal.copy(alpha = 0.5f),
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Person,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = TamixaColors.deepTeal
+                )
+            }
+            
+            if (isEditing) {
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text(Strings.name()) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TamixaColors.deepTeal,
+                        unfocusedBorderColor = TamixaColors.deepTeal.copy(alpha = 0.5f),
+                        focusedLabelColor = TamixaColors.deepTeal,
+                        cursorColor = TamixaColors.deepTeal,
+                        focusedTextColor = TamixaContentColors.cardPrimary(),
+                        unfocusedTextColor = TamixaContentColors.cardPrimary()
+                    )
+                )
+                OutlinedTextField(
+                    value = nickname,
+                    onValueChange = { nickname = it },
+                    label = { Text(Strings.nickname()) },
+                    placeholder = { Text(Strings.nicknameHint()) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TamixaColors.deepTeal,
+                        unfocusedBorderColor = TamixaColors.deepTeal.copy(alpha = 0.5f),
+                        focusedLabelColor = TamixaColors.deepTeal,
+                        cursorColor = TamixaColors.deepTeal,
+                        focusedTextColor = TamixaContentColors.cardPrimary(),
+                        unfocusedTextColor = TamixaContentColors.cardPrimary()
+                    )
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
+                ) {
+                    OutlinedButton(
+                        onClick = { isEditing = false },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(text = Strings.cancel(), color = TamixaColors.deepTeal)
+                    }
+                    TamixaPrimaryButton(
+                        onClick = {
+                            onUpdateProfile(
+                                nickname.trim().takeIf { it.isNotBlank() },
+                                displayName.trim().takeIf { it.isNotBlank() }
+                            )
+                            isEditing = false
+                        },
+                        text = Strings.save(),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            } else {
+                Text(
+                    text = user.displayNameOrFallback(Strings.profile()),
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    color = TamixaContentColors.cardPrimary()
+                )
+                if (user.nickname?.trim()?.isNotBlank() == true) {
+                    Text(
+                        text = "@${user.nickname}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TamixaContentColors.cardSecondary()
+                    )
+                }
+                TextButton(onClick = { isEditing = true }) {
+                    Text(text = Strings.edit(), color = TamixaColors.deepTeal)
+                }
+            }
+            
+            Spacer(Modifier.height(4.dp))
         }
     }
 }
@@ -295,9 +541,18 @@ private fun LifeSkillPracticeCard(
     val selectedLabel = childOptions.find { it.first == selectedChildId }?.second
         ?: Strings.lifeSkillPracticeUnnamedChild()
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = TamixaColors.deepTeal.copy(alpha = 0.38f),
+                shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge)
+            ),
         shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
-        colors = TamixaCardColors.surface(),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White.copy(alpha = 0.68f),
+            contentColor = TamixaContentColors.cardPrimary()
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation),
     ) {
         Column(
@@ -305,10 +560,38 @@ private fun LifeSkillPracticeCard(
                 .fillMaxWidth()
                 .padding(
                     horizontal = TamixaDesignTokens.contentPaddingHorizontal,
-                    vertical = TamixaDesignTokens.smallSpacing,
+                    vertical = TamixaDesignTokens.contentPaddingHorizontal,
                 ),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing),
         ) {
+            // Section header
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            color = TamixaColors.deepTeal.copy(alpha = 0.15f),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = TamixaColors.deepTeal
+                    )
+                }
+                Text(
+                    text = Strings.lifeSkillPracticeTitle(),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = TamixaContentColors.cardPrimary(),
+                )
+            }
+            
             if (childOptions.size > 1) {
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
@@ -337,16 +620,13 @@ private fun LifeSkillPracticeCard(
                     }
                 }
             }
-            Text(
-                text = Strings.lifeSkillPracticeTitle(),
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = TamixaContentColors.cardPrimary(),
-            )
+            
             Text(
                 text = Strings.lifeSkillPracticeDisclaimer(),
                 style = MaterialTheme.typography.bodySmall,
                 color = TamixaContentColors.cardPrimary().copy(alpha = 0.75f),
             )
+            
             if (loading) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -355,10 +635,11 @@ private fun LifeSkillPracticeCard(
                     CircularProgressIndicator(
                         modifier = Modifier.size(28.dp),
                         strokeWidth = 2.dp,
-                        color = TamixaColors.goldAccent,
+                        color = TamixaColors.deepTeal,
                     )
                 }
             } else if (counters != null) {
+                Spacer(Modifier.height(4.dp))
                 LifeSkillPillarRow(Strings.lifeSkillPillarWisdom(), counters.wisdom)
                 LifeSkillPillarRow(Strings.lifeSkillPillarSocial(), counters.social)
                 LifeSkillPillarRow(Strings.lifeSkillPillarMoney(), counters.money)
@@ -373,7 +654,7 @@ private fun LifeSkillPillarRow(label: String, value: Int) {
     val frac = (value / 40f).coerceIn(0f, 1f)
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -382,161 +663,31 @@ private fun LifeSkillPillarRow(label: String, value: Int) {
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = TamixaContentColors.cardPrimary().copy(alpha = 0.88f),
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = TamixaContentColors.cardPrimary(),
                 modifier = Modifier.weight(1f),
             )
             Text(
                 text = value.toString(),
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = TamixaContentColors.cardPrimary(),
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = TamixaColors.deepTeal,
             )
         }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(6.dp)
+                .height(8.dp)
                 .clip(RoundedCornerShape(4.dp))
-                .background(TamixaContentColors.cardPrimary().copy(alpha = 0.12f)),
+                .background(TamixaColors.deepTeal.copy(alpha = 0.15f)),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(frac)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(4.dp))
-                    .background(TamixaColors.goldAccent.copy(alpha = 0.88f)),
+                    .background(TamixaColors.deepTeal.copy(alpha = 0.88f)),
             )
         }
-    }
-}
-
-@Composable
-private fun ProfileDetailsCard(
-    user: CurrentUser,
-    onUpdateProfile: (nickname: String?, displayName: String?) -> Unit
-) {
-    val hasProfileData = user.nickname?.trim()?.isNotBlank() == true ||
-        user.displayName?.trim()?.isNotBlank() == true
-    var isEditing by remember { mutableStateOf(!hasProfileData) }
-    var nickname by remember(user.nickname, isEditing) { mutableStateOf(user.nickname ?: "") }
-    var displayName by remember(user.displayName, isEditing) { mutableStateOf(user.displayName ?: "") }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
-        colors = TamixaCardColors.surface(),
-        elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = TamixaDesignTokens.contentPaddingHorizontal,
-                    vertical = TamixaDesignTokens.smallSpacing,
-                ),
-            verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = TamixaColors.goldAccent
-                    )
-                    Text(
-                        text = Strings.personalDetails(),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TamixaContentColors.cardPrimary()
-                    )
-                }
-                if (isEditing) {
-                    TextButton(onClick = { isEditing = false }) {
-                        Text(text = Strings.cancel(), color = TamixaColors.goldAccent)
-                    }
-                } else {
-                    TextButton(onClick = { isEditing = true }) {
-                        Text(text = Strings.edit(), color = TamixaColors.goldAccent)
-                    }
-                }
-            }
-            if (isEditing) {
-                OutlinedTextField(
-                    value = nickname,
-                    onValueChange = { nickname = it },
-                    label = { Text(Strings.nickname()) },
-                    placeholder = { Text(Strings.nicknameHint()) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = TamixaColors.goldAccent,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                        focusedLabelColor = TamixaColors.goldAccent,
-                        cursorColor = TamixaColors.goldAccent,
-                        focusedTextColor = TamixaContentColors.cardPrimary(),
-                        unfocusedTextColor = TamixaContentColors.cardPrimary()
-                    )
-                )
-                OutlinedTextField(
-                    value = displayName,
-                    onValueChange = { displayName = it },
-                    label = { Text(Strings.name()) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = TamixaColors.goldAccent,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                        focusedLabelColor = TamixaColors.goldAccent,
-                        cursorColor = TamixaColors.goldAccent,
-                        focusedTextColor = TamixaContentColors.cardPrimary(),
-                        unfocusedTextColor = TamixaContentColors.cardPrimary()
-                    )
-                )
-                TamixaPrimaryButton(
-                    onClick = {
-                        onUpdateProfile(
-                            nickname.trim().takeIf { it.isNotBlank() },
-                            displayName.trim().takeIf { it.isNotBlank() }
-                        )
-                        isEditing = false
-                    },
-                    text = Strings.save(),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            } else {
-                ProfileDetailRow(label = Strings.nickname(), value = user.nickname?.trim()?.takeIf { it.isNotBlank() })
-                ProfileDetailRow(label = Strings.name(), value = user.displayName?.trim()?.takeIf { it.isNotBlank() })
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProfileDetailRow(label: String, value: String?) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = TamixaContentColors.cardPrimary().copy(alpha = 0.8f)
-        )
-        Text(
-            text = value ?: Strings.notSet(),
-            style = MaterialTheme.typography.bodyMedium,
-            color = TamixaContentColors.cardPrimary()
-        )
     }
 }
 
@@ -544,53 +695,98 @@ private fun ProfileDetailRow(label: String, value: String?) {
 private fun ProfileMenuItem(
     icon: ImageVector,
     label: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    compact: Boolean = false
 ) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
-        colors = TamixaCardColors.surface(),
-        elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation)
-    ) {
+    if (compact) {
+        // Compact mode for items inside section cards
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(onClick = onClick)
                 .padding(
                     horizontal = TamixaDesignTokens.contentPaddingHorizontal,
-                    vertical = 14.dp,
+                    vertical = TamixaDesignTokens.smallSpacing,
                 ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(
-                        color = TamixaColors.goldAccent.copy(alpha = 0.15f),
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    modifier = Modifier.size(24.dp),
-                    tint = TamixaColors.goldAccent
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(24.dp),
+                tint = TamixaColors.deepTeal
+            )
             Text(
                 text = label,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = TamixaContentColors.cardPrimary(),
                 modifier = Modifier.weight(1f)
             )
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = TamixaContentColors.cardPrimary().copy(alpha = 0.6f)
+                modifier = Modifier.size(20.dp),
+                tint = TamixaContentColors.cardPrimary().copy(alpha = 0.5f)
             )
+        }
+    } else {
+        // Standalone card mode (not currently used but kept for flexibility)
+        Card(
+            onClick = onClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    width = 1.dp,
+                    color = TamixaColors.deepTeal.copy(alpha = 0.38f),
+                    shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge)
+                ),
+            shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White.copy(alpha = 0.68f),
+                contentColor = TamixaContentColors.cardPrimary()
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = TamixaDesignTokens.contentPaddingHorizontal,
+                        vertical = 14.dp,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(TamixaDesignTokens.smallSpacing)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(
+                            color = TamixaColors.deepTeal.copy(alpha = 0.15f),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        modifier = Modifier.size(24.dp),
+                        tint = TamixaColors.deepTeal
+                    )
+                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TamixaContentColors.cardPrimary(),
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = TamixaContentColors.cardPrimary().copy(alpha = 0.6f)
+                )
+            }
         }
     }
 }

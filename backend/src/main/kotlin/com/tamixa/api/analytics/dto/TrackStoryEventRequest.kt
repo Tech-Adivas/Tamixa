@@ -22,7 +22,7 @@ data class TrackStoryEventRequest(
 
     @field:NotBlank
     @field:Pattern(
-        regexp = "story_started|story_25_percent|story_50_percent|story_75_percent|story_completed|story_stopped_early|interactive_branch",
+        regexp = "story_started|story_25_percent|story_50_percent|story_75_percent|story_completed|story_stopped_early|interactive_branch|crisis_help_sos_tap",
         message = "Invalid event_type"
     )
     val eventType: String,

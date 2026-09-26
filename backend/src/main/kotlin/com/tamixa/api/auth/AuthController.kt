@@ -17,7 +17,9 @@ import com.tamixa.api.auth.dto.RefreshTokenRequest
 import com.tamixa.api.auth.dto.RegisterRequest
 import com.tamixa.application.auth.AuthService
 import com.tamixa.application.auth.OtpService
+import com.tamixa.application.port.JwtPort
 import com.tamixa.application.port.ParentRepositoryPort
+import com.tamixa.application.port.TokenRevocationPort
 import com.tamixa.application.profile.ProfileService
 import jakarta.validation.Valid
 import org.slf4j.LoggerFactory
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import com.tamixa.api.ApiVersion
@@ -43,7 +46,9 @@ class AuthController(
     private val otpService: OtpService,
     private val accountDeletionService: AccountDeletionService,
     private val parentRepository: ParentRepositoryPort,
-    private val profileService: ProfileService
+    private val profileService: ProfileService,
+    private val jwtPort: JwtPort,
+    private val tokenRevocationPort: TokenRevocationPort
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -139,6 +144,7 @@ class AuthController(
         val tokens = authService.verifyPasswordless(
             request.email,
             request.code,
+            request.loginToken,
             request.acceptedTerms,
             request.acceptedPrivacy,
             request.acceptedParentalAttestation
@@ -154,6 +160,27 @@ class AuthController(
     }
 
     private fun maskPhone(phone: String) = PiiMask.maskPhone(phone)
+
+    @PostMapping("/logout")
+    fun logout(@RequestHeader("Authorization") authHeader: String): ResponseEntity<Map<String, String>> {
+        val token = authHeader.removePrefix("Bearer ").trim()
+        val claims = jwtPort.validateAccessToken(token)
+        
+        if (claims != null) {
+            val expiresAt = jwtPort.getTokenExpiration(token)
+            if (expiresAt != null) {
+                tokenRevocationPort.revokeToken(token, expiresAt)
+                log.info("User logged out email={}", PiiMask.maskEmail(claims.email))
+            } else {
+                log.warn("Could not extract expiration from token for logout")
+            }
+        } else {
+            log.debug("Logout called with invalid token")
+        }
+        
+        // Always return success even if token is invalid (idempotent logout)
+        return ResponseEntity.ok(mapOf("message" to "Logged out successfully"))
+    }
 
     @GetMapping("/me")
     fun me(): ResponseEntity<CurrentUserResponse> {

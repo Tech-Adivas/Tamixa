@@ -12,6 +12,7 @@ import com.tamixa.application.narration.TTSService
 import com.tamixa.application.port.voice.ElevenLabsVoiceCloningPort
 import com.tamixa.application.port.voice.VoiceReferenceStoragePort
 import com.tamixa.infrastructure.config.AppProperties
+import com.tamixa.infrastructure.gemini.GeminiUrlBuilder
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
@@ -699,18 +700,41 @@ class DevVerifyConnectionsController(
         val apiKey = appProperties.llm.gemini.apiKey
         val baseUrl = appProperties.llm.gemini.baseUrl.trimEnd('/')
         if (apiKey.isBlank()) {
+            val needsGemini =
+                appProperties.llm.provider.trim().equals("gemini", ignoreCase = true) ||
+                    appProperties.translation.provider.trim().equals("gemini", ignoreCase = true) ||
+                    (
+                        appProperties.translation.provider.trim().equals("openai", ignoreCase = true) &&
+                            appProperties.translation.openaiFallbackToGemini
+                        ) ||
+                    (
+                        appProperties.llm.provider.trim().equals("openai", ignoreCase = true) &&
+                            appProperties.narration.openaiRewriteFallbackToGemini
+                        ) ||
+                    appProperties.imageGeneration.provider.trim().equals("gemini", ignoreCase = true) ||
+                    appProperties.coverAnimation.veo.enabled
             return mapOf(
                 "status" to "SKIPPED",
                 "message" to (
-                    "GEMINI_API_KEY not set (required when AI_LLM_PROVIDER=gemini, TRANSLATION_PROVIDER=gemini, " +
-                        "AI_COVER_IMAGE_PROVIDER=gemini, or COVER_ANIMATION_VEO_ENABLED=true)"
+                    if (needsGemini) {
+                        "GEMINI_API_KEY not set (required for AI_LLM_PROVIDER=gemini, TRANSLATION_PROVIDER=gemini, " +
+                            "TRANSLATION_OPENAI_FALLBACK_TO_GEMINI=true, NARRATION_OPENAI_REWRITE_FALLBACK_TO_GEMINI=true, " +
+                            "AI_COVER_IMAGE_PROVIDER=gemini, or COVER_ANIMATION_VEO_ENABLED=true)"
+                    } else {
+                        "GEMINI_API_KEY not set (optional unless using Gemini LLM/translation/covers/Veo or OpenAI→Gemini fallbacks)"
+                    }
                     ),
                 "configured" to false,
             )
         }
         return try {
             val enc = java.net.URLEncoder.encode(apiKey, java.nio.charset.StandardCharsets.UTF_8)
-            restTemplate.getForObject("$baseUrl/v1beta/models?key=$enc", Map::class.java)
+            val listUrl = GeminiUrlBuilder.modelsListUrl(
+                baseUrl,
+                enc,
+                appProperties.llm.gemini.apiUrlStyle,
+            )
+            restTemplate.getForObject(listUrl, Map::class.java)
             mapOf(
                 "status" to "OK",
                 "message" to "Gemini API reachable",

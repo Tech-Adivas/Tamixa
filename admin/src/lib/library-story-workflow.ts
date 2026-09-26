@@ -4,6 +4,10 @@
  */
 
 import type { PipelineStatusResponse } from "@/types/api";
+import {
+  DEFAULT_LIBRARY_SOURCE_LANGUAGE,
+  LIBRARY_TAB_LANGUAGES,
+} from "@/lib/library-story-admin-constants";
 
 /** Keys on pipeline-status payloads that are not per-language stage strings (single source for admin UI). */
 export const LIBRARY_STORY_PIPELINE_META_KEYS = [
@@ -25,15 +29,10 @@ export function isLibraryStoryPipelineMetaKey(key: string): boolean {
   return PIPELINE_STATUS_META_KEYS.has(key);
 }
 
-/** Full display names for curated-story language codes (tabs, badges, errors). */
-export const ADMIN_STORY_LANGUAGE_LABELS: Record<string, string> = {
-  en: "English",
-  ta: "Tamil",
-  hi: "Hindi",
-  te: "Telugu",
-  kn: "Kannada",
-  ml: "Malayalam",
-};
+/** Full display names for pipeline language codes (aligned with `LIBRARY_TAB_LANGUAGES`). */
+export const ADMIN_STORY_LANGUAGE_LABELS: Record<string, string> = Object.fromEntries(
+  LIBRARY_TAB_LANGUAGES.map((l) => [l.code, l.label])
+);
 
 export function adminStoryLanguageLabel(code: string): string {
   const c = code.trim().toLowerCase();
@@ -48,15 +47,14 @@ export function adminStoryEmotionModeLabel(mode: string): string {
   );
 }
 
-/** Short labels for dense pipeline badges. */
-export const ADMIN_STORY_LANGUAGE_SHORT: Record<string, string> = {
-  ta: "Ta",
-  hi: "Hi",
-  en: "En",
-  te: "Te",
-  kn: "Kn",
-  ml: "Ml",
-};
+/** Short labels for dense pipeline badges (two-letter codes → Title case). */
+export const ADMIN_STORY_LANGUAGE_SHORT: Record<string, string> = Object.fromEntries(
+  LIBRARY_TAB_LANGUAGES.map((l) => {
+    const c = l.code;
+    const short = c.length >= 2 ? c.charAt(0).toUpperCase() + c.charAt(1) : c.toUpperCase();
+    return [c, short];
+  })
+);
 
 export function normalizeLibraryStoryStatus(status?: string | null): string {
   return (status ?? "DRAFT").trim().toUpperCase() || "DRAFT";
@@ -71,6 +69,62 @@ export function isLibraryStoryInReviewQueue(status?: string | null): boolean {
 /** Submit for review is only for draft-like rows; not when already queued. */
 export function canSubmitLibraryStoryForReview(status: string | undefined | null, hasContent: boolean): boolean {
   return !isLibraryStoryInReviewQueue(status) && !!hasContent;
+}
+
+/** Shared admin UI: Create + Edit story progress strip (form → server → sync → cover → submit). */
+export type LibraryStoryAdminProgressStep = {
+  id: string;
+  label: string;
+  done: boolean;
+  busy?: boolean;
+  optional?: boolean;
+};
+
+export function buildLibraryStoryAdminProgressSteps(input: {
+  minWordCount: number;
+  wordCount: number;
+  titleTrimmed: boolean;
+  themeSet: boolean;
+  contentTrimmed: boolean;
+  simulatorSelected: boolean;
+  /** When simulator: graph present, lint OK, segment URL rules OK. Ignored when not simulator. */
+  simulatorGraphFieldsOk: boolean;
+  onServer: boolean;
+  regenerateBusy: boolean;
+  hasCover: boolean;
+  submitReady: boolean;
+}): LibraryStoryAdminProgressStep[] {
+  const {
+    minWordCount,
+    wordCount,
+    titleTrimmed,
+    themeSet,
+    contentTrimmed,
+    simulatorSelected,
+    simulatorGraphFieldsOk,
+    onServer,
+    regenerateBusy,
+    hasCover,
+    submitReady,
+  } = input;
+
+  /** Interactive (Learn · Simulator) episodes use segment scripts + graph; master story text has no minimum word count. */
+  const wordCountOk = simulatorSelected ? contentTrimmed : wordCount >= minWordCount;
+  const formReady =
+    titleTrimmed && themeSet && contentTrimmed && wordCountOk && (!simulatorSelected || simulatorGraphFieldsOk);
+
+  return [
+    { id: "write", label: "Form ready", done: formReady },
+    { id: "row", label: "On server", done: onServer },
+    {
+      id: "sync",
+      label: "Sync idle",
+      done: onServer && !regenerateBusy,
+      busy: regenerateBusy,
+    },
+    { id: "cover", label: "Cover", done: hasCover, optional: true },
+    { id: "submit", label: "Can submit", done: submitReady },
+  ];
 }
 
 /**
@@ -173,16 +227,6 @@ export const POST_APPROVAL_CONTENT_CHANGE_HELP =
 /** sessionStorage: bridges optional cover/regenerate prompts from Create → Edit (shape: { storyId, cover?, regenerate? }). */
 export const ADMIN_POST_CREATE_PROMPTS_KEY = "tamixa_admin_post_create_prompts";
 
-/** Master-language codes supported in admin create/edit (matches story new + edit pages). */
-const SOURCE_LANG_SCRIPT_LABEL: Record<string, string> = {
-  ta: "Tamil",
-  en: "English",
-  hi: "Hindi",
-  te: "Telugu",
-  kn: "Kannada",
-  ml: "Malayalam",
-};
-
 /**
  * Whether `text` contains characters in the expected script for the library master language.
  * English skips script checks. Aligns with backend StoryLibraryValidation-style expectations.
@@ -200,8 +244,8 @@ export function hasScriptForLibraryStoryLanguage(text: string, lang: string): bo
 }
 
 export function libraryStoryMasterScriptLabel(lang: string | undefined | null): string {
-  const code = (lang ?? "ta").trim().toLowerCase();
-  return SOURCE_LANG_SCRIPT_LABEL[code] ?? code;
+  const code = (lang ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).trim().toLowerCase();
+  return ADMIN_STORY_LANGUAGE_LABELS[code] ?? code;
 }
 
 /**
@@ -212,7 +256,7 @@ export function getLibraryStoryMasterScriptContentError(
   content: string,
   lang: string | undefined | null
 ): string | null {
-  const l = (lang ?? "ta").trim().toLowerCase();
+  const l = (lang ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).trim().toLowerCase();
   if (l === "en") return null;
   if (hasScriptForLibraryStoryLanguage(content, l)) return null;
   const label = libraryStoryMasterScriptLabel(l);

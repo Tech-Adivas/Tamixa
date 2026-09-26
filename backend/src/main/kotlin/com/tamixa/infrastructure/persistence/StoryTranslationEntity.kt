@@ -9,6 +9,8 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 import java.time.Instant
 
 @Entity
@@ -54,5 +56,24 @@ class StoryTranslationEntity(
     var lastError: String? = null,
 
     @Column(name = "narration_approved_at")
-    var narrationApprovedAt: java.time.Instant? = null
+    var narrationApprovedAt: java.time.Instant? = null,
+
+    @Column(name = "interactive_graph", columnDefinition = "TEXT")
+    var interactiveGraph: String? = null,
+
+    @Column(name = "post_story_mission", columnDefinition = "TEXT")
+    var postStoryMission: String? = null,
+
+    @Column(name = "post_story_resource_url", length = 512)
+    var postStoryResourceUrl: String? = null,
+
+    @Column(name = "parent_content_note", columnDefinition = "TEXT")
+    var parentContentNote: String? = null,
+
+    @Column(name = "speak_along_prompt", length = 500)
+    var speakAlongPrompt: String? = null,
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "parent_discussion_prompts", columnDefinition = "jsonb")
+    var parentDiscussionPrompts: List<String>? = null,
 )

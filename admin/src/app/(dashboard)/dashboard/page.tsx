@@ -132,7 +132,7 @@ export default function DashboardPage() {
 
   if (error) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-6">
         <div className="page-hero">
           <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Dashboard</h1>
           <p className="mt-1 text-sm text-muted-foreground sm:text-base">Overview and key metrics for Tamixa admin.</p>
@@ -147,7 +147,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Page hero — professional header strip */}
       <div className="page-hero">
         <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Dashboard</h1>
@@ -157,7 +157,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {KPI_CONFIG.map(({ key, label, value, icon: Icon, description, iconBg, borderAccent, href, linkLabel }) => (
           <Card
             key={key}
@@ -170,13 +170,13 @@ export default function DashboardPage() {
               <CardTitle className="text-sm font-semibold text-muted-foreground">
                 {label}
               </CardTitle>
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>
                 <Icon className="h-5 w-5" />
               </div>
             </CardHeader>
             <CardContent>
               {loading ? (
-                <Skeleton className="h-8 w-24 rounded-lg" />
+                <Skeleton className="h-7 w-20 rounded-lg" />
               ) : (
                 <>
                   <div className="text-2xl font-bold tracking-tight text-foreground">
@@ -199,7 +199,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-3">
         <Card className="border-l-4 border-l-tamixa-purple">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between gap-2">
@@ -210,7 +210,7 @@ export default function DashboardPage() {
                 <Button
                   size="sm"
                   variant={storyProfileDays === 7 ? "default" : "ghost"}
-                  className="h-7 px-2 text-xs"
+                  className="h-6 px-2 text-xs"
                   onClick={() => setStoryProfileDays(7)}
                 >
                   7d
@@ -218,7 +218,7 @@ export default function DashboardPage() {
                 <Button
                   size="sm"
                   variant={storyProfileDays === 30 ? "default" : "ghost"}
-                  className="h-7 px-2 text-xs"
+                  className="h-6 px-2 text-xs"
                   onClick={() => setStoryProfileDays(30)}
                 >
                   30d
@@ -228,7 +228,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {storyProfileLoading ? (
-              <Skeleton className="h-8 w-24 rounded-lg" />
+              <Skeleton className="h-7 w-20 rounded-lg" />
             ) : (
               <>
                 <div className="text-2xl font-bold tracking-tight text-foreground">
@@ -256,7 +256,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {storyProfileLoading ? (
-              <Skeleton className="h-8 w-24 rounded-lg" />
+              <Skeleton className="h-7 w-20 rounded-lg" />
             ) : (
               <>
                 <div className="text-2xl font-bold tracking-tight text-foreground">
@@ -286,7 +286,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {storyProfileLoading ? (
-              <Skeleton className="h-8 w-24 rounded-lg" />
+              <Skeleton className="h-7 w-20 rounded-lg" />
             ) : (
               <>
                 <div className="text-2xl font-bold tracking-tight text-foreground">
@@ -311,7 +311,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-5 lg:grid-cols-2">
         <Card className="overflow-hidden transition-shadow duration-200 hover:shadow-card-hover">
           <CardHeader className="border-b border-border bg-muted/50">
             <CardTitle className="flex items-center gap-3 text-base font-bold">
@@ -326,9 +326,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="pt-5">
             {loading ? (
-              <Skeleton className="h-64 w-full rounded-xl" />
+              <Skeleton className="h-56 w-full rounded-xl" />
             ) : (
-              <ResponsiveContainer width="100%" height={256}>
+              <ResponsiveContainer width="100%" height={224}>
                 <BarChart data={revenue} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="month" className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />
@@ -363,9 +363,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="pt-5">
             {loading ? (
-              <Skeleton className="h-64 w-full rounded-xl" />
+              <Skeleton className="h-56 w-full rounded-xl" />
             ) : (
-              <ResponsiveContainer width="100%" height={256}>
+              <ResponsiveContainer width="100%" height={224}>
                 <LineChart data={storyUsage} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="date" className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />

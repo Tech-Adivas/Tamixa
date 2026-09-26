@@ -196,12 +196,13 @@ class StreamUrlController(
         val effectiveSource = storySource?.takeIf { it in listOf("library", "generated") }
         val effectivePlaybackMode = playbackMode?.trim()?.lowercase()?.takeIf { it in listOf("default", "my_voice", "avatar") } ?: "default"
         val requestAvatarVideo = effectivePlaybackMode == "avatar"
-        val clonedRequested = voiceProfile != null && voiceProfile.startsWith("cloned:", ignoreCase = true)
+        val clonedVoiceProfile = voiceProfile?.takeIf { it.startsWith("cloned:", ignoreCase = true) }
+        val clonedRequested = clonedVoiceProfile != null
         var usedClonedFallback = false
         val url = when (effectiveSource) {
             "generated" -> {
-                val clonedUrl = if (clonedRequested && parentId != null) {
-                    audioStreamService.getGeneratedClonedStreamUrl(id, language, voiceProfile!!, parentId)
+                val clonedUrl = if (clonedVoiceProfile != null && parentId != null) {
+                    audioStreamService.getGeneratedClonedStreamUrl(id, language, clonedVoiceProfile, parentId)
                 } else null
                 if (clonedUrl != null) clonedUrl
                 else if (clonedRequested) {
@@ -234,8 +235,8 @@ class StreamUrlController(
                     else -> audioStreamService.getLibraryStreamUrl(id, language, parentId)
                 }
                 curatedUrl
-                    ?: if (clonedRequested && parentId != null) {
-                        audioStreamService.getGeneratedClonedStreamUrl(id, language, voiceProfile!!, parentId)
+                    ?: if (clonedVoiceProfile != null && parentId != null) {
+                        audioStreamService.getGeneratedClonedStreamUrl(id, language, clonedVoiceProfile, parentId)
                     } else null
                     ?: if (clonedRequested) {
                         usedClonedFallback = true

@@ -81,14 +81,15 @@ export default function TamixaSimulatorPlayer({
     }
     setPhase("reflection");
     setReflectSecondsLeft(REFLECTION_SECONDS);
-    let remaining = REFLECTION_SECONDS;
     const id = window.setInterval(() => {
-      remaining -= 1;
-      setReflectSecondsLeft(remaining);
-      if (remaining <= 0) {
-        window.clearInterval(id);
-        setPhase("choices");
-      }
+      setReflectSecondsLeft((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(id);
+          setPhase("choices");
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => window.clearInterval(id);
   }, [open, segmentKey, reflectionPoint]);

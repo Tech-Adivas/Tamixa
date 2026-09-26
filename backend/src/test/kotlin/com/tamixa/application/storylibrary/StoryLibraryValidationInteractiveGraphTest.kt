@@ -60,6 +60,12 @@ class StoryLibraryValidationInteractiveGraphTest {
         }
     }
 
+    @Test
+    fun `validateInteractiveGraphThemeAlignment allows Civic Survival simulator theme with graph`() {
+        val raw = """{"startSegmentId":"intro","segments":{"intro":{"audioUrl":"https://x/a.mp3"}}}"""
+        StoryLibraryValidation.validateInteractiveGraphThemeAlignment("Learn · Simulator · Civic Survival", null, raw)
+    }
+
     private fun assertDigitalSurvivalFixture(resourcePath: String) {
         val raw = javaClass.getResourceAsStream(resourcePath)!!.bufferedReader().readText().trim()
         assertEquals(raw, StoryLibraryValidation.normalizeInteractiveGraphJson(raw))

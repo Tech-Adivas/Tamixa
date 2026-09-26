@@ -463,27 +463,8 @@ object OnboardingCardDefaults {
 
 /** Design spec tokens: card radii, spacing, elevation — premium HD feel, kid- and elder-friendly */
 object TamixaDesignTokens {
-    val cardElevation = 6.dp
-    val cardElevationHover = 10.dp
-    val dialogRadius = 28.dp
-    val buttonRadius = 28.dp
-    val inputRadius = 20.dp
-    /** Card corner radius: list/content cards — consistent professional look */
-    val cardRadius = 18.dp
-    /** List rows / compact cards — between default and large feature cards */
-    val cardRadiusMedium = 20.dp
-    /** Large feature cards (e.g. profile menu, settings sections) */
-    val cardRadiusLarge = 22.dp
-    /** Carousel/poster cards */
-    val carouselCardRadius = 18.dp
-    /** List row cards: soft shadow (ambient / spot) — use with [listCardShadowElevation] */
-    val listCardShadowElevation = 5.dp
-    val listCardShadowAmbient = Color.Black.copy(alpha = 0.055f)
-    val listCardShadowSpot = Color.Black.copy(alpha = 0.04f)
-    /** Poster / carousel cards: slightly deeper shadow */
-    val carouselCardShadowElevation = 8.dp
-    val carouselCardShadowAmbient = Color.Black.copy(alpha = 0.075f)
-    val carouselCardShadowSpot = Color.Black.copy(alpha = 0.055f)
+    // ---- Spacing & Layout ----
+    
     /** Screen edge padding — consistent on all screens */
     val screenPadding = 24.dp
     /** Extra bottom padding when screen has bottom nav — minimal gap above bar, consistent across app */
@@ -500,10 +481,22 @@ object TamixaDesignTokens {
     val smallSpacing = 12.dp
     /** Padding inside cards — comfortable for touch and read */
     val cardContentPadding = 20.dp
-    /** Min touch target (accessibility); use for icon buttons and list rows */
-    val minTouchTargetSize = 48.dp
-    /** Full-width hero art on story player — consistent height across devices */
-    val storyIllustrationHeroHeight = 264.dp
+    /** Vertical gap inside starfield hub blocks (dashboard carousels, library generate + filters). */
+    val starfieldHubItemSpacing = 10.dp
+    
+    // ---- Border Radii ----
+    
+    val dialogRadius = 28.dp
+    val buttonRadius = 28.dp
+    val inputRadius = 20.dp
+    /** Card corner radius: list/content cards — consistent professional look */
+    val cardRadius = 18.dp
+    /** List rows / compact cards — between default and large feature cards */
+    val cardRadiusMedium = 20.dp
+    /** Large feature cards (e.g. profile menu, settings sections) */
+    val cardRadiusLarge = 22.dp
+    /** Carousel/poster cards */
+    val carouselCardRadius = 18.dp
     /** Corner radius for player hero illustration frame (cards may use [cardRadius] or [carouselCardRadius]) */
     val storyIllustrationFrameRadius = 18.dp
     /** Full-width home hero: flat top, rounded bottom (aligned with illustration frame). */
@@ -514,11 +507,166 @@ object TamixaDesignTokens {
             bottomStart = storyIllustrationFrameRadius,
             bottomEnd = storyIllustrationFrameRadius,
         )
+    
+    // ---- Elevation & Shadows ----
+    
+    val cardElevation = 6.dp
+    val cardElevationHover = 10.dp
+    /** List row cards: soft shadow (ambient / spot) — use with [listCardShadowElevation] */
+    val listCardShadowElevation = 5.dp
+    val listCardShadowAmbient = Color.Black.copy(alpha = 0.055f)
+    val listCardShadowSpot = Color.Black.copy(alpha = 0.04f)
+    /** Poster / carousel cards: slightly deeper shadow */
+    val carouselCardShadowElevation = 8.dp
+    val carouselCardShadowAmbient = Color.Black.copy(alpha = 0.075f)
+    val carouselCardShadowSpot = Color.Black.copy(alpha = 0.055f)
     /** Soft glow for primary CTA (gold) */
     val buttonShadowElevation = 8.dp
     val fabShadowElevation = 12.dp
-    /** Vertical gap inside starfield hub blocks (dashboard carousels, library generate + filters). */
-    val starfieldHubItemSpacing = 10.dp
+    
+    // ---- Dimensions ----
+    
+    /** Min touch target (accessibility); use for icon buttons and list rows */
+    val minTouchTargetSize = 48.dp
+    /** Full-width hero art on story player — consistent height across devices */
+    val storyIllustrationHeroHeight = 264.dp
+    
+    // ---- Motion Tokens ----
+    
+    /**
+     * Animation duration for quick UI feedback (button press, ripple, toggle).
+     * Follows 4dp/8dp grid system: 100ms base unit.
+     */
+    val motionDurationInstant = 100
+    
+    /**
+     * Animation duration for standard transitions (screen enter/exit, card expand/collapse).
+     * 300ms provides smooth, noticeable motion without feeling sluggish.
+     */
+    val motionDurationStandard = 300
+    
+    /**
+     * Animation duration for emphasized transitions (onboarding steps, major state changes).
+     * 500ms creates a more deliberate, premium feel for important moments.
+     */
+    val motionDurationEmphasized = 500
+    
+    /**
+     * Animation duration for long-running animations (loading spinners, progress indicators).
+     * 1000ms (1 second) for continuous or looping animations.
+     */
+    val motionDurationLong = 1000
+    
+    /**
+     * Standard easing for enter animations (elements appearing on screen).
+     * Deceleration curve: starts fast, ends slow for natural entrance.
+     * Cubic bezier: (0.0, 0.0, 0.2, 1.0) - Material Design standard decelerate.
+     */
+    val motionEasingEnter = androidx.compose.animation.core.CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f)
+    
+    /**
+     * Standard easing for exit animations (elements leaving screen).
+     * Acceleration curve: starts slow, ends fast for natural exit.
+     * Cubic bezier: (0.4, 0.0, 1.0, 1.0) - Material Design standard accelerate.
+     */
+    val motionEasingExit = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0.0f, 1.0f, 1.0f)
+    
+    /**
+     * Standard easing for bidirectional animations (expand/collapse, slide).
+     * Symmetric curve: smooth acceleration and deceleration.
+     * Cubic bezier: (0.4, 0.0, 0.2, 1.0) - Material Design standard.
+     */
+    val motionEasingStandard = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f)
+    
+    /**
+     * Emphasized easing for important transitions (onboarding, major state changes).
+     * More pronounced curve for premium, deliberate feel.
+     * Cubic bezier: (0.0, 0.0, 0.0, 1.0) - Sharp deceleration.
+     */
+    val motionEasingEmphasized = androidx.compose.animation.core.CubicBezierEasing(0.0f, 0.0f, 0.0f, 1.0f)
+    
+    /**
+     * Stagger delay for sequential entrance animations (onboarding cards, list items).
+     * 120ms between elements creates a smooth cascade effect without feeling slow.
+     * Follows 4dp/8dp grid system: 120ms = 100ms base + 20ms offset.
+     */
+    val motionStaggerDelay = 120
+    
+    /**
+     * Check if reduce motion is preferred (accessibility).
+     * When true, animations should be disabled or significantly reduced.
+     * Implementation note: This should be read from system accessibility settings.
+     * For now, defaults to false. Implement platform-specific checks in actual/expect.
+     */
+    val motionReduceMotionPreferred: Boolean = false
+    
+    // ---- Accessibility Tokens ----
+    
+    /**
+     * Focus ring width for keyboard navigation and accessibility.
+     * 3dp provides clear visual indication without overwhelming the UI.
+     * Follows 4dp/8dp grid system (rounded to nearest grid value).
+     */
+    val accessibilityFocusRingWidth = 3.dp
+    
+    /**
+     * Focus ring color for light theme.
+     * Deep teal with high opacity for clear visibility on light backgrounds.
+     */
+    val accessibilityFocusRingColorLight = DeepTeal.copy(alpha = 0.85f)
+    
+    /**
+     * Focus ring color for dark theme.
+     * Edu-story mint with high opacity for clear visibility on dark backgrounds.
+     */
+    val accessibilityFocusRingColorDark = EduStoryMint.copy(alpha = 0.90f)
+    
+    /**
+     * Minimum contrast ratio for normal text (WCAG 2.1 AA).
+     * 4.5:1 ensures readability for users with visual impairments.
+     */
+    val accessibilityMinContrastNormal = 4.5f
+    
+    /**
+     * Minimum contrast ratio for large text (WCAG 2.1 AA).
+     * 3.0:1 for text >= 18pt regular or >= 14pt bold.
+     */
+    val accessibilityMinContrastLarge = 3.0f
+    
+    /**
+     * High contrast mode multiplier for text colors.
+     * When high contrast is enabled, text opacity is increased by this factor.
+     * 1.15 provides 15% boost without oversaturating colors.
+     */
+    val accessibilityHighContrastMultiplier = 1.15f
+    
+    /**
+     * Minimum touch target size for interactive elements (WCAG 2.1 AA).
+     * 48dp ensures comfortable tapping for users with motor impairments.
+     * Applies to buttons, icons, list items, and all tappable elements.
+     */
+    val accessibilityMinTouchTarget = 48.dp
+    
+    /**
+     * Recommended touch target size for primary actions.
+     * 56dp provides extra comfort for important CTAs and frequently used controls.
+     */
+    val accessibilityRecommendedTouchTarget = 56.dp
+    
+    /**
+     * Spacing between adjacent touch targets to prevent accidental taps.
+     * 8dp minimum gap reduces mis-taps for users with motor impairments.
+     * Follows 4dp/8dp grid system.
+     */
+    val accessibilityTouchTargetSpacing = 8.dp
+    
+    /**
+     * Check if high contrast mode is enabled (accessibility).
+     * When true, UI should use higher contrast colors and bolder borders.
+     * Implementation note: This should be read from system accessibility settings.
+     * For now, defaults to false. Implement platform-specific checks in actual/expect.
+     */
+    val accessibilityHighContrastEnabled: Boolean = false
 }
 
 /** Shared styling for dialogs: shape and surface for kid + parent appeal. */

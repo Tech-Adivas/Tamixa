@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,6 +45,7 @@ fun rememberAvatarVideoExoPlayerController(
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
+    var durationMillisState by remember(videoUrl) { mutableLongStateOf(0L) }
     var isReady by remember { mutableStateOf(false) }
     var sleepTimerJob by remember { mutableStateOf<Job?>(null) }
 
@@ -52,6 +54,7 @@ fun rememberAvatarVideoExoPlayerController(
             override val isReady get() = false
             override val isPlaying get() = false
             override val progress get() = 0f
+            override val durationMillis get() = 0L
             override fun playPause() {}
             override fun rewind() {}
             override fun fastForward() {}
@@ -63,6 +66,7 @@ fun rememberAvatarVideoExoPlayerController(
     )
 
     DisposableEffect(videoUrl, muteVideoAudio, repeatVideo) {
+        durationMillisState = 0L
         if (videoUrl.isNullOrBlank()) {
             onDispose { }
         } else {
@@ -109,10 +113,17 @@ fun rememberAvatarVideoExoPlayerController(
                     delay(500)
                     val p = player
                     if (p != null && p.playbackState != Player.STATE_ENDED) {
-                        val dur = p.duration.coerceAtLeast(1L)
-                        val pos = p.currentPosition
-                        progress = (pos.toFloat() / dur).coerceIn(0f, 1f)
-                        onProgressChanged(progress)
+                        val raw = p.duration
+                        val dur = when {
+                            raw > 0L && raw != C.TIME_UNSET -> raw.also { durationMillisState = it }
+                            durationMillisState > 0L -> durationMillisState
+                            else -> 0L
+                        }
+                        if (dur > 0L) {
+                            val pos = p.currentPosition
+                            progress = (pos.toFloat() / dur).coerceIn(0f, 1f)
+                            onProgressChanged(progress)
+                        }
                     }
                 }
             }
@@ -132,6 +143,7 @@ fun rememberAvatarVideoExoPlayerController(
             override val isReady get() = isReady
             override val isPlaying get() = isPlaying
             override val progress get() = progress
+            override val durationMillis get() = durationMillisState
             override fun playPause() {
                 player?.let { if (it.isPlaying) it.pause() else it.play() }
             }
@@ -139,7 +151,15 @@ fun rememberAvatarVideoExoPlayerController(
                 player?.let { it.seekTo((it.currentPosition - TamixaConstants.SEEK_MS).coerceAtLeast(0L)) }
             }
             override fun fastForward() {
-                player?.let { val d = it.duration.coerceAtLeast(1L); it.seekTo((it.currentPosition + TamixaConstants.SEEK_MS).coerceAtMost(d)) }
+                player?.let {
+                    val raw = it.duration
+                    val d = when {
+                        raw > 0L && raw != C.TIME_UNSET -> raw
+                        durationMillisState > 0L -> durationMillisState
+                        else -> return@let
+                    }
+                    it.seekTo((it.currentPosition + TamixaConstants.SEEK_MS).coerceAtMost(d))
+                }
             }
             override fun setSleepTimer(minutes: Int) {
                 sleepTimerJob?.cancel()

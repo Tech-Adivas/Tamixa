@@ -79,4 +79,10 @@ interface StoryTranslationRepositoryPort {
 
     /** Returns map of language -> approved (true if narration_approved_at is set) for a story. */
     fun getNarrationApprovalByMasterStoryId(masterStoryId: Long): Map<String, Boolean>
+
+    /**
+     * Search translations by content (title, content, moral) for parent-facing search.
+     * Only returns translations where master story is PUBLISHED and has approved narration.
+     */
+    fun searchByContent(query: String, language: String, pageable: Pageable): Page<StoryTranslation>
 }

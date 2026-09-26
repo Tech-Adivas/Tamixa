@@ -24,7 +24,10 @@ class S3SignedUrlGenerator(
     private val bucket get() = appProperties.storage.effectiveS3Bucket
 
     fun signUrl(objectKey: String, expiryMinutes: Long = 10): URL? {
+        log.debug("🔍 signUrl called: key={}, expiryMin={}, bucket={}", objectKey, expiryMinutes, bucket)
         return try {
+            // For Access Point ARNs, use the ARN directly as the bucket parameter
+            // S3Presigner will handle the ARN correctly
             val getObjectRequest = GetObjectRequest.builder()
                 .bucket(bucket)
                 .key(objectKey)
@@ -35,10 +38,10 @@ class S3SignedUrlGenerator(
                 .build()
             val presigned = s3Presigner.presignGetObject(presignRequest)
             val url = presigned.url()
-            log.debug("S3 presigned URL generated key={} expiryMin={}", objectKey, expiryMinutes)
+            log.info("✅ S3 presigned URL generated: key={}, expiryMin={}, url={}", objectKey, expiryMinutes, url)
             url
         } catch (e: Exception) {
-            log.warn("S3 presign failed key={}: {}", objectKey, e.message)
+            log.error("❌ S3 presign failed: key={}, bucket={}, error={}", objectKey, bucket, e.message, e)
             null
         }
     }

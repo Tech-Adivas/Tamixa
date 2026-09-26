@@ -1,0 +1,68 @@
+---
+inclusion: manual
+---
+
+# Evaluation Agent
+
+Use this agent **after** an AI produces a substantive output (draft story text, prompt change, code, tests, or PR summary). Goal: **per-output evaluation** that is fast enough for daily use—not only quarterly scorecards.
+
+See [docs/AI_EVALUATION_SYSTEM.md](../../docs/AI_EVALUATION_SYSTEM.md), [docs/COST_GOVERNANCE.md](../../docs/COST_GOVERNANCE.md), and [.github/prompts/evaluate-output.prompt.md](../../.github/prompts/evaluate-output.prompt.md).
+
+## What to return (always structured)
+
+1. **Output type** — story | prompt | code | tests | PR | other  
+2. **Scores (0–5)** per applicable rubric below — use half points if needed  
+3. **Blockers** — must-fix before merge or publish  
+4. **Feedback for learning loop** — concrete edits (prompt text, rule file, spec) to try next time  
+5. **Human follow-up** — what only a human can judge  
+
+## Rubric: story / narration (product)
+
+| Criterion | Look for |
+|-----------|----------|
+| Safety & age fit | No violence, weapons, unsafe instructions; family-appropriate tone |
+| Coherence | Plot/logic; consistency with child profile constraints |
+| Cultural fit | Respectful, appropriate idioms for locale (not generic translationese) |
+| Tamixa voice | Warm, supportive; matches product persona docs |
+
+## Rubric: Tamil / multilingual fluency (text)
+
+| Criterion | Look for |
+|-----------|----------|
+| Script & spelling | Correct script, sandhi/grammar plausibility (flag uncertainty) |
+| Naturalness | Idiomatic phrasing vs literal calque from English |
+| TTS fit | Speakability, sentence length, punctuation that won’t break TTS |
+| Consistency | Glossary/terms match existing language packs / `docs/context-packs/` |
+
+## Rubric: code / tests (engineering)
+
+| Criterion | Look for |
+|-----------|----------|
+| Architecture fit | Layers, ports, no forbidden cross-cuts |
+| Standards | Naming, validation, logging (no secrets/PII), error handling |
+| Test quality | Determinism, meaningful assertions, right level (unit vs integration) |
+| Diff hygiene | Scope limited to task; no silent behavior change |
+
+## Rubric: PR / change set
+
+| Criterion | Look for |
+|-----------|----------|
+| Spec alignment | Matches mini-spec or ticket; spec-first areas respected |
+| Reviewability | Size, clarity, rollback story |
+| CI evidence | Tests/lint implied or run; no obvious CI break |
+| Acceptance likelihood | Would a tech lead likely accept without major rework? |
+
+## PR acceptance tracking (team habit)
+
+Record in PR description or team dashboard (manual until automated):
+
+- **AI-assisted?** y/n  
+- **Evaluator**: human or Evaluation agent pass  
+- **Outcome**: merged / changes requested / rejected  
+- **Re-prompt count** (optional)  
+
+Aggregates feed [docs/AGENTIC_SDLC_GOVERNANCE.md](../../docs/AGENTIC_SDLC_GOVERNANCE.md) between quarters.
+
+## Learning loop handoff
+
+Every evaluation should suggest **one** durable update when warranted: e.g. tweak `.github/prompts/`, `.cursor/rules/`, `docs/context-packs/`, or file an ADR. Tie to the loop in [docs/AI_EVALUATION_SYSTEM.md](../../docs/AI_EVALUATION_SYSTEM.md).

@@ -43,6 +43,9 @@ class RateLimitingFilter(
 
     override fun getOrder(): Int = Ordered.HIGHEST_PRECEDENCE + 1
 
+    override fun shouldNotFilter(request: HttpServletRequest): Boolean =
+        request.method.equals("OPTIONS", ignoreCase = true)
+
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
@@ -85,7 +88,9 @@ class RateLimitingFilter(
     }
 
     private fun clientKey(request: HttpServletRequest): String {
-        return request.getHeader("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()
+        // Use the LAST entry in X-Forwarded-For — added by our trusted reverse proxy and not spoofable
+        // by clients (who can only prepend to the left side of the chain).
+        return request.getHeader("X-Forwarded-For")?.split(",")?.lastOrNull()?.trim()?.takeIf { it.isNotBlank() }
             ?: request.remoteAddr
             ?: "unknown"
     }

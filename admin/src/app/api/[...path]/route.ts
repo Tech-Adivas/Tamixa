@@ -4,6 +4,7 @@
  *
  * Security: only paths under /api/v1/ are forwarded. All other paths are blocked.
  */
+import { existsSync } from "node:fs";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import {
@@ -18,6 +19,8 @@ let apiEnvMismatchWarned = false;
 const LONG_RUNNING_ADMIN_OP_TIMEOUT_MS = 20 * 60 * 1000;
 /** Fail fast when Spring is down or API_URL is wrong; avoids minute-long hangs (undici default). */
 const PROXY_DEFAULT_TIMEOUT_MS = 25_000;
+/** Large library rows (translations + interactive graph) can exceed the default. */
+const PROXY_ADMIN_STORY_TIMEOUT_MS = 120_000;
 
 function warnIfApiEnvMismatch(): void {
   if (apiEnvMismatchWarned) return;
@@ -50,7 +53,39 @@ function buildCandidateBackendUrls(base: string): string[] {
   } else if (base === "http://127.0.0.1:8080") {
     urls.push("http://localhost:8080");
   }
+  // Admin in Docker: localhost/127.0.0.1 is the container, not the host running Spring.
+  try {
+    const u = new URL(base);
+    const loopback =
+      u.hostname === "localhost" ||
+      u.hostname === "127.0.0.1" ||
+      u.hostname === "::1";
+    if (loopback && existsSync("/.dockerenv")) {
+      const port = u.port || (u.protocol === "https:" ? "443" : "80");
+      urls.push(`${u.protocol}//host.docker.internal:${port}`);
+    }
+  } catch {
+    /* ignore invalid base */
+  }
   return urls;
+}
+
+function proxyTimeoutMs(pathStr: string, method: string): number {
+  if (
+    pathStr.includes("regenerate-with-prompt") ||
+    pathStr.includes("rebuild-narration-pipeline") ||
+    pathStr.includes("bulk-generate") ||
+    pathStr.includes("regenerate-cover")
+  ) {
+    return LONG_RUNNING_ADMIN_OP_TIMEOUT_MS;
+  }
+  if (
+    /^v1\/admin\/stories(\/|$)/.test(pathStr) &&
+    ["GET", "PUT", "PATCH", "POST"].includes(method)
+  ) {
+    return PROXY_ADMIN_STORY_TIMEOUT_MS;
+  }
+  return PROXY_DEFAULT_TIMEOUT_MS;
 }
 
 function looksLikeConnectionFailure(err: Error): boolean {
@@ -161,19 +196,19 @@ async function proxy(
     cache: "no-store",
   };
   if (request.method !== "GET" && request.body) {
-    init.body = await request.arrayBuffer();
+    const MAX_BODY_BYTES = 50 * 1024 * 1024; // 50 MB — covers story content + base64 audio uploads
+    const contentLength = request.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
+      return NextResponse.json({ message: "Request body too large." }, { status: 413 });
+    }
+    const bodyBuffer = await request.arrayBuffer();
+    if (bodyBuffer.byteLength > MAX_BODY_BYTES) {
+      return NextResponse.json({ message: "Request body too large." }, { status: 413 });
+    }
+    init.body = bodyBuffer;
   }
-  const isLongRunningAdminOp =
-    pathStr.includes("regenerate-with-prompt") ||
-    pathStr.includes("rebuild-narration-pipeline") ||
-    pathStr.includes("bulk-generate") ||
-    pathStr.includes("regenerate-cover");
   const initWithTimeout = init as RequestInit & { signal?: AbortSignal };
-  if (isLongRunningAdminOp) {
-    initWithTimeout.signal = AbortSignal.timeout(LONG_RUNNING_ADMIN_OP_TIMEOUT_MS);
-  } else {
-    initWithTimeout.signal = AbortSignal.timeout(PROXY_DEFAULT_TIMEOUT_MS);
-  }
+  initWithTimeout.signal = AbortSignal.timeout(proxyTimeoutMs(pathStr, request.method));
 
   let lastErr: Error | null = null;
   let lastTriedUrl = urls[0];
@@ -204,14 +239,31 @@ async function proxy(
   }
 
   const isDev = process.env.NODE_ENV === "development";
+  const inDocker = existsSync("/.dockerenv");
+  const hints: string[] = [];
+  if (inDocker && /localhost|127\.0\.0\.1|::1/.test(base)) {
+    hints.push(
+      "Admin appears to run inside Docker: set API_URL and NEXT_PUBLIC_API_URL to http://host.docker.internal:8080 (or your host IP) so the proxy reaches Spring on the host."
+    );
+  }
+  if (
+    lastErr &&
+    (`${lastErr.message} ${(lastErr as Error & { cause?: unknown }).cause ?? ""}`.toLowerCase().includes("timeout") ||
+      `${lastErr.message}`.toLowerCase().includes("aborted"))
+  ) {
+    hints.push(
+      "Request timed out before the backend responded. For very large stories, timeouts were extended for /v1/admin/stories/*; if this persists, check DB/API slowness."
+    );
+  }
   const message = isDev
-    ? `Backend unreachable (proxy → ${lastTriedUrl}). Start Spring Boot (e.g. ./gradlew :backend:bootRun) and ensure admin/.env.local points API_URL or NEXT_PUBLIC_API_URL to the running backend.`
+    ? `Backend unreachable (proxy → ${lastTriedUrl}). Start Spring Boot (e.g. ./gradlew :backend:bootRun) and ensure admin/.env.local sets API_URL and NEXT_PUBLIC_API_URL to the same origin (e.g. http://127.0.0.1:8080).`
     : "Backend unreachable from admin. Confirm the API service is running, healthy, and reachable at the URL in configuredApiOrigin (open …/api/v1/health in a browser). On Railway, use each service’s public HTTPS URL for API_URL / NEXT_PUBLIC_API_URL.";
   return NextResponse.json(
     {
       message,
       detail: lastErr?.message,
       configuredApiOrigin: safeApiOrigin(base),
+      hints,
     },
     { status: 502 }
   );

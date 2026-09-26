@@ -41,8 +41,9 @@ data class VerifyOtpRequest(val phone: String, val code: String)
 
 @Serializable
 internal data class PasswordlessVerifyRequest(
-    val email: String,
-    val code: String,
+    val email: String? = null,
+    val code: String? = null,
+    val loginToken: String? = null,
     val acceptedTerms: Boolean = false,
     val acceptedPrivacy: Boolean = false,
     val acceptedParentalAttestation: Boolean = false
@@ -192,7 +193,37 @@ class AuthApi(private val client: HttpClient) {
     ): AuthTokens =
         parseAuthResponse(
             client.post("${ApiConfig.API_VERSION}/auth/passwordless/verify") {
-                setBody(PasswordlessVerifyRequest(email, code, acceptedTerms, acceptedPrivacy, acceptedParentalAttestation))
+                setBody(
+                    PasswordlessVerifyRequest(
+                        email = email,
+                        code = code,
+                        loginToken = null,
+                        acceptedTerms = acceptedTerms,
+                        acceptedPrivacy = acceptedPrivacy,
+                        acceptedParentalAttestation = acceptedParentalAttestation
+                    )
+                )
+            }
+        )
+
+    suspend fun verifyPasswordlessMagicLink(
+        loginToken: String,
+        acceptedTerms: Boolean,
+        acceptedPrivacy: Boolean,
+        acceptedParentalAttestation: Boolean
+    ): AuthTokens =
+        parseAuthResponse(
+            client.post("${ApiConfig.API_VERSION}/auth/passwordless/verify") {
+                setBody(
+                    PasswordlessVerifyRequest(
+                        email = null,
+                        code = null,
+                        loginToken = loginToken,
+                        acceptedTerms = acceptedTerms,
+                        acceptedPrivacy = acceptedPrivacy,
+                        acceptedParentalAttestation = acceptedParentalAttestation
+                    )
+                )
             }
         )
 

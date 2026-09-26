@@ -25,6 +25,29 @@ class ApiConfigTest {
     }
 
     @Test
+    fun resolveAudioUrl_lanIp_rewrittenToBaseForAudioPath() {
+        val emulatorBase = "http://10.0.2.2:8080"
+        assertEquals(
+            "http://10.0.2.2:8080/audio/stories/x.mp3",
+            ApiConfig.resolveAudioUrl(emulatorBase, "http://192.168.0.9:8080/audio/stories/x.mp3")
+        )
+    }
+
+    @Test
+    fun resolveAudioUrl_lanIp_unchangedWhenPortDiffersFromBase() {
+        val emulatorBase = "http://10.0.2.2:8080"
+        val url = "http://192.168.0.9:80/audio/x"
+        assertEquals(url, ApiConfig.resolveAudioUrl(emulatorBase, url))
+    }
+
+    @Test
+    fun resolveAudioUrl_lanIp_unchangedForNonBackendPath() {
+        val emulatorBase = "http://10.0.2.2:8080"
+        val url = "http://192.168.0.9:8080/other/x.mp3"
+        assertEquals(url, ApiConfig.resolveAudioUrl(emulatorBase, url))
+    }
+
+    @Test
     fun resolveAudioUrl_localhost_rewrittenToBase() {
         assertEquals(
             "https://api.example.com/path",
@@ -74,6 +97,15 @@ class ApiConfigTest {
     fun resolveCoverUrl_absoluteUrl_unchangedWhenNoLocalhost() {
         val url = "https://cdn.example.com/cover.png"
         assertEquals(url, ApiConfig.resolveCoverUrl(base, url))
+    }
+
+    @Test
+    fun resolveCoverUrl_lanIp_rewrittenForCoversPath() {
+        val emulatorBase = "http://10.0.2.2:8080"
+        assertEquals(
+            "http://10.0.2.2:8080/covers/1.png",
+            ApiConfig.resolveCoverUrl(emulatorBase, "http://192.168.0.9:8080/covers/1.png")
+        )
     }
 
     @Test

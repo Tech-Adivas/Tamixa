@@ -10,6 +10,14 @@ struct TamixaApp: App {
     var body: some Scene {
         WindowGroup {
             ComposeViewController()
+                .onOpenURL { url in
+                    IosAppKt.emitLaunchUri(uri: url.absoluteString)
+                }
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    if let url = activity.webpageURL {
+                        IosAppKt.emitLaunchUri(uri: url.absoluteString)
+                    }
+                }
         }
     }
 }

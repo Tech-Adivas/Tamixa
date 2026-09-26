@@ -1,9 +1,11 @@
 package com.tamixa.api.library
 
 import com.tamixa.IntegrationTestBase
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.tamixa.api.ApiVersion
 import com.tamixa.api.admin.dto.LibraryStoryResponse
 import com.tamixa.application.storylibrary.StoryLibraryService
+import java.time.Instant
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.mock.mockito.MockBean
@@ -13,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.hamcrest.Matchers.nullValue
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.data.domain.PageImpl
@@ -150,5 +153,49 @@ class LibraryStoryControllerTest : IntegrationTestBase() {
             .andExpect(jsonPath("$.content.length()").value(0))
 
         verify(storyLibraryService).findByLanguageApprovedOnly("ta", 0, 20, null, false)
+    }
+
+    @Test
+    @WithMockUser(username = "parent@test.com", roles = ["PARENT"])
+    fun `getById returns merged interactive graph without translationInteractiveGraphOverlay for parent`() {
+        val om = ObjectMapper()
+        val graphJson = """{"startSegmentId":"a","segments":{"a":{"text":"","audioUrl":"","choices":[]}}}"""
+        val graph = om.readTree(graphJson)
+        val overlay = om.readTree("""{"stripped":true}""")
+        val now = Instant.now()
+        val story = LibraryStoryResponse(
+            id = 42L,
+            title = "Interactive sample",
+            content = "body",
+            theme = "Learn · Simulator",
+            category = "Learn · Simulator",
+            language = "hi",
+            age = 8,
+            childName = "Child",
+            wordCount = 20,
+            readingTimeMinutes = 1.0,
+            moral = null,
+            audioFileUrl = "https://cdn.example/audio.mp3",
+            status = "PUBLISHED",
+            coverImageUrl = null,
+            coverVideoUrl = null,
+            createdAt = now,
+            modifiedAt = now,
+            narrationApprovedAt = now,
+            interactiveGraph = graph,
+            translationInteractiveGraphOverlay = overlay,
+        )
+        whenever(storyLibraryService.findByIdAndLanguage(42L, "hi")).thenReturn(story)
+
+        mockMvc.perform(
+            get("${ApiVersion.V1}/stories/library/42")
+                .param("language", "hi")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(42))
+            .andExpect(jsonPath("$.interactiveGraph").exists())
+            .andExpect(jsonPath("$.translationInteractiveGraphOverlay").value(nullValue()))
+
+        verify(storyLibraryService).findByIdAndLanguage(42L, "hi")
     }
 }

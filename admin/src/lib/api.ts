@@ -24,6 +24,12 @@ import type {
   StoryWithIssues,
   LibraryStorySummary,
   CreateLibraryStoryRequest,
+  InteractiveGraphFromStoryRequest,
+  InteractiveGraphFromStoryResponse,
+  InteractiveSegmentAudioGenerateRequest,
+  InteractiveSegmentAudioGenerateResponse,
+  InteractiveSegmentScriptsFillRequest,
+  InteractiveSegmentScriptsFillResponse,
   BulkGenerateStoriesRequest,
   BulkGenerateStoriesResponse,
   BulkGenerateJobResponse,
@@ -1059,6 +1065,45 @@ const admin = {
       `/api/v1/admin/stories/${id}${language ? `?language=${encodeURIComponent(language)}` : ""}`
     ),
 
+  generateInteractiveGraphFromStory: async (
+    id: number,
+    data: InteractiveGraphFromStoryRequest
+  ): Promise<InteractiveGraphFromStoryResponse> => {
+    const res = await fetchWithAuth(`/api/v1/admin/stories/${id}/interactive-graph/generate`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+    const body = (await res.json().catch(() => ({}))) as InteractiveGraphFromStoryResponse & { message?: string };
+    if (!res.ok) throw new Error(body?.message ?? "Interactive graph generation failed");
+    return body;
+  },
+
+  generateInteractiveSegmentAudio: async (
+    id: number,
+    data: InteractiveSegmentAudioGenerateRequest
+  ): Promise<InteractiveSegmentAudioGenerateResponse> => {
+    const res = await fetchWithAuth(`/api/v1/admin/stories/${id}/interactive-segments/generate-audio`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    const body = (await res.json().catch(() => ({}))) as InteractiveSegmentAudioGenerateResponse & { message?: string };
+    if (!res.ok) throw new Error(body?.message ?? "Interactive segment audio generation failed");
+    return body;
+  },
+
+  fillInteractiveSegmentScripts: async (
+    id: number,
+    data: InteractiveSegmentScriptsFillRequest
+  ): Promise<InteractiveSegmentScriptsFillResponse> => {
+    const res = await fetchWithAuth(`/api/v1/admin/stories/${id}/interactive-segments/fill-scripts`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    const body = (await res.json().catch(() => ({}))) as InteractiveSegmentScriptsFillResponse & { message?: string };
+    if (!res.ok) throw new Error(body?.message ?? "Interactive segment script fill failed");
+    return body;
+  },
+
   updateLibraryStoryTranslation: async (
     id: number,
     language: string,
@@ -1314,6 +1359,32 @@ const admin = {
     }
   },
 
+  requestChangesLibraryStory: async (id: number, notes?: string) => {
+    const res = await fetchWithAuth(
+      `/api/v1/admin/stories/${id}/request-changes`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(notes?.trim() ? { notes: notes.trim() } : {}),
+      }
+    );
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { message?: string };
+      throw new Error(err?.message ?? "Failed to request changes");
+    }
+  },
+
+  approveLibraryStory: async (id: number) => {
+    const res = await fetchWithAuth(
+      `/api/v1/admin/stories/${id}/approve`,
+      { method: "POST" }
+    );
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { message?: string };
+      throw new Error(err?.message ?? "Failed to approve story");
+    }
+  },
+
   approveLibraryStoryTranslationNarration: async (id: number, language: string) => {
     const res = await fetchWithAuth(
       `/api/v1/admin/stories/${id}/translations/${encodeURIComponent(language)}/approve-narration`,
@@ -1550,12 +1621,14 @@ const admin = {
     if (!jobId) throw new Error(startData.message ?? "Regeneration job did not start.");
 
     const maxWaitMs = 20 * 60 * 1000;
-    const pollEveryMs = 2000;
     const deadline = Date.now() + maxWaitMs;
     let finalResult: unknown = null;
+    let pollIntervalMs = 2000;
 
     while (Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, pollEveryMs));
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      // Exponential backoff: 2s → 4s → 8s → … capped at 30s
+      pollIntervalMs = Math.min(pollIntervalMs * 2, 30_000);
       const poll = await fetchWithAuth(`/api/v1/admin/stories/${id}/regenerate-with-prompt/jobs/${encodeURIComponent(jobId)}`);
       if (!poll.ok) {
         const err = (await poll.json().catch(() => ({}))) as { message?: string };

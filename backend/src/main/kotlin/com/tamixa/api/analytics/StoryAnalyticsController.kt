@@ -33,6 +33,11 @@ class StoryAnalyticsController(
         } else if (request.hubKey != null) {
             return ResponseEntity.badRequest().build()
         }
+        if (request.eventType == "crisis_help_open") {
+            val allowed = setOf("lib_sim", "settings", "player", "unknown")
+            val entry = request.screenName?.trim().orEmpty()
+            if (entry.isBlank() || entry !in allowed) return ResponseEntity.badRequest().build()
+        }
         log.debug(
             "App event parentId={} type={} screen={} hubKey={} searchLen={} storyId={}",
             parentId,

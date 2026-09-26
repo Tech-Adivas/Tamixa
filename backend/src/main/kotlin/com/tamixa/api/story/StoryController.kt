@@ -83,8 +83,8 @@ class StoryController(
                 childName = c.childName,
                 wordCount = c.wordCount,
                 readingTimeMinutes = c.readingTimeMinutes,
-                coverImageUrl = c.coverImageUrl,
-                coverVideoUrl = c.coverVideoUrl,
+                coverImageUrl = c.coverImageUrl,  // Already resolved by StoryLibraryService.search()
+                coverVideoUrl = c.coverVideoUrl,  // Already resolved by StoryLibraryService.search()
                 status = c.status
             )
         }

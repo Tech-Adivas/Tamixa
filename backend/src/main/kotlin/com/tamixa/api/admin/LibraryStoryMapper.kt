@@ -35,7 +35,7 @@ object LibraryStoryMapper {
         readingTimeMinutes = readingTimeMinutes,
         moral = moral,
         audioFileUrl = audioFileUrl,
-        status = status,
+        status = status.name,
         coverImageUrl = usableCoverUrl(coverImageUrlOverride ?: coverImageUrl),
         coverVideoUrl = usableCoverUrl(coverVideoUrlOverride ?: coverVideoUrl),
         createdAt = createdAt,
@@ -54,6 +54,7 @@ object LibraryStoryMapper {
         parentContentNote = parentContentNote,
         speakAlongPrompt = speakAlongPrompt,
         interactiveGraph = parseInteractiveGraphJson(interactiveGraphJson),
+        translationInteractiveGraphOverlay = null,
         postStoryMission = postStoryMission,
         postStoryResourceUrl = postStoryResourceUrl,
         sourceContent = content

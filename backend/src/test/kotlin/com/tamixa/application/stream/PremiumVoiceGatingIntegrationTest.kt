@@ -72,7 +72,7 @@ class PremiumVoiceGatingIntegrationTest : IntegrationTestBase() {
                 readingTimeMinutes = 1.0,
                 moral = "Be kind",
                 audioFileUrl = null,
-                status = "DRAFT",
+                status = com.tamixa.domain.LibraryStoryStatus.DRAFT,
                 coverImageUrl = null,
                 createdAt = Instant.now(),
                 updatedAt = Instant.now()

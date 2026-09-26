@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Size
 data class TrackAppEventRequest(
     @field:NotBlank
     @field:Pattern(
-        regexp = "screen_view|search|favorite_add|favorite_remove|library_hub",
+        regexp = "screen_view|search|favorite_add|favorite_remove|library_hub|crisis_help_open",
         message = "eventType must be a supported app event"
     )
     val eventType: String,

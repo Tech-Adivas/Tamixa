@@ -419,14 +419,15 @@ class AdminService(
 
     private fun recordAdminAction(adminEmail: String, action: String, resourceType: String, resourceId: String?, details: String?) {
         val traceId = MDC.get(RequestTracingFilter.TRACE_ID_MDC_KEY)
-        auditLog.logAdminAction(adminEmail, action, resourceType, resourceId, details, traceId)
+        val safeDetails = details?.let { PiiMask.maskEmailsInFreeText(it) }
+        auditLog.logAdminAction(adminEmail, action, resourceType, resourceId, safeDetails, traceId)
         adminAuditJpaRepository.save(
             AdminAuditEntity(
                 adminEmail = adminEmail,
                 action = action,
                 resourceType = resourceType,
                 resourceId = resourceId,
-                details = details,
+                details = safeDetails,
                 traceId = traceId
             )
         )

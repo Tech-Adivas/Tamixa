@@ -36,7 +36,7 @@ export default function BulkGenerateStoriesPage() {
     createdCount: number;
     failedCount: number;
     publish?: boolean;
-    created: Array<{ id: number; language: string; category: string; title: string }>;
+    created: Array<{ id: number; language: string; category: string; title: string; readingTimeMinutes?: number }>;
     failed: Array<{ language: string; category: string; error: string }>;
   } | null>(null);
 
@@ -107,7 +107,15 @@ export default function BulkGenerateStoriesPage() {
             createdCount: status.createdCount,
             failedCount: status.failedCount,
             publish: status.publish,
-            created: Array.isArray(status.result?.created) ? status.result.created as Array<{ id: number; language: string; category: string; title: string }> : [],
+            created: Array.isArray(status.result?.created)
+              ? (status.result.created as Array<{
+                  id: number;
+                  language: string;
+                  category: string;
+                  title: string;
+                  readingTimeMinutes?: number;
+                }>)
+              : [],
             failed: Array.isArray(status.result?.failed) ? status.result.failed as Array<{ language: string; category: string; error: string }> : [],
           });
           return;
@@ -240,11 +248,10 @@ export default function BulkGenerateStoriesPage() {
               Tamil story text is generated per slot (categories rotate). Translated text for other languages is seeded
               automatically; Submit for review still drives your approval and narration pipeline as before.
             </div>
-            {totalRequested > 5 && (
-              <p className="text-amber-600 dark:text-amber-500 mt-2 text-sm font-medium">
-                Bulk generation may take 2–5 minutes. Please do not close or refresh this page until it completes.
-              </p>
-            )}
+            <p className="text-amber-600 dark:text-amber-500 mt-2 text-sm font-medium">
+              Each story is one LLM call. Larger batches often need <strong>2–5 minutes</strong>. Keep this tab open until
+              progress finishes—closing or refreshing can interrupt your view of the job (the server may still complete).
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -263,45 +270,76 @@ export default function BulkGenerateStoriesPage() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Only one bulk run at a time. Runs in the background with progress; you can keep this page open.
+            Only one bulk run at a time. The job runs in the background; the button shows <strong>Story N/M</strong> while polling.
           </p>
         </CardContent>
       </Card>
 
       {result && (
-        <Card>
+        <Card role="region" aria-live="polite" aria-label="Bulk generation result">
           <CardHeader>
             <CardTitle className="text-base">Result</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm">
+            <p className="text-sm" id="bulk-result-summary">
               Requested: {result.requested} · Created: {result.createdCount} · Failed: {result.failedCount}
+            </p>
+            <p className="sr-only">
+              Bulk generation summary: {result.requested} requested, {result.createdCount} created, {result.failedCount}{" "}
+              failed.
             </p>
             {result.publish != null && result.publish && (
               <p className="text-sm text-muted-foreground">Submitted for review; pipeline will add translations and audio.</p>
             )}
             {result.createdCount === 0 && result.failedCount > 0 && (
               <p className="text-sm text-muted-foreground">
-                All generations failed. Check AI_LLM_PROVIDER and OPENAI_API_KEY or GEMINI_API_KEY, then try fewer stories or different categories.
+                All generations failed. Confirm <strong>AI_LLM_PROVIDER</strong> matches your key (
+                <strong>OPENAI_API_KEY</strong> or <strong>GEMINI_API_KEY</strong>), reduce story count, or try different
+                categories. Check server logs for provider errors.
+              </p>
+            )}
+            {result.createdCount > 0 && result.failedCount > 0 && (
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                Partial success: some stories failed. Open created rows below; fix keys or prompts and run again for the rest.
               </p>
             )}
             {result.created.length > 0 && (
               <div>
-                <p className="text-sm font-medium mb-1">Created stories</p>
-                <div className="space-y-1">
+                <p className="text-sm font-medium mb-1" id="bulk-created-heading">
+                  Created stories
+                </p>
+                <ul className="space-y-1 list-none pl-0" aria-labelledby="bulk-created-heading">
                   {result.created.map((s) => (
-                    <p key={s.id} className="text-sm text-muted-foreground">
-                      #{s.id} · {s.language} · {s.category} · {s.title}
-                    </p>
+                    <li key={s.id}>
+                      <Link
+                        href={`/dashboard/stories/${s.id}/edit`}
+                        className="text-sm text-primary underline-offset-4 hover:underline"
+                      >
+                        #{s.id} · {s.language} · {s.category} · {s.title}
+                        {typeof s.readingTimeMinutes === "number" && !Number.isNaN(s.readingTimeMinutes)
+                          ? ` · ~${s.readingTimeMinutes.toFixed(1)} min read`
+                          : ""}
+                      </Link>
+                    </li>
                   ))}
-                </div>
+                </ul>
                 <div className="flex flex-wrap gap-2 mt-3">
                   <Link href="/dashboard/stories">
-                    <Button variant="outline" size="sm">View in Stories</Button>
+                    <Button variant="default" size="sm">
+                      View in Stories
+                    </Button>
                   </Link>
-                  {result.publish && (
+                  {result.publish ? (
                     <Link href="/dashboard/story-for-review">
-                      <Button variant="outline" size="sm">Go to Story for review</Button>
+                      <Button variant="outline" size="sm">
+                        Go to Story for review
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Link href="/dashboard/story-for-review">
+                      <Button variant="outline" size="sm">
+                        Story for review queue
+                      </Button>
                     </Link>
                   )}
                 </div>

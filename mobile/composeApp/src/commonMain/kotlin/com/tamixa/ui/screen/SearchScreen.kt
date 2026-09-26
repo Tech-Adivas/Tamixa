@@ -83,31 +83,48 @@ fun SearchScreen(
                 ambientPresence = true
             )
             Column(modifier = Modifier.fillMaxSize()) {
+                // Search input with improved styling
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = onSearchQueryChange,
-                    placeholder = { Text(Strings.searchStories(), color = TamixaColors.cream.copy(alpha = 0.8f)) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = Strings.search(), tint = TamixaColors.cream) },
+                    placeholder = { 
+                        Text(
+                            Strings.searchStories(), 
+                            color = TamixaColors.appHeading.copy(alpha = 0.5f),
+                            style = MaterialTheme.typography.bodyLarge
+                        ) 
+                    },
+                    leadingIcon = { 
+                        Icon(
+                            Icons.Default.Search, 
+                            contentDescription = Strings.search(), 
+                            tint = TamixaColors.goldAccent
+                        ) 
+                    },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = TamixaDesignTokens.screenPadding, vertical = 12.dp),
+                        .padding(horizontal = TamixaDesignTokens.screenPadding, vertical = 16.dp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = {
                         focusManager.clearFocus()
-                        onSearch(searchQuery)
+                        if (searchQuery.length >= MIN_SEARCH_QUERY_CHARS) {
+                            onSearch(searchQuery)
+                        }
                     }),
                     colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TamixaColors.cream,
-                        unfocusedTextColor = TamixaColors.cream,
+                        focusedTextColor = TamixaColors.appHeading,
+                        unfocusedTextColor = TamixaColors.appHeading,
                         cursorColor = TamixaColors.goldAccent,
-                        focusedBorderColor = TamixaColors.goldAccent.copy(alpha = 0.7f),
-                        unfocusedBorderColor = TamixaColors.cream.copy(alpha = 0.5f),
-                        focusedContainerColor = TamixaColors.inputSurface.copy(alpha = 0.9f),
-                        unfocusedContainerColor = TamixaColors.inputSurface.copy(alpha = 0.7f)
+                        focusedBorderColor = TamixaColors.goldAccent,
+                        unfocusedBorderColor = TamixaColors.appHeading.copy(alpha = 0.3f),
+                        focusedContainerColor = TamixaColors.cream.copy(alpha = 0.95f),
+                        unfocusedContainerColor = TamixaColors.cream.copy(alpha = 0.9f)
                     ),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(TamixaDesignTokens.inputRadius)
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = TamixaColors.appHeading)
                 )
+                
                 Box(modifier = Modifier.weight(1f)) {
                     when {
                         searchLoading && searchQuery.isNotBlank() -> {
@@ -119,12 +136,17 @@ fun SearchScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center
                             ) {
-                                CircularProgressIndicator(color = TamixaColors.goldAccent)
+                                TamixaEmojiDisplay(emoji = "🔍", fontSize = 64.sp)
+                                Spacer(modifier = Modifier.height(24.dp))
+                                CircularProgressIndicator(
+                                    color = TamixaColors.goldAccent,
+                                    strokeWidth = 3.dp
+                                )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = Strings.loading(),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = TamixaColors.cream.copy(alpha = 0.9f)
+                                    text = Strings.searchingStories(),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = TamixaColors.cream
                                 )
                             }
                         }
@@ -137,15 +159,25 @@ fun SearchScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center
                             ) {
+                                TamixaEmojiDisplay(emoji = "😕", fontSize = 64.sp)
+                                Spacer(modifier = Modifier.height(16.dp))
                                 Text(
                                     text = searchError,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.error
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = TamixaColors.cream.copy(alpha = 0.9f),
+                                    textAlign = TextAlign.Center
                                 )
-                                Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(20.dp))
                                 onRetry?.let { retry ->
-                                    TextButton(onClick = retry) {
-                                        Text(Strings.retry(), color = TamixaColors.goldAccent)
+                                    TextButton(
+                                        onClick = retry,
+                                        modifier = Modifier.padding(horizontal = 32.dp)
+                                    ) {
+                                        Text(
+                                            Strings.retry(), 
+                                            color = TamixaColors.goldAccent,
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
                                     }
                                 }
                             }
@@ -161,18 +193,19 @@ fun SearchScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center
                             ) {
-                                TamixaEmojiDisplay(emoji = "🔍", fontSize = 72.sp)
-                                Spacer(modifier = Modifier.height(16.dp))
+                                TamixaEmojiDisplay(emoji = "🔍", fontSize = 80.sp)
+                                Spacer(modifier = Modifier.height(24.dp))
                                 Text(
                                     text = Strings.noSearchResults(),
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = MaterialTheme.typography.headlineSmall,
                                     color = TamixaColors.cream
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
                                 Text(
                                     text = Strings.noSearchResultsHint(),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = TamixaColors.cream.copy(alpha = 0.9f)
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = TamixaColors.cream.copy(alpha = 0.8f),
+                                    textAlign = TextAlign.Center
                                 )
                             }
                         }
@@ -185,20 +218,21 @@ fun SearchScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center
                             ) {
-                                TamixaEmojiDisplay(emoji = "✨", fontSize = 72.sp)
-                                Spacer(modifier = Modifier.height(16.dp))
+                                TamixaEmojiDisplay(emoji = "✨", fontSize = 80.sp)
+                                Spacer(modifier = Modifier.height(24.dp))
                                 Text(
-                                    text = Strings.searchMinCharactersHint(),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = TamixaColors.cream.copy(alpha = 0.95f),
+                                    text = Strings.discoverStories(),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = TamixaColors.cream,
                                     textAlign = TextAlign.Center
                                 )
-                                Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(16.dp))
                                 Text(
                                     text = Strings.searchWhatYouCanFindHint(),
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyLarge,
                                     color = TamixaColors.cream.copy(alpha = 0.8f),
-                                    textAlign = TextAlign.Center
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 32.dp)
                                 )
                             }
                         }
@@ -207,11 +241,19 @@ fun SearchScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(
                                     horizontal = TamixaDesignTokens.contentPaddingHorizontal,
-                                    vertical = TamixaDesignTokens.sectionSpacing
+                                    vertical = 12.dp
                                 ),
                                 verticalArrangement = Arrangement.spacedBy(TamixaDesignTokens.cardSpacing)
                             ) {
-                                itemsIndexed(searchResults) { index, item ->
+                                item {
+                                    Text(
+                                        text = "${searchResults.size} ${if (searchResults.size == 1) Strings.storyFound() else Strings.storiesFound()}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = TamixaColors.cream.copy(alpha = 0.9f),
+                                        modifier = Modifier.padding(bottom = 8.dp)
+                                    )
+                                }
+                                itemsIndexed(searchResults, key = { _, item -> "${item.storyId}-${item.storySource}" }) { index, item ->
                                     val story = item.toStory()
                                     StoryCard(
                                         story = story,

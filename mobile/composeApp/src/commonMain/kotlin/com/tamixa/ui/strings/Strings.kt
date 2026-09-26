@@ -1,5 +1,8 @@
 package com.tamixa.ui.strings
 
+import com.tamixa.ui.safety.CrisisHelpline
+import com.tamixa.ui.safety.CrisisHelplineSection
+
 object Strings {
     var languageCode: String = com.tamixa.util.TamixaConstants.DEFAULT_LANGUAGE
         private set
@@ -11,7 +14,7 @@ object Strings {
     fun appName(): String = "Tamixa"
 
     fun appTagline(): String = when (languageCode) {
-        "ta" -> "கேள் · கற்றுக்கொள் · ஒளிர்"
+        "ta" -> "கேள் · கற்றுக் கொள் · ஒளிர்"
         "hi" -> "सुनें · सीखें · चमकें"
         else -> "Listen · Learn · Shine"
     }
@@ -23,7 +26,7 @@ object Strings {
     }
 
     fun login(): String = when (languageCode) {
-        "ta" -> "உள்நுழை"
+        "ta" -> "உள் நுழை"
         "hi" -> "लॉग इन"
         else -> "Login"
     }
@@ -150,7 +153,7 @@ object Strings {
             "இன்றிரவு ஒரு புதிய குரலில் கேட்க முயலுங்கள் — சிறு மாற்றம் பெரிய நினைவுகள்.",
             "கதைக்குப் பிறகு: உங்களுக்குப் பிடித்த கதாபாத்திரம் யார் எனக் கேளுங்கள்.",
             "நாளைய கதையை யார் தேர்வு செய்வது — நீங்கள், குழந்தை, அல்லது ஆச்சரியம்?",
-            "பிளே அழுத்தும் முன் தலைப்பை உரக்கப் படியுங்கள் — ஆர்வம் இங்கே தொடங்குகிறது.",
+            "பிளே பட்டனை அழுத்தும் முன் தலைப்பை உரக்கப் படியுங்கள் — உங்களின் ஆர்வம் இங்கே தொடங்குகிறது.",
             "கதாநாயகனின் பெயரை ஒன்றாக மெதுவாகச் சொல்லுங்கள் — நண்பர்கள் போல் உணர்வார்கள்.",
             "தொடங்குவதற்கு இரண்டு நிமிடங்கள் முன் விளக்குகளை மங்கலாக்குங்கள் — இது அமைதி நேரம் என்று மூளைக்குத் தெரியும்.",
         )
@@ -410,7 +413,7 @@ object Strings {
     }
 
     fun voiceUpload(): String = when (languageCode) {
-        "ta" -> "குரல் பதிவேற்றம்"
+        "ta" -> "சொந்தக்குரல் பதிவேற்றம்"
         "hi" -> "आवाज़ अपलोड"
         else -> "Voice Upload"
     }
@@ -434,7 +437,7 @@ object Strings {
     }
 
     fun useSystemTheme(): String = when (languageCode) {
-        "ta" -> "அமைப்பு வண்ணம் (பகல்/இரவு)"
+        "ta" -> "அமைப்பு வண்ணம் \n(பகல்/இரவு)"
         "hi" -> "सिस्टम थीम (दिन/रात)"
         else -> "Use system theme (day/night)"
     }
@@ -651,6 +654,12 @@ object Strings {
         else -> "Passwordless login"
     }
 
+    fun finishEmailLinkSignIn(): String = when (languageCode) {
+        "ta" -> "மின்னஞ்சல் இணைப்புடன் உள்நுழைவை முடிக்கவும்"
+        "hi" -> "ईमेल लिंक से साइन इन पूरा करें"
+        else -> "Finish signing in from your email"
+    }
+
     fun mobileNumber(): String = when (languageCode) {
         "ta" -> "மொபைல் எண்"
         "hi" -> "मोबाइल नंबर"
@@ -746,7 +755,7 @@ object Strings {
     }
 
     fun consentHistory(): String = when (languageCode) {
-        "ta" -> "ஒப்புதல் வரலாறு"
+        "ta" -> "பயனர் ஒப்புதல்"
         else -> "Consent history"
     }
 
@@ -883,7 +892,7 @@ object Strings {
 
     /** Avatar requires voice + image (Super premium). */
     fun avatarSuperPremiumPrompt(): String = when (languageCode) {
-        "ta" -> "கதை சொல்லும் அவதாரத்திற்கு குரல் மற்றும் படம் பதிவேற்றுங்கள். சூப்பர் பிரீமியம்."
+        "ta" -> "கதை சொல்லும் அவதாரத்திற்கு குரல் மற்றும் படம் (சொந்தப் புகைப்படம்) பதிவேற்றுங்கள். சூப்பர் பிரீமியம்."
         "hi" -> "कहानी अवतार के लिए आवाज़ और फोटो अपलोड करें. सुपर प्रीमियम."
         else -> "Upload your voice and photo for storytelling avatar. Super premium."
     }
@@ -1267,7 +1276,7 @@ object Strings {
     }
 
     fun avatarUpload(): String = when (languageCode) {
-        "ta" -> "கதை சொல்லும் அவதாரம்"
+        "ta" -> "கதை சொல்லும் அவதாரம் \n(சொந்தப் புகைப்படம்)"
         "hi" -> "कहानी सुनाने वाला अवतार"
         else -> "Storytelling Avatar"
     }
@@ -1554,9 +1563,12 @@ object Strings {
     }
 
     fun recommendedForYou(): String = when (languageCode) {
-        "ta" -> "உங்களுக்கு பரிந்துரைக்கப்பட்டது"
-        "hi" -> "आपके लिए अनुशंसित"
-        else -> "Recommended for you"
+        "ta" -> "உங்களுக்காக"  // For You (casual)
+        "ka" -> "ನಿಮಗಾಗಿ"  // For You
+        "ml" -> "നിങ്ങൾക്കായി"  // For You
+        "te" -> "మీ కోసం"  // For You
+        "hi" -> "आपके लिए"  // For You
+        else -> "For You"
     }
 
     fun becauseYouListenedTo(title: String): String = when (languageCode) {
@@ -1654,6 +1666,13 @@ object Strings {
         "ta" -> "பேசும் உரை"
         "hi" -> "बोला गया पाठ"
         else -> "Transcript"
+    }
+
+    /** Interactive library: text shown matches the current segment audio, not the full story body. */
+    fun playerInteractiveSceneTranscriptTitle(): String = when (languageCode) {
+        "ta" -> "இந்த காட்சி — கேட்கும் உரை"
+        "hi" -> "यह दृश्य — सुनी जा रही पंक्तियाँ"
+        else -> "This scene — what you hear"
     }
 
     fun transcriptUnavailable(): String = when (languageCode) {
@@ -1806,29 +1825,41 @@ object Strings {
     }
 
     fun libraryBrowseTab(): String = when (languageCode) {
-        "ta" -> "நூலகம்"
-        "hi" -> "लाइब्रेरी"
-        else -> "Browse"
+        "ta" -> "எல்லாம்"  // All (casual)
+        "ka" -> "ಎಲ್ಲಾ"  // All
+        "ml" -> "എല്ലാം"  // All
+        "te" -> "అన్నీ"  // All
+        "hi" -> "सभी"  // All
+        else -> "All"
     }
 
     /** Library second lane: lighter classics (category Fun stories / Funny Stories). */
     fun libraryFunCornerTab(): String = when (languageCode) {
-        "ta" -> "சிரிப்பு மூலை"
-        "hi" -> "मज़ेदार कोना"
-        else -> "Fun corner"
+        "ta" -> "சிரிப்பு"  // Fun (casual)
+        "ka" -> "ಮಜಾ"  // Fun
+        "ml" -> "രസം"  // Fun
+        "te" -> "సరదా"  // Fun
+        "hi" -> "मज़ा"  // Fun
+        else -> "Fun"
     }
 
     /** Library third lane: Learn-prefixed and Digital Safety stories. */
     fun libraryLearnSafetyTab(): String = when (languageCode) {
-        "ta" -> "கற்றல் & பாதுகாப்பு"
-        "hi" -> "सीखें और सुरक्षा"
-        else -> "Learn & safety"
+        "ta" -> "புதுமை செய்"  // Innovate / Do something new
+        "ka" -> "ಹೊಸತು ಮಾಡು"  // Do something new
+        "ml" -> "പുതുമ കണ്ടെത്തൂ"  // Find/Create novelty
+        "te" -> "కొత్తగా చేయి"  // Do it in a new way
+        "hi" -> "कुछ नया करो"  // Do something new
+        else -> "Be Smart"
     }
 
     /** Library fourth lane: Learn · Simulator and interactive graph stories. */
     fun librarySimulatorTab(): String = when (languageCode) {
-        "ta" -> "பயிற்சி"
-        "hi" -> "अभ्यास"
+        "ta" -> "பயிற்சி"  // Practice (already casual!)
+        "ka" -> "ಅಭ್ಯಾಸ"  // Practice
+        "ml" -> "പരിശീലനം"  // Practice
+        "te" -> "అభ్యాసం"  // Practice
+        "hi" -> "अभ्यास"  // Practice
         else -> "Practice"
     }
 
@@ -1856,6 +1887,561 @@ object Strings {
         else -> "Stories labeled Learn · Simulator or with interactive choices appear here—assign metadata in admin if missing."
     }
 
+    fun crisisHelpTitle(): String = when (languageCode) {
+        "ta" -> "உதவி & பாதுகாப்பு"
+        "hi" -> "मदद और सुरक्षा"
+        else -> "Crisis help & safety"
+    }
+
+    fun crisisHelpIntro(): String = when (languageCode) {
+        "ta" -> "அரசு மற்றும் தேசிய உதவி எண்கள். தகவல்கள் மாறலாம்—அதிகாரப்பூர்வ தளங்களில் உறுதிப்படுத்தவும். Tamixa இந்த நிறுவனங்களுடன் இணைந்ததல்ல."
+        "hi" -> "सरकारी/राष्ट्रीय हेल्पलाइन। जानकारी बदल सकती है—आधिकारिक साइटों पर जाँचें। Tamixa इन संगठनों से संबद्ध नहीं है।"
+        else -> "Public helplines and portals for India. Numbers and sites can change—verify on official sources. Tamixa is not affiliated with these agencies."
+    }
+
+    fun crisisHelp1930Title(): String = when (languageCode) {
+        "ta" -> "முதல் 60 நிமிடங்கள் (ஆன்லைன் திருட்டு / ஏமாற்றம்)"
+        "hi" -> "पहले 60 मिनट (ऑनलाइन चोरी / धोखा)"
+        else -> "First hour after suspected online theft or fraud"
+    }
+
+    fun crisisHelpOpenWebsite(): String = when (languageCode) {
+        "ta" -> "வலைத்தளம் திற"
+        "hi" -> "वेबसाइट खोलें"
+        else -> "Open website"
+    }
+
+    fun crisisHelpCall(displayNumber: String): String = when (languageCode) {
+        "ta" -> "அழைப்பு: $displayNumber"
+        "hi" -> "कॉल: $displayNumber"
+        else -> "Call $displayNumber"
+    }
+
+    fun crisisHelpSms(displayNumber: String): String = when (languageCode) {
+        "ta" -> "SMS: $displayNumber"
+        "hi" -> "SMS: $displayNumber"
+        else -> "SMS $displayNumber"
+    }
+
+    fun crisisHelpVaultTitle(): String = when (languageCode) {
+        "ta" -> "உங்கள் பாதுகாப்பு குறிப்பேடு (சாதனத்தில் மட்டும்)"
+        "hi" -> "आपकी सुरक्षा नोटबुक (केवल डिवाइस पर)"
+        else -> "Your safety notebook (on this device only)"
+    }
+
+    fun crisisHelpVaultHint(): String = when (languageCode) {
+        "ta" -> "உள்ளூர் நிலையம், வங்கி RM, காப்பீட்டு TPA போன்ற எண்களை இங்கே எழுதவும். இது Tamixa சேவையகத்திற்கு அனுப்பப்படாது."
+        "hi" -> "थाना, बैंक RM, बीमा TPA आदि के नंबर यहाँ लिखें। यह Tamixa सर्वर पर नहीं जाता।"
+        else -> "Jot local police, bank RM, insurance TPA, etc. This text stays on your phone and is not sent to Tamixa."
+    }
+
+    fun crisisHelpVaultPlaceholder(): String = when (languageCode) {
+        "ta" -> "எ.கா: நிலையம் …, RM …"
+        "hi" -> "उदा.: थाना …, RM …"
+        else -> "e.g. Police station …, RM …"
+    }
+
+    fun crisisHelpVaultSave(): String = when (languageCode) {
+        "ta" -> "சேமி"
+        "hi" -> "सेव करें"
+        else -> "Save locally"
+    }
+
+    fun crisisHelpVaultSaved(): String = when (languageCode) {
+        "ta" -> "சேமிக்கப்பட்டது"
+        "hi" -> "सेव हो गया"
+        else -> "Saved on device"
+    }
+
+    fun crisisHelpDisclaimer(): String = when (languageCode) {
+        "ta" -> "இது சட்ட அல்லது மருத்துவ ஆலோசனை அல்ல. அவசரத்தில் 108/100 அல்லது உங்கள் மருத்துவரை அணுகவும்."
+        "hi" -> "यह कानूनी या चिकित्सा सलाह नहीं है। आपात में 108/100 या डॉक्टर से संपर्क करें।"
+        else -> "Not legal or medical advice. For emergencies use local emergency numbers or your clinician."
+    }
+
+    // --- Crisis workflow navigator (offline checklists; not legal/medical advice) ---
+
+    fun crisisNavigatorTitle(): String = when (languageCode) {
+        "ta" -> "அவசர வழிகாட்டி"
+        "hi" -> "संकट नेविगेटर"
+        else -> "Crisis workflow"
+    }
+
+    fun crisisNavigatorIntro(): String = when (languageCode) {
+        "ta" ->
+            "இணையம் மெதுவாக இருந்தாலும் இந்த திரை வேலை செய்யும். படிகளை உரத்தாகப் படித்து அல்லது அணுகல்தன்மை உதவியைப் பயன்படுத்தவும். Tamixa அரசு/என்ஜிஓக்களுடன் இணைந்ததல்ல—அதிகாரப்பூர்வ தளங்களைச் சரிபார்க்கவும்."
+        "hi" ->
+            "इंटरनेट धीमा हो तब भी यह स्क्रीन काम करती है। कदम ज़ोर से पढ़ें या एक्सेसिबिलिटी से सुनें। Tamixa सरकार/NGO से जुड़ा नहीं—आधिकारिक स्रोत चेक करें।"
+        else ->
+            "Works even on a slow connection—all steps are on your phone. Read them aloud or use accessibility read-out. Tamixa is not a government or NGO service—verify on official sources."
+    }
+
+    fun crisisNavigatorChoosePrompt(): String = when (languageCode) {
+        "ta" -> "எது நடக்கிறது?"
+        "hi" -> "क्या हुआ है?"
+        else -> "What kind of emergency?"
+    }
+
+    fun crisisNavigatorWorkflowMoney(): String = when (languageCode) {
+        "ta" -> "பணம் / ஆன்லைன் மோசடி"
+        "hi" -> "पैसा / ऑनलाइन धोखा"
+        else -> "Money / online fraud"
+    }
+
+    fun crisisNavigatorWorkflowPolice(): String = when (languageCode) {
+        "ta" -> "காவல்துறை / புகார்"
+        "hi" -> "पुलिस / शिकायत"
+        else -> "Police / complaint"
+    }
+
+    fun crisisNavigatorWorkflowMedical(): String = when (languageCode) {
+        "ta" -> "மருத்துவ அவசரம்"
+        "hi" -> "चिकित्सा आपात"
+        else -> "Medical emergency"
+    }
+
+    fun crisisNavigatorScriptMoneyTitle(): String = when (languageCode) {
+        "ta" -> "முதல் 60 நிமிடங்கள் — பணம் / UPI / கார்டு"
+        "hi" -> "पहले 60 मिनट — पैसा / UPI / कार्ड"
+        else -> "First hour — money / UPI / card fraud"
+    }
+
+    fun crisisNavigatorScriptMoneyBody(): String = when (languageCode) {
+        "ta" ->
+            "1) 1930-ஐ உடனே அழைக்கவும். வங்கி பெயர், தோராயத் தொகை, நேரம், உங்கள் பெயர் (முழு PAN சொல்ல வேண்டியதில்லை) தயாராக வைக்கவும்.\n" +
+                "2) வங்கி செயலியைத் திறந்து கார்டு/கணக்கு முடக்கம் அல்லது 'Block' தேடுங்கள்—வங்கிக்கு வங்கி பொத்தான் வேறுபடும்.\n" +
+                "3) SMS, UPI, மின்னஞ்சல் திரைப்பிடிப்புகளை எடுக்கவும்; சான்றுகளை நீக்காதீர்கள்.\n" +
+                "4) பாதுகாப்பான பிணையத்தில் cybercrime.gov.in புகார் பதிவு செய்யவும்.\n" +
+                "5) சாதனம் சந்தேகமானால் முக்கிய கடவுச்சொற்களை சுத்தமான சாதனத்தில் மாற்றவும்.\n" +
+                "6) நம்பகமான ஒருவருக்குத் தெரிவிக்கவும்."
+        "hi" ->
+            "1) तुरंत 1930 पर कॉल करें। बैंक नाम, लगभग राशि, समय, आपका नाम (पूरा PAN ज़रूरी नहीं) तैयार रखें।\n" +
+                "2) बैंक ऐप खोलकर कार्ड/खाता ब्लॉक या 'Block' ढूँढें—हर बैंक में जगह अलग हो सकती है।\n" +
+                "3) SMS, UPI, ईमेल के स्क्रीनशॉट लें; सबूत मिटाएँ नहीं।\n" +
+                "4) सुरक्षित नेटवर्क पर cybercrime.gov.in पर रिपोर्ट दर्ज करें।\n" +
+                "5) डिवाइस पर शक हो तो साफ़ डिवाइस से अहम पासवर्ड बदलें।\n" +
+                "6) भरोसेमंद व्यक्ति को बताएँ।"
+        else ->
+            "1) Call 1930 immediately. Have ready: bank name, approximate amount, time, your name (you should not need to share full PAN verbally).\n" +
+                "2) Open your bank app and find block/freeze for card or account—the exact button name varies by bank.\n" +
+                "3) Screenshot SMS, UPI, and email evidence; do not delete messages.\n" +
+                "4) When on a safe network, file a report at cybercrime.gov.in and keep acknowledgement IDs.\n" +
+                "5) If the device may be compromised, change critical passwords from another clean device.\n" +
+                "6) Tell one trusted person so you are not handling it alone."
+    }
+
+    fun crisisNavigatorScriptPoliceTitle(): String = when (languageCode) {
+        "ta" -> "காவல் நிலையம் / FIR"
+        "hi" -> "थाना / FIR"
+        else -> "Police station / FIR"
+    }
+
+    fun crisisNavigatorScriptPoliceBody(): String = when (languageCode) {
+        "ta" ->
+            "1) அமைதியாக இருங்கள். அதிகாரியின் பெயர், பதவி, நிலையம் கேட்க உரிமை உள்ளது.\n" +
+                "2) குற்றப் புகார் (FIR) உரிமை — மறுக்கப்பட்டால் மூத்த அதிகாரியிடம் கேள்வி; எழுதப்பட்ட மறுப்பு கேட்கலாம்.\n" +
+                "3) வெற்று காகிதங்களில் கையொப்பம் இட வேண்டாம்; நகல் கேட்கவும்.\n" +
+                "4) சாட்சிகளின் தொடர்பு குறித்துக் கொள்ளுங்கள்.\n" +
+                "5) இலவச சட்ட உதவி: NALSA 15100 அல்லது மாநில சட்ட உதவி வசதிகள்.\n" +
+                "6) உயிருக்கு அச்சுறுத்தல் இருந்தால் உள்ளூர் அவசர எண்ணை அழைக்கவும்."
+        "hi" ->
+            "1) शांत रहें। अधिकारी का नाम, पद, थाना पूछ सकते हैं।\n" +
+                "2) FIR का अधिकार है—मना हो तो वरिष्ठ अधिकारी से बात करें; लिखित अस्वीकार माँग सकते हैं।\n" +
+                "3) खाली कागज़ पर दस्तखत न करें; कॉपी माँगें।\n" +
+                "4) गवाहों के संपर्क नोट करें।\n" +
+                "5) मुफ़्त कानूनी मदद: NALSA 15100 या राज्य लीगल सेवा।\n" +
+                "6) जान का ख़तरा हो तो स्थानीय आपात नंबर पर कॉल करें।"
+        else ->
+            "1) Stay calm. You may ask for the officer’s name, rank, and police station.\n" +
+                "2) Serious cognizable offences generally merit an FIR; if refused, escalate to a senior officer and consider asking for a written refusal record.\n" +
+                "3) Avoid signing blank papers; ask for copies of what you sign.\n" +
+                "4) Note witness contact details if safe to do so.\n" +
+                "5) Free legal aid: NALSA 15100 or your state legal services authority.\n" +
+                "6) If there is immediate danger to life, use your local emergency number."
+    }
+
+    fun crisisNavigatorScriptMedicalTitle(): String = when (languageCode) {
+        "ta" -> "மருத்துவமனை / காப்பீடு"
+        "hi" -> "अस्पताल / बीमा"
+        else -> "Hospital / insurance"
+    }
+
+    fun crisisNavigatorScriptMedicalBody(): String = when (languageCode) {
+        "ta" ->
+            "1) உயிருக்கு அபாயம்: உடனே 112/108 அல்லது உங்கள் பகுதி அவசர எண்.\n" +
+                "2) அடையாளம், காப்பீட்டு விவரங்கள், மருந்து ஒவ்வாமை பட்டியல் தயாராக வைக்கவும்.\n" +
+                "3) பில் உருப்படிவாக கேட்கும் உரிமை; மருத்துவர் பெயர் குறித்துக் கொள்ளுங்கள்.\n" +
+                "4) PM-JAY / அரசு திட்ட விசாரணை: 14555.\n" +
+                "5) மன அழுத்தம் கடுமையாக இருந்தால் KIRAN 18005990019 அல்லது iCALL போன்ற வரிகளைப் பயன்படுத்தவும்."
+        "hi" ->
+            "1) जान का ख़तरा: तुरंत 112/108 या स्थानीय आपात नंबर।\n" +
+                "2) पहचान, बीमा विवरण, एलर्जी की सूची तैयार रखें।\n" +
+                "3) आइटमाइज़्ड बिल माँग सकते हैं; डॉक्टर का नाम नोट करें।\n" +
+                "4) PM-JAY / सरकारी योजना जानकारी: 14555।\n" +
+                "5) गंभीर मानसिक संकट में KIRAN 18005990019 या iCALL जैसी लाइनें देखें।"
+        else ->
+            "1) Life-threatening emergency: call 112/108 or your local emergency number immediately.\n" +
+                "2) Keep ID, insurance details, and allergy list ready if you can.\n" +
+                "3) You can ask for an itemized bill; note the treating doctor’s name.\n" +
+                "4) Government health scheme queries (e.g. PM-JAY): 14555.\n" +
+                "5) Severe mental health crisis: consider KIRAN 18005990019 or iCALL (see verified links below)."
+    }
+
+    fun crisisNavigatorExpertsTitle(): String = when (languageCode) {
+        "ta" -> "சரிபார்க்கப்பட்ட அமைப்புகள் (வணிகமில்லா)"
+        "hi" -> "सत्यापित संस्थाएँ (गैर-व्यावसायिक सूचना)"
+        else -> "Verified organisations (informational, non-commercial)"
+    }
+
+    fun crisisNavigatorExpertsIntro(): String = when (languageCode) {
+        "ta" -> "Tamixa இவற்றை உறுதிப்படுத்தாது; இணைப்புகள் மாறலாம். அதிகாரப்பூர்வ தளத்தில் சரிபார்க்கவும்."
+        "hi" -> "Tamixa इन्हें प्रमाणित नहीं करता; लिंक बदल सकते हैं—आधिकारिक साइट देखें।"
+        else -> "Tamixa does not endorse these groups; links may change—verify on their official sites."
+    }
+
+    fun crisisNavigatorOpenHelplines(): String = when (languageCode) {
+        "ta" -> "முழு ஹெல்ப்லைன் பட்டியல் & பாதுகாப்பு குறிப்பேடு"
+        "hi" -> "पूरी हेल्पलाइन सूची और सुरक्षा नोटबुक"
+        else -> "Full helpline list & safety notebook"
+    }
+
+    fun crisisNavigatorListenAloud(): String = when (languageCode) {
+        "ta" -> "படிகளை உரத்தொலியில் கேள்"
+        "hi" -> "कदम ज़ोर से सुनें"
+        else -> "Listen to steps aloud"
+    }
+
+    fun crisisNavigatorStopSpeaking(): String = when (languageCode) {
+        "ta" -> "நிறுத்து"
+        "hi" -> "रोकें"
+        else -> "Stop"
+    }
+
+    fun crisisNavigatorEntryFromHelp(): String = when (languageCode) {
+        "ta" -> "அவசர வழிகாட்டி (படிநிலைகள்)"
+        "hi" -> "संकट वर्कफ़्लो (चेकलिस्ट)"
+        else -> "Emergency workflow (step-by-step)"
+    }
+
+    /** Non-profit / public-interest signposts; URLs are informational. */
+    fun crisisNavigatorExpertResources(): List<CrisisHelpline> {
+        val cyTitle = when (languageCode) {
+            "ta" -> "Cyber Saathi — சைபர் விழிப்புணர்வு"
+            "hi" -> "Cyber Saathi — साइबर जागरूकता"
+            else -> "Cyber Saathi — cyber safety awareness"
+        }
+        val cySub = when (languageCode) {
+            "ta" -> "சட்டம் மற்றும் ஆன்லைன் பாதுகாப்பு குறித்த கல்வி வளங்கள்"
+            "hi" -> "कानून और ऑनलाइन सुरक्षा पर शैक्षिक संसाधन"
+            else -> "Educational resources on law and online safety"
+        }
+        val icTitle = when (languageCode) {
+            "ta" -> "iCALL (TISS) — மன நல ஆலோசனை"
+            "hi" -> "iCALL (TISS) — मानसिक स्वास्थ्य परामर्श"
+            else -> "iCALL (TISS) — psychosocial helpline"
+        }
+        val icSub = when (languageCode) {
+            "ta" -> "தொலைபேசி/மின்னஞ்சல் ஆலோசனை (நேர வரையறைகள் தளத்தில்)"
+            "hi" -> "फ़ोन/ईमेल काउंसलिंग (समय साइट पर)"
+            else -> "Phone/email counselling (see site for hours)"
+        }
+        val naTitle = when (languageCode) {
+            "ta" -> "NALSA — இலவச சட்ட உதவி"
+            "hi" -> "NALSA — मुफ़्त कानूनी सहायता"
+            else -> "NALSA — free legal aid"
+        }
+        val naSub = when (languageCode) {
+            "ta" -> "வழக்கறிஞர் செலவு தாங்க முடியாதவர்களுக்கு"
+            "hi" -> "जिनके पास वकील का खर्च न हो"
+            else -> "If you cannot afford a lawyer"
+        }
+        return listOf(
+            CrisisHelpline(
+                title = cyTitle,
+                subtitle = cySub,
+                websiteUrl = "https://www.cybersaathi.org/",
+            ),
+            CrisisHelpline(
+                title = icTitle,
+                subtitle = icSub,
+                websiteUrl = "https://icallhelpline.org/",
+                phoneNumbers = listOf("9152987821"),
+            ),
+            CrisisHelpline(
+                title = naTitle,
+                subtitle = naSub,
+                websiteUrl = "https://nalsa.gov.in",
+                phoneNumbers = listOf("15100"),
+            ),
+        )
+    }
+
+    fun crisisHelpSosChip(): String = when (languageCode) {
+        "ta" -> "உதவி வேண்டுமா?"
+        "hi" -> "मदद चाहिए?"
+        else -> "Need real help?"
+    }
+
+    fun crisisHelpLibraryBannerTitle(): String = when (languageCode) {
+        "ta" -> "உண்மையான நெருக்கடியா?"
+        "hi" -> "असली संकट?"
+        else -> "Real-world crisis?"
+    }
+
+    fun crisisHelpLibraryBannerSubtitle(): String = when (languageCode) {
+        "ta" -> "சரிபார்க்கப்பட்ட எண்கள், 1930 சரிபார்ப்பு, உங்கள் குறிப்பேடு."
+        "hi" -> "सत्यापित नंबर, 1930 चेकलिस्ट, आपकी नोटबुक।"
+        else -> "Verified helplines, 1930 checklist, your safety notebook."
+    }
+
+    fun crisisHelpOpenDirectory(): String = when (languageCode) {
+        "ta" -> "உதவிக்கு திற"
+        "hi" -> "मदद खोलें"
+        else -> "Get help"
+    }
+
+    fun crisisHelpSettingsTitle(): String = when (languageCode) {
+        "ta" -> "அவசர உதவிக்கு"
+        "hi" -> "संकट सहायता"
+        else -> "Crisis help"
+    }
+
+    fun crisisHelpSettingsSubtitle(): String = when (languageCode) {
+        "ta" -> "அரசு எண்கள், சைபர் படிகள், சாதனத்தில் பாதுகாப்பு குறிப்பேடு."
+        "hi" -> "सरकारी नंबर, साइबर कदम, डिवाइस नोटबुक।"
+        else -> "Government helplines, cyber steps, on-device safety notes."
+    }
+
+    /** First-hour checklist after suspected digital theft (UPI / card / OTP). Not legal advice. */
+    fun crisisHelpCyberFirstHourSteps(): String = when (languageCode) {
+        "ta" ->
+            "1) உங்கள் தொலைபேசியில் தேசிய சைபர் ஹெல்ப்லைன் 1930-ஐ அழைக்கவும் (எண்ணை தொடர்புகளில் சேமிக்கவும்).\n" +
+                "2) SMS இணைப்புகளிலிருந்து அல்ல—அட்டை அல்லது பாஸ்புக்கில் உள்ள வங்கியின் அச்சிடப்பட்ட மோசடி / வாடிக்கையாளர் பராமரிப்பு எண்ணை அழைக்கவும்.\n" +
+                "3) UPI ஐடிகள், தொகைகள், நேரங்களின் திரைப்பிடிப்புகள்; பரிவர்த்தனை குறிப்புகளை குறித்துக் கொள்ளவும்.\n" +
+                "4) சாதனம் சமரசமாகியிருக்கலாம் என்று நினைத்தால் சுத்தமான சாதனத்தில் முக்கிய கடவுச்சொற்களை மாற்றவும்.\n" +
+                "5) cybercrime.gov.in-ல் புகார் செய்யவும்; ஒப்புகை ஐடிகளை வைத்திருக்கவும்.\n" +
+                "6) நம்பகமான குடும்ப உறுப்பினரிடம் சொல்லுங்கள்—நாணம் மீட்பை தாமதப்படுத்தும்."
+        "hi" ->
+            "1) अपने फ़ोन से राष्ट्रीय साइबर हेल्पलाइन 1930 पर कॉल करें (नंबर संपर्कों में सेव करें)।\n" +
+                "2) SMS लिंक से नहीं—कार्ड या पासबुक पर छपे बैंक के धोखाधड़ी / कस्टमर केयर नंबर पर कॉल करें।\n" +
+                "3) UPI ID, राशि, समय के स्क्रीनशॉट; लेन-देन रेफ़रेंस नोट करें।\n" +
+                "4) अगर डिवाइस से समझौता लगे तो साफ़ डिवाइस से अहम पासवर्ड बदलें।\n" +
+                "5) जब हो सके cybercrime.gov.in पर रिपोर्ट करें; पावती ID रखें।\n" +
+                "6) भरोसेमंद परिवारजन को बताएँ—शर्म रिकवरी में देरी करती है।"
+        else ->
+            "1) Call national cyber helpline 1930 from your phone (save it in contacts).\n" +
+                "2) Call your bank’s printed fraud / customer-care number from the card or passbook—not from SMS links.\n" +
+                "3) Screenshot UPI IDs, amounts, times; note transaction references.\n" +
+                "4) Change critical passwords from a clean device if you suspect device compromise.\n" +
+                "5) File cybercrime.gov.in report when you can; keep acknowledgement IDs.\n" +
+                "6) Tell a trusted family member—shame delays recovery."
+    }
+
+    /** Localized helpline directory (URLs and phone digits are India-oriented; verify on official sites). */
+    fun crisisHelpDirectorySections(): List<CrisisHelplineSection> = when (languageCode) {
+        "ta" -> listOf(
+            CrisisHelplineSection(
+                sectionTitle = "நிதி & வங்கி",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "RBI ஓம்புட்ஸ்மேன் (CMS)",
+                        subtitle = "வங்கி தவறான நடத்தை, அங்கீகரிக்கப்படாத கட்டணங்கள்",
+                        websiteUrl = "https://cms.rbi.org.in",
+                        phoneNumbers = listOf("14448"),
+                    ),
+                    CrisisHelpline(
+                        title = "தேசிய நுகர்வோர் ஹெல்ப்லைன் (INGRAM)",
+                        subtitle = "தயாரிப்பு / சேவை புகார்கள்",
+                        websiteUrl = "https://consumerhelpline.gov.in",
+                        phoneNumbers = listOf("1800114000"),
+                        smsNumber = "8130009809",
+                    ),
+                ),
+            ),
+            CrisisHelplineSection(
+                sectionTitle = "டிஜிட்டல் & சைபர் குற்றம்",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "தேசிய சைபர் குற்றப் புகார்",
+                        subtitle = "UPI / வங்கி / சமூக ஊடக மோசடி புகார்",
+                        websiteUrl = "https://cybercrime.gov.in",
+                        phoneNumbers = listOf("1930"),
+                        note = "பல வங்கிகள் மோசடிக்குப் பிறகு விரைவாக 1930 அழைக்கச் சொல்கின்றன (\"தங்க நேரம்\")—உங்கள் வங்கி வழிகாட்டுதலையும் பின்பற்றவும்.",
+                    ),
+                ),
+            ),
+            CrisisHelplineSection(
+                sectionTitle = "சட்ட உதவி",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "NALSA — இலவச சட்ட உதவி",
+                        subtitle = "வழக்கறிஞர் செலவு தாங்க முடியாதவர்களுக்கு",
+                        websiteUrl = "https://nalsa.gov.in",
+                        phoneNumbers = listOf("15100"),
+                    ),
+                ),
+            ),
+            CrisisHelplineSection(
+                sectionTitle = "உடல்நலம் & மன நலம்",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "தேசிய உடல்நல ஆணையம் (Ayushman / PM-JAY விசாரணை)",
+                        subtitle = "அரசு உடல்நல திட்டத் தகவல்",
+                        websiteUrl = "https://pmjay.gov.in",
+                        phoneNumbers = listOf("14555"),
+                    ),
+                    CrisisHelpline(
+                        title = "KIRAN மன நல ஹெல்ப்லைன்",
+                        subtitle = "24×7 தொலை-மன நல ஆதரவு (இந்தியா)",
+                        websiteUrl = null,
+                        phoneNumbers = listOf("18005990019"),
+                    ),
+                ),
+            ),
+        )
+        "hi" -> listOf(
+            CrisisHelplineSection(
+                sectionTitle = "वित्त और बैंकिंग",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "RBI ओम्बड्समैन (CMS)",
+                        subtitle = "बैंक की गलत व्यवस्था, अनधिकृत शुल्क",
+                        websiteUrl = "https://cms.rbi.org.in",
+                        phoneNumbers = listOf("14448"),
+                    ),
+                    CrisisHelpline(
+                        title = "राष्ट्रीय उपभोक्ता हेल्पलाइन (INGRAM)",
+                        subtitle = "उत्पाद / सेवा शिकायतें",
+                        websiteUrl = "https://consumerhelpline.gov.in",
+                        phoneNumbers = listOf("1800114000"),
+                        smsNumber = "8130009809",
+                    ),
+                ),
+            ),
+            CrisisHelplineSection(
+                sectionTitle = "डिजिटल और साइबर अपराध",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "राष्ट्रीय साइबर अपराध रिपोर्टिंग",
+                        subtitle = "UPI / बैंक / सोशल मीडिया धोखाधड़ी रिपोर्ट",
+                        websiteUrl = "https://cybercrime.gov.in",
+                        phoneNumbers = listOf("1930"),
+                        note = "कई बैंक धोखाधड़ी के तुरंत बाद 1930 पर कॉल करने की सलाह देते हैं (\"गोल्डन आवर\")—अपने बैंक के निर्देश भी मानें।",
+                    ),
+                ),
+            ),
+            CrisisHelplineSection(
+                sectionTitle = "कानूनी सहायता",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "NALSA — मुफ़्त कानूनी सहायता",
+                        subtitle = "जिनके पास वकील का खर्च न हो",
+                        websiteUrl = "https://nalsa.gov.in",
+                        phoneNumbers = listOf("15100"),
+                    ),
+                ),
+            ),
+            CrisisHelplineSection(
+                sectionTitle = "स्वास्थ्य और मानसिक कल्याण",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "राष्ट्रीय स्वास्थ्य प्राधिकरण (Ayushman / PM-JAY प्रश्न)",
+                        subtitle = "सरकारी स्वास्थ्य योजना की जानकारी",
+                        websiteUrl = "https://pmjay.gov.in",
+                        phoneNumbers = listOf("14555"),
+                    ),
+                    CrisisHelpline(
+                        title = "KIRAN मानसिक स्वास्थ्य हेल्पलाइन",
+                        subtitle = "24×7 टेली-मानसिक स्वास्थ्य सहायता (भारत)",
+                        websiteUrl = null,
+                        phoneNumbers = listOf("18005990019"),
+                    ),
+                ),
+            ),
+        )
+        else -> listOf(
+            CrisisHelplineSection(
+                sectionTitle = "Financial & banking",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "RBI Ombudsman (CMS)",
+                        subtitle = "Bank misbehaviour, unauthorised charges",
+                        websiteUrl = "https://cms.rbi.org.in",
+                        phoneNumbers = listOf("14448"),
+                    ),
+                    CrisisHelpline(
+                        title = "National Consumer Helpline (INGRAM)",
+                        subtitle = "Product / service grievances",
+                        websiteUrl = "https://consumerhelpline.gov.in",
+                        phoneNumbers = listOf("1800114000"),
+                        smsNumber = "8130009809",
+                    ),
+                ),
+            ),
+            CrisisHelplineSection(
+                sectionTitle = "Digital & cyber crime",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "National Cyber Crime Reporting",
+                        subtitle = "UPI / bank / social media fraud reporting",
+                        websiteUrl = "https://cybercrime.gov.in",
+                        phoneNumbers = listOf("1930"),
+                        note = "Many banks advise calling 1930 quickly after fraud (\"golden hour\") to seek freeze of flows—follow your bank’s guidance too.",
+                    ),
+                ),
+            ),
+            CrisisHelplineSection(
+                sectionTitle = "Legal aid",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "NALSA — Free legal aid",
+                        subtitle = "If you cannot afford a lawyer",
+                        websiteUrl = "https://nalsa.gov.in",
+                        phoneNumbers = listOf("15100"),
+                    ),
+                ),
+            ),
+            CrisisHelplineSection(
+                sectionTitle = "Health & mental well-being",
+                lines = listOf(
+                    CrisisHelpline(
+                        title = "National Health Authority (Ayushman / PM-JAY queries)",
+                        subtitle = "Government health scheme information",
+                        websiteUrl = "https://pmjay.gov.in",
+                        phoneNumbers = listOf("14555"),
+                    ),
+                    CrisisHelpline(
+                        title = "KIRAN mental health helpline",
+                        subtitle = "24×7 tele-mental health support (India)",
+                        websiteUrl = null,
+                        phoneNumbers = listOf("18005990019"),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    /** Shown under catalog load errors on Library (connection / server). */
+    fun libraryCatalogUnavailableHint(): String = when (languageCode) {
+        "ta" -> "இணைப்பைச் சரிபார்த்து மீண்டும் முயலவும். கதைகள் உங்கள் பயன்பாட்டு மொழியில் ஏற்றப்படுகின்றன."
+        "hi" -> "कनेक्शन जाँचें और फिर कोशिश करें। कहानियाँ आपकी ऐप भाषा में लोड होती हैं।"
+        else -> "Check your connection and tap Retry. Stories load in your selected app language (ta, en, hi, te, kn, ml)."
+    }
+
+    /** Practice hub: segment exists in graph but audio URL missing (admin must generate segment audio). */
+    fun interactiveSegmentAudioMissing(): String = when (languageCode) {
+        "ta" -> "இந்த காட்சிக்கு ஆடியோ இன்னும் இல்லை. பின்னர் முயலவும் அல்லது வேறு கதையைத் தேர்ந்தெடுக்கவும்."
+        "hi" -> "इस हिस्से के लिए ऑडियो अभी तैयार नहीं है—बाद में कोशिश करें या दूसरी कहानी चुनें।"
+        else -> "This part has no audio yet. Try again later or pick another story—we’re still wiring every branch."
+    }
+
+    /** Interactive mode: current segment id missing from parsed graph. */
+    fun interactiveStorySegmentUnavailable(): String = when (languageCode) {
+        "ta" -> "இந்த கதையின் ஊடாடும் பாதை தற்போது கிடைக்கவில்லை. முகப்புக்குத் திரும்பி மீண்டும் திறக்கவும்."
+        "hi" -> "इंटरैक्टिव रास्ता अभी उपलब्ध नहीं है—होम पर जाकर दोबारा खोलें।"
+        else -> "This interactive path isn’t available right now. Go back and open the story again."
+    }
+
     /** Small chip on poster tiles in the fun lane. */
     fun storyFunCornerBadge(): String = when (languageCode) {
         "ta" -> "சிரிப்பு"
@@ -1872,13 +2458,13 @@ object Strings {
 
     /** Home dashboard: featured library listens (every tale is built for growth). */
     fun dashboardSpotlightTitle(): String = when (languageCode) {
-        "ta" -> "கேட்டு வளருங்கள்"
+        "ta" -> "கேட்போம், கற்போம்!"
         "hi" -> "सुनकर बढ़ें"
         else -> "Grow with every listen"
     }
 
     fun dashboardSpotlightSubtitle(): String = when (languageCode) {
-        "ta" -> "ஒவ்வொரு கதையிலும் மொழி, உணர்வு, ஆர்வம் — எதையும் தட்டி கேட்கத் தொடங்குங்கள்."
+        "ta" -> "ஒவ்வொரு கதையிலும் கற்றல், வாழ்க்கை, திறமை, உணர்வு, ஆர்வம் — எதை வேண்டுமானாலும் தேர்ந்தெடுங்கள்!"
         "hi" -> "हर कहानी में भाषा, भावना, जिज्ञासा—किसी भी कवर को टैप कर शुरू करें।"
         else -> "Heart, vocabulary, and curiosity are woven into every Tamixa tale—tap any cover to start."
     }
@@ -1903,19 +2489,22 @@ object Strings {
     }
 
     fun dashboardLibraryFunLaneTitle(): String = when (languageCode) {
-        "ta" -> "சிரிப்பு மூலை"
-        "hi" -> "मज़ेदार कोना"
+        "ta" -> "மகிழ்ச்சி முனை" // Magizhchi Munai	Happiness Point
+        "ka" -> "ಸಂತೋಷದ ತಾಣ" // Santhoshada Thaana	Happiness Place/Spot
+        "ml" -> "സന്തോഷ് കോർണർ" // Santhosh Corner	Happiness Corner
+        "te" -> "సంతోష నిలయం" // Santhosha Nilayam	Abode of Happiness
+        "hi" -> "खुशियों का कोना" // 	Khushiyon Ka Kona	Corner of Happiness
         else -> "Fun corner"
     }
 
     fun dashboardLibraryFunLaneBlurb(): String = when (languageCode) {
-        "ta" -> "இலகுவான, சிரிப்புத் தரும் கதைகள்."
+        "ta" -> "மென்மையான சிரிப்பைத் தரும் கதைகள்."
         "hi" -> "हल्की, मज़ेदार कहानियाँ।"
         else -> "Lighthearted listens—stories just for fun."
     }
 
     fun dashboardLibraryLearnLaneBlurb(): String = when (languageCode) {
-        "ta" -> "உயிர்க்கல்வி, மின்னணு பாதுகாப்பு, முழு கற்றல் வரிசை."
+        "ta" -> "உயர்க் கல்வி, மின்னணு பாதுகாப்பு, முழு கற்றல் வரிசை."
         "hi" -> "जीवन कौशल, डिजिटल सुरक्षा, पूरी लर्न सूची।"
         else -> "Life skills, digital safety, and the full Learn catalog."
     }
@@ -1946,20 +2535,26 @@ object Strings {
     }
 
     fun openFunCorner(): String = when (languageCode) {
-        "ta" -> "சிரிப்பு மூலை"
-        "hi" -> "मज़ेदार कोना"
+        "ta" -> "மகிழ்ச்சி முனை" // Magizhchi Munai	Happiness Point
+        "ka" -> "ಸಂತೋಷದ ತಾಣ" // Santhoshada Thaana	Happiness Place/Spot
+        "ml" -> "സന്തോഷ് കോർണർ" // Santhosh Corner	Happiness Corner
+        "te" -> "సంతోష నిలయం" // Santhosha Nilayam	Abode of Happiness
+        "hi" -> "खुशियों का कोना" // 	Khushiyon Ka Kona	Corner of Happiness
         else -> "Open fun corner"
     }
 
     fun openLearnSafety(): String = when (languageCode) {
-        "ta" -> "கற்றல் & பாதுகாப்பு"
-        "hi" -> "सीखें और सुरक्षा"
-        else -> "Learn & safety"
+        "ta" -> "புதுமை செய்"  // Innovate / Do something new
+        "ka" -> "ಹೊಸತು ಮಾಡು"  // Do something new
+        "ml" -> "പുതുമ കണ്ടെത്തൂ"  // Find/Create novelty
+        "te" -> "కొత్తగా చేయి"  // Do it in a new way
+        "hi" -> "कुछ नया करो"  // Do something new
+        else -> "Be Smart"
     }
 
     /** Dashboard spotlight: library Practice hub (Learn · Simulator). */
     fun openPracticeHub(): String = when (languageCode) {
-        "ta" -> "பயிற்சி (சிமுலேட்டர்)"
+        "ta" -> "பயிற்சி (மெய்நிகர் உலகம்)"
         "hi" -> "अभ्यास (सिम्युलेटर)"
         else -> "Practice (simulator)"
     }
@@ -2088,13 +2683,13 @@ object Strings {
     }
 
     fun storyFromOurFamilyHint(): String = when (languageCode) {
-        "ta" -> "உங்கள் குடும்பத்தை கதையில் சேர்க்கவும் (விரும்பினால்)"
+        "ta" -> "உங்கள் குடும்பம் சம்பந்தமான கதையை சேர்க்கவும் (விரும்பினால்)"
         "hi" -> "कहानी में अपना विवरण जोड़ें (वैकल्पिक)"
         else -> "Add your family to the story (optional)"
     }
 
     fun storyFromOurFamilyPlaceholder(): String = when (languageCode) {
-        "ta" -> "எ.கா. ஒரு நாய் மேக்ஸ், கோயம்புத்தூரில் அமைக்கவும்"
+        "ta" -> "எ.கா. ஒரு வியாபாரத்தை கோயம்புத்தூரில் ஆரம்பிக்கவும்"
         "hi" -> "जैसे: एक कुत्ता मैक्स, कोयंबटूर में सेट करें"
         else -> "e.g. Include a dog named Max, or set it in Coimbatore"
     }
@@ -2106,9 +2701,12 @@ object Strings {
     }
 
     fun trending(): String = when (languageCode) {
-        "ta" -> "பிரபலம்"
-        "hi" -> "ट्रेंडिंग"
-        else -> "Trending"
+        "ta" -> "இப்போ ஹிட்"  // Hot Now (casual)
+        "ka" -> "ಈಗ ಹಿಟ್"  // Hot Now
+        "ml" -> "ഇപ്പോൾ ഹിറ്റ്"  // Hot Now
+        "te" -> "ఇప్పుడు హిట్"  // Hot Now
+        "hi" -> "अभी हिट"  // Hot Now
+        else -> "Hot Now"
     }
 
     fun popular(): String = when (languageCode) {
@@ -2118,9 +2716,12 @@ object Strings {
     }
 
     fun continueListening(): String = when (languageCode) {
-        "ta" -> "கேட்டது தொடர்"
-        "hi" -> "सुनना जारी रखें"
-        else -> "Continue Listening"
+        "ta" -> "தொடர்"  // Keep Going (casual)
+        "ka" -> "ಮುಂದುವರಿಸು"  // Keep Going
+        "ml" -> "തുടരുക"  // Keep Going
+        "te" -> "కొనసాగించు"  // Keep Going
+        "hi" -> "जारी रखो"  // Keep Going
+        else -> "Keep Going"
     }
 
     fun playerCategoryDuration(category: String, minutes: Int): String = when (languageCode) {
@@ -2196,7 +2797,7 @@ object Strings {
     }
 
     fun playerStartReading(): String = when (languageCode) {
-        "ta" -> "வாசிப்பைத் தொடங்கு"
+        "ta" -> "வாசிப்பைத் தொடங்கவும்"
         "hi" -> "पढ़ना शुरू करें"
         else -> "Start reading"
     }
@@ -2216,7 +2817,7 @@ object Strings {
 
     /** Shown when playback uses on-device read-aloud (no server word timings). */
     fun playerDeviceReadAloudHint(): String = when (languageCode) {
-        "ta" -> "சாதன வாசிப்பு — உரை ஒலியுடன் ஒத்திசைக்கப்படாது; முழு கதையை கீழே படிக்கலாம்."
+        "ta" -> "சத்தமாக வாசியுங்கள் — உங்கள் உரை பதிவு செய்யப்படாது; முழுக் கதையையும் கீழே படிக்கலாம்."
         "hi" -> "डिवाइस रीड-अलाउड — टेक्स्ट आवाज़ से मेल नहीं खा सकता; नीचे पूरी कहानी पढ़ें।"
         else -> "Device read-aloud — text won’t track the voice; scroll to read the full story below."
     }
@@ -2229,7 +2830,7 @@ object Strings {
 
     /** Overflow ⋮ on audio player hero (opens voice & related actions). */
     fun playerMoreActions(): String = when (languageCode) {
-        "ta" -> "மேலும் செயல்கள்"
+        "ta" -> "மேலும் செயல்களுக்கு"
         "hi" -> "और विकल्प"
         else -> "More actions"
     }
@@ -2242,7 +2843,7 @@ object Strings {
 
     /** Shown under Continue Listening on the home dashboard. */
     fun latestListeningSubtitle(): String = when (languageCode) {
-        "ta" -> "சமீபத்திய கேட்ட கதைகள் — புதியவை முதலில்"
+        "ta" -> "சமீபத்தில் கேட்டக் கதைகள் — புதியவை முதலில்"
         "hi" -> "आपकी हाल की सुनी कहानियाँ — नई पहले"
         else -> "Your latest listens — newest first"
     }
@@ -2263,7 +2864,7 @@ object Strings {
 
     /** Section title for generated / saved tales (friendlier than “all stories”). */
     fun dashboardYourStoriesTitle(): String = when (languageCode) {
-        "ta" -> "உங்கள் கதைகள்"
+        "ta" -> "உங்களின் கதைகள்"
         "hi" -> "आपकी कहानियाँ"
         else -> "Your stories"
     }
@@ -2281,6 +2882,18 @@ object Strings {
         else -> "Share"
     }
 
+    fun playerSpeed(): String = when (languageCode) {
+        "ta" -> "வேகம்"
+        "hi" -> "गति"
+        else -> "Speed"
+    }
+
+    fun playerRelatedStories(): String = when (languageCode) {
+        "ta" -> "தொடர்புடைய கதைகள்"
+        "hi" -> "संबंधित कहानियाँ"
+        else -> "Related Stories"
+    }
+
     fun noStoriesYet(): String = when (languageCode) {
         "ta" -> "இன்னும் கதைகள் இல்லை"
         "hi" -> "अभी तक कोई कहानी नहीं"
@@ -2294,13 +2907,13 @@ object Strings {
     }
 
     fun listeningStreak(days: Int): String = when (languageCode) {
-        "ta" -> "$days நாள் கேட்டல் தொடர்!"
+        "ta" -> "$days நாள் தொடர்!"
         "hi" -> "$days दिन की सुनने की लकीर!"
         else -> "$days day listening streak!"
     }
 
     fun buildYourStreak(): String = when (languageCode) {
-        "ta" -> "தினமும் கேட்டு கேட்டல் தொடரை உருவாக்குங்கள்"
+        "ta" -> "தினமும் கேளுங்கள் \uD83D\uDD25 தொடரை உருவாக்குங்கள்!"
         "hi" -> "रोज़ सुनकर सुनने की लकीर बनाएं"
         else -> "Listen daily to build your listening streak"
     }
@@ -2318,7 +2931,7 @@ object Strings {
     }
 
     fun noListeningHistoryYet(): String = when (languageCode) {
-        "ta" -> "இன்னும் கேட்கும் வரலாறு இல்லை"
+        "ta" -> "இன்னும் 'நீங்கள் கேட்ட கதைகள்' இல்லை"
         "hi" -> "अभी सुनने का इतिहास नहीं"
         else -> "No listening history yet"
     }
@@ -2446,10 +3059,40 @@ object Strings {
         else -> "Search"
     }
 
+    fun clear(): String = when (languageCode) {
+        "ta" -> "அழி"
+        "hi" -> "साफ़ करें"
+        else -> "Clear"
+    }
+
     fun searchStories(): String = when (languageCode) {
         "ta" -> "கதைகளைத் தேடு"
         "hi" -> "कहानियाँ खोजें"
         else -> "Search stories"
+    }
+
+    fun searchingStories(): String = when (languageCode) {
+        "ta" -> "கதைகளைத் தேடுகிறது..."
+        "hi" -> "कहानियाँ खोज रहे हैं..."
+        else -> "Searching stories..."
+    }
+
+    fun discoverStories(): String = when (languageCode) {
+        "ta" -> "கதைகளைக் கண்டறியுங்கள்"
+        "hi" -> "कहानियाँ खोजें"
+        else -> "Discover stories"
+    }
+
+    fun storyFound(): String = when (languageCode) {
+        "ta" -> "கதை கிடைத்தது"
+        "hi" -> "कहानी मिली"
+        else -> "story found"
+    }
+
+    fun storiesFound(): String = when (languageCode) {
+        "ta" -> "கதைகள் கிடைத்தன"
+        "hi" -> "कहानियाँ मिलीं"
+        else -> "stories found"
     }
 
     fun tryDifferentSearch(): String = when (languageCode) {
@@ -2483,9 +3126,12 @@ object Strings {
     }
 
     fun profile(): String = when (languageCode) {
-        "ta" -> "சுயவிவரம்"
-        "hi" -> "प्रोफ़ाइल"
-        else -> "Profile"
+        "ta" -> "நான்"  // Me (casual)
+        "ka" -> "ನಾನು"  // Me
+        "ml" -> "ഞാൻ"  // Me
+        "te" -> "నేను"  // Me
+        "hi" -> "मैं"  // Me
+        else -> "Me"
     }
 
     fun nickname(): String = when (languageCode) {
@@ -2524,6 +3170,18 @@ object Strings {
         else -> "Profile updated"
     }
 
+    fun quickActions(): String = when (languageCode) {
+        "ta" -> "விரைவு செயல்கள்"
+        "hi" -> "त्वरित क्रियाएँ"
+        else -> "Quick Actions"
+    }
+
+    fun settingsAndMore(): String = when (languageCode) {
+        "ta" -> "அமைப்புகள் மற்றும் மேலும்"
+        "hi" -> "सेटिंग्स और अधिक"
+        else -> "Settings & More"
+    }
+
     fun save(): String = when (languageCode) {
         "ta" -> "சேமி"
         "hi" -> "सहेजें"
@@ -2531,9 +3189,12 @@ object Strings {
     }
 
     fun library(): String = when (languageCode) {
-        "ta" -> "நூலகம்"
-        "hi" -> "लाइब्रेरी"
-        else -> "Library"
+        "ta" -> "கதைகள்"  // Stories (casual)
+        "ka" -> "ಕಥೆಗಳು"  // Stories
+        "ml" -> "കഥകൾ"  // Stories
+        "te" -> "కథలు"  // Stories
+        "hi" -> "कहानियाँ"  // Stories
+        else -> "Stories"
     }
 
     fun storyLibrary(): String = when (languageCode) {
@@ -2555,7 +3216,7 @@ object Strings {
     }
 
     fun listeningHistory(): String = when (languageCode) {
-        "ta" -> "கேட்கும் வரலாறு"
+        "ta" -> "நீங்கள் கேட்டக் கதைகள்"
         "hi" -> "सुनने का इतिहास"
         else -> "Listening History"
     }
@@ -2585,7 +3246,7 @@ object Strings {
     }
 
     fun onboardingVoiceHeadline(): String = when (languageCode) {
-        "ta" -> "உங்கள் குடும்ப குரலில் கதைகள் விரும்புகிறீர்களா?"
+        "ta" -> "உங்கள் குடும்ப குரலில் கதைகள் கேட்க விரும்புகிறீர்களா?"
         "hi" -> "क्या आप अपनी पारिवारिक आवाज़ में कहानियाँ चाहते हैं?"
         else -> "Want stories in your family voice?"
     }
@@ -2708,6 +3369,74 @@ object Strings {
         else -> "Learn · Safety"
     }
 
+    // --- Onboarding Interactive Preview (Step 3) ---
+
+    fun onboardingInteractiveHeadline(): String = when (languageCode) {
+        "ta" -> "தேர்வுகள் கதையை வடிவமைக்கின்றன"
+        "hi" -> "विकल्प कहानी को आकार देते हैं"
+        else -> "Choices shape the story"
+    }
+
+    fun onboardingInteractiveSubline(): String = when (languageCode) {
+        "ta" -> "சில கதைகள் கிளைகளாகப் பிரியும் — உங்கள் குழந்தை முடிவெடுக்கிறது, கதை மாறுகிறது. கற்றல் நூலகத்தில் கிடைக்கும்."
+        "hi" -> "कुछ कहानियाँ शाखाओं में बँटती हैं — आपका बच्चा चुनता है, कहानी बदलती है। लर्न लाइब्रेरी में उपलब्ध।"
+        else -> "Some stories branch — your child decides, the story changes. Available in Learn library."
+    }
+
+    fun onboardingInteractiveCardTeaser(): String = when (languageCode) {
+        "ta" -> "அடுத்து என்ன நடக்கும்?"
+        "hi" -> "आगे क्या होगा?"
+        else -> "What happens next?"
+    }
+
+    fun onboardingInteractivePillLearn(): String = when (languageCode) {
+        "ta" -> "கற்றல் · பாதுகாப்பு"
+        "hi" -> "सीखें · सुरक्षा"
+        else -> "Learn · Safety"
+    }
+
+    fun onboardingInteractivePillInteractive(): String = when (languageCode) {
+        "ta" -> "ஊடாடும் கதை"
+        "hi" -> "इंटरैक्टिव कहानी"
+        else -> "Interactive"
+    }
+
+    fun onboardingInteractiveChoiceA(): String = when (languageCode) {
+        "ta" -> "காட்டை ஆராயுங்கள்"
+        "hi" -> "जंगल का अन्वेषण करें"
+        else -> "Explore the forest"
+    }
+
+    fun onboardingInteractiveChoiceB(): String = when (languageCode) {
+        "ta" -> "கிராமத்திற்கு திரும்புங்கள்"
+        "hi" -> "गाँव लौटें"
+        else -> "Return to village"
+    }
+
+    fun onboardingInteractiveTapHint(): String = when (languageCode) {
+        "ta" -> "தேர்வுகளைத் தட்டி பாருங்கள்!"
+        "hi" -> "विकल्पों को टैप करके देखें!"
+        else -> "Tap choices to see branching!"
+    }
+
+    fun onboardingInteractiveBenefitChoices(): String = when (languageCode) {
+        "ta" -> "முடிவு புள்ளிகளில் உண்மையான தேர்வுகள்"
+        "hi" -> "निर्णय बिंदुओं पर असली विकल्प"
+        else -> "Real choices at decision points"
+    }
+
+    fun onboardingInteractiveBenefitBranching(): String = when (languageCode) {
+        "ta" -> "கதை பாதைகள் தேர்வுகளின் அடிப்படையில் மாறும்"
+        "hi" -> "कहानी पथ चुनावों के आधार पर बदलते हैं"
+        else -> "Story paths change based on choices"
+    }
+
+    fun onboardingInteractiveBenefitLearning(): String = when (languageCode) {
+        "ta" -> "வாழ்க்கைத் திறன்களை பயிற்சி செய்யுங்கள் — மதிப்பெண்கள் இல்லை"
+        "hi" -> "जीवन कौशल का अभ्यास करें — स्कोर नहीं"
+        else -> "Practice life skills — no scores, just learning"
+    }
+
     fun onboardingVoiceBenefitKeepsake(): String = when (languageCode) {
         "ta" -> "பாட்டி / அப்பாவின் தொனி ஒவ்வொரு அத்தியாயத்திலும்"
         "hi" -> "दादी या पापा की आवाज़ हर अध्याय में"
@@ -2744,7 +3473,7 @@ object Strings {
         else -> "Totally optional — skip and keep listening anytime"
     }
 
-    /** Short section title above value bullets (step 1–4 onboarding). */
+    /** Short section title above value bullets (step 1–5 onboarding). */
     fun onboardingStripTitle(step: Int): String = when (step) {
         1 -> when (languageCode) {
             "ta" -> "உங்கள் குடும்பத்திற்கு ஏற்றது"
@@ -2757,11 +3486,16 @@ object Strings {
             else -> "In this mini demo"
         }
         3 -> when (languageCode) {
-            "ta" -> "குடும்பக் குரல்"
+            "ta" -> "ஊடாடும் கதைகள்"
+            "hi" -> "इंटरैक्टिव कहानियाँ"
+            else -> "Interactive stories"
+        }
+        4 -> when (languageCode) {
+            "ta" -> "குடும்பத்தின் குரல்"
             "hi" -> "परिवार की आवाज़"
             else -> "Layer in family voice"
         }
-        4 -> when (languageCode) {
+        5 -> when (languageCode) {
             "ta" -> "விருப்பமான முகம்"
             "hi" -> "वैकल्पिक चेहरा"
             else -> "Optional storyteller face"
@@ -3028,7 +3762,7 @@ object Strings {
     }
 
     fun uploadAudioForFirstProfile(): String = when (languageCode) {
-        "ta" -> "முதல் குரல் சுயவிவரத்தை உருவாக்க ஆடியோ பதிவேற்றம் செய்யுங்கள்"
+        "ta" -> "உங்களின் முதல் சொந்தக் குரலை உருவாக்க ஆடியோ பதிவேற்றம் செய்யுங்கள்"
         "hi" -> "पहली आवाज़ प्रोफ़ाइल बनाने के लिए ऑडियो अपलोड करें"
         else -> "Upload audio to create your first voice profile"
     }
@@ -3091,18 +3825,24 @@ object Strings {
         else -> "Learn library — gentle practice signals from choices, not scores"
     }
 
-    /** Short chip: Learn & safety lane (matches admin category naming intent). */
+    /** Short chip: Be Smart lane (empowering, casual learning & safety). */
     fun onboardingHookPillLearnSafety(): String = when (languageCode) {
-        "ta" -> "கற்றல் · பாதுகாப்பு"
-        "hi" -> "सीखें · सुरक्षा"
-        else -> "Learn · Safety"
+        "ta" -> "புதுமை செய்"  // Innovate / Do something new
+        "ka" -> "ಹೊಸತು ಮಾಡು"  // Do something new
+        "ml" -> "പുതുമ കണ്ടെത്തൂ"  // Find/Create novelty
+        "te" -> "కొత్తగా చేయి"  // Do it in a new way
+        "hi" -> "कुछ नया करो"  // Do something new
+        else -> "Be Smart"
     }
 
     /** Ribbon under onboarding progress — positions Tamixa as edu / learn-lane stories. */
     fun onboardingEduStoryBadgeLabel(): String = when (languageCode) {
-        "ta" -> "கற்றல் கதைகள் · பாதுகாப்பான கேட்டல்"
-        "hi" -> "सीखने वाली कहानियाँ · सुरक्षित सुनना"
-        else -> "Learn stories · Safe listening"
+        "ta" -> "புதுமை கதைகள்"  // Innovative stories
+        "ka" -> "ಹೊಸ ಕಥೆಗಳು"  // New stories
+        "ml" -> "പുതുമ കഥകൾ"  // Novel stories
+        "te" -> "కొత్త కథలు"  // New stories
+        "hi" -> "नई कहानियाँ"  // New stories
+        else -> "Smart stories"
     }
 
     fun onboardingProgressShort(step: Int, totalSteps: Int): String = when (languageCode) {

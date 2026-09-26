@@ -20,12 +20,13 @@ object StoryAnalyticsEventType {
     const val STORY_COMPLETED = "story_completed"
     const val STORY_STOPPED_EARLY = "story_stopped_early"
     const val INTERACTIVE_BRANCH = "interactive_branch"
+    const val CRISIS_HELP_SOS_TAP = "crisis_help_sos_tap"
     const val SHARE_CLIP_REQUESTED = "share_clip_requested"
     const val SHARE_CLIP_DOWNLOADED = "share_clip_downloaded"
 
     val ALL = setOf(
         STORY_STARTED, STORY_25_PERCENT, STORY_50_PERCENT, STORY_75_PERCENT,
-        STORY_COMPLETED, STORY_STOPPED_EARLY, INTERACTIVE_BRANCH,
+        STORY_COMPLETED, STORY_STOPPED_EARLY, INTERACTIVE_BRANCH, CRISIS_HELP_SOS_TAP,
         SHARE_CLIP_REQUESTED, SHARE_CLIP_DOWNLOADED
     )
 }

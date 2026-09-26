@@ -29,7 +29,13 @@ class StoryTranslationRepositoryAdapter(
             status = translation.status,
             retryCount = translation.retryCount,
             lastError = translation.lastError,
-            narrationApprovedAt = translation.narrationApprovedAt
+            narrationApprovedAt = translation.narrationApprovedAt,
+            interactiveGraph = translation.interactiveGraphJson,
+            postStoryMission = translation.postStoryMission,
+            postStoryResourceUrl = translation.postStoryResourceUrl,
+            parentContentNote = translation.parentContentNote,
+            speakAlongPrompt = translation.speakAlongPrompt,
+            parentDiscussionPrompts = translation.parentDiscussionPrompts,
         )
         val saved = jpaRepository.save(entity)
         return saved.toDomain()
@@ -129,6 +135,9 @@ class StoryTranslationRepositoryAdapter(
 
     override fun getNarrationApprovalByMasterStoryId(masterStoryId: Long): Map<String, Boolean> =
         jpaRepository.findByMasterStoryId(masterStoryId).associate { it.language to (it.narrationApprovedAt != null) }
+
+    override fun searchByContent(query: String, language: String, pageable: Pageable): Page<StoryTranslation> =
+        jpaRepository.searchByContent(query, language, pageable).map { it.toDomain() }
 }
 
 private fun toListing(p: StoryTranslationListingProjection) = com.tamixa.domain.StoryTranslationListing(
@@ -154,5 +163,11 @@ private fun StoryTranslationEntity.toDomain() = StoryTranslation(
     status = status,
     retryCount = retryCount,
     lastError = lastError,
-    narrationApprovedAt = narrationApprovedAt
+    narrationApprovedAt = narrationApprovedAt,
+    interactiveGraphJson = interactiveGraph,
+    postStoryMission = postStoryMission,
+    postStoryResourceUrl = postStoryResourceUrl,
+    parentContentNote = parentContentNote,
+    speakAlongPrompt = speakAlongPrompt,
+    parentDiscussionPrompts = parentDiscussionPrompts,
 )

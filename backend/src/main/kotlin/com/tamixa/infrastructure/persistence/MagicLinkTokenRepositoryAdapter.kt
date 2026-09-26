@@ -35,6 +35,20 @@ class MagicLinkTokenRepositoryAdapter(
         )
     }
 
+    override fun findValidByLoginToken(loginToken: String): MagicLinkToken? {
+        val normalized = loginToken.trim().lowercase()
+        val entity = jpaRepository.findByTokenAndUsedAtIsNull(normalized) ?: return null
+        if (entity.expiresAt.isBefore(Instant.now())) return null
+        val sc = entity.shortCode ?: return null
+        return MagicLinkToken(
+            id = entity.id,
+            email = entity.email,
+            token = entity.token,
+            expiresAt = entity.expiresAt,
+            shortCode = sc
+        )
+    }
+
     override fun markUsed(id: Long) {
         jpaRepository.findById(id).ifPresent { entity ->
             entity.usedAt = Instant.now()

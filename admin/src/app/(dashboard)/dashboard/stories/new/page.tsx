@@ -30,14 +30,26 @@ import {
 } from "@/components/ui/select";
 import { useActionResult } from "@/contexts/action-result-context";
 import { usePipelineActive } from "@/contexts/pipeline-active-context";
-import { ArrowLeft, Save, ImagePlus, Sparkles, RefreshCw, Braces, LayoutTemplate } from "lucide-react";
-import { cn, parseJsonStoryContent, resolveLibraryStoryEditorBody } from "@/lib/utils";
+import {
+  ArrowLeft,
+  Save,
+  ImagePlus,
+  Sparkles,
+  RefreshCw,
+  Braces,
+  LayoutTemplate,
+  FileText,
+  Loader2,
+} from "lucide-react";
+import { InteractiveGraphSchemaHint } from "@/components/interactive-graph-schema-hint";
+import { cn, interactiveGraphJsonRoughlyEqual, parseJsonStoryContent, resolveLibraryStoryEditorBody } from "@/lib/utils";
 import {
   REGENERATE_THEN_TRANSLATIONS_HELP,
   getLibraryStoryMasterScriptContentError,
   canSubmitLibraryStoryForReview,
   adminStoryEmotionModeLabel,
   isLibraryStoryPipelineActivelyRunning,
+  buildLibraryStoryAdminProgressSteps,
 } from "@/lib/library-story-workflow";
 import { lintInteractiveGraphJson } from "@/lib/interactive-graph-lint";
 import { outlineInteractiveGraphJson } from "@/lib/interactive-graph-outline";
@@ -47,41 +59,78 @@ import {
   DIGITAL_SAFETY_SIMULATOR_THEME,
   getDefaultDecisionJournalUrl,
 } from "@/lib/edu-simulator-template";
-import { validateInteractiveStoryCategory } from "@/lib/story-interactive-conventions";
+import { SIMULATOR_THEME_PREFIX, validateInteractiveStoryCategory } from "@/lib/story-interactive-conventions";
+import { validateInteractiveSegmentUrls } from "@/lib/interactive-segment-audio-url";
+import {
+  ADMIN_LIBRARY_PIPELINE_POLL_FIRST_MS,
+  ADMIN_LIBRARY_PIPELINE_POLL_INTERVAL_MS,
+  ADMIN_LIBRARY_PIPELINE_POLL_MAX_ROUNDS,
+  ADMIN_LIBRARY_SEGMENT_ERROR_DETAIL_MAX_CHARS,
+  ADMIN_LIBRARY_TITLE_MAX_LENGTH,
+  ADMIN_LIBRARY_POST_MISSION_MAX_CHARS,
+  ADMIN_LIBRARY_POST_RESOURCE_URL_MAX_CHARS,
+  ADMIN_NEW_LIBRARY_STORY_SESSION_STORAGE_KEY,
+  ADMIN_STORY_DRAFT_AUTOSAVE_STORAGE_KEY,
+  AUTOSAVE_DEBOUNCE_MS,
+  DEFAULT_LIBRARY_CHILD_NAME,
+  DEFAULT_LIBRARY_EMOTION_MODE,
+  DEFAULT_LIBRARY_SOURCE_LANGUAGE,
+  INTERACTIVE_GRAPH_MASTER_LOCALE_KEY,
+  LIBRARY_ENGLISH_LANGUAGE_CODE,
+  LIBRARY_SOURCE_LANGUAGE_OPTIONS,
+  LIBRARY_TAB_LANGUAGES,
+  SEGMENT_STUDIO_PARENT_STORAGE_KEY,
+  defaultTranslationTabLanguage,
+  newEmptyLibraryStoryForm,
+  emptyLibraryTranslationTab,
+  buildLibraryTranslationContentPayload,
+  type LibraryTranslationTabFields,
+} from "@/lib/library-story-admin-constants";
+import {
+  parseInteractiveSegments,
+  segmentStudioActivityMessage,
+  type SegmentStudioActivity,
+} from "@/lib/library-story-segment-studio";
 
-const AUTOSAVE_KEY = "tamixa_story_draft";
-const AUTOSAVE_DEBOUNCE_MS = 2000;
+const AUTOSAVE_KEY = ADMIN_STORY_DRAFT_AUTOSAVE_STORAGE_KEY;
 
-const SOURCE_LANGUAGES = [
-  { code: "ta", label: "Tamil (recommended)" },
-  { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
-  { code: "te", label: "Telugu" },
-  { code: "kn", label: "Kannada" },
-  { code: "ml", label: "Malayalam" },
-] as const;
+function formatDraftAutosavedLabel(savedAt: number): string {
+  const sec = Math.floor((Date.now() - savedAt) / 1000);
+  if (sec < 30) return "just now";
+  if (sec < 90) return "about a minute ago";
+  if (sec < 3600) return `${Math.floor(sec / 60)} min ago`;
+  return `${Math.floor(sec / 3600)} hr ago`;
+}
 
-const TAB_LANGUAGES = [
-  { code: "ta", label: "Tamil" },
-  { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
-  { code: "te", label: "Telugu" },
-  { code: "kn", label: "Kannada" },
-  { code: "ml", label: "Malayalam" },
-] as const;
+function isSimulatorTheme(theme: string | null | undefined): boolean {
+  return (theme?.trim() ?? "").startsWith(SIMULATOR_THEME_PREFIX);
+}
 
 /** Survives refresh so Regenerate / Cover keep using UPDATE instead of CREATE (avoids duplicate title). */
-const ADMIN_NEW_STORY_SESSION_ID_KEY = "tamixa_admin_new_library_story_id";
+const ADMIN_NEW_STORY_SESSION_ID_KEY = ADMIN_NEW_LIBRARY_STORY_SESSION_STORAGE_KEY;
+
+function stringifyInteractiveGraphOverlay(raw: unknown): string {
+  if (raw == null) return "";
+  if (typeof raw === "string") return raw;
+  try {
+    return JSON.stringify(raw, null, 2);
+  } catch {
+    return "";
+  }
+}
 
 async function loadTranslationTabEntries(
   storyId: number,
-  masterLang: string
+  masterLang: string,
+  masterGraphStr: string
 ): Promise<{
   tabLangs: { code: string; label: string }[];
-  entries: Record<string, { content: string; title: string; moral: string }>;
+  entries: Record<string, LibraryTranslationTabFields>;
+  graphOverlays: Record<string, string>;
 }> {
   const master = masterLang.toLowerCase();
-  const tabLangs = TAB_LANGUAGES.filter((l) => l.code !== master);
+  const masterNorm = masterGraphStr.trim();
+  const tabLangs = LIBRARY_TAB_LANGUAGES.filter((l) => l.code !== master);
   const langResults = await Promise.all(
     tabLangs.map(({ code }) =>
       api.admin
@@ -89,21 +138,50 @@ async function loadTranslationTabEntries(
         .then((s) => {
           const raw = resolveLibraryStoryEditorBody(s ?? {});
           const parsed = parseJsonStoryContent(raw);
+          const overlayRaw = stringifyInteractiveGraphOverlay(s?.translationInteractiveGraphOverlay).trim();
+          const mergedRaw = stringifyInteractiveGraphOverlay(s?.interactiveGraph).trim();
           return {
             code,
             content: parsed?.content ?? raw,
             title: (parsed?.title ?? s?.title ?? "")?.trim() || "",
             moral: (parsed?.moral ?? s?.moral ?? "")?.trim() || "",
+            postStoryMission: s?.postStoryMission?.trim() ?? "",
+            postStoryResourceUrl: s?.postStoryResourceUrl?.trim() ?? "",
+            overlayGraphStr: overlayRaw,
+            mergedGraphStr: mergedRaw,
           };
         })
-        .catch(() => ({ code, content: "", title: "", moral: "" }))
+        .catch(() => ({
+          code,
+          content: "",
+          title: "",
+          moral: "",
+          postStoryMission: "",
+          postStoryResourceUrl: "",
+          overlayGraphStr: "",
+          mergedGraphStr: "",
+        }))
     )
   );
-  const entries: Record<string, { content: string; title: string; moral: string }> = {};
-  langResults.forEach(({ code, content, title, moral }) => {
-    entries[code] = { content, title: title ?? "", moral: moral ?? "" };
-  });
-  return { tabLangs, entries };
+  const entries: Record<string, LibraryTranslationTabFields> = {};
+  const graphOverlays: Record<string, string> = {};
+  langResults.forEach(
+    ({ code, content, title, moral, postStoryMission, postStoryResourceUrl, overlayGraphStr, mergedGraphStr }) => {
+      entries[code] = {
+        content,
+        title: title ?? "",
+        moral: moral ?? "",
+        postStoryMission: postStoryMission ?? "",
+        postStoryResourceUrl: postStoryResourceUrl ?? "",
+      };
+      const overlay = overlayGraphStr.trim();
+      const merged = mergedGraphStr.trim();
+      const slot =
+        overlay || (merged && !interactiveGraphJsonRoughlyEqual(merged, masterNorm) ? merged : undefined);
+      if (slot) graphOverlays[code] = slot;
+    }
+  );
+  return { tabLangs, entries, graphOverlays };
 }
 
 /** Matches backend `existsByTitle` (case-insensitive). */
@@ -119,24 +197,6 @@ async function findLibraryStoryIdByTitleIgnoreCase(title: string): Promise<numbe
     if (res.last || !res.content?.length) break;
   }
   return null;
-}
-
-function buildTranslationContentPayload(
-  entries: Record<string, { content: string; title: string; moral: string }>
-): Record<string, { content: string; title?: string | null; moral?: string | null }> | undefined {
-  const translationPayload: Record<string, { content: string; title?: string | null; moral?: string | null }> = {};
-  Object.entries(entries).forEach(([lang, entry]) => {
-    const content = entry?.content?.trim() ?? "";
-    const title = entry?.title?.trim() ?? "";
-    const moral = entry?.moral?.trim() ?? "";
-    if (!content && !title && !moral) return;
-    translationPayload[lang] = {
-      content: content || "",
-      title: title || null,
-      moral: moral || null,
-    };
-  });
-  return Object.keys(translationPayload).length > 0 ? translationPayload : undefined;
 }
 
 function resolveCoverSrc(coverImageUrl: string | null | undefined): string | null {
@@ -171,23 +231,7 @@ export default function NewLibraryStoryPage() {
   const { showSuccess, showError } = useActionResult();
   const { refresh: refreshPipelineActive, registerTriggered } = usePipelineActive();
 
-  const [form, setForm] = useState<CreateLibraryStoryRequest>({
-    title: "",
-    content: "",
-    theme: STORY_CATEGORIES[0],
-    language: "ta",
-    age: 5,
-    childName: "Child",
-    moral: "",
-    status: "DRAFT",
-    emotionMode: "CALM",
-    parentDiscussionPrompts: undefined,
-    parentContentNote: null,
-    speakAlongPrompt: null,
-    interactiveGraph: "",
-    postStoryMission: "",
-    postStoryResourceUrl: "",
-  });
+  const [form, setForm] = useState<CreateLibraryStoryRequest>(() => newEmptyLibraryStoryForm());
   /** Set after first server create (via Regenerate, optional Save, Cover, or Submit). */
   const [savedStoryId, setSavedStoryId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -197,16 +241,37 @@ export default function NewLibraryStoryPage() {
   const [coverRefreshKey, setCoverRefreshKey] = useState(0);
   const [coverVideoUrl, setCoverVideoUrl] = useState<string | null>(null);
   const [translationContentEntries, setTranslationContentEntries] = useState<
-    Record<string, { content: string; title: string; moral: string }>
+    Record<string, LibraryTranslationTabFields>
   >({});
   /** Active tab for “Other languages” (must not equal master `form.language`). */
-  const [activeLangTab, setActiveLangTab] = useState<string>("en");
+  const [activeLangTab, setActiveLangTab] = useState<string>(() =>
+    defaultTranslationTabLanguage(DEFAULT_LIBRARY_SOURCE_LANGUAGE)
+  );
   const [translationsRefreshing, setTranslationsRefreshing] = useState(false);
   const [scriptSyncInProgress, setScriptSyncInProgress] = useState(false);
   const [regenerateServerRunning, setRegenerateServerRunning] = useState(false);
   const [storyPipelineRunning, setStoryPipelineRunning] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [segmentScripts, setSegmentScripts] = useState<Record<string, string>>({});
+  const [segmentVoiceProfile, setSegmentVoiceProfile] = useState("default");
+  const [segmentVoiceParentId, setSegmentVoiceParentId] = useState("");
+  const [segmentVoiceOptions, setSegmentVoiceOptions] = useState<Array<{ value: string; label: string }>>([
+    { value: "default", label: "Default" },
+  ]);
+  const [segmentVoiceStatus, setSegmentVoiceStatus] = useState<string | null>(null);
+  const [segmentStudioActivity, setSegmentStudioActivity] = useState<SegmentStudioActivity>({ kind: "idle" });
+  const segmentStudioBusy = segmentStudioActivity.kind !== "idle";
+  const segmentVoiceAutoLoadedRef = useRef(false);
   const autosaveRef = useRef<ReturnType<typeof setTimeout>>();
+  /** Client-only: last time the unpublished form was written to `AUTOSAVE_KEY`. */
+  const [localDraftSavedAt, setLocalDraftSavedAt] = useState<number | null>(null);
+  /** Master key + per-locale full graph JSON (same model as Edit). */
+  const [interactiveGraphSlots, setInteractiveGraphSlots] = useState<Record<string, string>>(() => ({
+    [INTERACTIVE_GRAPH_MASTER_LOCALE_KEY]: "",
+  }));
+  const [interactiveGraphEditLocale, setInteractiveGraphEditLocale] = useState<string>(
+    INTERACTIVE_GRAPH_MASTER_LOCALE_KEY
+  );
   const regenerateInFlightRef = useRef(false);
   const regeneratePrevRunningRef = useRef(false);
   /** Prevents parallel CREATE requests that both hit duplicate-title. */
@@ -235,6 +300,74 @@ export default function NewLibraryStoryPage() {
     return outlineInteractiveGraphJson(ig);
   }, [form.interactiveGraph, interactiveGraphLint.ok]);
 
+  const simulatorSelected = useMemo(() => isSimulatorTheme(form.theme), [form.theme]);
+  const interactiveGraphRequiredError = useMemo(() => {
+    if (!simulatorSelected) return null;
+    if (!form.interactiveGraph?.trim()) {
+      return 'Simulator stories require "Interactive graph (JSON)".';
+    }
+    return null;
+  }, [simulatorSelected, form.interactiveGraph]);
+  const interactiveSegmentUrlErrors = useMemo(() => {
+    const ig = form.interactiveGraph?.trim();
+    if (!ig || !interactiveGraphLint.ok) return [];
+    return validateInteractiveSegmentUrls(ig);
+  }, [form.interactiveGraph, interactiveGraphLint.ok]);
+  const interactiveSegments = useMemo(
+    () => parseInteractiveSegments(form.interactiveGraph),
+    [form.interactiveGraph]
+  );
+  const simulatorSegmentsMissingAudio = useMemo(
+    () => interactiveSegments.filter((s) => !s.audioUrl?.trim()),
+    [interactiveSegments]
+  );
+  const simulatorSubmitBlockedByAudio =
+    simulatorSelected && interactiveSegments.length > 0 && simulatorSegmentsMissingAudio.length > 0;
+
+  const segmentStudioLanguage = useMemo(
+    () =>
+      interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY
+        ? (form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase()
+        : interactiveGraphEditLocale.toLowerCase(),
+    [form.language, interactiveGraphEditLocale]
+  );
+
+  const handleInteractiveGraphLocaleChange = useCallback(
+    (next: string) => {
+      const flushed: Record<string, string> = {
+        ...interactiveGraphSlots,
+        [interactiveGraphEditLocale]: form.interactiveGraph ?? "",
+      };
+      const nextBody =
+        next === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY
+          ? flushed[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] ?? ""
+          : flushed[next] ?? flushed[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] ?? "";
+      setInteractiveGraphSlots(flushed);
+      setForm((f) => ({ ...f, interactiveGraph: nextBody }));
+      setInteractiveGraphEditLocale(next);
+    },
+    [form.interactiveGraph, interactiveGraphEditLocale, interactiveGraphSlots]
+  );
+
+  useEffect(() => {
+    setSegmentScripts((prev) => {
+      const next: Record<string, string> = {};
+      for (const seg of interactiveSegments) {
+        next[seg.id] = prev[seg.id]?.trim() ? prev[seg.id] : seg.text;
+      }
+      return next;
+    });
+  }, [interactiveSegments]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SEGMENT_STUDIO_PARENT_STORAGE_KEY)?.trim() ?? "";
+      if (saved) setSegmentVoiceParentId(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -247,7 +380,8 @@ export default function NewLibraryStoryPage() {
           const contentToEdit = resolveLibraryStoryEditorBody(story);
           const parsed = parseJsonStoryContent(contentToEdit);
           const resolved = parsed ?? { content: contentToEdit };
-          const sourceLang = (story.language ?? "ta").toLowerCase();
+          const sourceLang = (story.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase();
+          const masterIg = stringifyInteractiveGraphOverlay(story.interactiveGraph);
           setSavedStoryId(sid);
           setForm({
             title: (story.title ?? resolved.title ?? "")?.trim() || "",
@@ -255,35 +389,30 @@ export default function NewLibraryStoryPage() {
             theme: (resolved.theme ?? story.theme) as string,
             language: sourceLang,
             age: story.age,
-            childName: story.childName ?? "Child",
+            childName: story.childName ?? DEFAULT_LIBRARY_CHILD_NAME,
             moral: (story.moral ?? resolved.moral ?? "")?.trim() || "",
             status: (story.status as CreateLibraryStoryRequest["status"]) ?? "DRAFT",
             coverImageUrl: story.coverImageUrl ?? "",
-            emotionMode: story.emotionMode ?? "CALM",
+            emotionMode: story.emotionMode ?? DEFAULT_LIBRARY_EMOTION_MODE,
             parentDiscussionPrompts: story.parentDiscussionPrompts?.length
               ? [...story.parentDiscussionPrompts]
               : undefined,
             parentContentNote: story.parentContentNote ?? null,
             speakAlongPrompt: story.speakAlongPrompt ?? null,
-            interactiveGraph: (() => {
-              const g = story.interactiveGraph;
-              if (g == null) return "";
-              if (typeof g === "string") return g;
-              try {
-                return JSON.stringify(g, null, 2);
-              } catch {
-                return "";
-              }
-            })(),
+            interactiveGraph: masterIg,
             postStoryMission: story.postStoryMission?.trim() ?? "",
             postStoryResourceUrl: story.postStoryResourceUrl?.trim() ?? "",
           });
           setCoverVideoUrl(story.coverVideoUrl ?? null);
-          const { tabLangs, entries } = await loadTranslationTabEntries(sid, sourceLang);
+          const { tabLangs, entries, graphOverlays } = await loadTranslationTabEntries(sid, sourceLang, masterIg);
           if (cancelled) return;
+          setInteractiveGraphSlots({ [INTERACTIVE_GRAPH_MASTER_LOCALE_KEY]: masterIg, ...graphOverlays });
+          setInteractiveGraphEditLocale(INTERACTIVE_GRAPH_MASTER_LOCALE_KEY);
           setTranslationContentEntries(entries);
           const withText = tabLangs.find((l) => entries[l.code]?.content?.trim());
-          setActiveLangTab(withText?.code ?? tabLangs[0]?.code ?? "en");
+          setActiveLangTab(
+            withText?.code ?? tabLangs[0]?.code ?? defaultTranslationTabLanguage(sourceLang)
+          );
           localStorage.removeItem(AUTOSAVE_KEY);
           return;
         } catch {
@@ -299,8 +428,15 @@ export default function NewLibraryStoryPage() {
             ...f,
             ...parsed,
             theme: parsed.theme?.trim() || STORY_CATEGORIES[0],
-            emotionMode: parsed.emotionMode || "CALM",
+            emotionMode: parsed.emotionMode || DEFAULT_LIBRARY_EMOTION_MODE,
           }));
+          if (typeof parsed.interactiveGraph === "string") {
+            setInteractiveGraphSlots((p) => ({
+              ...p,
+              [INTERACTIVE_GRAPH_MASTER_LOCALE_KEY]: parsed.interactiveGraph as string,
+            }));
+            setInteractiveGraphEditLocale(INTERACTIVE_GRAPH_MASTER_LOCALE_KEY);
+          }
         }
       } catch {
         /* ignore */
@@ -315,7 +451,12 @@ export default function NewLibraryStoryPage() {
     if (savedStoryId != null) return;
     if (!(form.content || form.title)) return;
     autosaveRef.current = setTimeout(() => {
-      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(form));
+      try {
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(form));
+        setLocalDraftSavedAt(Date.now());
+      } catch {
+        /* storage full / private mode */
+      }
     }, AUTOSAVE_DEBOUNCE_MS);
     return () => {
       if (autosaveRef.current) clearTimeout(autosaveRef.current);
@@ -365,20 +506,34 @@ export default function NewLibraryStoryPage() {
   }, [savedStoryId]);
 
   useEffect(() => {
-    const master = (form.language ?? "ta").toLowerCase();
+    const master = (form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase();
     if (activeLangTab === master) {
-      const next = TAB_LANGUAGES.find((l) => l.code !== master)?.code ?? "en";
+      const next = defaultTranslationTabLanguage(master);
       setActiveLangTab(next);
     }
   }, [form.language, activeLangTab]);
 
   const refreshTranslationTabsFromServer = useCallback(
     async (storyId: number) => {
-      const master = (form.language ?? "ta").toLowerCase();
+      const master = (form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase();
       setTranslationsRefreshing(true);
       try {
-        const { tabLangs, entries } = await loadTranslationTabEntries(storyId, master);
+        const masterSlot = (interactiveGraphSlots[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] ?? "").trim();
+        const masterGraphForCompare =
+          masterSlot || stringifyInteractiveGraphOverlay(form.interactiveGraph).trim();
+        const { tabLangs, entries, graphOverlays } = await loadTranslationTabEntries(
+          storyId,
+          master,
+          masterGraphForCompare
+        );
         setTranslationContentEntries(entries);
+        setInteractiveGraphSlots((prev) => {
+          const merged = { ...prev };
+          for (const [code, raw] of Object.entries(graphOverlays)) {
+            merged[code] = raw;
+          }
+          return merged;
+        });
         const withText = tabLangs.find((l) => entries[l.code]?.content?.trim());
         setActiveLangTab((prev) => {
           if (prev !== master && tabLangs.some((l) => l.code === prev)) return prev;
@@ -390,7 +545,7 @@ export default function NewLibraryStoryPage() {
         setTranslationsRefreshing(false);
       }
     },
-    [form.language]
+    [form.language, form.interactiveGraph, interactiveGraphSlots]
   );
 
   const validate = useCallback((): boolean => {
@@ -403,9 +558,12 @@ export default function NewLibraryStoryPage() {
       const scriptErr = getLibraryStoryMasterScriptContentError(form.content, form.language);
       if (scriptErr) errs.content = scriptErr;
     }
-    if (form.title?.trim() && form.title.length > 255)
-      errs.title = "Title must be 255 characters or less";
+    if (form.title?.trim() && form.title.length > ADMIN_LIBRARY_TITLE_MAX_LENGTH)
+      errs.title = `Title must be ${ADMIN_LIBRARY_TITLE_MAX_LENGTH} characters or less`;
     const ig = form.interactiveGraph?.trim();
+    if (simulatorSelected && !ig) {
+      errs.interactiveGraph = 'Simulator category requires "Interactive graph (JSON)".';
+    }
     if (ig) {
       const igLint = lintInteractiveGraphJson(ig);
       if (!igLint.ok) errs.interactiveGraph = igLint.errors.join(" · ");
@@ -416,11 +574,15 @@ export default function NewLibraryStoryPage() {
           else errs.theme = categoryErr;
           errs.interactiveGraph = categoryErr;
         }
+        const segUrlErrs = validateInteractiveSegmentUrls(ig);
+        if (segUrlErrs.length > 0) {
+          errs.interactiveGraph = segUrlErrs.join(" · ");
+        }
       }
     }
     setValidationErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [form, wordCount]);
+  }, [form, wordCount, simulatorSelected]);
 
   const refreshStoryPipelineStatus = useCallback(async (storyId: number) => {
     const status = await api.admin.getLibraryStoryPipelineStatus(storyId);
@@ -441,10 +603,12 @@ export default function NewLibraryStoryPage() {
 
   const pollUntilPipelineIdle = useCallback(
     async (storyId: number) => {
-      const maxRounds = 90;
+      const maxRounds = ADMIN_LIBRARY_PIPELINE_POLL_MAX_ROUNDS;
       let sawBusy = false;
       for (let round = 0; round < maxRounds; round++) {
-        await new Promise((r) => setTimeout(r, round === 0 ? 6000 : 4000));
+        await new Promise((r) =>
+          setTimeout(r, round === 0 ? ADMIN_LIBRARY_PIPELINE_POLL_FIRST_MS : ADMIN_LIBRARY_PIPELINE_POLL_INTERVAL_MS)
+        );
         try {
           const status = await api.admin.getLibraryStoryPipelineStatus(storyId);
           const busy = isLibraryStoryPipelineActivelyRunning(status ?? null);
@@ -466,14 +630,66 @@ export default function NewLibraryStoryPage() {
     [showSuccess, refreshTranslationTabsFromServer]
   );
 
+  const flushInteractiveGraphForApi = useCallback(
+    (body: CreateLibraryStoryRequest) => {
+      const flushed: Record<string, string> = {
+        ...interactiveGraphSlots,
+        [interactiveGraphEditLocale]: body.interactiveGraph ?? "",
+      };
+      const masterGraphStr = flushed[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] ?? "";
+      const masterLang = (body.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase();
+      const translationInteractiveGraphEntries: Record<string, string> = {};
+      for (const { code } of LIBRARY_TAB_LANGUAGES) {
+        if (code === masterLang) continue;
+        if (Object.prototype.hasOwnProperty.call(flushed, code)) {
+          translationInteractiveGraphEntries[code] = flushed[code] ?? "";
+        }
+      }
+      return {
+        masterGraphStr,
+        translationInteractiveGraphEntries:
+          Object.keys(translationInteractiveGraphEntries).length > 0
+            ? translationInteractiveGraphEntries
+            : undefined,
+      };
+    },
+    [interactiveGraphSlots, interactiveGraphEditLocale]
+  );
+
+  /** POST /admin/stories — same field normalization as first persist; includes translation rows so DB seeds match the form before any PUT. */
+  const buildCreateLibraryStoryPayload = useCallback(
+    (status: "DRAFT" | "PUBLISHED"): CreateLibraryStoryRequest => {
+      const translationPayload = buildLibraryTranslationContentPayload(translationContentEntries);
+      const { masterGraphStr, translationInteractiveGraphEntries } = flushInteractiveGraphForApi(form);
+      return {
+        ...form,
+        title: form.title?.trim() || null,
+        moral: form.moral?.trim() || null,
+        status,
+        coverImageUrl: form.coverImageUrl?.trim() || null,
+        coverVideoUrl: coverVideoUrl ?? null,
+        parentContentNote: form.parentContentNote?.trim() || null,
+        speakAlongPrompt: form.speakAlongPrompt?.trim() || null,
+        parentDiscussionPrompts: form.parentDiscussionPrompts?.length ? form.parentDiscussionPrompts : null,
+        interactiveGraph: masterGraphStr.trim() ? masterGraphStr.trim() : null,
+        translationInteractiveGraphEntries,
+        postStoryMission: form.postStoryMission?.trim() || null,
+        postStoryResourceUrl: form.postStoryResourceUrl?.trim() || null,
+        translationContentEntries: translationPayload,
+      };
+    },
+    [form, coverVideoUrl, translationContentEntries, flushInteractiveGraphForApi]
+  );
+
   const buildPersistPayload = useCallback(
     (
       next: CreateLibraryStoryRequest,
       status: "DRAFT" | "PUBLISHED",
-      translationEntries?: Record<string, { content: string; title: string; moral: string }>
+      translationEntries?: Record<string, LibraryTranslationTabFields>
     ) => {
       const entries = translationEntries ?? translationContentEntries;
-      const translationPayload = buildTranslationContentPayload(entries);
+      const translationPayload = buildLibraryTranslationContentPayload(entries);
+      const { masterGraphStr, translationInteractiveGraphEntries } = flushInteractiveGraphForApi(next);
       return {
         ...next,
         title: next.title?.trim() || null,
@@ -483,15 +699,16 @@ export default function NewLibraryStoryPage() {
         coverVideoUrl: coverVideoUrl ?? null,
         regenerateNarration: false,
         translationContentEntries: translationPayload,
+        translationInteractiveGraphEntries,
         parentContentNote: next.parentContentNote?.trim() || null,
         speakAlongPrompt: next.speakAlongPrompt?.trim() || null,
         parentDiscussionPrompts: next.parentDiscussionPrompts?.length ? next.parentDiscussionPrompts : null,
-        interactiveGraph: next.interactiveGraph?.trim() ? next.interactiveGraph.trim() : null,
+        interactiveGraph: masterGraphStr.trim() ? masterGraphStr.trim() : null,
         postStoryMission: next.postStoryMission?.trim() || null,
         postStoryResourceUrl: next.postStoryResourceUrl?.trim() || null,
       };
     },
-    [translationContentEntries, coverVideoUrl]
+    [translationContentEntries, coverVideoUrl, flushInteractiveGraphForApi]
   );
 
   const applyDigitalSafetyTemplate = () => {
@@ -505,14 +722,22 @@ export default function NewLibraryStoryPage() {
       }
     }
     const journalUrl = getDefaultDecisionJournalUrl();
+    const tpl = DIGITAL_SAFETY_INTERACTIVE_GRAPH_TEMPLATE;
     setForm({
       ...form,
       theme: DIGITAL_SAFETY_SIMULATOR_THEME,
-      interactiveGraph: DIGITAL_SAFETY_INTERACTIVE_GRAPH_TEMPLATE,
+      interactiveGraph: tpl,
       postStoryMission: form.postStoryMission?.trim()
         ? form.postStoryMission
         : DIGITAL_SAFETY_SIMULATOR_POST_MISSION,
       postStoryResourceUrl: form.postStoryResourceUrl?.trim() ? form.postStoryResourceUrl : journalUrl || "",
+    });
+    setInteractiveGraphSlots((p) => {
+      const next = { ...p, [interactiveGraphEditLocale]: tpl };
+      if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+        next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = tpl;
+      }
+      return next;
     });
   };
 
@@ -524,11 +749,190 @@ export default function NewLibraryStoryPage() {
     }
     try {
       const obj = JSON.parse(ig) as unknown;
-      setForm({ ...form, interactiveGraph: JSON.stringify(obj, null, 2) });
+      const formatted = JSON.stringify(obj, null, 2);
+      setForm({ ...form, interactiveGraph: formatted });
+      setInteractiveGraphSlots((p) => {
+        const next = { ...p, [interactiveGraphEditLocale]: formatted };
+        if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+          next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = formatted;
+        }
+        return next;
+      });
     } catch (e) {
       showError("Invalid JSON", e instanceof Error ? e.message : "Could not parse JSON.");
     }
   };
+
+  const handleGenerateGraphFromStory = async () => {
+    setSegmentStudioActivity({ kind: "graph" });
+    try {
+      const storyId = await ensureDraftOnServer();
+      const result = await api.admin.generateInteractiveGraphFromStory(storyId, {
+        language: segmentStudioLanguage,
+        storyText: form.content ?? "",
+      });
+      const g = result.interactiveGraph ?? "";
+      setForm((f) => ({ ...f, interactiveGraph: g || (f.interactiveGraph ?? "") }));
+      setInteractiveGraphSlots((p) => {
+        const next = { ...p, [interactiveGraphEditLocale]: g || (p[interactiveGraphEditLocale] ?? "") };
+        if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+          next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = g || (p[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] ?? "");
+        }
+        return next;
+      });
+      showSuccess(
+        "Interactive graph generated",
+        "Segment narration scripts were filled where needed. Review branches, then use Segment Audio Studio for MP3s."
+      );
+    } catch (e) {
+      showError("Graph generation failed", e instanceof Error ? e.message : "Unable to generate interactive graph.");
+    } finally {
+      setSegmentStudioActivity({ kind: "idle" });
+    }
+  };
+
+  const handleGenerateSegmentAudio = async (segmentIds?: string[]) => {
+    const selectedIds = (segmentIds ?? interactiveSegments.map((s) => s.id)).filter(Boolean);
+    if (!selectedIds.length) {
+      showError("No segments", "Add a valid interactive graph first.");
+      return;
+    }
+    const audioScope: "all" | "one" | "some" =
+      selectedIds.length === 1
+        ? "one"
+        : selectedIds.length === interactiveSegments.length
+          ? "all"
+          : "some";
+    setSegmentStudioActivity({ kind: "audio", scope: audioScope, segmentIds: selectedIds });
+    try {
+      const storyId = await ensureDraftOnServer();
+      const segments = selectedIds.map((id) => ({
+        segmentId: id,
+        text: (segmentScripts[id] ?? interactiveSegments.find((s) => s.id === id)?.text ?? "").trim(),
+        overwriteExisting: true,
+      }));
+      const result = await api.admin.generateInteractiveSegmentAudio(storyId, {
+        language: segmentStudioLanguage,
+        voiceProfile: segmentVoiceProfile.trim() || "default",
+        interactiveGraph: form.interactiveGraph?.trim() ?? "",
+        segments,
+      });
+      const g = result.interactiveGraph ?? "";
+      setForm((f) => ({ ...f, interactiveGraph: g || (f.interactiveGraph ?? "") }));
+      setInteractiveGraphSlots((p) => {
+        const next = { ...p, [interactiveGraphEditLocale]: g || (p[interactiveGraphEditLocale] ?? "") };
+        if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+          next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = g || (p[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] ?? "");
+        }
+        return next;
+      });
+      const ok = result.generated?.length ?? 0;
+      const failed = result.failed?.length ?? 0;
+      if (failed > 0) {
+        const failLines = (result.failed ?? [])
+          .map((f) => {
+            const msg = (f.message ?? "failed").replace(/\s+/g, " ").trim();
+            return `${f.segmentId}: ${msg}`;
+          })
+          .join(" · ");
+        const detail =
+          failLines.length > ADMIN_LIBRARY_SEGMENT_ERROR_DETAIL_MAX_CHARS
+            ? `${failLines.slice(0, ADMIN_LIBRARY_SEGMENT_ERROR_DETAIL_MAX_CHARS)}…`
+            : failLines;
+        showError(
+          ok === 0 ? "Segment audio failed" : "Segment audio partially generated",
+          `${ok} generated, ${failed} failed.${detail ? ` ${detail}` : ""}`,
+        );
+      } else {
+        showSuccess("Segment audio generated", `${ok} segment audio URL(s) written into interactive graph.`);
+      }
+    } catch (e) {
+      showError("Segment audio failed", e instanceof Error ? e.message : "Could not generate segment audio.");
+    } finally {
+      setSegmentStudioActivity({ kind: "idle" });
+    }
+  };
+
+  const handleFillMissingSegmentScripts = async () => {
+    const ig = form.interactiveGraph?.trim();
+    if (!ig) {
+      showError("No graph", "Add or paste interactive graph JSON first.");
+      return;
+    }
+    if (!form.content?.trim()) {
+      showError("Story text required", "Add story content so the model can write segment narration.");
+      return;
+    }
+    setSegmentStudioActivity({ kind: "scripts" });
+    try {
+      const storyId = await ensureDraftOnServer();
+      const result = await api.admin.fillInteractiveSegmentScripts(storyId, {
+        language: segmentStudioLanguage,
+        interactiveGraph: ig,
+        storyText: form.content ?? "",
+      });
+      const g = result.interactiveGraph ?? "";
+      setForm((f) => ({ ...f, interactiveGraph: g || (f.interactiveGraph ?? "") }));
+      setInteractiveGraphSlots((p) => {
+        const next = { ...p, [interactiveGraphEditLocale]: g || (p[interactiveGraphEditLocale] ?? "") };
+        if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+          next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = g || (p[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] ?? "");
+        }
+        return next;
+      });
+      const filled = result.filledSegmentIds?.length ?? 0;
+      showSuccess(
+        filled === 0 ? "Segment scripts" : "Segment scripts generated",
+        result.message ?? (filled === 0 ? "All segments already have text." : `${filled} segment(s) updated.`)
+      );
+    } catch (e) {
+      showError("Segment scripts failed", e instanceof Error ? e.message : "Could not fill segment narration.");
+    } finally {
+      setSegmentStudioActivity({ kind: "idle" });
+    }
+  };
+
+  const handleLoadVoiceProfiles = useCallback(async () => {
+    const pid = Number.parseInt(segmentVoiceParentId.trim(), 10);
+    if (!Number.isFinite(pid) || pid <= 0) {
+      showError("Parent ID required", "Enter a valid parent ID to load cloned voices.");
+      return;
+    }
+    setSegmentStudioActivity({ kind: "voices" });
+    try {
+      const profiles = await api.admin.getVoiceProfilesForParent(pid);
+      const clonedOptions = profiles.map((p) => ({
+        value: `cloned:${p.id}`,
+        label: `${p.profileName?.trim() || `Voice ${p.id}`} (cloned:${p.id})`,
+      }));
+      const next = [{ value: "default", label: "Default" }, ...clonedOptions];
+      setSegmentVoiceOptions(next);
+      if (!next.some((o) => o.value === segmentVoiceProfile)) {
+        setSegmentVoiceProfile(next[0]?.value ?? "default");
+      }
+      setSegmentVoiceStatus(
+        clonedOptions.length > 0
+          ? `${clonedOptions.length} cloned voice(s) loaded for parent ${pid}.`
+          : `No cloned voices found for parent ${pid}.`
+      );
+      localStorage.setItem(SEGMENT_STUDIO_PARENT_STORAGE_KEY, String(pid));
+      showSuccess("Voices loaded", `${clonedOptions.length} cloned voice profile(s) available.`);
+    } catch (e) {
+      setSegmentVoiceStatus("Failed to load voices. Check Parent ID and try again.");
+      showError("Load voices failed", e instanceof Error ? e.message : "Could not fetch voice profiles.");
+    } finally {
+      setSegmentStudioActivity({ kind: "idle" });
+    }
+  }, [segmentVoiceParentId, segmentVoiceProfile, showError, showSuccess]);
+
+  useEffect(() => {
+    const pid = Number.parseInt(segmentVoiceParentId.trim(), 10);
+    if (!simulatorSelected || segmentVoiceAutoLoadedRef.current) return;
+    if (!Number.isFinite(pid) || pid <= 0) return;
+    if (segmentVoiceOptions.length > 1) return;
+    segmentVoiceAutoLoadedRef.current = true;
+    void handleLoadVoiceProfiles();
+  }, [segmentVoiceParentId, simulatorSelected, segmentVoiceOptions.length, handleLoadVoiceProfiles]);
 
   /**
    * Ensures a library row exists (CREATE once, then UPDATE). Survives refresh via sessionStorage.
@@ -540,17 +944,7 @@ export default function NewLibraryStoryPage() {
 
     const run = (async (): Promise<number> => {
       try {
-        const created = await api.admin.createLibraryStory({
-          ...form,
-          title: form.title?.trim() || null,
-          moral: form.moral?.trim() || null,
-          status: "DRAFT",
-          coverImageUrl: form.coverImageUrl?.trim() || null,
-          coverVideoUrl: coverVideoUrl ?? null,
-          parentContentNote: form.parentContentNote?.trim() || null,
-          speakAlongPrompt: form.speakAlongPrompt?.trim() || null,
-          parentDiscussionPrompts: form.parentDiscussionPrompts?.length ? form.parentDiscussionPrompts : null,
-        });
+        const created = await api.admin.createLibraryStory(buildCreateLibraryStoryPayload("DRAFT"));
         if (!created?.id) throw new Error("Could not create the library story.");
         localStorage.removeItem(AUTOSAVE_KEY);
         setSavedStoryId(created.id);
@@ -593,11 +987,11 @@ export default function NewLibraryStoryPage() {
   }, [
     savedStoryId,
     form,
-    coverVideoUrl,
     refreshStoryPipelineStatus,
     refreshRegenerateStatus,
     refreshTranslationTabsFromServer,
     showSuccess,
+    buildCreateLibraryStoryPayload,
   ]);
 
   const handleSaveDraft = async () => {
@@ -630,6 +1024,13 @@ export default function NewLibraryStoryPage() {
       showError("Validation failed", "Please fix the validation errors before submitting.");
       return;
     }
+    if (simulatorSubmitBlockedByAudio) {
+      showError(
+        "Segment audio missing",
+        "Simulator stories require audioUrl for all segments before submitting. Use Segment Audio Studio to generate missing audio."
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       let id = savedStoryId;
@@ -649,17 +1050,7 @@ export default function NewLibraryStoryPage() {
         await api.admin.updateLibraryStory(id, buildPersistPayload(form, "PUBLISHED"));
       } else {
         try {
-          const created = await api.admin.createLibraryStory({
-            ...form,
-            title: form.title?.trim() || null,
-            moral: form.moral?.trim() || null,
-            status: "PUBLISHED",
-            coverImageUrl: form.coverImageUrl?.trim() || null,
-            coverVideoUrl: coverVideoUrl ?? null,
-            parentContentNote: form.parentContentNote?.trim() || null,
-            speakAlongPrompt: form.speakAlongPrompt?.trim() || null,
-            parentDiscussionPrompts: form.parentDiscussionPrompts?.length ? form.parentDiscussionPrompts : null,
-          });
+          const created = await api.admin.createLibraryStory(buildCreateLibraryStoryPayload("PUBLISHED"));
           if (!created?.id) throw new Error("Could not create the story.");
           id = created.id;
           localStorage.removeItem(AUTOSAVE_KEY);
@@ -736,7 +1127,7 @@ export default function NewLibraryStoryPage() {
         storyId,
         form.content,
         true,
-        form.language ?? "ta",
+        form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE,
         regenerateCustomPrompt.trim() || null
       );
       const parsed =
@@ -775,10 +1166,13 @@ export default function NewLibraryStoryPage() {
       if (result.translations && typeof result.translations === "object") {
         for (const [lang, entry] of Object.entries(result.translations)) {
           if (entry && typeof entry === "object") {
+            const prev = nextEntries[lang] ?? emptyLibraryTranslationTab();
             nextEntries[lang] = {
               content: (entry.content ?? "").trim(),
               title: (entry.title ?? "").trim(),
               moral: (entry.moral ?? "").trim(),
+              postStoryMission: prev.postStoryMission,
+              postStoryResourceUrl: prev.postStoryResourceUrl,
             };
           }
         }
@@ -788,8 +1182,8 @@ export default function NewLibraryStoryPage() {
       setTranslationContentEntries(nextEntries);
 
       const regeneratedTranslations = result.translations ?? {};
-      const sourceLang = (form.language ?? "ta").toLowerCase();
-      const expectedTargetLangs = TAB_LANGUAGES.map((l) => l.code).filter((code) => code !== sourceLang);
+      const sourceLang = (form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase();
+      const expectedTargetLangs = LIBRARY_TAB_LANGUAGES.map((l) => l.code).filter((code) => code !== sourceLang);
       const hasAllRegeneratedTargets = expectedTargetLangs.every((lang) => {
         const entry = regeneratedTranslations[lang];
         return !!entry?.content?.trim();
@@ -851,9 +1245,53 @@ export default function NewLibraryStoryPage() {
   const regenerateBusy = scriptSyncInProgress || storyPipelineRunning || regenerateServerRunning;
 
   const langLabel = (code: string) =>
-    SOURCE_LANGUAGES.find((l) => l.code === code)?.label?.replace(/ \(recommended\)/, "") ?? code;
+    LIBRARY_SOURCE_LANGUAGE_OPTIONS.find((l) => l.code === code)?.label?.replace(/ \(recommended\)/, "") ?? code;
 
   const canSubmitForReview = canSubmitLibraryStoryForReview(form.status, !!form.content?.trim());
+  const submitReady =
+    canSubmitForReview &&
+    !(savedStoryId != null && storyPipelineRunning) &&
+    !simulatorSubmitBlockedByAudio;
+
+  const creationProgressSteps = useMemo(
+    () =>
+      buildLibraryStoryAdminProgressSteps({
+        minWordCount: MIN_WORD_COUNT,
+        wordCount,
+        titleTrimmed: !!form.title?.trim(),
+        themeSet: !!form.theme,
+        contentTrimmed: !!form.content?.trim(),
+        simulatorSelected,
+        simulatorGraphFieldsOk:
+          !!form.interactiveGraph?.trim() && interactiveGraphLint.ok && interactiveSegmentUrlErrors.length === 0,
+        onServer: savedStoryId != null,
+        regenerateBusy,
+        hasCover: !!(form.coverImageUrl?.trim() || coverVideoUrl?.trim()),
+        submitReady,
+      }),
+    [
+      wordCount,
+      form.title,
+      form.theme,
+      form.content,
+      form.interactiveGraph,
+      form.coverImageUrl,
+      simulatorSelected,
+      interactiveGraphLint.ok,
+      interactiveSegmentUrlErrors.length,
+      savedStoryId,
+      regenerateBusy,
+      coverVideoUrl,
+      submitReady,
+    ]
+  );
+
+  const [, setDraftAutosaveTick] = useState(0);
+  useEffect(() => {
+    if (savedStoryId != null || localDraftSavedAt == null) return;
+    const id = window.setInterval(() => setDraftAutosaveTick((t) => t + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, [savedStoryId, localDraftSavedAt]);
 
   const startNewStory = useCallback(() => {
     sessionStorage.removeItem(ADMIN_NEW_STORY_SESSION_ID_KEY);
@@ -865,21 +1303,14 @@ export default function NewLibraryStoryPage() {
     setValidationErrors({});
     setRegenerateServerRunning(false);
     setStoryPipelineRunning(false);
-    setForm({
-      title: "",
-      content: "",
-      theme: STORY_CATEGORIES[0],
-      language: "ta",
-      age: 5,
-      childName: "Child",
-      moral: "",
-      status: "DRAFT",
-      emotionMode: "CALM",
-      parentDiscussionPrompts: undefined,
-      parentContentNote: null,
-      speakAlongPrompt: null,
-    });
-    setActiveLangTab("en");
+    setForm(newEmptyLibraryStoryForm());
+    setLocalDraftSavedAt(null);
+    setInteractiveGraphSlots({ [INTERACTIVE_GRAPH_MASTER_LOCALE_KEY]: "" });
+    setInteractiveGraphEditLocale(INTERACTIVE_GRAPH_MASTER_LOCALE_KEY);
+    setActiveLangTab(defaultTranslationTabLanguage(DEFAULT_LIBRARY_SOURCE_LANGUAGE));
+    setSegmentScripts({});
+    setSegmentStudioActivity({ kind: "idle" });
+    setSegmentVoiceStatus(null);
   }, []);
 
   return (
@@ -905,12 +1336,45 @@ export default function NewLibraryStoryPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               <strong>Regenerate &amp; sync</strong> uses the story text in this form and starts Tamixa conversion + all
               languages (a library row is created automatically the first time). Then cover, then submit. Autosave · Min{" "}
-              {MIN_WORD_COUNT} words · Master: {langLabel(form.language ?? "ta")}
-              {form.language !== "en"
-                ? ` · ${langLabel(form.language ?? "ta")} script rules apply when master is not English`
+              {MIN_WORD_COUNT} words · Master: {langLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)}
+              {(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase() !== LIBRARY_ENGLISH_LANGUAGE_CODE
+                ? ` · ${langLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)} script rules apply when master is not English`
                 : ""}
             </p>
           </div>
+        </div>
+        <div
+          className="flex flex-wrap gap-2 sm:gap-3 border border-border/60 rounded-xl bg-background/80 p-3"
+          aria-label="Story creation progress"
+        >
+          {creationProgressSteps.map((step, i) => (
+            <div key={step.id} className="flex items-center gap-2 text-xs sm:text-sm">
+              <span
+                className={cn(
+                  "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tabular-nums",
+                  step.done
+                    ? "bg-emerald-600 text-white dark:bg-emerald-600"
+                    : "busy" in step && step.busy
+                      ? "bg-primary text-primary-foreground animate-pulse"
+                      : "bg-muted text-muted-foreground"
+                )}
+                aria-hidden
+              >
+                {step.done ? "✓" : i + 1}
+              </span>
+              <span
+                className={cn(
+                  "font-medium",
+                  step.done ? "text-foreground" : "text-muted-foreground"
+                )}
+              >
+                {step.label}
+                {"optional" in step && step.optional ? (
+                  <span className="font-normal text-muted-foreground"> · optional</span>
+                ) : null}
+              </span>
+            </div>
+          ))}
         </div>
         <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground border border-border/60 rounded-xl bg-background/80 p-4">
           <li>
@@ -948,6 +1412,14 @@ export default function NewLibraryStoryPage() {
                   <>
                     No library row yet — <strong>Regenerate &amp; sync</strong> (or Save draft / Cover / Submit) will create
                     one from this form.
+                    {localDraftSavedAt != null ? (
+                      <>
+                        {" "}
+                        <span className="text-foreground/90">
+                          Local draft saved {formatDraftAutosavedLabel(localDraftSavedAt)} (this device).
+                        </span>
+                      </>
+                    ) : null}
                   </>
                 )}
               </p>
@@ -956,7 +1428,7 @@ export default function NewLibraryStoryPage() {
               <div>
                 <Label htmlFor="sourceLang">Language *</Label>
                 <Select
-                  value={form.language ?? "ta"}
+                  value={form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE}
                   disabled={savedStoryId != null && regenerateBusy}
                   onValueChange={(v) => setForm((f) => ({ ...f, language: v }))}
                 >
@@ -964,7 +1436,7 @@ export default function NewLibraryStoryPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {SOURCE_LANGUAGES.map((l) => (
+                    {LIBRARY_SOURCE_LANGUAGE_OPTIONS.map((l) => (
                       <SelectItem key={l.code} value={l.code}>
                         {l.label}
                       </SelectItem>
@@ -982,7 +1454,7 @@ export default function NewLibraryStoryPage() {
                 ) : null}
               </div>
               <div>
-                <Label htmlFor="title">Title ({langLabel(form.language ?? "ta")}) *</Label>
+                <Label htmlFor="title">Title ({langLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)}) *</Label>
                 <Input
                   id="title"
                   value={form.title ?? ""}
@@ -990,13 +1462,26 @@ export default function NewLibraryStoryPage() {
                   placeholder="e.g. அறிவுள்ள காகம்"
                   className="mt-1 rounded-xl"
                   dir="ltr"
+                  maxLength={ADMIN_LIBRARY_TITLE_MAX_LENGTH}
                 />
                 {validationErrors.title && (
                   <p className="text-sm text-destructive mt-1">{validationErrors.title}</p>
                 )}
               </div>
               <div>
-                <Label htmlFor="theme">Category *</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="theme">Category *</Label>
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+                      simulatorSelected
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {simulatorSelected ? "Interactive mode enabled" : "Linear mode"}
+                  </span>
+                </div>
                 <Select value={form.theme} onValueChange={(v) => setForm((f) => ({ ...f, theme: v }))}>
                   <SelectTrigger className="mt-1 rounded-xl">
                     <SelectValue placeholder="Select category" />
@@ -1017,21 +1502,39 @@ export default function NewLibraryStoryPage() {
                 ) : null}
               </div>
               <div>
-                <Label htmlFor="content">Story text ({langLabel(form.language ?? "ta")}) *</Label>
+                <Label htmlFor="content">Story text ({langLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)}) *</Label>
                 <textarea
                   id="content"
                   value={form.content}
                   onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-                  placeholder={`Enter full story text in ${langLabel(form.language ?? "ta")}…`}
+                  placeholder={`Enter full story text in ${langLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)}…`}
                   className="mt-1 flex min-h-[280px] w-full rounded-xl border-2 border-input bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   dir="ltr"
                 />
-                <div className="flex justify-between mt-1">
-                  <span
-                    className={cn("text-xs", isValidWordCount ? "text-muted-foreground" : "text-destructive")}
+                <div className="mt-2 space-y-1">
+                  <div
+                    className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={MIN_WORD_COUNT}
+                    aria-valuenow={Math.min(wordCount, MIN_WORD_COUNT)}
+                    aria-label="Minimum word count progress"
                   >
-                    {wordCount} / {MIN_WORD_COUNT} words
-                  </span>
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-[width] duration-300",
+                        isValidWordCount ? "bg-emerald-500 dark:bg-emerald-600" : "bg-primary/70"
+                      )}
+                      style={{ width: `${Math.min(100, (wordCount / Math.max(MIN_WORD_COUNT, 1)) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between">
+                    <span
+                      className={cn("text-xs", isValidWordCount ? "text-muted-foreground" : "text-destructive")}
+                    >
+                      {wordCount} / {MIN_WORD_COUNT} words minimum
+                    </span>
+                  </div>
                 </div>
                 {validationErrors.content && (
                   <p className="text-sm text-destructive">{validationErrors.content}</p>
@@ -1101,42 +1604,148 @@ export default function NewLibraryStoryPage() {
                   />
                 </div>
               </div>
-              <div className="rounded-xl border border-border/80 bg-muted/10 p-4 space-y-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
+              <div
+                className={cn(
+                  "rounded-xl border p-4 space-y-3 transition-opacity",
+                  simulatorSelected
+                    ? "border-border/80 bg-muted/10"
+                    : "border-border/50 bg-muted/5 opacity-70"
+                )}
+              >
+                <div className="flex flex-col gap-3">
+                  <div className="w-full min-w-0 space-y-2">
                     <p className="text-sm font-semibold">Interactive episode (EduStory pilot)</p>
-                    <p className="text-xs text-muted-foreground mt-1 max-w-prose">
-                      Same as <strong>Edit</strong>: valid JSON with{" "}
-                      <code className="rounded bg-muted px-1">startSegmentId</code> and{" "}
-                      <code className="rounded bg-muted px-1">segments</code> (each segment:{" "}
-                      <code className="rounded bg-muted px-1">audioUrl</code>, optional{" "}
-                      <code className="rounded bg-muted px-1">choices</code>). Leave empty for linear playback only.
-                    </p>
+                    {simulatorSelected ? (
+                      <InteractiveGraphSchemaHint />
+                    ) : (
+                      <p className="text-xs text-muted-foreground max-w-prose leading-relaxed">
+                        Select a category that starts with <strong>Learn · Simulator</strong> to enable interactive graph
+                        entry. For linear Fun/Learn stories, leave this section empty.
+                      </p>
+                    )}
                   </div>
-                  <div className="flex flex-wrap gap-2 shrink-0">
-                    <Button type="button" variant="secondary" size="sm" onClick={applyDigitalSafetyTemplate}>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={applyDigitalSafetyTemplate}
+                      disabled={!simulatorSelected}
+                    >
                       <LayoutTemplate className="h-4 w-4 mr-1.5" />
                       Digital Safety template
                     </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={formatInteractiveGraphField}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={formatInteractiveGraphField}
+                      disabled={!simulatorSelected}
+                    >
                       <Braces className="h-4 w-4 mr-1.5" />
                       Format JSON
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleGenerateGraphFromStory}
+                      disabled={!simulatorSelected || !form.content?.trim() || segmentStudioBusy}
+                    >
+                      {segmentStudioActivity.kind === "graph" ? (
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 mr-1.5" />
+                      )}
+                      {segmentStudioActivity.kind === "graph" ? "Generating graph…" : "Generate graph from story"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleFillMissingSegmentScripts()}
+                      disabled={
+                        !simulatorSelected ||
+                        !form.interactiveGraph?.trim() ||
+                        !form.content?.trim() ||
+                        !interactiveGraphLint.ok ||
+                        segmentStudioBusy
+                      }
+                      title="Uses the LLM to write spoken lines for any segment with empty text."
+                    >
+                      {segmentStudioActivity.kind === "scripts" ? (
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                      ) : (
+                        <FileText className="h-4 w-4 mr-1.5" />
+                      )}
+                      {segmentStudioActivity.kind === "scripts" ? "Generating scripts…" : "Generate missing segment scripts"}
                     </Button>
                     <Button type="button" variant="ghost" size="sm" asChild>
                       <Link href="/dashboard/edu-simulator-analytics">Choice analytics</Link>
                     </Button>
                   </div>
                 </div>
+                {segmentStudioActivityMessage(segmentStudioActivity) ? (
+                  <div
+                    role="status"
+                    className="flex items-center gap-2 rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-foreground"
+                  >
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" aria-hidden />
+                    <span>{segmentStudioActivityMessage(segmentStudioActivity)}</span>
+                  </div>
+                ) : null}
                 <div>
-                  <Label htmlFor="interactiveGraph">Interactive graph (JSON)</Label>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <Label htmlFor="interactiveGraph">Interactive graph (JSON)</Label>
+                    <div className="flex flex-col gap-1 sm:items-end">
+                      <Label className="text-xs text-muted-foreground font-normal">Graph locale</Label>
+                      <Select
+                        value={interactiveGraphEditLocale}
+                        onValueChange={(v) => handleInteractiveGraphLocaleChange(v)}
+                        disabled={!simulatorSelected}
+                      >
+                        <SelectTrigger className="h-8 w-full sm:w-[220px] rounded-lg text-xs">
+                          <SelectValue placeholder="Locale" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={INTERACTIVE_GRAPH_MASTER_LOCALE_KEY}>
+                            Master ({langLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)})
+                          </SelectItem>
+                          {LIBRARY_TAB_LANGUAGES.filter((l) => l.code !== form.language).map(({ code, label }) => (
+                            <SelectItem key={code} value={code}>
+                              {label} ({code})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-muted-foreground max-w-[280px] sm:text-right">
+                        Per-locale graphs are saved with the draft (same as Edit). TTS and script fill use this locale.
+                        Choosing a tab under Other languages also switches graph locale and loads locale-specific JSON when
+                        the API differs from master (e.g. English segment audio URLs).
+                      </p>
+                    </div>
+                  </div>
                   <textarea
                     id="interactiveGraph"
                     value={form.interactiveGraph ?? ""}
-                    onChange={(e) => setForm((f) => ({ ...f, interactiveGraph: e.target.value || "" }))}
+                    onChange={(e) => {
+                      const v = e.target.value || "";
+                      setForm((f) => ({ ...f, interactiveGraph: v }));
+                      setInteractiveGraphSlots((p) => {
+                        const next = { ...p, [interactiveGraphEditLocale]: v };
+                        if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+                          next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = v;
+                        }
+                        return next;
+                      });
+                    }}
                     className="mt-1 flex min-h-[240px] w-full rounded-xl border-2 border-input bg-background px-3 py-2 text-sm font-mono text-xs"
                     spellCheck={false}
+                    disabled={!simulatorSelected}
                   />
-                  {validationErrors.interactiveGraph ? (
+                  {interactiveGraphRequiredError && !validationErrors.interactiveGraph ? (
+                    <p className="text-sm text-destructive mt-2">{interactiveGraphRequiredError}</p>
+                  ) : validationErrors.interactiveGraph ? (
                     <p className="text-sm text-destructive mt-2">{validationErrors.interactiveGraph}</p>
                   ) : !interactiveGraphLint.ok ? (
                     <ul className="text-sm text-destructive mt-2 list-disc pl-5 space-y-0.5">
@@ -1146,6 +1755,29 @@ export default function NewLibraryStoryPage() {
                     </ul>
                   ) : form.interactiveGraph?.trim() ? (
                     <p className="text-sm text-muted-foreground mt-2">Interactive graph JSON looks valid.</p>
+                  ) : null}
+                  {simulatorSelected && interactiveSegmentUrlErrors.length > 0 ? (
+                    <ul className="text-sm text-destructive mt-2 list-disc pl-5 space-y-0.5">
+                      {interactiveSegmentUrlErrors.map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {simulatorSelected ? (
+                    <div className="mt-3 rounded-md border border-border/60 bg-background/80 p-3 text-xs space-y-1.5">
+                      <p className="font-semibold text-foreground">Interactive checklist</p>
+                      <p className={form.interactiveGraph?.trim() ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500"}>
+                        {form.interactiveGraph?.trim() ? "✓ Graph added" : "• Add interactive graph JSON"}
+                      </p>
+                      <p className={interactiveGraphLint.ok ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500"}>
+                        {interactiveGraphLint.ok ? "✓ Graph structure valid" : "• Fix graph JSON lint issues"}
+                      </p>
+                      <p className={interactiveSegmentUrlErrors.length === 0 ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500"}>
+                        {interactiveSegmentUrlErrors.length === 0
+                          ? "✓ Segment URLs (HTTPS MP3, or dev http on LAN)"
+                          : "• Fix segment audioUrl HTTPS/MP3 issues"}
+                      </p>
+                    </div>
                   ) : null}
                 </div>
                 {interactiveGraphOutline && interactiveGraphOutline.length > 0 ? (
@@ -1172,6 +1804,121 @@ export default function NewLibraryStoryPage() {
                     </ol>
                   </div>
                 ) : null}
+                {simulatorSelected ? (
+                  <div className="rounded-md border border-border/60 bg-background/80 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Segment Audio Studio
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => void handleGenerateSegmentAudio()}
+                        disabled={
+                          segmentStudioBusy ||
+                          interactiveSegments.length === 0 ||
+                          !interactiveGraphLint.ok
+                        }
+                      >
+                        {segmentStudioActivity.kind === "audio" &&
+                        (segmentStudioActivity.scope === "all" || segmentStudioActivity.scope === "some") ? (
+                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 mr-1.5" />
+                        )}
+                        {segmentStudioActivity.kind === "audio" &&
+                        (segmentStudioActivity.scope === "all" || segmentStudioActivity.scope === "some")
+                          ? "Generating audio…"
+                          : "Generate all segment audio"}
+                      </Button>
+                    </div>
+                    <div>
+                      <Label htmlFor="segmentVoiceProfile" className="text-xs">Voice profile</Label>
+                      <Select
+                        value={segmentVoiceProfile}
+                        onValueChange={setSegmentVoiceProfile}
+                      >
+                        <SelectTrigger id="segmentVoiceProfile" className="mt-1 h-8 rounded-lg text-xs">
+                          <SelectValue placeholder="Select voice profile" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {segmentVoiceOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="mt-2 flex gap-2">
+                        <Input
+                          value={segmentVoiceParentId}
+                          onChange={(e) => setSegmentVoiceParentId(e.target.value)}
+                          className="h-8 rounded-lg text-xs"
+                          placeholder="Parent ID for cloned voices"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={handleLoadVoiceProfiles}
+                          disabled={segmentStudioBusy}
+                        >
+                          {segmentStudioActivity.kind === "voices" ? (
+                            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                          ) : null}
+                          {segmentStudioActivity.kind === "voices" ? "Loading…" : "Load voices"}
+                        </Button>
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {segmentVoiceStatus ?? "Tip: load voices with Parent ID, then pick cloned:{id}. Keep Default as fallback."}
+                      </p>
+                    </div>
+                    {interactiveSegments.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Add a valid graph to parse segments. Then generate audio URLs in one click.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {interactiveSegments.map((seg) => (
+                          <div key={seg.id} className="rounded border border-border/60 p-2 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <code className="text-xs">{seg.id}</code>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void handleGenerateSegmentAudio([seg.id])}
+                                disabled={segmentStudioBusy || !interactiveGraphLint.ok}
+                              >
+                                {segmentStudioActivity.kind === "audio" &&
+                                segmentStudioActivity.segmentIds.includes(seg.id) ? (
+                                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                                ) : null}
+                                {segmentStudioActivity.kind === "audio" &&
+                                segmentStudioActivity.segmentIds.includes(seg.id)
+                                  ? "Generating…"
+                                  : "Generate audio"}
+                              </Button>
+                            </div>
+                            <textarea
+                              value={segmentScripts[seg.id] ?? seg.text}
+                              onChange={(e) =>
+                                setSegmentScripts((prev) => ({ ...prev, [seg.id]: e.target.value }))
+                              }
+                              className="flex min-h-[68px] w-full rounded border border-input bg-background px-2 py-1.5 text-xs"
+                              placeholder="Segment narration script"
+                              spellCheck={false}
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              {seg.audioUrl ? `Current audio: ${seg.audioUrl}` : "Audio missing"}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
                 <div>
                   <Label htmlFor="postStoryMission">Post-episode family mission (plain text)</Label>
                   <textarea
@@ -1182,6 +1929,7 @@ export default function NewLibraryStoryPage() {
                     }
                     className="mt-1 flex min-h-[80px] w-full rounded-xl border-2 border-input bg-background px-3 py-2 text-sm"
                     maxLength={8000}
+                    disabled={!simulatorSelected}
                   />
                 </div>
                 <div>
@@ -1200,6 +1948,7 @@ export default function NewLibraryStoryPage() {
                     className="mt-1 rounded-xl"
                     maxLength={512}
                     placeholder="https://..."
+                    disabled={!simulatorSelected}
                   />
                 </div>
               </div>
@@ -1245,7 +1994,7 @@ export default function NewLibraryStoryPage() {
                 <Label htmlFor="childName">Child name placeholder</Label>
                 <Input
                   id="childName"
-                  value={form.childName ?? "Child"}
+                  value={form.childName ?? DEFAULT_LIBRARY_CHILD_NAME}
                   onChange={(e) => setForm((f) => ({ ...f, childName: e.target.value }))}
                   className="mt-1 rounded-xl"
                 />
@@ -1260,8 +2009,9 @@ export default function NewLibraryStoryPage() {
                   <div>
                     <CardTitle className="text-base font-bold">Other languages</CardTitle>
                     <p className="text-sm text-muted-foreground mt-0.5">
-                      Text loaded from the server after <strong>Regenerate &amp; sync</strong> (or when the pipeline
-                      finishes). Edit here, then use <strong>Update draft</strong> to save tab changes.
+                      Text loads from the server after <strong>Regenerate &amp; sync</strong> (or when the pipeline
+                      finishes). You can <strong>Copy from master</strong> to seed a tab, then edit. Use{" "}
+                      <strong>Update draft</strong> to save tab changes.
                     </p>
                   </div>
                   <Button
@@ -1279,11 +2029,14 @@ export default function NewLibraryStoryPage() {
               </CardHeader>
               <CardContent className="space-y-4 pt-6">
                 <div className="flex gap-1 flex-wrap">
-                  {TAB_LANGUAGES.filter((l) => l.code !== form.language).map(({ code, label }) => (
+                  {LIBRARY_TAB_LANGUAGES.filter((l) => l.code !== form.language).map(({ code, label }) => (
                     <button
                       key={code}
                       type="button"
-                      onClick={() => setActiveLangTab(code)}
+                      onClick={() => {
+                        setActiveLangTab(code);
+                        handleInteractiveGraphLocaleChange(code);
+                      }}
                       className={cn(
                         "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
                         activeLangTab === code
@@ -1295,11 +2048,49 @@ export default function NewLibraryStoryPage() {
                     </button>
                   ))}
                 </div>
-                {TAB_LANGUAGES.filter((l) => l.code !== form.language).map(({ code, label }) => {
+                {LIBRARY_TAB_LANGUAGES.filter((l) => l.code !== form.language).map(({ code, label }) => {
                   if (activeLangTab !== code) return null;
-                  const entry = translationContentEntries[code] ?? { content: "", title: "", moral: "" };
+                  const entry = translationContentEntries[code] ?? emptyLibraryTranslationTab();
+                  const masterCode = form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE;
+                  const masterLbl = langLabel(masterCode);
+                  const tabEmpty =
+                    !entry.content?.trim() &&
+                    !entry.title?.trim() &&
+                    !entry.moral?.trim() &&
+                    !entry.postStoryMission?.trim() &&
+                    !entry.postStoryResourceUrl?.trim();
                   return (
                     <div key={code} className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="rounded-lg"
+                          disabled={!form.content?.trim() && !form.title?.trim()}
+                          onClick={() => {
+                            setTranslationContentEntries((p) => ({
+                              ...p,
+                              [code]: {
+                                content: form.content ?? "",
+                                title: (form.title ?? "").trim(),
+                                moral: (form.moral ?? "").trim(),
+                                postStoryMission: (form.postStoryMission ?? "").trim(),
+                                postStoryResourceUrl: (form.postStoryResourceUrl ?? "").trim(),
+                              },
+                            }));
+                            showSuccess(
+                              "Copied from master",
+                              `${masterLbl} fields copied into ${label}. Edit the translation, then Update draft.`
+                            );
+                          }}
+                        >
+                          Copy from master ({masterLbl})
+                        </Button>
+                        {tabEmpty ? (
+                          <span className="text-xs text-muted-foreground">Tab is empty — paste, sync, or copy to start.</span>
+                        ) : null}
+                      </div>
                       <div>
                         <Label htmlFor={`new-tl-title-${code}`}>Title</Label>
                         <Input
@@ -1308,7 +2099,7 @@ export default function NewLibraryStoryPage() {
                           onChange={(e) =>
                             setTranslationContentEntries((p) => ({
                               ...p,
-                              [code]: { ...(p[code] ?? { content: "", title: "", moral: "" }), title: e.target.value },
+                              [code]: { ...(p[code] ?? emptyLibraryTranslationTab()), title: e.target.value },
                             }))
                           }
                           placeholder={`Title in ${label}`}
@@ -1324,7 +2115,7 @@ export default function NewLibraryStoryPage() {
                             setTranslationContentEntries((p) => ({
                               ...p,
                               [code]: {
-                                ...(p[code] ?? { content: "", title: "", moral: "" }),
+                                ...(p[code] ?? emptyLibraryTranslationTab()),
                                 content: e.target.value,
                               },
                             }))
@@ -1345,11 +2136,46 @@ export default function NewLibraryStoryPage() {
                           onChange={(e) =>
                             setTranslationContentEntries((p) => ({
                               ...p,
-                              [code]: { ...(p[code] ?? { content: "", title: "", moral: "" }), moral: e.target.value },
+                              [code]: { ...(p[code] ?? emptyLibraryTranslationTab()), moral: e.target.value },
                             }))
                           }
                           placeholder={`Moral in ${label}`}
                           className="mt-1 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`new-tl-mission-${code}`}>Post-episode family mission ({label})</Label>
+                        <textarea
+                          id={`new-tl-mission-${code}`}
+                          value={entry.postStoryMission}
+                          onChange={(e) =>
+                            setTranslationContentEntries((p) => ({
+                              ...p,
+                              [code]: { ...(p[code] ?? emptyLibraryTranslationTab()), postStoryMission: e.target.value },
+                            }))
+                          }
+                          placeholder={`Plain text for parents after the episode in ${label}. Empty uses master story values.`}
+                          className="mt-1 flex min-h-[72px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                          maxLength={ADMIN_LIBRARY_POST_MISSION_MAX_CHARS}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`new-tl-resource-${code}`}>Post-episode resource URL ({label})</Label>
+                        <Input
+                          id={`new-tl-resource-${code}`}
+                          value={entry.postStoryResourceUrl}
+                          onChange={(e) =>
+                            setTranslationContentEntries((p) => ({
+                              ...p,
+                              [code]: {
+                                ...(p[code] ?? emptyLibraryTranslationTab()),
+                                postStoryResourceUrl: e.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Optional link (inherits master if empty)"
+                          className="mt-1 rounded-lg"
+                          maxLength={ADMIN_LIBRARY_POST_RESOURCE_URL_MAX_CHARS}
                         />
                       </div>
                     </div>
@@ -1545,10 +2371,17 @@ export default function NewLibraryStoryPage() {
                 size="default"
                 className="w-full rounded-xl"
                 variant="primary"
-                disabled={submitting || !canSubmitForReview || (savedStoryId != null && storyPipelineRunning)}
+                disabled={
+                  submitting ||
+                  !canSubmitForReview ||
+                  (savedStoryId != null && storyPipelineRunning) ||
+                  simulatorSubmitBlockedByAudio
+                }
                 title={
                   storyPipelineRunning
                     ? "Wait for pipeline to finish"
+                    : simulatorSubmitBlockedByAudio
+                      ? "Generate audio for all simulator segments first"
                     : !canSubmitForReview
                       ? "Add story content first"
                       : undefined
@@ -1556,6 +2389,26 @@ export default function NewLibraryStoryPage() {
               >
                 {submitting ? "Submitting…" : "Submit for review"}
               </Button>
+              {simulatorSubmitBlockedByAudio ? (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-amber-600 dark:text-amber-500">
+                    Blocked: {simulatorSegmentsMissingAudio.length} segment(s) missing audioUrl. Generate all segment
+                    audio in Segment Audio Studio before submitting.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleGenerateSegmentAudio(simulatorSegmentsMissingAudio.map((s) => s.id))}
+                    disabled={segmentStudioBusy || submitting}
+                  >
+                    {segmentStudioActivity.kind === "audio" ? (
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                    ) : null}
+                    {segmentStudioActivity.kind === "audio" ? "Generating audio…" : "Generate all missing now"}
+                  </Button>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 

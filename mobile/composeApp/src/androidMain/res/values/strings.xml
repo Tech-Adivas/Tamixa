@@ -3,5 +3,5 @@
     <string name="app_name">Tamixa</string>
     <string name="audio_playback_attribution">Audio playback for stories</string>
     <!-- Empty string for platform attribution tag workaround (Android 16+) -->
-    <string name="attribution_empty"></string>
+    <string name="attribution_empty" />
 </resources>

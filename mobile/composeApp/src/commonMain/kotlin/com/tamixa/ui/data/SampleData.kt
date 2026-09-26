@@ -30,6 +30,15 @@ object SampleData {
         "Learn · Life Skills",
         "Learn · Digital Safety",
         "Learn · Simulator · Digital Safety",
+        "Learn · Simulator · Money",
+        "Learn · Simulator · Leadership",
+        "Learn · Simulator · Business",
+        "Learn · Simulator · Ethics",
+        "Learn · Simulator · Life Skills",
+        "Learn · Simulator · Mental Health",
+        "Learn · Simulator · Communication",
+        "Learn · Simulator · Adulting & Survival",
+        "Learn · Simulator · Civic Survival",
     )
 
     /** English fallback for TTS when Tamil/other language packs are not installed. */

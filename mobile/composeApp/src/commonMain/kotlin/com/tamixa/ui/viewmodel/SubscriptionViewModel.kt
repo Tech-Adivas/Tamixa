@@ -45,6 +45,7 @@ class SubscriptionViewModel(
                 _usage.value = repository.getUsage()
             } catch (e: Throwable) {
                 _loadError.value = e.message ?: "Failed to load subscription"
+                _usage.value = null
             } finally {
                 _loading.value = false
             }

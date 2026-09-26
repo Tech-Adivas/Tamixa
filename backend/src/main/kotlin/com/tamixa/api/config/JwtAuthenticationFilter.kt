@@ -1,6 +1,7 @@
 package com.tamixa.api.config
 
 import com.tamixa.application.port.JwtPort
+import com.tamixa.application.port.TokenRevocationPort
 import com.tamixa.infrastructure.logging.PiiMask
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
@@ -14,7 +15,8 @@ import org.springframework.web.filter.OncePerRequestFilter
 
 @Component
 class JwtAuthenticationFilter(
-    private val jwtPort: JwtPort
+    private val jwtPort: JwtPort,
+    private val tokenRevocationPort: TokenRevocationPort
 ) : OncePerRequestFilter() {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -27,8 +29,22 @@ class JwtAuthenticationFilter(
         try {
             val token = extractToken(request)
             if (token != null) {
+                // Check token-level revocation first (fast path)
+                if (tokenRevocationPort.isRevoked(token)) {
+                    log.debug("Token is revoked")
+                    filterChain.doFilter(request, response)
+                    return
+                }
+
                 val claims = jwtPort.validateAccessToken(token)
                 if (claims != null) {
+                    // Check user-level revocation (e.g., account deleted, password changed)
+                    if (tokenRevocationPort.isUserRevoked(claims.email, claims.issuedAt)) {
+                        log.debug("User sessions revoked for email={}", PiiMask.maskEmail(claims.email))
+                        filterChain.doFilter(request, response)
+                        return
+                    }
+
                     val authority = SimpleGrantedAuthority("ROLE_${claims.role}")
                     val authentication = UsernamePasswordAuthenticationToken(
                         claims.email,

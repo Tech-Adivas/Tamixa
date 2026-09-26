@@ -13,8 +13,16 @@ class GeminiAnyUsageCondition : Condition {
         val llm = env.getProperty("app.llm.provider", "openai")?.trim()?.lowercase() ?: "openai"
         val translation =
             env.getProperty("app.translation.provider", "simulated")?.trim()?.lowercase() ?: "simulated"
+        val translationOpenAiGeminiFallback = env.getProperty("app.translation.openai-fallback-to-gemini", "false")
+            ?.trim()?.lowercase() in setOf("true", "1", "yes", "on")
+        val narrationRewriteGeminiFallback = env.getProperty("app.narration.openai-rewrite-fallback-to-gemini", "false")
+            ?.trim()?.lowercase() in setOf("true", "1", "yes", "on")
         val coverImage =
             env.getProperty("app.image-generation.provider", "openai")?.trim()?.lowercase() ?: "openai"
-        return llm == "gemini" || translation == "gemini" || coverImage == "gemini"
+        return llm == "gemini" ||
+            translation == "gemini" ||
+            (translation == "openai" && translationOpenAiGeminiFallback) ||
+            (llm == "openai" && narrationRewriteGeminiFallback) ||
+            coverImage == "gemini"
     }
 }

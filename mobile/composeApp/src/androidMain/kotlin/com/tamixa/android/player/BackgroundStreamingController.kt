@@ -7,11 +7,13 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -43,12 +45,14 @@ fun rememberBackgroundStreamingController(
     var isReady by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
+    var durationMillisState by remember(streamUrl) { mutableLongStateOf(0L) }
     var sleepTimerJob by remember { mutableStateOf<Job?>(null) }
 
     val noOpController = object : StoryPlaybackController {
         override val isReady: Boolean get() = false
         override val isPlaying: Boolean get() = false
         override val progress: Float get() = 0f
+        override val durationMillis: Long get() = 0L
         override fun playPause() {}
         override fun rewind() {}
         override fun fastForward() {}
@@ -59,6 +63,7 @@ fun rememberBackgroundStreamingController(
 
     LaunchedEffect(streamUrl) {
         if (streamUrl.isNullOrBlank()) return@LaunchedEffect
+        durationMillisState = 0L
         context.startForegroundService(Intent(context, AudioPlaybackService::class.java))
         val token = SessionToken(context, ComponentName(context, AudioPlaybackService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
@@ -106,11 +111,18 @@ fun rememberBackgroundStreamingController(
             delay(500)
             val controller = mediaController ?: break
             if (controller.playbackState != Player.STATE_ENDED) {
-                val dur = controller.duration.coerceAtLeast(1L)
-                val pos = controller.currentPosition
-                val prog = (pos.toFloat() / dur).coerceIn(0f, 1f)
-                progress = prog
-                onProgressChanged(prog)
+                val raw = controller.duration
+                val dur = when {
+                    raw > 0L && raw != C.TIME_UNSET -> raw.also { durationMillisState = it }
+                    durationMillisState > 0L -> durationMillisState
+                    else -> 0L
+                }
+                if (dur > 0L) {
+                    val pos = controller.currentPosition
+                    val prog = (pos.toFloat() / dur).coerceIn(0f, 1f)
+                    progress = prog
+                    onProgressChanged(prog)
+                }
             }
         }
     }
@@ -126,6 +138,7 @@ fun rememberBackgroundStreamingController(
             isReady = false
             isPlaying = false
             progress = 0f
+            durationMillisState = 0L
             context.stopService(Intent(context, AudioPlaybackService::class.java))
         }
     }
@@ -136,6 +149,7 @@ fun rememberBackgroundStreamingController(
         override val isReady: Boolean get() = isReady
         override val isPlaying: Boolean get() = isPlaying
         override val progress: Float get() = progress
+        override val durationMillis: Long get() = durationMillisState
 
         override fun playPause() {
             mediaController?.let { c ->
@@ -152,7 +166,12 @@ fun rememberBackgroundStreamingController(
 
         override fun fastForward() {
             mediaController?.let { c ->
-                val dur = c.duration.coerceAtLeast(1L)
+                val raw = c.duration
+                val dur = when {
+                    raw > 0L && raw != C.TIME_UNSET -> raw
+                    durationMillisState > 0L -> durationMillisState
+                    else -> return@let
+                }
                 val newPos = (c.currentPosition + TamixaConstants.SEEK_MS).coerceAtMost(dur)
                 c.seekTo(newPos)
             }

@@ -42,8 +42,8 @@ fun OnboardingVoiceInvitationScreen(
     modifier: Modifier = Modifier
 ) {
     OnboardingShell(
-        step = 3,
-        totalSteps = 4,
+        step = 4,
+        totalSteps = 5,
         modifier = modifier,
         onSwipeToNext = onSwipeToNext,
         onSwipeToPrevious = onSwipeToPrevious,
@@ -67,60 +67,25 @@ fun OnboardingVoiceInvitationScreen(
         }
     ) {
         val spec = LocalOnboardingLayoutSpec.current
+        
+        // Large hero visual
         OnboardingHeroSpotlight(
             kind = OnboardingHeroHaloKind.VoiceRipple,
-            haloHeight = 264.dp,
+            haloHeight = 320.dp,
             modifier = Modifier.onboardingEntrance(delayMs = 55)
         ) {
             VoiceInvitationPreviewCard()
         }
+        
         Spacer(Modifier.height(spec.gapLg))
+        
+        // Simple headline only
         OnboardingEditorialTextCard(
             modifier = Modifier.onboardingEntrance(delayMs = 115)
         ) {
             OnboardingHeadline(
                 text = Strings.onboardingVoiceHeadline(),
                 modifier = Modifier.fillMaxWidth()
-            )
-            OnboardingSubline(
-                text = Strings.onboardingVoiceSubline(),
-                modifier = Modifier.fillMaxWidth(),
-                lineHeight = 26.sp
-            )
-            Text(
-                text = Strings.onboardingVoicePrivacyNote(),
-                style = MaterialTheme.typography.labelLarge,
-                color = OnboardingCardColors.onboardingSubline.copy(alpha = 0.82f),
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-            )
-        }
-        Spacer(Modifier.height(spec.gapMd))
-        OnboardingValueStripTitle(
-            text = Strings.onboardingStripTitle(3),
-            modifier = Modifier.onboardingEntrance(delayMs = 150)
-        )
-        Spacer(Modifier.height(spec.gapSm))
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(spec.benefitRowSpacing)
-        ) {
-            OnboardingBenefitRow(
-                emoji = "🎙️",
-                text = Strings.onboardingVoiceBenefitKeepsake(),
-                modifier = Modifier.onboardingEntrance(delayMs = 185)
-            )
-            OnboardingBenefitRow(
-                emoji = "✨",
-                text = Strings.onboardingVoiceBenefitQuick(),
-                modifier = Modifier.onboardingEntrance(delayMs = 235)
-            )
-            OnboardingBenefitRow(
-                emoji = "🛏️",
-                text = Strings.onboardingVoiceBenefitRoutine(),
-                modifier = Modifier.onboardingEntrance(delayMs = 285)
             )
         }
     }

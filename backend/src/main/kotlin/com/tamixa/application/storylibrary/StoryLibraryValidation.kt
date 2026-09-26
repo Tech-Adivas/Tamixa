@@ -17,6 +17,25 @@ object StoryLibraryValidation {
 
     const val MAX_INTERACTIVE_GRAPH_CHARS = 100_000
 
+    /** Matches admin age bands (1–99); keep create/update aligned. */
+    const val LIBRARY_STORY_MIN_AGE = 1
+    const val LIBRARY_STORY_MAX_AGE = 99
+
+    private const val READING_TIME_WORDS_PER_MINUTE = 150.0
+    const val LIBRARY_STORY_READING_TIME_MIN_MINUTES = 1.0
+    const val LIBRARY_STORY_READING_TIME_MAX_MINUTES = 30.0
+
+    /**
+     * Default reading-time estimate from word count (used for create/update when no explicit duration is supplied).
+     */
+    fun readingTimeMinutesFromWordCount(wordCount: Int): Double =
+        (wordCount / READING_TIME_WORDS_PER_MINUTE).coerceIn(
+            LIBRARY_STORY_READING_TIME_MIN_MINUTES,
+            LIBRARY_STORY_READING_TIME_MAX_MINUTES,
+        )
+
+    fun coerceLibraryStoryAge(age: Int): Int = age.coerceIn(LIBRARY_STORY_MIN_AGE, LIBRARY_STORY_MAX_AGE)
+
     /** Matches mobile/web [isSimulatorStory] — theme or category must use Learn · Simulator for branching graphs. */
     private val simulatorMetadataRegex = Regex("^learn\\s*·\\s*simulator\\b", RegexOption.IGNORE_CASE)
 

@@ -11,6 +11,10 @@ data class AppProperties(
     val auth: AuthProperties = AuthProperties(),
     val storage: StorageProperties = StorageProperties(),
     val cors: CorsProperties = CorsProperties(),
+    /**
+     * Tighten who can reach Swagger/OpenAPI and Actuator beyond health/info (e.g. prod: admin JWT only).
+     */
+    val apiExposure: ApiExposureProperties = ApiExposureProperties(),
     val rateLimit: RateLimitProperties = RateLimitProperties(),
     val jwt: JwtProperties = JwtProperties(),
     val openai: OpenAIProperties = OpenAIProperties(),
@@ -28,11 +32,17 @@ data class AppProperties(
     /** Cover GIF pipeline: FFmpeg MP4→GIF; optional Google Veo Lite image-to-video. */
     val coverAnimation: CoverAnimationProperties = CoverAnimationProperties(),
     val story: StoryProperties = StoryProperties(),
+    /** Admin interactive library episodes: LLM graph generation, segment script fill, batch segment TTS. */
+    val interactiveEpisode: InteractiveEpisodeProperties = InteractiveEpisodeProperties(),
     val audio: AudioProperties = AudioProperties(),
     val cdn: CdnStreamProperties = CdnStreamProperties(),
     val voice: VoiceProperties = VoiceProperties(),
     val subscription: SubscriptionProperties = SubscriptionProperties(),
     val aiTokenLimits: AiTokenLimitProperties = AiTokenLimitProperties(),
+    /**
+     * Library / pipeline translation provider (openai, gemini, simulated) and optional OpenAI→Gemini fallback.
+     */
+    val translation: TranslationClientProperties = TranslationClientProperties(),
     val translationPipeline: TranslationPipelineProperties = TranslationPipelineProperties(),
     val narration: NarrationProperties = NarrationProperties(),
     val export: ExportProperties = ExportProperties(),
@@ -41,6 +51,10 @@ data class AppProperties(
     val shareClip: ShareClipProperties = ShareClipProperties(),
     val bulkJob: BulkJobProperties = BulkJobProperties(),
     val push: PushProperties = PushProperties(),
+    /**
+     * Optional “cultural clock” / seasonal banner copy for the parent app; push dispatch remains a stub until FCM topics/jobs ship.
+     */
+    val seasonalHighlight: SeasonalHighlightProperties = SeasonalHighlightProperties(),
     /** Soft-deleted library stories: retention before permanent DB delete. */
     val libraryStorySoftDelete: LibraryStorySoftDeleteProperties = LibraryStorySoftDeleteProperties(),
     /**
@@ -117,6 +131,17 @@ data class AppProperties(
         val apnsKeyPath: String = "",
         val apnsBundleId: String = "com.tamixa.app",
         val apnsProduction: Boolean = false
+    )
+
+    data class SeasonalHighlightProperties(
+        /** When true, clients may show a home/library banner using [titleEn] / [bodyEn]. */
+        val enabled: Boolean = false,
+        /** Stable id for analytics and future scheduled push (stub). */
+        val campaignKey: String = "off",
+        val titleEn: String = "",
+        val bodyEn: String = "",
+        /** Reserved: when true, a future job may fan out FCM; currently unused. */
+        val pushDispatchStub: Boolean = false,
     )
 
     data class BulkJobProperties(
@@ -199,6 +224,15 @@ data class AppProperties(
         val webBaseUrl: String = "http://localhost:3000"
     )
 
+    data class TranslationClientProperties(
+        val provider: String = "simulated",
+        /**
+         * When [provider] is `openai`, try Gemini if OpenAI returns quota/rate-limit style errors.
+         * Env: `TRANSLATION_OPENAI_FALLBACK_TO_GEMINI`.
+         */
+        val openaiFallbackToGemini: Boolean = false,
+    )
+
     data class NarrationProperties(
         val dailyTokenLimit: Int = 100000,
         val maxNarrationTokens: Int = 1024,
@@ -219,7 +253,12 @@ data class AppProperties(
         val asyncQueueCapacity: Int = 200,
         val maxConcurrentJobs: Int = 100,
         /** Max concurrent TTS API calls (separate from job limiter; protects provider rate limits). */
-        val maxConcurrentTts: Int = 8
+        val maxConcurrentTts: Int = 8,
+        /**
+         * When [com.tamixa.infrastructure.config.AppProperties.LlmProperties.provider] is `openai`, try Gemini for
+         * pipeline rewrite if OpenAI fails with quota/rate-limit style errors. Env: `NARRATION_OPENAI_REWRITE_FALLBACK_TO_GEMINI`.
+         */
+        val openaiRewriteFallbackToGemini: Boolean = false,
     )
 
     data class CorsProperties(
@@ -227,6 +266,19 @@ data class AppProperties(
         val allowedOrigins: String = "*",
         /** Comma-separated CORS origin patterns (Spring allowedOriginPatterns). Env: CORS_ALLOWED_ORIGIN_PATTERNS. */
         val allowedOriginPatterns: String = ""
+    )
+
+    data class ApiExposureProperties(
+        /**
+         * When true, OpenAPI/Swagger UI requires an admin-role JWT (not merely any authenticated user).
+         * Enable in production so parent accounts cannot use API docs for reconnaissance.
+         */
+        val swaggerRequiresAdminRole: Boolean = false,
+        /**
+         * When true, Actuator endpoints other than health/info require an admin-role JWT.
+         * Disable (e.g. ACTUATOR_REQUIRES_ADMIN_ROLE=false) if Prometheus scrapes metrics without a Bearer token.
+         */
+        val actuatorRequiresAdminRole: Boolean = false,
     )
 
     data class RateLimitProperties(
@@ -256,7 +308,16 @@ data class AppProperties(
     data class JwtProperties(
         val secret: String = "",
         val accessExpirationMs: Long = 900000,
-        val refreshExpirationMs: Long = 604800000
+        val refreshExpirationMs: Long = 604800000,
+        val revocation: JwtRevocationProperties = JwtRevocationProperties()
+    )
+
+    data class JwtRevocationProperties(
+        /**
+         * Enable JWT token revocation. When true, tokens can be revoked before expiration.
+         * Requires Redis for production use.
+         */
+        val enabled: Boolean = true
     )
 
     data class OpenAIProperties(
@@ -264,6 +325,11 @@ data class AppProperties(
         val baseUrl: String = "https://api.openai.com",
         val model: String = "gpt-4o-mini",
         val maxTokens: Int = 1024,
+        /**
+         * Max completion tokens for admin bulk library generation (JSON + long story body).
+         * Default 2048 avoids truncating ~1500–1750 word prompts; clamped in service.
+         */
+        val bulkMaxTokens: Int = 2048,
         val connectTimeoutMs: Long = 15000,
         val readTimeoutMs: Long = 180000,
         /**
@@ -288,7 +354,13 @@ data class AppProperties(
         data class GeminiLlmProperties(
             val apiKey: String = "",
             val baseUrl: String = "https://generativelanguage.googleapis.com",
-            val model: String = "gemini-2.0-flash",
+            /**
+             * `google-ai` (default): `/v1beta/models/{model}:generateContent` on [baseUrl].
+             * `vertex-publishers`: `/v1/publishers/google/models/{model}:generateContent` — use with
+             * `GEMINI_BASE_URL=https://aiplatform.googleapis.com` when your key works on Vertex publisher API only.
+             */
+            val apiUrlStyle: String = "google-ai",
+            val model: String = "gemini-2.5-flash",
             val connectTimeoutMs: Long = 15000,
             val readTimeoutMs: Long = 180000,
             /**
@@ -350,6 +422,19 @@ data class AppProperties(
          * approves in Story moderation; then status becomes PENDING and narration/cover jobs run.
          */
         val humanReviewBeforeNarration: Boolean = false
+    )
+
+    data class InteractiveEpisodeProperties(
+        /** Max tokens for narration LLM calls (graph from story, segment script fill). */
+        val llmMaxOutputTokens: Int = 4096,
+        /** Reject when normalized interactive graph JSON exceeds this size before sending to LLM. */
+        val maxInteractiveGraphCharsForLlm: Int = 120_000,
+        /** Max story body characters used as LLM context for graph / script fill. */
+        val maxStoryCharsForInteractiveLlm: Int = 100_000,
+        /** Max segments per segment-audio admin batch. */
+        val maxSegmentBatchSize: Int = 50,
+        /** When request language is blank/invalid. */
+        val defaultLanguageFallback: String = "ta",
     )
 
     data class AiTokenLimitProperties(
@@ -427,7 +512,14 @@ data class AppProperties(
         /** Cache TTL for CDN (seconds) */
         val cacheTtlSeconds: Long = 86400,
         /** Regex: paths under stories with a pending segment should not be CDN-cached. */
-        val noCachePattern: String = "/stories/" + ".*" + "/pending/"
+        val noCachePattern: String = "/stories/" + ".*" + "/pending/",
+        /**
+         * CloudFront distribution base URL for interactive story segment audio.
+         * When set, segment audioUrl is stored as a full CDN URL (e.g. https://d1ga398w5nxxhc.cloudfront.net).
+         * When blank, falls back to [AppProperties.AudioProperties.publicBaseUrl] + /audio/ proxy path.
+         * Env: INTERACTIVE_AUDIO_CDN_BASE_URL
+         */
+        val interactiveAudioCdnBaseUrl: String = "",
     )
 
     data class VoiceProperties(

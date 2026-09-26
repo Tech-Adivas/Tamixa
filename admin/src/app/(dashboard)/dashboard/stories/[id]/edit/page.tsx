@@ -5,7 +5,7 @@ import { useRouter, useParams, usePathname, useSearchParams } from "next/navigat
 import Link from "next/link";
 import Image from "next/image";
 import { api, getApiBaseUrl, reconcileAdminAuthCookie, refreshTokensIfNeeded } from "@/lib/api";
-import type { CreateLibraryStoryRequest } from "@/types/api";
+import type { CreateLibraryStoryRequest, LibraryStorySummary } from "@/types/api";
 import {
   STORY_CATEGORIES,
   AGE_GROUPS,
@@ -35,6 +35,7 @@ import {
   getLibraryStoryMasterScriptContentError,
   adminStoryEmotionModeLabel,
   ADMIN_POST_CREATE_PROMPTS_KEY,
+  buildLibraryStoryAdminProgressSteps,
 } from "@/lib/library-story-workflow";
 import { parseJsonStoryContent, resolveLibraryStoryEditorBody } from "@/lib/utils";
 import { lintInteractiveGraphJson } from "@/lib/interactive-graph-lint";
@@ -45,9 +46,48 @@ import {
   DIGITAL_SAFETY_SIMULATOR_THEME,
   getDefaultDecisionJournalUrl,
 } from "@/lib/edu-simulator-template";
-import { validateInteractiveStoryCategory } from "@/lib/story-interactive-conventions";
-import { ArrowLeft, Save, ImagePlus, Sparkles, RefreshCw, ExternalLink, Braces, LayoutTemplate } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { SIMULATOR_THEME_PREFIX, validateInteractiveStoryCategory } from "@/lib/story-interactive-conventions";
+import { validateInteractiveSegmentUrls } from "@/lib/interactive-segment-audio-url";
+import {
+  ADMIN_LIBRARY_PIPELINE_POLL_FIRST_MS,
+  ADMIN_LIBRARY_PIPELINE_POLL_INTERVAL_MS,
+  ADMIN_LIBRARY_PIPELINE_POLL_MAX_ROUNDS,
+  ADMIN_LIBRARY_SEGMENT_ERROR_DETAIL_MAX_CHARS,
+  ADMIN_LIBRARY_TITLE_MAX_LENGTH,
+  ADMIN_LIBRARY_POST_MISSION_MAX_CHARS,
+  ADMIN_LIBRARY_POST_RESOURCE_URL_MAX_CHARS,
+  DEFAULT_LIBRARY_CHILD_NAME,
+  DEFAULT_LIBRARY_EMOTION_MODE,
+  DEFAULT_LIBRARY_SOURCE_LANGUAGE,
+  INTERACTIVE_GRAPH_MASTER_LOCALE_KEY,
+  LIBRARY_ENGLISH_LANGUAGE_CODE,
+  LIBRARY_SOURCE_LANGUAGE_OPTIONS,
+  LIBRARY_TAB_LANGUAGES,
+  SEGMENT_STUDIO_PARENT_STORAGE_KEY,
+  emptyLibraryTranslationTab,
+  buildLibraryTranslationContentPayload,
+  type LibraryTranslationTabFields,
+} from "@/lib/library-story-admin-constants";
+import {
+  parseInteractiveSegments,
+  segmentStudioActivityMessage,
+  type SegmentStudioActivity,
+} from "@/lib/library-story-segment-studio";
+import {
+  ArrowLeft,
+  Save,
+  ImagePlus,
+  Sparkles,
+  RefreshCw,
+  ExternalLink,
+  Braces,
+  LayoutTemplate,
+  FileText,
+  Loader2,
+  GitBranch,
+} from "lucide-react";
+import { InteractiveGraphSchemaHint } from "@/components/interactive-graph-schema-hint";
+import { cn, interactiveGraphJsonRoughlyEqual } from "@/lib/utils";
 import {
   StoryWorkflowStepper,
   StoryWorkflowStepFooter,
@@ -55,47 +95,22 @@ import {
 } from "@/components/story-workflow-stepper";
 import { StoryReviewStepPanel, StoryNarrationStepPanel } from "@/components/story-workflow-contextual-panels";
 
-/** Source languages for main story content. Tamil is pipeline source (recommended). */
-const SOURCE_LANGUAGES = [
-  { code: "ta", label: "Tamil (recommended)" },
-  { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
-  { code: "te", label: "Telugu" },
-  { code: "kn", label: "Kannada" },
-  { code: "ml", label: "Malayalam" },
-] as const;
-
-/** Tab languages = all except current master (same list without “recommended” label). */
-const TAB_LANGUAGES = [
-  { code: "ta", label: "Tamil" },
-  { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
-  { code: "te", label: "Telugu" },
-  { code: "kn", label: "Kannada" },
-  { code: "ml", label: "Malayalam" },
-] as const;
-
-function sourceLangLabel(code: string): string {
-  return SOURCE_LANGUAGES.find((l) => l.code === code)?.label?.replace(/ \(recommended\)/, "") ?? code;
+function stringifyInteractiveGraphOverlay(raw: unknown): string {
+  if (raw == null) return "";
+  if (typeof raw === "string") return raw;
+  try {
+    return JSON.stringify(raw, null, 2);
+  } catch {
+    return "";
+  }
 }
 
-/** Build API payload for other-language tabs; include a row if story text, title, or moral is non-empty. */
-function buildTranslationContentPayload(
-  entries: Record<string, { content: string; title: string; moral: string }>
-): Record<string, { content: string; title?: string | null; moral?: string | null }> | undefined {
-  const translationPayload: Record<string, { content: string; title?: string | null; moral?: string | null }> = {};
-  Object.entries(entries).forEach(([lang, entry]) => {
-    const content = entry?.content?.trim() ?? "";
-    const title = entry?.title?.trim() ?? "";
-    const moral = entry?.moral?.trim() ?? "";
-    if (!content && !title && !moral) return;
-    translationPayload[lang] = {
-      content: content || "",
-      title: title || null,
-      moral: moral || null,
-    };
-  });
-  return Object.keys(translationPayload).length > 0 ? translationPayload : undefined;
+function isSimulatorTheme(theme: string | null | undefined): boolean {
+  return (theme?.trim() ?? "").startsWith(SIMULATOR_THEME_PREFIX);
+}
+
+function sourceLangLabel(code: string): string {
+  return LIBRARY_SOURCE_LANGUAGE_OPTIONS.find((l) => l.code === code)?.label?.replace(/ \(recommended\)/, "") ?? code;
 }
 
 function splitSentences(text: string): string[] {
@@ -331,7 +346,7 @@ export default function EditLibraryStoryPage() {
   const [regenerateCustomPrompt, setRegenerateCustomPrompt] = useState("");
   /** Per-language content for non-Tamil languages (optional). When set, sent as translationContentEntries so other languages are updated. */
   const [translationContentEntries, setTranslationContentEntries] = useState<
-    Record<string, { content: string; title: string; moral: string }>
+    Record<string, LibraryTranslationTabFields>
   >({});
 
   const [paraphraseBefore, setParaphraseBefore] = useState<{
@@ -347,6 +362,19 @@ export default function EditLibraryStoryPage() {
 
   const [activeLangTab, setActiveLangTab] = useState<string>("en");
   const [refreshingContent, setRefreshingContent] = useState(false);
+  const [segmentScripts, setSegmentScripts] = useState<Record<string, string>>({});
+  const [segmentVoiceProfile, setSegmentVoiceProfile] = useState("default");
+  const [segmentVoiceParentId, setSegmentVoiceParentId] = useState("");
+  const [segmentVoiceOptions, setSegmentVoiceOptions] = useState<Array<{ value: string; label: string }>>([
+    { value: "default", label: "Default" },
+  ]);
+  const [segmentVoiceStatus, setSegmentVoiceStatus] = useState<string | null>(null);
+  const [segmentStudioActivity, setSegmentStudioActivity] = useState<SegmentStudioActivity>({ kind: "idle" });
+  const segmentStudioBusy = segmentStudioActivity.kind !== "idle";
+  const segmentVoiceAutoLoadedRef = useRef(false);
+  /** Per-locale interactive graph text: master key + optional language codes (e.g. hi). Empty string = clear DB overlay. */
+  const [interactiveGraphSlots, setInteractiveGraphSlots] = useState<Record<string, string>>({});
+  const [interactiveGraphEditLocale, setInteractiveGraphEditLocale] = useState<string>(INTERACTIVE_GRAPH_MASTER_LOCALE_KEY);
   /** True while reloading main + tabs after changing Source language (master). */
   const [sourceLanguageLoading, setSourceLanguageLoading] = useState(false);
   const [regenerateGate, setRegenerateGate] = useState({
@@ -397,18 +425,118 @@ export default function EditLibraryStoryPage() {
     if (!ig || !interactiveGraphLint.ok) return null;
     return outlineInteractiveGraphJson(ig);
   }, [form?.interactiveGraph, interactiveGraphLint.ok]);
-  const isValidWordCount = wordCount >= MIN_WORD_COUNT;
+  const simulatorSelected = useMemo(() => isSimulatorTheme(form?.theme), [form?.theme]);
+  const interactiveGraphRequiredError = useMemo(() => {
+    if (!simulatorSelected) return null;
+    if (!form?.interactiveGraph?.trim()) {
+      return 'Simulator stories require "Interactive graph (JSON)".';
+    }
+    return null;
+  }, [simulatorSelected, form?.interactiveGraph]);
+  const interactiveSegmentUrlErrors = useMemo(() => {
+    const ig = form?.interactiveGraph?.trim();
+    if (!ig || !interactiveGraphLint.ok) return [];
+    return validateInteractiveSegmentUrls(ig);
+  }, [form?.interactiveGraph, interactiveGraphLint.ok]);
+  const interactiveSegments = useMemo(
+    () => parseInteractiveSegments(form?.interactiveGraph),
+    [form?.interactiveGraph]
+  );
+  const simulatorSegmentsMissingAudio = useMemo(
+    () => interactiveSegments.filter((s) => !s.audioUrl?.trim()),
+    [interactiveSegments]
+  );
+  const simulatorSubmitBlockedByAudio =
+    simulatorSelected && interactiveSegments.length > 0 && simulatorSegmentsMissingAudio.length > 0;
+  /** TTS / script fill language for the graph being edited (locale-specific overlays use that locale code). */
+  const segmentStudioLanguage = useMemo(
+    () =>
+      interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY
+        ? (form?.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase()
+        : interactiveGraphEditLocale.toLowerCase(),
+    [form?.language, interactiveGraphEditLocale]
+  );
+  /** LLM context for graph/script tools: master body, or the translation tab matching Graph locale when non-empty. */
+  const segmentStudioStoryText = useMemo(() => {
+    if (!form) return "";
+    if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+      return form.content ?? "";
+    }
+    const localized = translationContentEntries[interactiveGraphEditLocale]?.content?.trim();
+    return localized || form.content || "";
+  }, [form, interactiveGraphEditLocale, translationContentEntries]);
+  const isValidWordCount = simulatorSelected ? !!form?.content?.trim() : wordCount >= MIN_WORD_COUNT;
   const inReviewQueue = isLibraryStoryInReviewQueue(form?.status);
   const workflowBusy =
     submitting || sourceLanguageLoading || scriptSyncInProgress || refreshingContent;
   const blockNextStepForPipeline = workflowStep === 1 && storyPipelineRunning;
   const regenerateBusy = scriptSyncInProgress || storyPipelineRunning || regenerateServerRunning;
   const canSubmitForReview = canSubmitLibraryStoryForReview(form?.status, !!form?.content?.trim());
+  const submitReady =
+    !!form &&
+    canSubmitForReview &&
+    !storyPipelineRunning &&
+    !simulatorSubmitBlockedByAudio;
+
+  const storyProgressSteps = useMemo(
+    () =>
+      buildLibraryStoryAdminProgressSteps({
+        minWordCount: MIN_WORD_COUNT,
+        wordCount,
+        titleTrimmed: !!form?.title?.trim(),
+        themeSet: !!form?.theme,
+        contentTrimmed: !!form?.content?.trim(),
+        simulatorSelected,
+        simulatorGraphFieldsOk:
+          !!form?.interactiveGraph?.trim() &&
+          interactiveGraphLint.ok &&
+          interactiveSegmentUrlErrors.length === 0,
+        onServer: id != null,
+        regenerateBusy,
+        hasCover: !!(form?.coverImageUrl?.trim() || coverVideoUrl?.trim()),
+        submitReady,
+      }),
+    [
+      id,
+      wordCount,
+      form?.title,
+      form?.theme,
+      form?.content,
+      form?.interactiveGraph,
+      form?.coverImageUrl,
+      simulatorSelected,
+      interactiveGraphLint.ok,
+      interactiveSegmentUrlErrors.length,
+      regenerateBusy,
+      coverVideoUrl,
+      submitReady,
+    ]
+  );
+
+  useEffect(() => {
+    setSegmentScripts((prev) => {
+      const next: Record<string, string> = {};
+      for (const seg of interactiveSegments) {
+        next[seg.id] = prev[seg.id]?.trim() ? prev[seg.id] : seg.text;
+      }
+      return next;
+    });
+  }, [interactiveSegments]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SEGMENT_STUDIO_PARENT_STORAGE_KEY)?.trim() ?? "";
+      if (saved) setSegmentVoiceParentId(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   /** Fetch “other language” tabs for a given master/source language. */
   const fetchTranslationTabs = useCallback(
-    async (storyId: number, masterLang: string) => {
-      const tabLangs = TAB_LANGUAGES.filter((l) => l.code !== masterLang);
+    async (storyId: number, masterLang: string, masterGraphStr: string) => {
+      const tabLangs = LIBRARY_TAB_LANGUAGES.filter((l) => l.code !== masterLang);
+      const masterNorm = masterGraphStr.trim();
       const langResults = await Promise.all(
         tabLangs.map(({ code }) =>
           api.admin
@@ -416,63 +544,93 @@ export default function EditLibraryStoryPage() {
             .then((s) => {
               const raw = resolveLibraryStoryEditorBody(s ?? {});
               const parsed = parseJsonStoryContent(raw);
+              const overlayRaw = stringifyInteractiveGraphOverlay(s?.translationInteractiveGraphOverlay).trim();
+              const mergedRaw = stringifyInteractiveGraphOverlay(s?.interactiveGraph).trim();
               return {
                 code,
                 content: parsed?.content ?? raw,
                 title: (parsed?.title ?? s?.title ?? "")?.trim() || "",
                 moral: (parsed?.moral ?? s?.moral ?? "")?.trim() || "",
+                postStoryMission: s?.postStoryMission?.trim() ?? "",
+                postStoryResourceUrl: s?.postStoryResourceUrl?.trim() ?? "",
+                overlayGraphStr: overlayRaw,
+                mergedGraphStr: mergedRaw,
               };
             })
-            .catch(() => ({ code, content: "", title: "", moral: "" }))
+            .catch(() => ({
+              code,
+              content: "",
+              title: "",
+              moral: "",
+              postStoryMission: "",
+              postStoryResourceUrl: "",
+              overlayGraphStr: "",
+              mergedGraphStr: "",
+            }))
         )
       );
-      const next: Record<string, { content: string; title: string; moral: string }> = {};
-      langResults.forEach(({ code, content, title, moral }) => {
-        next[code] = { content, title: title ?? "", moral: moral ?? "" };
-      });
-      return { tabLangs, entries: next };
+      const next: Record<string, LibraryTranslationTabFields> = {};
+      const graphOverlays: Record<string, string> = {};
+      langResults.forEach(
+        ({ code, content, title, moral, postStoryMission, postStoryResourceUrl, overlayGraphStr, mergedGraphStr }) => {
+          next[code] = {
+            content,
+            title: title ?? "",
+            moral: moral ?? "",
+            postStoryMission: postStoryMission ?? "",
+            postStoryResourceUrl: postStoryResourceUrl ?? "",
+          };
+          const overlay = overlayGraphStr.trim();
+          const merged = mergedGraphStr.trim();
+          const slot =
+            overlay ||
+            (merged && !interactiveGraphJsonRoughlyEqual(merged, masterNorm) ? merged : undefined);
+          if (slot) graphOverlays[code] = slot;
+        }
+      );
+      return { tabLangs, entries: next, graphOverlays };
     },
     []
   );
 
-  /** Load story and all language variants (pipeline-generated content). Use on mount and via "Refresh content" after pipeline completes. */
-  const loadStoryContent = useCallback(
-    async (storyId: number) => {
-      const story = await api.admin.getLibraryStory(storyId);
-      const sourceLang = (story.language ?? "ta").toLowerCase();
-      const { tabLangs, entries } = await fetchTranslationTabs(storyId, sourceLang);
+  /** Apply GET /admin/stories/:id (optional ?language=) to the whole editor: form, graph slots, tabs, segment studio. */
+  const applyEditorFromLoadedLibraryStory = useCallback(
+    (
+      story: LibraryStorySummary & { content: string },
+      tabLangs: { code: string; label: string }[],
+      entries: Record<string, LibraryTranslationTabFields>,
+      graphOverlays: Record<string, string>,
+      masterInteractiveGraphStr: string
+    ) => {
       const contentToEdit = resolveLibraryStoryEditorBody(story);
       const parsed = parseJsonStoryContent(contentToEdit);
       const resolved = parsed ?? { content: contentToEdit };
+      const lang = (story.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase();
       setForm({
         title: (story.title ?? resolved.title ?? "")?.trim() || "",
         content: resolved.content,
         theme: resolved.theme ?? story.theme,
-        language: sourceLang,
+        language: lang,
         age: story.age,
-        childName: story.childName ?? "Child",
+        childName: story.childName ?? DEFAULT_LIBRARY_CHILD_NAME,
         moral: (story.moral ?? resolved.moral ?? "")?.trim() || "",
         status: story.status ?? "DRAFT",
         coverImageUrl: story.coverImageUrl ?? "",
-        emotionMode: story.emotionMode ?? "CALM",
+        emotionMode: story.emotionMode ?? DEFAULT_LIBRARY_EMOTION_MODE,
         parentDiscussionPrompts: story.parentDiscussionPrompts?.length
           ? [...story.parentDiscussionPrompts]
           : undefined,
         parentContentNote: story.parentContentNote ?? null,
         speakAlongPrompt: story.speakAlongPrompt ?? null,
-        interactiveGraph: (() => {
-          const g = story.interactiveGraph;
-          if (g == null) return "";
-          if (typeof g === "string") return g;
-          try {
-            return JSON.stringify(g, null, 2);
-          } catch {
-            return "";
-          }
-        })(),
+        interactiveGraph: masterInteractiveGraphStr,
         postStoryMission: story.postStoryMission?.trim() ?? "",
         postStoryResourceUrl: story.postStoryResourceUrl?.trim() ?? "",
       });
+      setInteractiveGraphSlots({
+        [INTERACTIVE_GRAPH_MASTER_LOCALE_KEY]: masterInteractiveGraphStr,
+        ...graphOverlays,
+      });
+      setInteractiveGraphEditLocale(INTERACTIVE_GRAPH_MASTER_LOCALE_KEY);
       setReviewerFeedback(story.reviewNotes?.trim() ? story.reviewNotes.trim() : null);
       setCoverVideoUrl(story.coverVideoUrl ?? null);
       setTranslationContentEntries(entries);
@@ -485,17 +643,36 @@ export default function EditLibraryStoryPage() {
       setParaphraseBefore(null);
       setParaphraseBeforeByLang(null);
       setShowParaphraseDiff(false);
+      setRephraseSuggestion(null);
+      setValidationErrors({});
+      setSegmentStudioActivity({ kind: "idle" });
+      setSegmentVoiceStatus(null);
+      segmentVoiceAutoLoadedRef.current = false;
     },
-    [fetchTranslationTabs]
+    []
+  );
+
+  /** Load story and all language variants (pipeline-generated content). Use on mount and via "Refresh content" after pipeline completes. */
+  const loadStoryContent = useCallback(
+    async (storyId: number) => {
+      const story = await api.admin.getLibraryStory(storyId);
+      const sourceLang = (story.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase();
+      const masterIg = stringifyInteractiveGraphOverlay(story.interactiveGraph);
+      const { tabLangs, entries, graphOverlays } = await fetchTranslationTabs(storyId, sourceLang, masterIg);
+      applyEditorFromLoadedLibraryStory(story, tabLangs, entries, graphOverlays, masterIg);
+    },
+    [fetchTranslationTabs, applyEditorFromLoadedLibraryStory]
   );
 
   /** Reload language tabs until pipeline no longer shows TRANSLATING/REWRITING/TTS (Generate translations is async). */
   const pollTranslationsAfterRebuild = useCallback(
     async (storyId: number) => {
-      const maxRounds = 120;
+      const maxRounds = ADMIN_LIBRARY_PIPELINE_POLL_MAX_ROUNDS;
       let sawLanguageWork = false;
       for (let round = 0; round < maxRounds; round++) {
-        await new Promise((r) => setTimeout(r, round === 0 ? 6000 : 4000));
+        await new Promise((r) =>
+          setTimeout(r, round === 0 ? ADMIN_LIBRARY_PIPELINE_POLL_FIRST_MS : ADMIN_LIBRARY_PIPELINE_POLL_INTERVAL_MS)
+        );
         try {
           const status = await api.admin.getLibraryStoryPipelineStatus(storyId);
           const busy = isStoryPipelineRunning(status ?? undefined);
@@ -591,38 +768,11 @@ export default function EditLibraryStoryPage() {
     async (storyId: number, newLang: string) => {
       setSourceLanguageLoading(true);
       try {
-        const main = await api.admin.getLibraryStory(storyId, newLang);
-        const { tabLangs, entries } = await fetchTranslationTabs(storyId, newLang);
-        const contentToEdit = resolveLibraryStoryEditorBody(main);
-        const parsed = parseJsonStoryContent(contentToEdit);
-        const resolved = parsed ?? { content: contentToEdit };
-        setForm((prev) =>
-          prev
-            ? {
-                ...prev,
-                language: newLang,
-                title: (main.title ?? resolved.title ?? "")?.trim() || "",
-                content: resolved.content,
-                theme: resolved.theme ?? main.theme ?? prev.theme,
-                moral: (main.moral ?? resolved.moral ?? "")?.trim() || "",
-                coverImageUrl: main.coverImageUrl ?? prev.coverImageUrl ?? "",
-                emotionMode: main.emotionMode ?? prev.emotionMode,
-              }
-            : prev
-        );
-        setCoverVideoUrl((v) => main.coverVideoUrl ?? v);
-        setTranslationContentEntries(entries);
-        setActiveLangTab(tabLangs[0]?.code ?? "en");
-        setRegenerateGate({
-          locked: !!main.regeneratePromptLocked,
-          lockApproved: !!main.regeneratePromptLockApproved,
-          unlockRequestedAt: main.regeneratePromptUnlockRequestedAt ?? null,
-        });
-        setRephraseSuggestion(null);
-        setValidationErrors({});
-        setParaphraseBefore(null);
-        setParaphraseBeforeByLang(null);
-        setShowParaphraseDiff(false);
+        const normalized = newLang.trim().toLowerCase();
+        const main = await api.admin.getLibraryStory(storyId, normalized);
+        const masterIg = stringifyInteractiveGraphOverlay(main.interactiveGraph);
+        const { tabLangs, entries, graphOverlays } = await fetchTranslationTabs(storyId, normalized, masterIg);
+        applyEditorFromLoadedLibraryStory(main, tabLangs, entries, graphOverlays, masterIg);
       } catch (e) {
         showError(
           "Could not switch language",
@@ -632,7 +782,7 @@ export default function EditLibraryStoryPage() {
         setSourceLanguageLoading(false);
       }
     },
-    [fetchTranslationTabs, showError]
+    [fetchTranslationTabs, applyEditorFromLoadedLibraryStory, showError]
   );
 
   useEffect(() => {
@@ -688,15 +838,26 @@ export default function EditLibraryStoryPage() {
     const errs: Record<string, string> = {};
     if (!form.theme?.trim()) errs.theme = "Category is required";
     if (!form.content?.trim()) errs.content = "Story text is required";
-    else if (wordCount < MIN_WORD_COUNT)
-      errs.content = `Minimum ${MIN_WORD_COUNT} words required (current: ${wordCount})`;
-    else {
-      const scriptErr = getLibraryStoryMasterScriptContentError(form.content, form.language);
-      if (scriptErr) errs.content = scriptErr;
+    else if (!simulatorSelected) {
+      if (wordCount < MIN_WORD_COUNT) {
+        errs.content = `Minimum ${MIN_WORD_COUNT} words required (current: ${wordCount})`;
+      } else {
+        const scriptErr = getLibraryStoryMasterScriptContentError(form.content, form.language);
+        if (scriptErr) errs.content = scriptErr;
+      }
+    } else {
+      // Learn · Simulator: master text is optional context (e.g. for graph-from-story); skip min length and script checks when short.
+      if (wordCount >= MIN_WORD_COUNT) {
+        const scriptErr = getLibraryStoryMasterScriptContentError(form.content, form.language);
+        if (scriptErr) errs.content = scriptErr;
+      }
     }
-    if (form.title?.trim() && form.title.length > 255)
-      errs.title = "Title must be 255 characters or less";
+    if (form.title?.trim() && form.title.length > ADMIN_LIBRARY_TITLE_MAX_LENGTH)
+      errs.title = `Title must be ${ADMIN_LIBRARY_TITLE_MAX_LENGTH} characters or less`;
     const ig = form.interactiveGraph?.trim();
+    if (simulatorSelected && !ig) {
+      errs.interactiveGraph = 'Simulator category requires "Interactive graph (JSON)".';
+    }
     if (ig) {
       const igLint = lintInteractiveGraphJson(ig);
       if (!igLint.ok) errs.interactiveGraph = igLint.errors.join(" · ");
@@ -707,11 +868,15 @@ export default function EditLibraryStoryPage() {
           else errs.theme = categoryErr;
           errs.interactiveGraph = categoryErr;
         }
+        const segUrlErrs = validateInteractiveSegmentUrls(ig);
+        if (segUrlErrs.length > 0) {
+          errs.interactiveGraph = segUrlErrs.join(" · ");
+        }
       }
     }
     setValidationErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [form, wordCount]);
+  }, [form, wordCount, simulatorSelected]);
 
   const goNextWorkflowStep = useCallback(() => {
     if (workflowStep === 0 && !validate()) {
@@ -743,14 +908,11 @@ export default function EditLibraryStoryPage() {
     setRegenerateStatusLastCheckedAt(new Date());
     regeneratePrevRunningRef.current = true;
     try {
-      const persistDraftWithRetry = async (
+        const persistDraftWithRetry = async (
         storyId: number,
         payload: CreateLibraryStoryRequest & {
           regenerateNarration?: boolean;
-          translationContentEntries?: Record<
-            string,
-            { content: string; title?: string | null; moral?: string | null }
-          >;
+          translationContentEntries?: CreateLibraryStoryRequest["translationContentEntries"];
         }
       ): Promise<void> => {
         try {
@@ -775,7 +937,7 @@ export default function EditLibraryStoryPage() {
         id,
         form.content,
         true,
-        form.language ?? "ta",
+        form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE,
         regenerateCustomPrompt.trim() || null
       );
       if (result.paraphraseBefore) {
@@ -830,15 +992,18 @@ export default function EditLibraryStoryPage() {
       if (result.translations && typeof result.translations === "object") {
         for (const [lang, entry] of Object.entries(result.translations)) {
           if (entry && typeof entry === "object") {
+            const prev = nextEntries[lang] ?? emptyLibraryTranslationTab();
             nextEntries[lang] = {
               content: (entry.content ?? "").trim(),
               title: (entry.title ?? "").trim(),
               moral: (entry.moral ?? "").trim(),
+              postStoryMission: prev.postStoryMission,
+              postStoryResourceUrl: prev.postStoryResourceUrl,
             };
           }
         }
       }
-      const translationPayload = buildTranslationContentPayload(nextEntries);
+      const translationPayload = buildLibraryTranslationContentPayload(nextEntries);
       await persistDraftWithRetry(id, {
         ...nextForm,
         title: nextForm.title?.trim() || null,
@@ -852,8 +1017,8 @@ export default function EditLibraryStoryPage() {
       setForm({ ...nextForm, status: "DRAFT" });
       setTranslationContentEntries(nextEntries);
       const regeneratedTranslations = result.translations ?? {};
-      const sourceLang = (form.language ?? "ta").toLowerCase();
-      const expectedTargetLangs = TAB_LANGUAGES.map((l) => l.code).filter((code) => code !== sourceLang);
+      const sourceLang = (form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase();
+      const expectedTargetLangs = LIBRARY_TAB_LANGUAGES.map((l) => l.code).filter((code) => code !== sourceLang);
       const hasAllRegeneratedTargets = expectedTargetLangs.every((lang) => {
         const entry = regeneratedTranslations[lang];
         return !!entry?.content?.trim();
@@ -931,14 +1096,22 @@ export default function EditLibraryStoryPage() {
       }
     }
     const journalUrl = getDefaultDecisionJournalUrl();
+    const tpl = DIGITAL_SAFETY_INTERACTIVE_GRAPH_TEMPLATE;
     setForm({
       ...form,
       theme: DIGITAL_SAFETY_SIMULATOR_THEME,
-      interactiveGraph: DIGITAL_SAFETY_INTERACTIVE_GRAPH_TEMPLATE,
+      interactiveGraph: tpl,
       postStoryMission: form.postStoryMission?.trim()
         ? form.postStoryMission
         : DIGITAL_SAFETY_SIMULATOR_POST_MISSION,
       postStoryResourceUrl: form.postStoryResourceUrl?.trim() ? form.postStoryResourceUrl : journalUrl || "",
+    });
+    setInteractiveGraphSlots((p) => {
+      const next = { ...p, [interactiveGraphEditLocale]: tpl };
+      if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+        next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = tpl;
+      }
+      return next;
     });
   };
 
@@ -951,11 +1124,234 @@ export default function EditLibraryStoryPage() {
     }
     try {
       const obj = JSON.parse(ig) as unknown;
-      setForm({ ...form, interactiveGraph: JSON.stringify(obj, null, 2) });
+      const formatted = JSON.stringify(obj, null, 2);
+      setForm({ ...form, interactiveGraph: formatted });
+      setInteractiveGraphSlots((p) => {
+        const next = { ...p, [interactiveGraphEditLocale]: formatted };
+        if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+          next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = formatted;
+        }
+        return next;
+      });
     } catch (e) {
       showError("Invalid JSON", e instanceof Error ? e.message : "Could not parse JSON.");
     }
   };
+
+  const handleGenerateGraphFromStory = useCallback(async () => {
+    if (!id || !form) return;
+    setSegmentStudioActivity({ kind: "graph" });
+    try {
+      const result = await api.admin.generateInteractiveGraphFromStory(id, {
+        language: segmentStudioLanguage,
+        storyText: segmentStudioStoryText,
+      });
+      const g = result.interactiveGraph ?? "";
+      setForm((f) => (f ? { ...f, interactiveGraph: g || (f.interactiveGraph ?? "") } : f));
+      setInteractiveGraphSlots((p) => {
+        const next = { ...p, [interactiveGraphEditLocale]: g };
+        if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+          next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = g;
+        }
+        return next;
+      });
+      showSuccess(
+        "Interactive graph generated",
+        "Segment narration scripts were filled where needed. Review branches, then use Segment Audio Studio to create MP3s."
+      );
+    } catch (e) {
+      showError("Graph generation failed", e instanceof Error ? e.message : "Could not generate interactive graph.");
+    } finally {
+      setSegmentStudioActivity({ kind: "idle" });
+    }
+  }, [id, form, interactiveGraphEditLocale, segmentStudioLanguage, segmentStudioStoryText, showError, showSuccess]);
+
+  const handleGenerateSegmentAudio = useCallback(
+    async (segmentIds?: string[]) => {
+      if (!id || !form) return;
+      const selectedIds = (segmentIds ?? interactiveSegments.map((s) => s.id)).filter(Boolean);
+      if (!selectedIds.length) {
+        showError("No segments", "Interactive graph has no segments to synthesize.");
+        return;
+      }
+      const audioScope: "all" | "one" | "some" =
+        selectedIds.length === 1
+          ? "one"
+          : selectedIds.length === interactiveSegments.length
+            ? "all"
+            : "some";
+      setSegmentStudioActivity({ kind: "audio", scope: audioScope, segmentIds: selectedIds });
+      try {
+        const segments = selectedIds.map((sid) => ({
+          segmentId: sid,
+          text: (segmentScripts[sid] ?? interactiveSegments.find((s) => s.id === sid)?.text ?? "").trim(),
+          overwriteExisting: true,
+        }));
+        const result = await api.admin.generateInteractiveSegmentAudio(id, {
+          language: segmentStudioLanguage,
+          voiceProfile: segmentVoiceProfile.trim() || "default",
+          interactiveGraph: form.interactiveGraph?.trim() ?? "",
+          segments,
+        });
+        const g = result.interactiveGraph ?? "";
+        setForm((f) => (f ? { ...f, interactiveGraph: g || (f.interactiveGraph ?? "") } : f));
+        setInteractiveGraphSlots((p) => {
+          const next = { ...p, [interactiveGraphEditLocale]: g };
+          if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+            next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = g;
+          }
+          return next;
+        });
+        const ok = result.generated?.length ?? 0;
+        const failed = result.failed?.length ?? 0;
+        if (failed > 0) {
+          const failLines = (result.failed ?? [])
+            .map((f) => {
+              const msg = (f.message ?? "failed").replace(/\s+/g, " ").trim();
+              return `${f.segmentId}: ${msg}`;
+            })
+            .join(" · ");
+          const detail =
+            failLines.length > ADMIN_LIBRARY_SEGMENT_ERROR_DETAIL_MAX_CHARS
+              ? `${failLines.slice(0, ADMIN_LIBRARY_SEGMENT_ERROR_DETAIL_MAX_CHARS)}…`
+              : failLines;
+          showError(
+            ok === 0 ? "Segment audio failed" : "Segment audio partially generated",
+            `${ok} generated, ${failed} failed.${detail ? ` ${detail}` : ""}`,
+          );
+        } else {
+          showSuccess("Segment audio generated", `${ok} segment audio URL(s) updated in interactive graph.`);
+        }
+      } catch (e) {
+        showError("Segment audio failed", e instanceof Error ? e.message : "Could not generate segment audio.");
+      } finally {
+        setSegmentStudioActivity({ kind: "idle" });
+      }
+    },
+    [
+      id,
+      form,
+      interactiveSegments,
+      segmentScripts,
+      segmentVoiceProfile,
+      segmentStudioLanguage,
+      interactiveGraphEditLocale,
+      showError,
+      showSuccess,
+    ]
+  );
+
+  const handleFillMissingSegmentScripts = useCallback(async () => {
+    if (!id || !form) return;
+    const ig = form.interactiveGraph?.trim();
+    if (!ig) {
+      showError("No graph", "Add or paste interactive graph JSON first.");
+      return;
+    }
+    if (!segmentStudioStoryText.trim()) {
+      showError(
+        "Story text required",
+        interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY
+          ? "Add story content in the main story body so the model can write segment narration."
+          : `Add ${interactiveGraphEditLocale.toUpperCase()} story text in the "${LIBRARY_TAB_LANGUAGES.find((l) => l.code === interactiveGraphEditLocale)?.label ?? interactiveGraphEditLocale}" language tab (or fall back fills from the master body).`,
+      );
+      return;
+    }
+    setSegmentStudioActivity({ kind: "scripts" });
+    try {
+      const result = await api.admin.fillInteractiveSegmentScripts(id, {
+        language: segmentStudioLanguage,
+        interactiveGraph: ig,
+        storyText: segmentStudioStoryText,
+      });
+      const g = result.interactiveGraph ?? "";
+      setForm((f) => (f ? { ...f, interactiveGraph: g || (f.interactiveGraph ?? "") } : f));
+      setInteractiveGraphSlots((p) => {
+        const next = { ...p, [interactiveGraphEditLocale]: g };
+        if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+          next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = g;
+        }
+        return next;
+      });
+      const filled = result.filledSegmentIds?.length ?? 0;
+      showSuccess(
+        filled === 0 ? "Segment scripts" : "Segment scripts generated",
+        result.message ?? (filled === 0 ? "All segments already have text." : `${filled} segment(s) updated.`)
+      );
+    } catch (e) {
+      showError("Segment scripts failed", e instanceof Error ? e.message : "Could not fill segment narration.");
+    } finally {
+      setSegmentStudioActivity({ kind: "idle" });
+    }
+  }, [
+    id,
+    form,
+    segmentStudioLanguage,
+    segmentStudioStoryText,
+    interactiveGraphEditLocale,
+    showError,
+    showSuccess,
+  ]);
+
+  const handleInteractiveGraphLocaleChange = useCallback(
+    (next: string) => {
+      if (!form) return;
+      const flushed: Record<string, string> = {
+        ...interactiveGraphSlots,
+        [interactiveGraphEditLocale]: form.interactiveGraph ?? "",
+      };
+      const nextBody =
+        next === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY
+          ? flushed[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] ?? ""
+          : flushed[next] ?? flushed[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] ?? "";
+      setInteractiveGraphSlots(flushed);
+      setForm({ ...form, interactiveGraph: nextBody });
+      setInteractiveGraphEditLocale(next);
+    },
+    [form, interactiveGraphEditLocale, interactiveGraphSlots]
+  );
+
+  const handleLoadVoiceProfiles = useCallback(async () => {
+    const pid = Number.parseInt(segmentVoiceParentId.trim(), 10);
+    if (!Number.isFinite(pid) || pid <= 0) {
+      showError("Parent ID required", "Enter a valid parent ID to load cloned voices.");
+      return;
+    }
+    setSegmentStudioActivity({ kind: "voices" });
+    try {
+      const profiles = await api.admin.getVoiceProfilesForParent(pid);
+      const clonedOptions = profiles.map((p) => ({
+        value: `cloned:${p.id}`,
+        label: `${p.profileName?.trim() || `Voice ${p.id}`} (cloned:${p.id})`,
+      }));
+      const next = [{ value: "default", label: "Default" }, ...clonedOptions];
+      setSegmentVoiceOptions(next);
+      if (!next.some((o) => o.value === segmentVoiceProfile)) {
+        setSegmentVoiceProfile(next[0]?.value ?? "default");
+      }
+      setSegmentVoiceStatus(
+        clonedOptions.length > 0
+          ? `${clonedOptions.length} cloned voice(s) loaded for parent ${pid}.`
+          : `No cloned voices found for parent ${pid}.`
+      );
+      localStorage.setItem(SEGMENT_STUDIO_PARENT_STORAGE_KEY, String(pid));
+      showSuccess("Voices loaded", `${clonedOptions.length} cloned voice profile(s) available.`);
+    } catch (e) {
+      setSegmentVoiceStatus("Failed to load voices. Check Parent ID and try again.");
+      showError("Load voices failed", e instanceof Error ? e.message : "Could not fetch voice profiles.");
+    } finally {
+      setSegmentStudioActivity({ kind: "idle" });
+    }
+  }, [segmentVoiceParentId, segmentVoiceProfile, showError, showSuccess]);
+
+  useEffect(() => {
+    const pid = Number.parseInt(segmentVoiceParentId.trim(), 10);
+    if (!simulatorSelected || segmentVoiceAutoLoadedRef.current) return;
+    if (!Number.isFinite(pid) || pid <= 0) return;
+    if (segmentVoiceOptions.length > 1) return;
+    segmentVoiceAutoLoadedRef.current = true;
+    void handleLoadVoiceProfiles();
+  }, [segmentVoiceParentId, simulatorSelected, segmentVoiceOptions.length, handleLoadVoiceProfiles]);
 
   const handleSubmit = async (publish: boolean) => {
     if (!form || !id) return;
@@ -983,10 +1379,29 @@ export default function EditLibraryStoryPage() {
       showError("Validation failed", "Please fix the validation errors before saving.");
       return;
     }
+    if (publish && simulatorSubmitBlockedByAudio) {
+      showError(
+        "Segment audio missing",
+        "Simulator stories require audioUrl for all segments before submitting. Use Segment Audio Studio to generate missing audio."
+      );
+      return;
+    }
     submitInFlightRef.current = true;
     setSubmitting(true);
     try {
-      const translationPayload = buildTranslationContentPayload(translationContentEntries);
+      const translationPayload = buildLibraryTranslationContentPayload(translationContentEntries);
+      const flushedSlots: Record<string, string> = {
+        ...interactiveGraphSlots,
+        [interactiveGraphEditLocale]: form.interactiveGraph ?? "",
+      };
+      const masterGraphStr = flushedSlots[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] ?? "";
+      const translationInteractiveGraphEntries: Record<string, string> = {};
+      for (const { code } of LIBRARY_TAB_LANGUAGES) {
+        if (code === form.language) continue;
+        if (Object.prototype.hasOwnProperty.call(flushedSlots, code)) {
+          translationInteractiveGraphEntries[code] = flushedSlots[code] ?? "";
+        }
+      }
       await api.admin.updateLibraryStory(id, {
         ...form,
         title: form.title?.trim() || null,
@@ -996,12 +1411,16 @@ export default function EditLibraryStoryPage() {
         coverVideoUrl: coverVideoUrl ?? null,
         regenerateNarration: false,
         translationContentEntries: translationPayload,
+        translationInteractiveGraphEntries:
+          Object.keys(translationInteractiveGraphEntries).length > 0
+            ? translationInteractiveGraphEntries
+            : undefined,
         parentContentNote: form.parentContentNote?.trim() || null,
         speakAlongPrompt: form.speakAlongPrompt?.trim() || null,
         parentDiscussionPrompts: form.parentDiscussionPrompts?.length
           ? form.parentDiscussionPrompts
           : null,
-        interactiveGraph: form.interactiveGraph?.trim() ? form.interactiveGraph.trim() : null,
+        interactiveGraph: masterGraphStr.trim() ? masterGraphStr.trim() : null,
         postStoryMission: form.postStoryMission?.trim() || null,
         postStoryResourceUrl: form.postStoryResourceUrl?.trim() || null,
       });
@@ -1051,10 +1470,21 @@ export default function EditLibraryStoryPage() {
             Edit Story #{id}
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Min {MIN_WORD_COUNT} words · Master (saved on update): {sourceLangLabel(form.language ?? "ta")}
-            {form.language !== "en"
-              ? ` · ${sourceLangLabel(form.language ?? "ta")} script required in story text when master is not English`
-              : ""}
+            {simulatorSelected ? (
+              <>
+                Interactive pilot · Master (saved on update):{" "}
+                {sourceLangLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)} · no minimum word count (graph + segments
+                carry the experience)
+              </>
+            ) : (
+              <>
+                Min {MIN_WORD_COUNT} words · Master (saved on update):{" "}
+                {sourceLangLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)}
+                {(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE).toLowerCase() !== LIBRARY_ENGLISH_LANGUAGE_CODE
+                  ? ` · ${sourceLangLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)} script required in story text when master is not English`
+                  : ""}
+              </>
+            )}
           </p>
         </div>
         <Button
@@ -1079,6 +1509,35 @@ export default function EditLibraryStoryPage() {
           <RefreshCw className={cn("h-4 w-4 mr-2", refreshingContent && "animate-spin")} />
           {refreshingContent ? "Loading…" : "Refresh content"}
         </Button>
+      </div>
+
+      <div
+        className="flex flex-wrap gap-2 sm:gap-3 border border-border/60 rounded-xl bg-muted/20 p-3"
+        aria-label="Story readiness progress"
+      >
+        {storyProgressSteps.map((step, i) => (
+          <div key={step.id} className="flex items-center gap-2 text-xs sm:text-sm">
+            <span
+              className={cn(
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tabular-nums",
+                step.done
+                  ? "bg-emerald-600 text-white dark:bg-emerald-600"
+                  : "busy" in step && step.busy
+                    ? "bg-primary text-primary-foreground animate-pulse"
+                    : "bg-muted text-muted-foreground"
+              )}
+              aria-hidden
+            >
+              {step.done ? "✓" : i + 1}
+            </span>
+            <span className={cn("font-medium", step.done ? "text-foreground" : "text-muted-foreground")}>
+              {step.label}
+              {"optional" in step && step.optional ? (
+                <span className="font-normal text-muted-foreground"> · optional</span>
+              ) : null}
+            </span>
+          </div>
+        ))}
       </div>
 
       <StoryWorkflowStepper
@@ -1139,16 +1598,26 @@ export default function EditLibraryStoryPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">Story content</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Title, category, <strong>story text</strong> (master language), and optional pipeline-managed TTS script for
-                the master row. Next: <strong>All languages</strong> (regenerate &amp; sync), then <strong>Cover</strong>, then
-                submit.
+                {simulatorSelected ? (
+                  <>
+                    Title, category, and a short <strong>master text</strong> (optional context for “generate graph from story”
+                    and catalog). The <strong>interactive graph</strong> and segment lines drive the app. Next:{" "}
+                    <strong>All languages</strong>, <strong>Cover</strong>, then submit.
+                  </>
+                ) : (
+                  <>
+                    Title, category, <strong>story text</strong> (master language), and optional pipeline-managed TTS script for
+                    the master row. Next: <strong>All languages</strong> (regenerate &amp; sync), then <strong>Cover</strong>, then
+                    submit.
+                  </>
+                )}
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
                 <Label htmlFor="sourceLang">Source language *</Label>
                 <Select
-                  value={form?.language ?? "ta"}
+                  value={form?.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE}
                   disabled={sourceLanguageLoading || scriptSyncInProgress || submitting}
                   onValueChange={(v) => {
                     if (!id || v === form.language) return;
@@ -1159,7 +1628,7 @@ export default function EditLibraryStoryPage() {
                     <SelectValue placeholder={sourceLanguageLoading ? "Loading…" : "Select language"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {SOURCE_LANGUAGES.map((l) => (
+                    {LIBRARY_SOURCE_LANGUAGE_OPTIONS.map((l) => (
                       <SelectItem key={l.code} value={l.code}>
                         {l.label}
                       </SelectItem>
@@ -1167,13 +1636,14 @@ export default function EditLibraryStoryPage() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Changing this reloads the main fields and tabs from the server for that language. After editing, Save
-                  or Submit so the library stores this choice as the story&rsquo;s master language.
+                  Changing this reloads the full editor for that language: story fields, post-episode mission/URL, parent
+                  prompts, interactive graph (and per-locale slots), translation tabs, and segment studio state. After
+                  editing, Save or Submit so the library stores this choice as the story&rsquo;s master language.
                 </p>
               </div>
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor="title">Title ({sourceLangLabel(form.language ?? "ta")}) *</Label>
+                  <Label htmlFor="title">Title ({sourceLangLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)}) *</Label>
                   <Button
                     type="button"
                     variant="ghost"
@@ -1213,7 +1683,19 @@ export default function EditLibraryStoryPage() {
               </div>
 
               <div>
-                <Label htmlFor="theme">Category *</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="theme">Category *</Label>
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+                      simulatorSelected
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {simulatorSelected ? "Interactive mode enabled" : "Linear mode"}
+                  </span>
+                </div>
                 <Select value={form.theme} onValueChange={(v) => setForm((f) => (f ? { ...f, theme: v } : f))}>
                   <SelectTrigger className="mt-1 rounded-lg">
                     <SelectValue placeholder="Select category" />
@@ -1233,7 +1715,10 @@ export default function EditLibraryStoryPage() {
               </div>
 
               <div>
-                <Label htmlFor="content">Story text ({sourceLangLabel(form.language ?? "ta")}) *</Label>
+                <Label htmlFor="content">
+                  {simulatorSelected ? "Master text / outline" : "Story text"} (
+                  {sourceLangLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)}) *
+                </Label>
                 {showParaphraseDiff && paraphraseBefore ? (
                   <div className="mt-1 rounded-lg border border-border/60 bg-primary/5 p-3 space-y-2">
                     <p className="text-xs font-medium text-muted-foreground">Diff mode (live preview)</p>
@@ -1246,13 +1731,23 @@ export default function EditLibraryStoryPage() {
                   id="content"
                   value={form.content}
                   onChange={(e) => setForm((f) => (f ? { ...f, content: e.target.value } : f))}
-                  placeholder={`Enter full story text in ${sourceLangLabel(form.language ?? "ta")}…`}
+                  placeholder={
+                    simulatorSelected
+                      ? `Optional: seed outline or notes in ${sourceLangLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)} (segments hold spoken lines)…`
+                      : `Enter full story text in ${sourceLangLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)}…`
+                  }
                   className="mt-2 flex min-h-[220px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   dir="ltr"
                 />
                 <div className="flex justify-between mt-1">
                   <span className={cn("text-xs", isValidWordCount ? "text-muted-foreground" : "text-destructive")}>
-                    {wordCount} / {MIN_WORD_COUNT} words
+                    {simulatorSelected ? (
+                      <>{wordCount} words · interactive mode (no minimum)</>
+                    ) : (
+                      <>
+                        {wordCount} / {MIN_WORD_COUNT} words
+                      </>
+                    )}
                   </span>
                 </div>
                 {paraphraseBefore && (
@@ -1305,12 +1800,357 @@ export default function EditLibraryStoryPage() {
             </CardContent>
           </Card>
 
-          {/* Metadata — moral, age, child name */}
+          {simulatorSelected ? (
+          <Card className="border-emerald-500/35 bg-gradient-to-b from-emerald-500/[0.07] to-transparent shadow-sm dark:from-emerald-950/40">
+            <CardHeader className="pb-3 space-y-1 border-b border-emerald-500/20 bg-emerald-500/[0.05] dark:bg-emerald-950/25">
+              <div className="flex gap-2.5">
+                <GitBranch className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" aria-hidden />
+                <div className="min-w-0 space-y-1">
+                  <CardTitle className="text-base font-semibold">Interactive episode (Learn · Simulator)</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Graph + segment audio power the mobile practice hub. Use templates and studio tools below; submit when
+                    every segment has audio unless you are still drafting.
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-4">
+                <div className="flex flex-col gap-4">
+                  <div className="w-full min-w-0">
+                    <InteractiveGraphSchemaHint />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" size="sm" onClick={applyDigitalSafetyTemplate}>
+                      <LayoutTemplate className="h-4 w-4 mr-1.5" />
+                      Digital Safety template
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={formatInteractiveGraphField}>
+                      <Braces className="h-4 w-4 mr-1.5" />
+                      Format JSON
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleGenerateGraphFromStory()}
+                      disabled={!segmentStudioStoryText.trim() || segmentStudioBusy}
+                    >
+                      {segmentStudioActivity.kind === "graph" ? (
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 mr-1.5" />
+                      )}
+                      {segmentStudioActivity.kind === "graph" ? "Generating graph…" : "Generate graph from story"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleFillMissingSegmentScripts()}
+                      disabled={
+                        !form.interactiveGraph?.trim() ||
+                        !segmentStudioStoryText.trim() ||
+                        !interactiveGraphLint.ok ||
+                        segmentStudioBusy
+                      }
+                      title="Uses the LLM to write spoken lines for any segment with empty text (e.g. outcomes after a template)."
+                    >
+                      {segmentStudioActivity.kind === "scripts" ? (
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                      ) : (
+                        <FileText className="h-4 w-4 mr-1.5" />
+                      )}
+                      {segmentStudioActivity.kind === "scripts" ? "Generating scripts…" : "Generate missing segment scripts"}
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" asChild>
+                      <Link href="/dashboard/edu-simulator-analytics">Choice analytics</Link>
+                    </Button>
+                  </div>
+                </div>
+                {segmentStudioActivityMessage(segmentStudioActivity) ? (
+                  <div
+                    role="status"
+                    className="flex items-center gap-2 rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-foreground"
+                  >
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" aria-hidden />
+                    <span>{segmentStudioActivityMessage(segmentStudioActivity)}</span>
+                  </div>
+                ) : null}
+                <div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <Label htmlFor="interactiveGraph">Interactive graph (JSON)</Label>
+                    <div className="flex flex-col gap-1 sm:items-end">
+                      <Label className="text-xs text-muted-foreground font-normal">Graph locale</Label>
+                      <Select
+                        value={interactiveGraphEditLocale}
+                        onValueChange={(v) => handleInteractiveGraphLocaleChange(v)}
+                      >
+                        <SelectTrigger className="h-8 w-full sm:w-[220px] rounded-lg text-xs">
+                          <SelectValue placeholder="Locale" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={INTERACTIVE_GRAPH_MASTER_LOCALE_KEY}>
+                            Master ({sourceLangLabel(form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE)})
+                          </SelectItem>
+                          {LIBRARY_TAB_LANGUAGES.filter((l) => l.code !== form.language).map(({ code, label }) => (
+                            <SelectItem key={code} value={code}>
+                              {label} ({code})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-muted-foreground max-w-[280px] sm:text-right">
+                        Each locale can store a full graph + segment audio. TTS/script fill uses the selected locale.
+                        Choosing a tab under Other languages also switches this graph locale and loads saved or
+                        locale-specific playback JSON (e.g. English segment URLs).
+                      </p>
+                    </div>
+                  </div>
+                  <textarea
+                    id="interactiveGraph"
+                    value={form.interactiveGraph ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value || "";
+                      setForm((f) => (f ? { ...f, interactiveGraph: v } : f));
+                      setInteractiveGraphSlots((p) => {
+                        const next = { ...p, [interactiveGraphEditLocale]: v };
+                        if (interactiveGraphEditLocale === INTERACTIVE_GRAPH_MASTER_LOCALE_KEY) {
+                          next[INTERACTIVE_GRAPH_MASTER_LOCALE_KEY] = v;
+                        }
+                        return next;
+                      });
+                    }}
+                    className="mt-1 flex min-h-[240px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono text-xs"
+                    spellCheck={false}
+                  />
+                  {interactiveGraphRequiredError && !validationErrors.interactiveGraph ? (
+                    <p className="text-sm text-destructive mt-2">{interactiveGraphRequiredError}</p>
+                  ) : validationErrors.interactiveGraph ? (
+                    <p className="text-sm text-destructive mt-2">{validationErrors.interactiveGraph}</p>
+                  ) : !interactiveGraphLint.ok ? (
+                    <ul className="text-sm text-destructive mt-2 list-disc pl-5 space-y-0.5">
+                      {interactiveGraphLint.errors.map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  ) : form.interactiveGraph?.trim() ? (
+                    <p className="text-sm text-muted-foreground mt-2">Interactive graph JSON looks valid.</p>
+                  ) : null}
+                  {simulatorSelected && interactiveSegmentUrlErrors.length > 0 ? (
+                    <ul className="text-sm text-destructive mt-2 list-disc pl-5 space-y-0.5">
+                      {interactiveSegmentUrlErrors.map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {simulatorSelected ? (
+                    <div className="mt-3 rounded-md border border-border/60 bg-background/80 p-3 text-xs space-y-1.5">
+                      <p className="font-semibold text-foreground">Interactive checklist</p>
+                      <p className={form.interactiveGraph?.trim() ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500"}>
+                        {form.interactiveGraph?.trim() ? "✓ Graph added" : "• Add interactive graph JSON"}
+                      </p>
+                      <p className={interactiveGraphLint.ok ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500"}>
+                        {interactiveGraphLint.ok ? "✓ Graph structure valid" : "• Fix graph JSON lint issues"}
+                      </p>
+                      <p className={interactiveSegmentUrlErrors.length === 0 ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500"}>
+                        {interactiveSegmentUrlErrors.length === 0
+                          ? "✓ Segment URLs (HTTPS MP3, or dev http on LAN)"
+                          : "• Fix segment audioUrl HTTPS/MP3 issues"}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+                {interactiveGraphOutline && interactiveGraphOutline.length > 0 ? (
+                  <div className="rounded-md border border-border/60 bg-background/80 p-3 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Flow preview</p>
+                    <ol className="text-sm space-y-2 list-decimal pl-4">
+                      {interactiveGraphOutline.map((seg) => (
+                        <li key={seg.id}>
+                          <span className="font-mono text-xs">{seg.id}</span>
+                          {seg.isEnd ? (
+                            <span className="text-muted-foreground"> — end</span>
+                          ) : (
+                            <ul className="mt-1 space-y-0.5 pl-0 list-none">
+                              {seg.choices.map((c) => (
+                                <li key={c.id} className="text-xs text-muted-foreground">
+                                  → <span className="text-foreground">{c.label}</span>{" "}
+                                  <span className="font-mono">({c.nextSegmentId})</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
+                {simulatorSelected ? (
+                  <div className="rounded-md border border-border/60 bg-background/80 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Segment Audio Studio
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => void handleGenerateSegmentAudio()}
+                        disabled={
+                          segmentStudioBusy ||
+                          interactiveSegments.length === 0 ||
+                          !interactiveGraphLint.ok
+                        }
+                      >
+                        {segmentStudioActivity.kind === "audio" &&
+                        (segmentStudioActivity.scope === "all" || segmentStudioActivity.scope === "some") ? (
+                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 mr-1.5" />
+                        )}
+                        {segmentStudioActivity.kind === "audio" &&
+                        (segmentStudioActivity.scope === "all" || segmentStudioActivity.scope === "some")
+                          ? "Generating audio…"
+                          : "Generate all segment audio"}
+                      </Button>
+                    </div>
+                    <div>
+                      <Label htmlFor="segmentVoiceProfileEdit" className="text-xs">Voice profile</Label>
+                      <Select
+                        value={segmentVoiceProfile}
+                        onValueChange={setSegmentVoiceProfile}
+                      >
+                        <SelectTrigger id="segmentVoiceProfileEdit" className="mt-1 h-8 rounded-lg text-xs">
+                          <SelectValue placeholder="Select voice profile" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {segmentVoiceOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="mt-2 flex gap-2">
+                        <Input
+                          value={segmentVoiceParentId}
+                          onChange={(e) => setSegmentVoiceParentId(e.target.value)}
+                          className="h-8 rounded-lg text-xs"
+                          placeholder="Parent ID for cloned voices"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleLoadVoiceProfiles()}
+                          disabled={segmentStudioBusy}
+                        >
+                          {segmentStudioActivity.kind === "voices" ? (
+                            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                          ) : null}
+                          {segmentStudioActivity.kind === "voices" ? "Loading…" : "Load voices"}
+                        </Button>
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {segmentVoiceStatus ?? "Tip: load voices with Parent ID, then pick cloned:{id}. Keep Default as fallback."}
+                      </p>
+                    </div>
+                    {interactiveSegments.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Add a valid graph to parse segments, then generate missing audio URLs.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {interactiveSegments.map((seg) => (
+                          <div key={seg.id} className="rounded border border-border/60 p-2 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <code className="text-xs">{seg.id}</code>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void handleGenerateSegmentAudio([seg.id])}
+                                disabled={segmentStudioBusy || !interactiveGraphLint.ok}
+                              >
+                                {segmentStudioActivity.kind === "audio" &&
+                                segmentStudioActivity.segmentIds.includes(seg.id) ? (
+                                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                                ) : null}
+                                {segmentStudioActivity.kind === "audio" &&
+                                segmentStudioActivity.segmentIds.includes(seg.id)
+                                  ? "Generating…"
+                                  : "Generate audio"}
+                              </Button>
+                            </div>
+                            <textarea
+                              value={segmentScripts[seg.id] ?? seg.text}
+                              onChange={(e) =>
+                                setSegmentScripts((prev) => ({ ...prev, [seg.id]: e.target.value }))
+                              }
+                              className="flex min-h-[68px] w-full rounded border border-input bg-background px-2 py-1.5 text-xs"
+                              placeholder="Segment narration script"
+                              spellCheck={false}
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              {seg.audioUrl ? `Current audio: ${seg.audioUrl}` : "Audio missing"}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+                <div>
+                  <Label htmlFor="postStoryMission">Post-episode family mission (plain text)</Label>
+                  <textarea
+                    id="postStoryMission"
+                    value={form.postStoryMission ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, postStoryMission: e.target.value || "" } : f))
+                    }
+                    className="mt-1 flex min-h-[80px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                    maxLength={8000}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="postStoryResourceUrl">Optional resource link (e.g. decision journal)</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Printable journal: parent app <code className="rounded bg-muted px-1">/decision-journal.html</code>. Pre-fill
+                    via admin env <code className="rounded bg-muted px-1">NEXT_PUBLIC_DECISION_JOURNAL_URL</code> (HTTPS in
+                    production).
+                  </p>
+                  <Input
+                    id="postStoryResourceUrl"
+                    value={form.postStoryResourceUrl ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, postStoryResourceUrl: e.target.value || "" } : f))
+                    }
+                    className="mt-1 rounded-lg"
+                    maxLength={512}
+                    placeholder="https://..."
+                  />
+                </div>
+            </CardContent>
+          </Card>
+          ) : (
+          <Card className="border-dashed border-muted-foreground/35 bg-muted/15">
+            <CardContent className="py-4">
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">Branching interactive episode?</span> Set{" "}
+                <strong>Category</strong> to one that starts with <strong>Learn · Simulator</strong> to edit the JSON graph,
+                segment scripts, and audio studio.
+              </p>
+            </CardContent>
+          </Card>
+          )}
+
+          {/* Metadata: linear stories only; interactive pilots get catalog defaults above */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">Metadata</CardTitle>
+              <CardTitle className="text-sm font-semibold">{simulatorSelected ? "Catalog defaults" : "Metadata"}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {!simulatorSelected ? (
+              <>
               <div>
                 <Label htmlFor="moral">Moral (optional)</Label>
                 <Input id="moral" value={form.moral ?? ""} onChange={(e) => setForm((f) => (f ? { ...f, moral: e.target.value } : f))} placeholder="e.g. Sharing brings joy" className="mt-1 rounded-lg" />
@@ -1401,112 +2241,33 @@ export default function EditLibraryStoryPage() {
                   />
                 </div>
               </div>
-              <div className="rounded-lg border border-border/80 bg-muted/10 p-4 space-y-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold">Interactive episode (EduStory pilot)</p>
-                    <p className="text-xs text-muted-foreground mt-1 max-w-prose">
-                      Valid JSON with <code className="rounded bg-muted px-1">startSegmentId</code> and{" "}
-                      <code className="rounded bg-muted px-1">segments</code> (each segment:{" "}
-                      <code className="rounded bg-muted px-1">audioUrl</code>, optional{" "}
-                      <code className="rounded bg-muted px-1">choices</code> with{" "}
-                      <code className="rounded bg-muted px-1">id</code>, <code className="rounded bg-muted px-1">label</code>,{" "}
-                      <code className="rounded bg-muted px-1">nextSegmentId</code>, optional{" "}
-                      <code className="rounded bg-muted px-1">skillDeltas</code>). Leave empty for linear playback only.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 shrink-0">
-                    <Button type="button" variant="secondary" size="sm" onClick={applyDigitalSafetyTemplate}>
-                      <LayoutTemplate className="h-4 w-4 mr-1.5" />
-                      Digital Safety template
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={formatInteractiveGraphField}>
-                      <Braces className="h-4 w-4 mr-1.5" />
-                      Format JSON
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" asChild>
-                      <Link href="/dashboard/edu-simulator-analytics">Choice analytics</Link>
-                    </Button>
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="interactiveGraph">Interactive graph (JSON)</Label>
-                  <textarea
-                    id="interactiveGraph"
-                    value={form.interactiveGraph ?? ""}
-                    onChange={(e) =>
-                      setForm((f) => (f ? { ...f, interactiveGraph: e.target.value || "" } : f))
-                    }
-                    className="mt-1 flex min-h-[240px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono text-xs"
-                    spellCheck={false}
-                  />
-                  {validationErrors.interactiveGraph ? (
-                    <p className="text-sm text-destructive mt-2">{validationErrors.interactiveGraph}</p>
-                  ) : !interactiveGraphLint.ok ? (
-                    <ul className="text-sm text-destructive mt-2 list-disc pl-5 space-y-0.5">
-                      {interactiveGraphLint.errors.map((err, i) => (
-                        <li key={i}>{err}</li>
-                      ))}
-                    </ul>
-                  ) : form.interactiveGraph?.trim() ? (
-                    <p className="text-sm text-muted-foreground mt-2">Interactive graph JSON looks valid.</p>
-                  ) : null}
-                </div>
-                {interactiveGraphOutline && interactiveGraphOutline.length > 0 ? (
-                  <div className="rounded-md border border-border/60 bg-background/80 p-3 space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Flow preview</p>
-                    <ol className="text-sm space-y-2 list-decimal pl-4">
-                      {interactiveGraphOutline.map((seg) => (
-                        <li key={seg.id}>
-                          <span className="font-mono text-xs">{seg.id}</span>
-                          {seg.isEnd ? (
-                            <span className="text-muted-foreground"> — end</span>
-                          ) : (
-                            <ul className="mt-1 space-y-0.5 pl-0 list-none">
-                              {seg.choices.map((c) => (
-                                <li key={c.id} className="text-xs text-muted-foreground">
-                                  → <span className="text-foreground">{c.label}</span>{" "}
-                                  <span className="font-mono">({c.nextSegmentId})</span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                ) : null}
-                <div>
-                  <Label htmlFor="postStoryMission">Post-episode family mission (plain text)</Label>
-                  <textarea
-                    id="postStoryMission"
-                    value={form.postStoryMission ?? ""}
-                    onChange={(e) =>
-                      setForm((f) => (f ? { ...f, postStoryMission: e.target.value || "" } : f))
-                    }
-                    className="mt-1 flex min-h-[80px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
-                    maxLength={8000}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="postStoryResourceUrl">Optional resource link (e.g. decision journal)</Label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Printable journal: parent app <code className="rounded bg-muted px-1">/decision-journal.html</code>. Pre-fill
-                    via admin env <code className="rounded bg-muted px-1">NEXT_PUBLIC_DECISION_JOURNAL_URL</code> (HTTPS in
-                    production).
+              </>
+              ) : null}
+              {simulatorSelected ? (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Moral, narration tone, and parent discussion fields are not used for interactive pilots. Age and
+                    listener label still apply for catalog and TTS defaults.
                   </p>
-                  <Input
-                    id="postStoryResourceUrl"
-                    value={form.postStoryResourceUrl ?? ""}
-                    onChange={(e) =>
-                      setForm((f) => (f ? { ...f, postStoryResourceUrl: e.target.value || "" } : f))
-                    }
-                    className="mt-1 rounded-lg"
-                    maxLength={512}
-                    placeholder="https://..."
-                  />
-                </div>
-              </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Age group</Label>
+                      <Select value={String(form.age)} onValueChange={(v) => setForm((f) => (f ? { ...f, age: parseInt(v, 10) } : f))}>
+                        <SelectTrigger className="mt-1 rounded-lg"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {AGE_GROUPS.map((a) => (
+                            <SelectItem key={a.value} value={String(a.value)}>{a.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="childName">Child name</Label>
+                      <Input id="childName" value={form.childName ?? "Child"} onChange={(e) => setForm((f) => (f ? { ...f, childName: e.target.value } : f))} className="mt-1 rounded-lg" />
+                    </div>
+                  </div>
+                </>
+              ) : null}
             </CardContent>
           </Card>
             </>
@@ -1517,18 +2278,23 @@ export default function EditLibraryStoryPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">Other languages</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Edit per-language text if needed. Use <strong>Regenerate &amp; sync all languages</strong> in the right panel to run
-                Tamixa TTS script conversion and rebuild scripts for every pipeline language (no MP3s). When idle, go to{" "}
-                <strong>Cover</strong>. After approval, open <strong>Narration</strong> and use <strong>Generate audio</strong>.
+                Edit per-language text if needed. A language tab also switches the <strong>Graph locale</strong> under All
+                languages so the interactive JSON and segment studio match that locale when content exists on the server.
+                Use <strong>Regenerate &amp; sync all languages</strong> in the right panel to run Tamixa TTS script
+                conversion and rebuild scripts for every pipeline language (no MP3s). When idle, go to <strong>Cover</strong>.
+                After approval, open <strong>Narration</strong> and use <strong>Generate audio</strong>.
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex gap-1 flex-wrap">
-                {TAB_LANGUAGES.filter((l) => l.code !== form.language).map(({ code, label }) => (
+                {LIBRARY_TAB_LANGUAGES.filter((l) => l.code !== form.language).map(({ code, label }) => (
                   <button
                     key={code}
                     type="button"
-                    onClick={() => setActiveLangTab(code)}
+                    onClick={() => {
+                      setActiveLangTab(code);
+                      handleInteractiveGraphLocaleChange(code);
+                    }}
                     className={cn(
                       "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
                       activeLangTab === code ? "bg-primary text-primary-foreground" : "bg-muted/50 text-muted-foreground hover:bg-muted"
@@ -1538,9 +2304,9 @@ export default function EditLibraryStoryPage() {
                   </button>
                 ))}
               </div>
-              {TAB_LANGUAGES.filter((l) => l.code !== form.language).map(({ code, label }) => {
+              {LIBRARY_TAB_LANGUAGES.filter((l) => l.code !== form.language).map(({ code, label }) => {
                 if (activeLangTab !== code) return null;
-                const entry = translationContentEntries[code] ?? { content: "", title: "", moral: "" };
+                const entry = translationContentEntries[code] ?? emptyLibraryTranslationTab();
                 const langBefore = paraphraseBeforeByLang?.[code] ?? null;
                 return (
                   <div key={code} className="space-y-3">
@@ -1566,7 +2332,7 @@ export default function EditLibraryStoryPage() {
                     )}
                     <div>
                       <Label htmlFor={`tl-title-${code}`}>Title</Label>
-                      <Input id={`tl-title-${code}`} value={entry.title} onChange={(e) => setTranslationContentEntries((p) => ({ ...p, [code]: { ...(p[code] ?? { content: "", title: "", moral: "" }), title: e.target.value } }))} placeholder={`Title in ${label}`} className="mt-1 rounded-lg" />
+                      <Input id={`tl-title-${code}`} value={entry.title} onChange={(e) => setTranslationContentEntries((p) => ({ ...p, [code]: { ...(p[code] ?? emptyLibraryTranslationTab()), title: e.target.value } }))} placeholder={`Title in ${label}`} className="mt-1 rounded-lg" />
                     </div>
                     <div>
                       <Label htmlFor={`tl-content-${code}`}>Story text</Label>
@@ -1577,7 +2343,7 @@ export default function EditLibraryStoryPage() {
                           setTranslationContentEntries((p) => ({
                             ...p,
                             [code]: {
-                              ...(p[code] ?? { content: "", title: "", moral: "" }),
+                              ...(p[code] ?? emptyLibraryTranslationTab()),
                               content: e.target.value,
                             },
                           }))
@@ -1588,7 +2354,39 @@ export default function EditLibraryStoryPage() {
                     </div>
                     <div>
                       <Label htmlFor={`tl-moral-${code}`}>Moral</Label>
-                      <Input id={`tl-moral-${code}`} value={entry.moral} onChange={(e) => setTranslationContentEntries((p) => ({ ...p, [code]: { ...(p[code] ?? { content: "", title: "", moral: "" }), moral: e.target.value } }))} placeholder={`Moral in ${label}`} className="mt-1 rounded-lg" />
+                      <Input id={`tl-moral-${code}`} value={entry.moral} onChange={(e) => setTranslationContentEntries((p) => ({ ...p, [code]: { ...(p[code] ?? emptyLibraryTranslationTab()), moral: e.target.value } }))} placeholder={`Moral in ${label}`} className="mt-1 rounded-lg" />
+                    </div>
+                    <div>
+                      <Label htmlFor={`tl-mission-${code}`}>Post-episode family mission ({label})</Label>
+                      <textarea
+                        id={`tl-mission-${code}`}
+                        value={entry.postStoryMission}
+                        onChange={(e) =>
+                          setTranslationContentEntries((p) => ({
+                            ...p,
+                            [code]: { ...(p[code] ?? emptyLibraryTranslationTab()), postStoryMission: e.target.value },
+                          }))
+                        }
+                        placeholder={`Plain text shown to parents after the episode in ${label}. Leave empty to use the master story value.`}
+                        className="mt-1 flex min-h-[72px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                        maxLength={ADMIN_LIBRARY_POST_MISSION_MAX_CHARS}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`tl-resource-${code}`}>Post-episode resource URL ({label})</Label>
+                      <Input
+                        id={`tl-resource-${code}`}
+                        value={entry.postStoryResourceUrl}
+                        onChange={(e) =>
+                          setTranslationContentEntries((p) => ({
+                            ...p,
+                            [code]: { ...(p[code] ?? emptyLibraryTranslationTab()), postStoryResourceUrl: e.target.value },
+                          }))
+                        }
+                        placeholder="Optional link (inherits master if empty)"
+                        className="mt-1 rounded-lg"
+                        maxLength={ADMIN_LIBRARY_POST_RESOURCE_URL_MAX_CHARS}
+                      />
                     </div>
                   </div>
                 );
@@ -1787,7 +2585,7 @@ export default function EditLibraryStoryPage() {
           )}
         </div>
 
-        <div className="space-y-6 lg:sticky lg:top-20 lg:self-start">
+        <div className="space-y-6">
           {workflowStep === 1 && (
           <Card>
             <CardHeader className="pb-2">
@@ -1868,7 +2666,7 @@ export default function EditLibraryStoryPage() {
                   ? ` • Last completed ${regenerateLastCompletedAt.toLocaleTimeString()}`
                   : ""}
                 {regenerateStatusUnavailable
-                  ? " • Live regenerate status is temporarily unavailable; using best-effort UI state."
+                  ? " • Regenerate status could not be fetched (network or server). Idle / running below reflects this editor session until the next successful poll—refresh or retry."
                   : ""}
               </p>
               <p className="text-xs text-muted-foreground">
@@ -1968,10 +2766,17 @@ export default function EditLibraryStoryPage() {
                 onClick={() => handleSubmit(true)}
                 size="default"
                 className="w-full"
-                disabled={workflowBusy || storyPipelineRunning || !canSubmitForReview}
+                disabled={
+                  workflowBusy ||
+                  storyPipelineRunning ||
+                  !canSubmitForReview ||
+                  simulatorSubmitBlockedByAudio
+                }
                 title={
                   storyPipelineRunning
                     ? "Pipeline queued or running for this story"
+                    : simulatorSubmitBlockedByAudio
+                      ? "Generate audio for all simulator segments first"
                     : inReviewQueue
                       ? "Already in review queue. Move to draft after edits, then submit again."
                       : !form?.content?.trim()
@@ -1981,6 +2786,26 @@ export default function EditLibraryStoryPage() {
               >
                 {submitting ? "Submitting…" : "Submit for review"}
               </Button>
+              {simulatorSubmitBlockedByAudio ? (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-amber-600 dark:text-amber-500">
+                    Blocked: {simulatorSegmentsMissingAudio.length} segment(s) missing audioUrl. Generate all segment
+                    audio in Segment Audio Studio before submitting.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleGenerateSegmentAudio(simulatorSegmentsMissingAudio.map((s) => s.id))}
+                    disabled={segmentStudioBusy || submitting}
+                  >
+                    {segmentStudioActivity.kind === "audio" ? (
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                    ) : null}
+                    {segmentStudioActivity.kind === "audio" ? "Generating audio…" : "Generate all missing now"}
+                  </Button>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
           )}

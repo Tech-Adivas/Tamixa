@@ -33,6 +33,9 @@ class RedisRateLimitingFilter(
     private val objectMapper: ObjectMapper
 ) : OncePerRequestFilter() {
 
+    override fun shouldNotFilter(request: HttpServletRequest): Boolean =
+        request.method.equals("OPTIONS", ignoreCase = true)
+
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,

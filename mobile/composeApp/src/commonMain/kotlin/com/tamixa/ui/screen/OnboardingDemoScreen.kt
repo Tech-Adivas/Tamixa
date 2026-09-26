@@ -87,7 +87,7 @@ fun OnboardingDemoScreen(
 
     OnboardingShell(
         step = 2,
-        totalSteps = 4,
+        totalSteps = 5,
         modifier = modifier,
         onSwipeToNext = onSwipeToNext,
         onSwipeToPrevious = onSwipeToPrevious,
@@ -111,9 +111,11 @@ fun OnboardingDemoScreen(
         }
     ) {
         val spec = LocalOnboardingLayoutSpec.current
+        
+        // Large hero with demo player - self-explanatory
         OnboardingHeroSpotlight(
             kind = OnboardingHeroHaloKind.LanternGlow,
-            haloHeight = 278.dp,
+            haloHeight = 360.dp,
             modifier = Modifier.onboardingEntrance(delayMs = 55)
         ) {
             OnboardingDemoStoryCard(
@@ -123,43 +125,16 @@ fun OnboardingDemoScreen(
                 onPlayPause = { controller.playPause() }
             )
         }
+        
         Spacer(Modifier.height(spec.gapLg))
+        
+        // Simple headline only
         OnboardingEditorialTextCard(
             modifier = Modifier.onboardingEntrance(delayMs = 115)
         ) {
             OnboardingHeadline(
                 text = Strings.onboardingDemoHeadline(),
                 modifier = Modifier.fillMaxWidth()
-            )
-            OnboardingSubline(
-                text = Strings.onboardingDemoSubline(),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        Spacer(Modifier.height(spec.gapMd))
-        OnboardingValueStripTitle(
-            text = Strings.onboardingStripTitle(2),
-            modifier = Modifier.onboardingEntrance(delayMs = 150)
-        )
-        Spacer(Modifier.height(spec.gapSm))
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(spec.benefitRowSpacing)
-        ) {
-            OnboardingBenefitRow(
-                emoji = "🦊",
-                text = Strings.onboardingDemoBenefitHear(),
-                modifier = Modifier.onboardingEntrance(delayMs = 185)
-            )
-            OnboardingBenefitRow(
-                emoji = "⏯️",
-                text = Strings.onboardingDemoBenefitControl(),
-                modifier = Modifier.onboardingEntrance(delayMs = 235)
-            )
-            OnboardingBenefitRow(
-                emoji = "🧭",
-                text = Strings.onboardingDemoBenefitInteractive(),
-                modifier = Modifier.onboardingEntrance(delayMs = 285)
             )
         }
     }
@@ -231,29 +206,6 @@ private fun OnboardingDemoStoryCard(
                             cornerRadius = imgCorner
                         )
                     }
-                    Text(
-                        text = Strings.onboardingDemoCardTeaser(),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = OnboardingCardColors.onCardText,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 6.dp)
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OnboardingLanePill(
-                            text = Strings.onboardingDemoPillFun(),
-                            accent = OnboardingCardColors.pillWarmOrange
-                        )
-                        OnboardingLanePill(
-                            text = Strings.onboardingDemoPillLearn(),
-                            accent = OnboardingCardColors.pillLearnLane
-                        )
-                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Center,
@@ -297,15 +249,6 @@ private fun OnboardingDemoStoryCard(
                             .padding(horizontal = 2.dp),
                         color = TamixaColors.goldAccent,
                         trackColor = TamixaColors.lavenderGlow.copy(alpha = 0.28f)
-                    )
-                    Text(
-                        text = Strings.onboardingDemoListenAlongHint(),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = OnboardingCardColors.onboardingSubline.copy(alpha = 0.88f),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp)
                     )
                 }
             }

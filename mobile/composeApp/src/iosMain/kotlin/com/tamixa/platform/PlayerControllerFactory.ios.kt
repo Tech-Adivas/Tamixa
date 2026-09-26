@@ -3,6 +3,7 @@ package com.tamixa.platform
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +34,7 @@ private fun noOpController(): StoryPlaybackController = object : StoryPlaybackCo
     override val isReady get() = false
     override val isPlaying get() = false
     override val progress get() = 0f
+    override val durationMillis get() = 0L
     override fun playPause() {}
     override fun rewind() {}
     override fun fastForward() {}
@@ -62,6 +64,7 @@ private fun createAvPlayerController(
     isReadyState: androidx.compose.runtime.MutableState<Boolean>,
     isPlayingState: androidx.compose.runtime.MutableState<Boolean>,
     progressState: androidx.compose.runtime.MutableState<Float>,
+    durationMillisState: MutableState<Long>,
     onProgressChanged: (Float) -> Unit,
     onPlaybackError: (() -> Unit)?,
     muteVideoAudio: Boolean = false
@@ -101,7 +104,8 @@ private fun createAvPlayerController(
             }
             val currentTime = CMTimeGetSeconds(avPlayer.currentTime())
             val duration = currentItem.duration?.let { d -> CMTimeGetSeconds(d) } ?: 0.0
-            if (duration > 0 && !duration.isNaN()) {
+            if (duration > 0 && !duration.isNaN() && !duration.isInfinite()) {
+                durationMillisState.value = (duration * 1000.0).toLong()
                 val p = (currentTime / duration).toFloat().coerceIn(0f, 1f)
                 progressState.value = p
                 onProgressChanged(p)
@@ -113,6 +117,7 @@ private fun createAvPlayerController(
         override val isReady: Boolean get() = isReadyState.value
         override val isPlaying: Boolean get() = isPlayingState.value
         override val progress: Float get() = progressState.value
+        override val durationMillis: Long get() = durationMillisState.value
         override fun playPause() {
             if (!isReadyState.value) return
             if (avPlayer.timeControlStatus == AVPlayerTimeControlStatusPlaying) {
@@ -170,6 +175,7 @@ actual fun rememberStreamingController(
     val isReadyState = remember(streamUrl) { mutableStateOf(false) }
     val isPlayingState = remember(streamUrl) { mutableStateOf(false) }
     val progressState = remember(streamUrl) { mutableFloatStateOf(0f) }
+    val durationMillisState = remember(streamUrl) { mutableStateOf(0L) }
     var controller by remember(streamUrl) { mutableStateOf<StoryPlaybackController>(noOpController()) }
     var avPlayer by remember(streamUrl) { mutableStateOf<AVPlayer?>(null) }
     DisposableEffect(streamUrl) {
@@ -183,6 +189,7 @@ actual fun rememberStreamingController(
                 isReadyState,
                 isPlayingState,
                 progressState,
+                durationMillisState,
                 onProgressChanged,
                 onPlaybackError,
                 muteVideoAudio = false
@@ -212,6 +219,7 @@ actual fun rememberLocalFileController(
     val isReadyState = remember(fileUri) { mutableStateOf(false) }
     val isPlayingState = remember(fileUri) { mutableStateOf(false) }
     val progressState = remember(fileUri) { mutableFloatStateOf(0f) }
+    val durationMillisState = remember(fileUri) { mutableStateOf(0L) }
     var controller by remember(fileUri) { mutableStateOf<StoryPlaybackController>(noOpController()) }
     var avPlayer by remember(fileUri) { mutableStateOf<AVPlayer?>(null) }
     DisposableEffect(fileUri) {
@@ -224,6 +232,7 @@ actual fun rememberLocalFileController(
                 isReadyState,
                 isPlayingState,
                 progressState,
+                durationMillisState,
                 onProgressChanged,
                 null,
                 muteVideoAudio = false
@@ -256,6 +265,7 @@ actual fun rememberAvatarVideoController(
     val isReadyState = remember(videoUrl, muteVideoAudio, repeatVideo) { mutableStateOf(false) }
     val isPlayingState = remember(videoUrl, muteVideoAudio, repeatVideo) { mutableStateOf(false) }
     val progressState = remember(videoUrl, muteVideoAudio, repeatVideo) { mutableFloatStateOf(0f) }
+    val durationMillisState = remember(videoUrl, muteVideoAudio, repeatVideo) { mutableStateOf(0L) }
     var result by remember(videoUrl, muteVideoAudio, repeatVideo) {
         mutableStateOf(
             AvatarVideoControllerResult(controller = noOpController(), player = null)
@@ -273,6 +283,7 @@ actual fun rememberAvatarVideoController(
                 isReadyState,
                 isPlayingState,
                 progressState,
+                durationMillisState,
                 onProgressChanged,
                 onPlaybackError,
                 muteVideoAudio = muteVideoAudio

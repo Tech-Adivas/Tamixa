@@ -32,7 +32,10 @@ class TranslationService(
         val translated: Boolean,
         val titleBeforeParaphrase: String? = null,
         val contentBeforeParaphrase: String? = null,
-        val moralBeforeParaphrase: String? = null
+        val moralBeforeParaphrase: String? = null,
+        val parentContentNote: String? = null,
+        val parentDiscussionPrompts: List<String>? = null,
+        val speakAlongPrompt: String? = null,
     )
 
     /**
@@ -46,7 +49,10 @@ class TranslationService(
         content: String,
         moral: String?,
         forceParaphraseForSameLanguage: Boolean = false,
-        bypassCache: Boolean = false
+        bypassCache: Boolean = false,
+        parentContentNote: String? = null,
+        parentDiscussionPrompts: List<String>? = null,
+        speakAlongPrompt: String? = null,
     ): TranslationResult {
         val src = sourceLang.trim().lowercase()
         val tgt = targetLang.trim().lowercase()
@@ -56,10 +62,16 @@ class TranslationService(
                 title = title,
                 content = content,
                 moral = moral,
-                translated = false
+                translated = false,
+                parentContentNote = parentContentNote?.trim()?.takeIf { it.isNotBlank() },
+                parentDiscussionPrompts = parentDiscussionPrompts
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotBlank() }
+                    ?.takeIf { it.isNotEmpty() },
+                speakAlongPrompt = speakAlongPrompt?.trim()?.takeIf { it.isNotBlank() },
             )
         }
-        val sourceHash = contentHash(title, content, moral)
+        val sourceHash = contentHash(title, content, moral, parentContentNote, parentDiscussionPrompts, speakAlongPrompt)
         if (!bypassCache) {
             translationCache?.getByContentHash(sourceHash, tgt)?.let { cached ->
                 log.info("Translation cache HIT {}->{} (hash={})", src, tgt, sourceHash.take(8))
@@ -67,7 +79,10 @@ class TranslationService(
                     title = cached.title,
                     content = cached.content,
                     moral = cached.moral,
-                    translated = true
+                    translated = true,
+                    parentContentNote = cached.parentContentNote,
+                    parentDiscussionPrompts = cached.parentDiscussionPrompts,
+                    speakAlongPrompt = cached.speakAlongPrompt,
                 )
             }
         }
@@ -79,7 +94,10 @@ class TranslationService(
             title = title,
             content = content,
             moral = moral,
-            timeoutMs = timeoutMs
+            timeoutMs = timeoutMs,
+            parentContentNote = parentContentNote,
+            parentDiscussionPrompts = parentDiscussionPrompts,
+            speakAlongPrompt = speakAlongPrompt,
         )
         val beforeTitle = translated.titleBeforeParaphrase?.let { trimLeadingSpecialSymbols(it) }
         val beforeContent = translated.contentBeforeParaphrase?.let { trimLeadingSpecialSymbols(it) }
@@ -91,7 +109,12 @@ class TranslationService(
             translated = true,
             titleBeforeParaphrase = beforeTitle,
             contentBeforeParaphrase = beforeContent,
-            moralBeforeParaphrase = beforeMoral
+            moralBeforeParaphrase = beforeMoral,
+            parentContentNote = translated.parentContentNote?.let { trimLeadingSpecialSymbols(it) },
+            parentDiscussionPrompts = translated.parentDiscussionPrompts
+                ?.mapNotNull { trimLeadingSpecialSymbols(it).takeIf { s -> s.isNotBlank() } }
+                ?.takeIf { it.isNotEmpty() },
+            speakAlongPrompt = translated.speakAlongPrompt?.let { trimLeadingSpecialSymbols(it) },
         )
         if (!bypassCache) {
             translationCache?.setByContentHash(
@@ -102,15 +125,26 @@ class TranslationService(
                     content = result.content,
                     moral = result.moral,
                     wordCount = result.content.split(Regex("\\s+")).filter { it.isNotBlank() }.size,
-                    readingTimeMinutes = 0.0
+                    readingTimeMinutes = 0.0,
+                    parentContentNote = result.parentContentNote,
+                    parentDiscussionPrompts = result.parentDiscussionPrompts,
+                    speakAlongPrompt = result.speakAlongPrompt,
                 )
             )
         }
         return result
     }
 
-    private fun contentHash(title: String?, content: String, moral: String?): String {
-        val input = "${title ?: ""}|$content|${moral ?: ""}"
+    private fun contentHash(
+        title: String?,
+        content: String,
+        moral: String?,
+        parentContentNote: String?,
+        parentDiscussionPrompts: List<String>?,
+        speakAlongPrompt: String?,
+    ): String {
+        val p = parentDiscussionPrompts?.joinToString("\u001e") ?: ""
+        val input = "${title ?: ""}|$content|${moral ?: ""}|${parentContentNote ?: ""}|$p|${speakAlongPrompt ?: ""}"
         val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
         return digest.joinToString("") { "%02x".format(it) }
     }

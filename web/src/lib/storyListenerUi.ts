@@ -40,7 +40,12 @@ export function isSimulatorStory(theme: string, category?: string | null): boole
   return SIMULATOR_PREFIX.test(c) || SIMULATOR_PREFIX.test(t);
 }
 
-/** Practice hub: simulator naming or non-empty interactive graph payload from API. */
+/**
+ * Practice hub: simulator naming or non-empty interactive graph payload from API.
+ *
+ * Canonical graph for parents: `GET /v1/stories/library/{id}` returns a merged `interactiveGraph` and does not
+ * expose `translationInteractiveGraphOverlay` (admin-only overlay). Use `interactiveGraph` for branching UI.
+ */
 export function isInteractivePracticeLibraryStory(story: {
   theme: string;
   category?: string | null;

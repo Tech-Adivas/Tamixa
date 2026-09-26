@@ -66,7 +66,7 @@ class DigitalSurvivalDevE2eSeedService(
     }
 
     private fun upsertMasterForDelivery(master: LibraryStoryEntity, now: Instant) {
-        master.status = "PUBLISHED"
+        master.status = com.tamixa.domain.LibraryStoryStatus.PUBLISHED
         master.narrationApprovedAt = now
         master.updatedAt = now
         if (master.audioFileUrl.isNullOrBlank()) {

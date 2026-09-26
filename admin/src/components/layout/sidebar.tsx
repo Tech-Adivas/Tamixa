@@ -97,41 +97,46 @@ export function Sidebar() {
         aria-label="Main navigation"
       >
       <div className="flex min-h-touch items-center justify-between gap-3 border-b border-sidebar-border/80 px-4">
-        <div className="flex min-h-touch items-center gap-3">
+        <div className="flex min-h-touch items-center gap-2.5">
           <Link
             href="/dashboard"
-            className="tamixa-app-icon flex flex-shrink-0 rounded-xl bg-white/10 min-h-[48px] min-w-[48px] w-12 h-12 focus:outline-none focus:ring-2 focus:ring-sidebar-accent focus:ring-offset-2 focus:ring-offset-transparent [&>span]:!block [&>span]:!size-full [&>span]:!flex [&>span]:!items-center [&>span]:!justify-center"
+            className="tamixa-app-icon flex flex-shrink-0 rounded-xl bg-white/10 min-h-[40px] min-w-[40px] w-10 h-10 focus:outline-none focus:ring-2 focus:ring-sidebar-accent focus:ring-offset-2 focus:ring-offset-transparent [&>span]:!block [&>span]:!size-full [&>span]:!flex [&>span]:!items-center [&>span]:!justify-center"
             aria-label="Tamixa Admin home"
             onClick={() => setOpen(false)}
           >
             <Image
               src="/tamixa-app-icon.png"
               alt=""
-              width={48}
-              height={48}
+              width={40}
+              height={40}
               className="object-contain"
             />
           </Link>
-          <Link
-            href="/dashboard"
-            className="font-semibold tracking-tight text-sidebar-foreground"
-            onClick={() => setOpen(false)}
-          >
-            Admin
-          </Link>
+          <div className="flex flex-col leading-none">
+            <Link
+              href="/dashboard"
+              className="text-sm font-bold tracking-tight text-sidebar-foreground"
+              onClick={() => setOpen(false)}
+            >
+              Tamixa
+            </Link>
+            <span className="text-[10px] font-medium tracking-wider uppercase text-sidebar-muted opacity-70">
+              Admin
+            </span>
+          </div>
         </div>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sidebar-foreground hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-sidebar-accent md:hidden"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sidebar-foreground hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-sidebar-accent md:hidden"
           aria-label="Close menu"
         >
-          <X className="h-5 w-5" />
+          <X className="h-4 w-4" />
         </button>
       </div>
-      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-3">
-        <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">
-          Menu
+      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2.5">
+        <p className="mb-1 px-2 pt-1 text-[10px] font-bold uppercase tracking-widest text-sidebar-muted/70">
+          Operations
         </p>
         {mainItems.map((item) => {
           const Icon = item.icon;
@@ -143,10 +148,10 @@ export function Sidebar() {
           return disabled ? (
             <span
               key={item.href}
-              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold border-l-2 border-transparent text-sidebar-muted/60 cursor-not-allowed"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium border-l-2 border-transparent text-sidebar-muted/50 cursor-not-allowed"
               title="Unavailable while TTS pipeline is running"
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon className="h-3.5 w-3.5 shrink-0" />
               {item.label}
             </span>
           ) : (
@@ -154,7 +159,7 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-standard border-l-2",
+                "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-standard border-l-2",
                 active
                   ? "border-l-sidebar-accent bg-sidebar-accent/15 text-sidebar-foreground"
                   : "border-transparent text-sidebar-muted hover:bg-white/5 hover:text-sidebar-foreground"
@@ -163,13 +168,13 @@ export function Sidebar() {
               aria-label={item.label}
               onClick={() => setOpen(false)}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon className="h-3.5 w-3.5 shrink-0" />
               {item.label}
             </Link>
           );
         })}
-        <p className="mb-2 mt-4 px-3 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">
-          More
+        <p className="mb-1 mt-3 px-2 text-[10px] font-bold uppercase tracking-widest text-sidebar-muted/70">
+          System
         </p>
         {secondaryItems.map((item) => {
           const Icon = item.icon;
@@ -181,10 +186,10 @@ export function Sidebar() {
           return disabled ? (
             <span
               key={item.href}
-              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold border-l-2 border-transparent text-sidebar-muted/60 cursor-not-allowed"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium border-l-2 border-transparent text-sidebar-muted/50 cursor-not-allowed"
               title="Unavailable while TTS pipeline is running"
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon className="h-3.5 w-3.5 shrink-0" />
               {item.label}
             </span>
           ) : (
@@ -192,7 +197,7 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-standard border-l-2",
+                "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-standard border-l-2",
                 active
                   ? "border-l-sidebar-accent bg-sidebar-accent/15 text-sidebar-foreground"
                   : "border-transparent text-sidebar-muted hover:bg-white/5 hover:text-sidebar-foreground"
@@ -201,7 +206,7 @@ export function Sidebar() {
               aria-label={item.label}
               onClick={() => setOpen(false)}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon className="h-3.5 w-3.5 shrink-0" />
               {item.label}
             </Link>
           );

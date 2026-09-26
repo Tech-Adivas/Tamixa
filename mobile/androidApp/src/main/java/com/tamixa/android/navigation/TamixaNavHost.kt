@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import com.tamixa.ui.data.SampleData
 import com.tamixa.ui.isInteractivePracticeLibraryStory
 import com.tamixa.ui.isLearnOrDigitalSafetyStory
+import com.tamixa.util.AuthValidation
 import com.tamixa.util.TamixaConstants
 import com.tamixa.ui.state.UiState
 import androidx.navigation.NavType
@@ -45,10 +46,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -88,6 +92,12 @@ fun TamixaNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     var deepLinkHandled by remember { mutableStateOf(false) }
+    LaunchedEffect(initialDeepLinkUri) {
+        val token = AuthValidation.extractPasswordlessLoginTokenFromUri(initialDeepLinkUri)
+        if (!token.isNullOrBlank() && !authViewModel.isLoggedIn()) {
+            authViewModel.setPendingPasswordlessMagicLinkToken(token)
+        }
+    }
     LaunchedEffect(currentRoute) {
         val sensitive = currentRoute == Screen.Login.route || currentRoute == Screen.Register.route
         onSensitiveScreen?.invoke(sensitive)
@@ -101,7 +111,9 @@ fun TamixaNavHost(
     }
     val loginState by authViewModel.loginState.collectAsState()
     val otpSentToPhone by authViewModel.otpSentToPhone.collectAsState()
+    val otpDevCode by authViewModel.otpDevCode.collectAsState()
     val passwordlessCodeSentToEmail by authViewModel.passwordlessCodeSentToEmail.collectAsState()
+    val pendingPasswordlessMagicLinkToken by authViewModel.pendingPasswordlessMagicLinkToken.collectAsState()
     val registerState by authViewModel.registerState.collectAsState()
     val currentUser by authViewModel.currentUser.collectAsState()
     val generateState by storyViewModel.generateState.collectAsState()
@@ -162,6 +174,8 @@ fun TamixaNavHost(
                 authViewModel.isLoggedIn()
             ) {
                 if (!settingsState.settingsLoaded) return@LaunchedEffect
+                // Let the splash animation play for a moment before navigating
+                kotlinx.coroutines.delay(3000L)
                 if (!settingsState.hasCompletedLanguageSelection) {
                     navController.navigate(Screen.LanguageSelection.route) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
@@ -208,9 +222,15 @@ fun TamixaNavHost(
             LoginScreen(
                 loginState = loginState,
                 otpSentToPhone = otpSentToPhone,
+                otpDevCode = otpDevCode,
                 passwordlessCodeSentToEmail = passwordlessCodeSentToEmail,
+                passwordlessMagicLinkToken = pendingPasswordlessMagicLinkToken,
                 onRequestPasswordlessCode = { authViewModel.requestPasswordlessCode(it) },
                 onVerifyPasswordlessCode = { email, code, terms, privacy, parentalAttestation -> authViewModel.verifyPasswordlessCode(email, code, terms, privacy, parentalAttestation) },
+                onVerifyPasswordlessMagicLink = { token, terms, privacy, parental ->
+                    authViewModel.verifyPasswordlessMagicLink(token, terms, privacy, parental)
+                },
+                onDismissPasswordlessMagicLink = { authViewModel.clearPendingPasswordlessMagicLinkToken() },
                 onClearPasswordlessState = { authViewModel.clearPasswordlessState() },
                 onSendOtp = { authViewModel.sendOtp(it) },
                 onVerifyOtp = { phone, code -> authViewModel.loginWithOtp(phone, code) },
@@ -225,8 +245,29 @@ fun TamixaNavHost(
             )
         }
         composable(Screen.OnboardingDemo.route) {
+            println("🔵 Navigation: OnboardingDemo composable")
             OnboardingDemoScreen(
-                onContinue = { navController.navigate(Screen.OnboardingVoiceInvitation.route) }
+                onContinue = { 
+                    println("🔵 Navigation: OnboardingDemo -> OnboardingInteractivePreview")
+                    navController.navigate(Screen.OnboardingInteractivePreview.route) 
+                },
+                onSkip = { 
+                    println("🔵 Navigation: OnboardingDemo SKIP -> OnboardingInteractivePreview")
+                    navController.navigate(Screen.OnboardingInteractivePreview.route) 
+                }
+            )
+        }
+        composable(Screen.OnboardingInteractivePreview.route) {
+            println("🟢 Navigation: OnboardingInteractivePreview composable")
+            OnboardingInteractivePreviewScreen(
+                onContinue = { 
+                    println("🟢 Navigation: OnboardingInteractivePreview -> OnboardingVoiceInvitation")
+                    navController.navigate(Screen.OnboardingVoiceInvitation.route) 
+                },
+                onSkip = { 
+                    println("🟢 Navigation: OnboardingInteractivePreview SKIP -> OnboardingVoiceInvitation")
+                    navController.navigate(Screen.OnboardingVoiceInvitation.route) 
+                }
             )
         }
         composable(Screen.OnboardingVoiceInvitation.route) {
@@ -421,6 +462,9 @@ fun TamixaNavHost(
                     } else {
                         null
                     },
+                onNavigateToCrisisHelp = {
+                    navController.navigate(Screen.CrisisHelp.route(Screen.CrisisHelp.FROM_LIB_SIM))
+                },
             )
         }
         composable(Screen.Profile.route) {
@@ -603,6 +647,9 @@ fun TamixaNavHost(
                     com.tamixa.ui.listenerPlaybackSubtitle(s, src)
                 }
             }
+            val showCrisisSos =
+                story?.parentId == 0L && !story?.interactiveGraph.isNullOrBlank()
+            Box(Modifier.fillMaxSize()) {
             AudioPlayerScreen(
                 story = story,
                 playbackSubtitle = playbackSubtitle,
@@ -727,6 +774,32 @@ fun TamixaNavHost(
                     }
                 }
             )
+            if (showCrisisSos) {
+                Surface(
+                    onClick = {
+                        story?.let { s ->
+                            val src =
+                                if (s.parentId == 0L) com.tamixa.util.TamixaConstants.STORY_SOURCE_LIBRARY
+                                else com.tamixa.util.TamixaConstants.STORY_SOURCE_GENERATED
+                            appAnalytics.trackCrisisHelpSosTap(s.id, src, prefLang)
+                        }
+                        navController.navigate(Screen.CrisisNavigator.route)
+                    },
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.95f),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 48.dp, end = 12.dp),
+                ) {
+                    Text(
+                        text = Strings.crisisHelpSosChip(),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+            }
         }
         composable(Screen.MyVoiceAndAvatar.route) {
             MyVoiceAndAvatarScreen(
@@ -968,7 +1041,69 @@ fun TamixaNavHost(
                 onNavigateToMyVoiceAndAvatar = { navController.navigate(Screen.MyVoiceAndAvatar.route) { popUpTo(Screen.Dashboard.route) { inclusive = true } } },
                 onNavigateToLibrary = { navController.navigate(Screen.Library.withHub()) },
                 onNavigateToShortContent = { navController.navigate(Screen.ShortContent.route) },
-                onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                onNavigateToCrisisHelp = {
+                    navController.navigate(Screen.CrisisHelp.route(Screen.CrisisHelp.FROM_SETTINGS))
+                },
+            )
+        }
+        composable(
+            route = Screen.CrisisHelp.route,
+            arguments = listOf(
+                navArgument(Screen.CrisisHelp.FROM_ARG) {
+                    type = NavType.StringType
+                    defaultValue = Screen.CrisisHelp.FROM_UNKNOWN
+                },
+            ),
+        ) { crisisEntry ->
+            val fromRaw = crisisEntry.arguments?.getString(Screen.CrisisHelp.FROM_ARG)
+            val from = when (fromRaw) {
+                Screen.CrisisHelp.FROM_LIB_SIM,
+                Screen.CrisisHelp.FROM_SETTINGS,
+                Screen.CrisisHelp.FROM_PLAYER,
+                -> fromRaw
+                else -> Screen.CrisisHelp.FROM_UNKNOWN
+            }
+            val appAnalyticsCrisis: AppAnalytics = koinInject()
+            LaunchedEffect(from) { appAnalyticsCrisis.trackCrisisHelpOpen(from) }
+            val preferencesPortCrisis: PreferencesPort = koinInject()
+            var vaultInit by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(Unit) { vaultInit = preferencesPortCrisis.getCrisisSafetyVaultText() }
+            when (val v = vaultInit) {
+                null -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+                else -> CrisisHelpScreen(
+                    initialVaultText = v,
+                    onSaveVault = { text -> preferencesPortCrisis.setCrisisSafetyVaultText(text) },
+                    onOpenUrl = { url ->
+                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(intent)
+                    },
+                    onBack = { navController.popBackStack() },
+                    onNavigateToCrisisNavigator = {
+                        navController.navigate(Screen.CrisisNavigator.route)
+                    },
+                )
+            }
+        }
+        composable(Screen.CrisisNavigator.route) {
+            val appAnalyticsNavigator: AppAnalytics = koinInject()
+            CrisisNavigatorScreen(
+                onBack = { navController.popBackStack() },
+                onOpenFullDirectory = {
+                    navController.navigate(Screen.CrisisHelp.route(Screen.CrisisHelp.FROM_PLAYER))
+                },
+                onOpenUrl = { url ->
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                },
+                onTrackScreenView = { appAnalyticsNavigator.trackScreenView("crisis_navigator") },
             )
         }
     }

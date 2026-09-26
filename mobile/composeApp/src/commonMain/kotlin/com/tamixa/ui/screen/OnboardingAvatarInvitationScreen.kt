@@ -41,8 +41,8 @@ fun OnboardingAvatarInvitationScreen(
     modifier: Modifier = Modifier
 ) {
     OnboardingShell(
-        step = 4,
-        totalSteps = 4,
+        step = 5,
+        totalSteps = 5,
         modifier = modifier,
         onSwipeToNext = onSwipeToNext,
         onSwipeToPrevious = onSwipeToPrevious,
@@ -66,51 +66,25 @@ fun OnboardingAvatarInvitationScreen(
         }
     ) {
         val spec = LocalOnboardingLayoutSpec.current
+        
+        // Large hero visual
         OnboardingHeroSpotlight(
             kind = OnboardingHeroHaloKind.AvatarShimmer,
-            haloHeight = 266.dp,
+            haloHeight = 320.dp,
             modifier = Modifier.onboardingEntrance(delayMs = 55)
         ) {
             AvatarInvitationPreviewCard()
         }
+        
         Spacer(Modifier.height(spec.gapLg))
+        
+        // Simple headline only
         OnboardingEditorialTextCard(
             modifier = Modifier.onboardingEntrance(delayMs = 115)
         ) {
             OnboardingHeadline(
                 text = Strings.onboardingAvatarHeadline(),
                 modifier = Modifier.fillMaxWidth()
-            )
-            OnboardingSubline(
-                text = Strings.onboardingAvatarSubline(),
-                modifier = Modifier.fillMaxWidth(),
-                lineHeight = 26.sp
-            )
-        }
-        Spacer(Modifier.height(spec.gapMd))
-        OnboardingValueStripTitle(
-            text = Strings.onboardingStripTitle(4),
-            modifier = Modifier.onboardingEntrance(delayMs = 150)
-        )
-        Spacer(Modifier.height(spec.gapSm))
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(spec.benefitRowSpacing)
-        ) {
-            OnboardingBenefitRow(
-                emoji = "🖼️",
-                text = Strings.onboardingAvatarBenefitFace(),
-                modifier = Modifier.onboardingEntrance(delayMs = 185)
-            )
-            OnboardingBenefitRow(
-                emoji = "💛",
-                text = Strings.onboardingAvatarBenefitTrust(),
-                modifier = Modifier.onboardingEntrance(delayMs = 235)
-            )
-            OnboardingBenefitRow(
-                emoji = "🚪",
-                text = Strings.onboardingAvatarBenefitOptional(),
-                modifier = Modifier.onboardingEntrance(delayMs = 285)
             )
         }
     }

@@ -77,11 +77,11 @@ interface StoryLibraryRepositoryPort {
 
     fun updateAudioUrl(id: Long, audioFileUrl: String)
 
-    fun updateStatus(id: Long, status: String)
+    fun updateStatus(id: Long, status: com.tamixa.domain.LibraryStoryStatus)
 
-    fun updateStatusAndReviewNotes(id: Long, status: String, reviewNotes: String?)
+    fun updateStatusAndReviewNotes(id: Long, status: com.tamixa.domain.LibraryStoryStatus, reviewNotes: String?)
 
-    fun updateStatusBulk(ids: List<Long>, status: String): Int
+    fun updateStatusBulk(ids: List<Long>, status: com.tamixa.domain.LibraryStoryStatus): Int
 
     fun updateThemeBulk(ids: List<Long>, theme: String): Int
 

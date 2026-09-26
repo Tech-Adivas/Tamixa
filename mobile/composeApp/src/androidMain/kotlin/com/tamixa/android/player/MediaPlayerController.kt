@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,6 +41,7 @@ fun rememberMediaPlayerController(
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
+    var durationMillisState by remember(fileUri) { mutableLongStateOf(0L) }
     var isReady by remember { mutableStateOf(false) }
     var sleepTimerJob by remember { mutableStateOf<Job?>(null) }
 
@@ -47,6 +49,7 @@ fun rememberMediaPlayerController(
         override val isReady: Boolean get() = false
         override val isPlaying: Boolean get() = false
         override val progress: Float get() = 0f
+        override val durationMillis: Long get() = 0L
         override fun playPause() {}
         override fun rewind() {}
         override fun fastForward() {}
@@ -63,6 +66,7 @@ fun rememberMediaPlayerController(
 
         var progressJob: kotlinx.coroutines.Job? = null
         var mp: MediaPlayer? = null
+        durationMillisState = 0L
         if (isValid) {
             val attrs = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -106,7 +110,13 @@ fun rememberMediaPlayerController(
                 while (true) {
                     delay(300)
                     mediaPlayer?.let { p ->
-                        val dur = p.duration.coerceAtLeast(1)
+                        val raw = p.duration
+                        if (raw > 0) durationMillisState = raw.toLong()
+                        val dur = when {
+                            raw > 0 -> raw
+                            durationMillisState > 0L -> durationMillisState.toInt().coerceAtLeast(1)
+                            else -> return@let
+                        }
                         val pos = p.currentPosition
                         progress = (pos.toFloat() / dur).coerceIn(0f, 1f)
                         onProgressChanged(progress)
@@ -136,6 +146,7 @@ fun rememberMediaPlayerController(
         override val isReady: Boolean get() = isReady
         override val isPlaying: Boolean get() = isPlaying
         override val progress: Float get() = progress
+        override val durationMillis: Long get() = durationMillisState
 
         override fun playPause() {
             mediaPlayer?.let { mp ->
@@ -160,7 +171,8 @@ fun rememberMediaPlayerController(
         override fun fastForward() {
             mediaPlayer?.let { mp ->
                 val seekMs = TamixaConstants.SEEK_MS.toInt()
-                val newPos = (mp.currentPosition + seekMs).coerceAtMost(mp.duration)
+                val dur = mp.duration.takeIf { it > 0 } ?: durationMillisState.toInt().takeIf { it > 0 } ?: return@let
+                val newPos = (mp.currentPosition + seekMs).coerceAtMost(dur)
                 mp.seekTo(newPos)
             }
         }

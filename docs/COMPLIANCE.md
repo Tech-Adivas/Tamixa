@@ -495,18 +495,24 @@ Text-based data flow for Tamixa (parent and child data).
 
 ### 13.2 Steps (full account deletion)
 
-| Step | Action | Owner |
-|------|--------|--------|
-| 1 | Authenticate parent and verify identity | Backend / support |
-| 2 | Revoke all sessions (invalidate refresh tokens; optional blocklist) | Backend |
-| 3 | Delete or anonymise all children for this parent | Backend |
-| 4 | Delete or anonymise all stories for this parent | Backend |
-| 5 | Delete or anonymise voice profiles | Backend / storage |
-| 6 | Delete parent account (email, password hash) | Backend |
-| 7 | Purge Redis cache for related keys | Backend |
-| 8 | Queue or run purge of Kafka-related state (if any) | Backend |
-| 9 | Log deletion event (e.g. account_id, date; no PII) | Audit |
-| 10 | Confirm to parent (e.g. email) | Support / automated |
+| Step | Action | Owner | Status |
+|------|--------|--------|--------|
+| 1 | Authenticate parent and verify identity | Backend / support | ✅ Implemented |
+| 2 | Revoke all sessions (invalidate refresh tokens; optional blocklist) | Backend | ✅ **IMPLEMENTED** (JWT revocation via Redis) |
+| 3 | Delete or anonymise all children for this parent | Backend | ✅ Implemented |
+| 4 | Delete or anonymise all stories for this parent | Backend | ✅ Implemented |
+| 5 | Delete or anonymise voice profiles | Backend / storage | ✅ Implemented |
+| 6 | Delete parent account (email, password hash) | Backend | ✅ Implemented |
+| 7 | Purge Redis cache for related keys | Backend | ✅ Implemented |
+| 8 | Queue or run purge of Kafka-related state (if any) | Backend | N/A |
+| 9 | Log deletion event (e.g. account_id, date; no PII) | Audit | ✅ Implemented |
+| 10 | Confirm to parent (e.g. email) | Support / automated | ⚠️ Manual |
+
+**JWT Revocation Implementation (Step 2):**
+- `AccountDeletionService` calls `tokenRevocationPort.revokeAllForUser(email)` before deletion
+- All access and refresh tokens issued before deletion timestamp are invalidated
+- Redis stores user-level revocation timestamp with 30-day TTL
+- See `/JWT_REVOCATION_IMPLEMENTATION_SUMMARY.md` for full details
 
 ### 13.3 Child-only deletion
 

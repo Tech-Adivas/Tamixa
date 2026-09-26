@@ -1,0 +1,12 @@
+---
+inclusion: always
+---
+
+# Mobile App First Priority
+
+The **mobile app** (`mobile/`) is the first priority for this project. When planning work or making improvements:
+
+1. **Prioritize mobile** – Address mobile app screens, components, and flows before web or backend
+2. **Full coverage** – Ensure all mobile screens (Login, Register, Dashboard, StoryGeneration, LanguageSelection, VoiceUpload, Subscription, Settings, etc.) meet the same premium UI standard
+3. **Kid + parent appeal** – Design for both: engaging for kids, trustworthy and professional for parents
+4. **Consistency** – Use shared components (TamixaHeroIllustration, TamixaEmojiDisplay, TamixaColors) and theme tokens across screens

@@ -44,8 +44,8 @@ class ShortContentViewModel(
 
     fun loadList(type: String, language: String = TamixaConstants.DEFAULT_LANGUAGE) {
         scope.launch {
-            _loading.value = true
             _error.value = null
+            _loading.value = true
             try {
                 _items.value = shortContentApi.list(type, language, page = 0, size = 50)
             } catch (e: Exception) {

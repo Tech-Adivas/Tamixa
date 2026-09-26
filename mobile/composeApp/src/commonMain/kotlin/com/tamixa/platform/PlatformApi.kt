@@ -46,3 +46,12 @@ expect fun AvatarVideoSurface(
 
 /** Plays a short reveal chime synced with splash logo animation. Call when logo lands (~850ms). */
 expect fun playSplashRevealSound()
+
+/**
+ * Speak plain text with on-device TTS (e.g. crisis navigator checklists). Stops any prior [speakPlainText] utterance.
+ * [languageCode] is app language (ta, hi, en, …). No-op if text is blank.
+ */
+expect fun speakPlainText(text: String, languageCode: String)
+
+/** Stop speech started by [speakPlainText]. */
+expect fun stopPlainTextSpeech()

@@ -142,7 +142,8 @@ app:
     # Dev-only: dummy OTP code accepted with any phone (e.g. 123456). Set in dev profile.
     dev-otp-code: ${DEV_OTP_CODE:}
     # Web app base URL for passwordless magic links (e.g. http://localhost:3000 or your production Tamixa URL).
-    web-base-url: ${TAMIXA_WEB_APP_URL:http://localhost:3000}
+    # Public web app origin for passwordless links (`/login?token=…`). Alias: MAGIC_LINK_BASE_URL.
+    web-base-url: ${TAMIXA_WEB_APP_URL:${MAGIC_LINK_BASE_URL:http://localhost:3000}}
     # Dev only: fixed code accepted for web passwordless (e.g. 123456). Set in dev profile; leave empty in prod.
     dev-passwordless-code: ${DEV_PASSWORDLESS_CODE:}
   # Strangler: POST magic-link email to tamixa-notifications (internal API). When true, backend skips in-process SendGrid for passwordless.
@@ -150,11 +151,20 @@ app:
     remote-enabled: ${NOTIFICATIONS_EMAIL_REMOTE_ENABLED:false}
     base-url: ${NOTIFICATIONS_EMAIL_BASE_URL:}
     internal-api-key: ${NOTIFICATIONS_INTERNAL_API_KEY:}
+  # Transactional email (passwordless). SendGrid v3 API; bean registers only when sendgrid-api-key is non-empty.
+  email:
+    sendgrid-api-key: ${SENDGRID_API_KEY:}
+    from-email: ${EMAIL_FROM_ADDRESS:noreply@tamixa.in}
+    from-name: ${EMAIL_FROM_NAME:Tamixa}
   cors:
     # Comma-separated exact origins. "*" = unset for non-dev unless allowed-origin-patterns is set (see profile YAML).
     allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
     # Comma-separated origin patterns (optional). Staging/dev profiles set defaults; prod should use explicit origins.
     allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:}
+  # Prod profile defaults swagger/actuator to admin-JWT-only (see application-prod.yml). Set *_REQUIRES_ADMIN_ROLE=false if needed (e.g. Prometheus without Bearer).
+  api-exposure:
+    swagger-requires-admin-role: ${SWAGGER_REQUIRES_ADMIN_ROLE:false}
+    actuator-requires-admin-role: ${ACTUATOR_REQUIRES_ADMIN_ROLE:false}
   rate-limit:
     enabled: ${RATE_LIMIT_ENABLED:true}
     # Set true for multi-instance: uses Redis. Requires Redis. Default false.
@@ -173,12 +183,15 @@ app:
     secret: ${JWT_SECRET:tamixa-secret-key-min-256-bits-for-hs256-algorithm-please-change-in-production}
     access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:900000}
     refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+    revocation:
+      enabled: ${JWT_REVOCATION_ENABLED:true}
   # OpenAI: token limit controls cost; system prompt is reused for caching (provider-supported).
   openai:
     api-key: ${OPENAI_API_KEY:}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com}
     model: ${OPENAI_MODEL:gpt-4o-mini}
     max-tokens: ${OPENAI_MAX_TOKENS:1024}
+    bulk-max-tokens: ${OPENAI_BULK_MAX_TOKENS:2048}
     connect-timeout-ms: ${OPENAI_CONNECT_TIMEOUT_MS:15000}
     # Regenerate with prompt generates ~900-word stories; 3 min allows full response (60s can timeout)
     read-timeout-ms: ${OPENAI_READ_TIMEOUT_MS:180000}
@@ -194,7 +207,9 @@ app:
     gemini:
       api-key: ${GEMINI_API_KEY:}
       base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
-      model: ${GEMINI_MODEL:gemini-2.0-flash}
+      # google-ai | vertex-publishers (latter + base-url https://aiplatform.googleapis.com matches publisher :generateContent)
+      api-url-style: ${GEMINI_API_URL_STYLE:google-ai}
+      model: ${GEMINI_MODEL:gemini-2.5-flash}
       connect-timeout-ms: ${GEMINI_CONNECT_TIMEOUT_MS:15000}
       read-timeout-ms: ${GEMINI_READ_TIMEOUT_MS:180000}
       moderation-required: ${GEMINI_MODERATION_REQUIRED:false}
@@ -233,6 +248,13 @@ app:
     keyword-blocklist: ${STORY_KEYWORD_BLOCKLIST:}
     # When true, generated stories require admin approval (PENDING_REVIEW) before TTS/cover async pipeline starts.
     human-review-before-narration: ${STORY_HUMAN_REVIEW_BEFORE_NARRATION:false}
+  # Admin: interactive library graph (LLM) + segment TTS batch. Override via env in production if needed.
+  interactive-episode:
+    llm-max-output-tokens: ${INTERACTIVE_EPISODE_LLM_MAX_OUTPUT_TOKENS:4096}
+    max-interactive-graph-chars-for-llm: ${INTERACTIVE_EPISODE_MAX_GRAPH_CHARS:120000}
+    max-story-chars-for-interactive-llm: ${INTERACTIVE_EPISODE_MAX_STORY_CHARS:100000}
+    max-segment-batch-size: ${INTERACTIVE_EPISODE_MAX_SEGMENT_BATCH:50}
+    default-language-fallback: ${INTERACTIVE_EPISODE_DEFAULT_LANG:ta}
   # Library soft-delete: Super Admin delete hides rows for retention-days, then scheduled purge removes them permanently.
   library-story-soft-delete:
     retention-days: ${LIBRARY_STORY_SOFT_DELETE_RETENTION_DAYS:30}
@@ -259,6 +281,8 @@ app:
   translation:
     # openai | gemini = real translation via LLM; simulated = dev-only prefix [lang]
     provider: ${TRANSLATION_PROVIDER:simulated}
+    # When provider=openai: if OpenAI fails (quota/rate limit), translate with Gemini. Requires GEMINI_API_KEY.
+    openai-fallback-to-gemini: ${TRANSLATION_OPENAI_FALLBACK_TO_GEMINI:false}
   # Curated library ops flow (recommended): raw draft → AI rephrase/edit (TA) → Run pipeline (translate+rewrite
   # scripts only, no TTS) with audio-after-approval=true → Submit for review → Approve narration → Generate audio.
   # See docs/ARCHITECTURE_AND_FLOWS.md §9.
@@ -312,6 +336,10 @@ app:
     # Max 10 min per security requirements (S3 presigned URLs)
     signed-url-expiry-minutes: ${CDN_SIGNED_URL_EXPIRY_MINUTES:10}
     cache-ttl-seconds: ${CDN_CACHE_TTL_SECONDS:86400}
+    # CloudFront distribution base URL for interactive story segment audio.
+    # Set to your CloudFront domain (e.g. https://d1ga398w5nxxhc.cloudfront.net).
+    # When blank, falls back to AUDIO_PUBLIC_BASE_URL + /audio/ proxy path.
+    interactive-audio-cdn-base-url: ${INTERACTIVE_AUDIO_CDN_BASE_URL:}
   narration:
     # Optional one-switch preset for narration behavior.
     # Values: bedtime | balanced | energetic
@@ -388,6 +416,8 @@ app:
     max-concurrent-tts: ${NARRATION_MAX_CONCURRENT_TTS:5}  # TTS API rate limit protection
     # Must be >= translation-pipeline.parallelism (default 4) or tasks timeout waiting for rewrite permit
     max-concurrent-rewrite: ${NARRATION_MAX_CONCURRENT_REWRITE:5}  # Match parallelism; lower if OpenAI 429
+    # When AI_LLM_PROVIDER=openai: if OpenAI rewrite fails (quota/rate limit), use Gemini. Requires GEMINI_API_KEY.
+    openai-rewrite-fallback-to-gemini: ${NARRATION_OPENAI_REWRITE_FALLBACK_TO_GEMINI:false}
     # Natural pace: use rate=100% so playback matches Cloud samples. Set false for slower kid-friendly pacing.
     ssml-use-natural-pace: ${NARRATION_SSML_USE_NATURAL_PACE:true}
     # When natural pace is on: add very light prosody for dialogue/conversational (+1–2% pitch) to sound warmer. Set false for flat delivery.
@@ -481,3 +511,10 @@ app:
     apns-key-path: ${APNS_KEY_PATH:}
     apns-bundle-id: ${APNS_BUNDLE_ID:com.tamixa.app}
     apns-production: ${APNS_PRODUCTION:false}
+  # Seasonal / “cultural clock” banner for parent apps. Push fan-out is not implemented yet (push-dispatch-stub reserved).
+  seasonal-highlight:
+    enabled: ${SEASONAL_HIGHLIGHT_ENABLED:false}
+    campaign-key: ${SEASONAL_HIGHLIGHT_CAMPAIGN_KEY:2026-04-default}
+    title-en: ${SEASONAL_HIGHLIGHT_TITLE_EN:}
+    body-en: ${SEASONAL_HIGHLIGHT_BODY_EN:}
+    push-dispatch-stub: ${SEASONAL_HIGHLIGHT_PUSH_DISPATCH_STUB:false}

@@ -5,6 +5,7 @@ import com.tamixa.util.TamixaConstants
 import com.tamixa.domain.GenerateStoryRequest
 import com.tamixa.domain.GenerationTopicResponse
 import com.tamixa.domain.Story
+import com.tamixa.library.LibraryPipelineLanguages
 import com.tamixa.repository.RecentPlaybackHydrated
 import com.tamixa.repository.StoryRepository
 import com.tamixa.util.TamixaLog
@@ -88,6 +89,9 @@ class StoryViewModel(
         _lifeSkillCountersRefreshVersion.value = _lifeSkillCountersRefreshVersion.value + 1
     }
 
+    /** Aligns with backend pipeline languages; unknown codes fall back to [TamixaConstants.DEFAULT_LANGUAGE]. */
+    private fun normalizeStoryLanguage(language: String): String = LibraryPipelineLanguages.normalizeForApi(language)
+
     fun cachedStories(): List<Story> = storyRepository.getCachedStories()
 
     /** First child id from the parent's generated stories (for education / reading-level routes). */
@@ -99,8 +103,9 @@ class StoryViewModel(
         scope.launch {
             _libraryLoading.value = true
             _libraryError.value = null
+            val lang = normalizeStoryLanguage(language)
             try {
-                storyRepository.getLibraryStories(language, theme = null, learnHub = false).fold(
+                storyRepository.getLibraryStories(lang, theme = null, learnHub = false).fold(
                     onSuccess = { _libraryStories.value = it },
                     onFailure = {
                         TamixaLog.w("StoryViewModel", "loadLibraryScreen getLibraryStories failed", it)
@@ -127,10 +132,11 @@ class StoryViewModel(
     fun refreshDashboard(language: String = TamixaConstants.DEFAULT_LANGUAGE) {
         scope.launch {
             _dashboardRefreshing.value = true
+            val lang = normalizeStoryLanguage(language)
             try {
                 coroutineScope {
                     val lib = async {
-                        storyRepository.getLibraryStories(language, theme = null, learnHub = false).fold(
+                        storyRepository.getLibraryStories(lang, theme = null, learnHub = false).fold(
                             onSuccess = { _libraryStories.value = it },
                             onFailure = {
                                 TamixaLog.w("StoryViewModel", "refreshDashboard getLibraryStories failed", it)
@@ -146,7 +152,7 @@ class StoryViewModel(
                         )
                     }
                     val recent = async {
-                        storyRepository.getRecentPlaybackHydrated(language, TamixaConstants.RECENT_PLAYBACK_LIMIT).fold(
+                        storyRepository.getRecentPlaybackHydrated(lang, TamixaConstants.RECENT_PLAYBACK_LIMIT).fold(
                             onSuccess = { rows ->
                                 _recentPlayback.value = rows.map { it.dto }
                                 _recentPlaybackWithStories.value = rows
@@ -161,15 +167,15 @@ class StoryViewModel(
                     val fav = async {
                         storyRepository.getFavorites().fold(
                             onSuccess = { favList ->
-                                val stories = favList.mapNotNull { fav -> storyRepository.getStoryById(fav.storyId, fav.storySource, language) }
+                                val stories = favList.mapNotNull { fav -> storyRepository.getStoryById(fav.storyId, fav.storySource, lang) }
                                 _favorites.value = stories
                             },
                             onFailure = { _favorites.value = emptyList(); appMessageNotifier?.showError() }
                         )
                     }
                     val rec = async {
-                        storyRepository.getRecommended(null, language, TamixaConstants.RECOMMENDED_LIMIT).fold(
-                            onSuccess = { dtos -> _recommendedWithStories.value = dtos.map { dto -> Pair(dto, storyRepository.getStoryById(dto.storyId, dto.storySource, language)) } },
+                        storyRepository.getRecommended(null, lang, TamixaConstants.RECOMMENDED_LIMIT).fold(
+                            onSuccess = { dtos -> _recommendedWithStories.value = dtos.map { dto -> Pair(dto, storyRepository.getStoryById(dto.storyId, dto.storySource, lang)) } },
                             onFailure = { _recommendedWithStories.value = emptyList(); appMessageNotifier?.showError() }
                         )
                     }
@@ -207,7 +213,8 @@ class StoryViewModel(
 
     fun loadLibraryStories(language: String = TamixaConstants.DEFAULT_LANGUAGE) {
         scope.launch {
-            storyRepository.getLibraryStories(language, theme = null, learnHub = false)
+            val lang = normalizeStoryLanguage(language)
+            storyRepository.getLibraryStories(lang, theme = null, learnHub = false)
                 .fold(
                     onSuccess = { _libraryStories.value = it },
                     onFailure = {
@@ -235,12 +242,13 @@ class StoryViewModel(
         scope.launch {
             _favoritesLoading.value = true
             _favoritesError.value = null
+            val lang = normalizeStoryLanguage(language)
             try {
                 storyRepository.getFavorites().fold(
                     onSuccess = { favList ->
                         val stories = mutableListOf<Story>()
                         favList.forEach { fav ->
-                            storyRepository.getStoryById(fav.storyId, fav.storySource, language)?.let { stories.add(it) }
+                            storyRepository.getStoryById(fav.storyId, fav.storySource, lang)?.let { stories.add(it) }
                         }
                         _favorites.value = stories
                     },
@@ -260,8 +268,9 @@ class StoryViewModel(
         scope.launch {
             _recentPlaybackLoading.value = true
             _recentPlaybackError.value = null
+            val lang = normalizeStoryLanguage(language)
             try {
-                storyRepository.getRecentPlaybackHydrated(language, limit).fold(
+                storyRepository.getRecentPlaybackHydrated(lang, limit).fold(
                     onSuccess = { rows ->
                         _recentPlayback.value = rows.map { it.dto }
                         _recentPlaybackWithStories.value = rows
@@ -285,6 +294,7 @@ class StoryViewModel(
         storySource: String? = null,
         forceRefresh: Boolean = false
     ): Story? {
+        val lang = normalizeStoryLanguage(language)
         if (!forceRefresh) {
             val cached = cachedStories().find { it.id == id }
             if (cached != null) return cached
@@ -294,10 +304,10 @@ class StoryViewModel(
             if (myStories != null) return myStories
         }
         if (storySource != null) {
-            return storyRepository.getStoryById(id, storySource, language)
+            return storyRepository.getStoryById(id, storySource, lang)
         }
-        return storyRepository.getLibraryStoryById(id, language)
-            ?: storyRepository.getStoryById(id, TamixaConstants.STORY_SOURCE_GENERATED, language)
+        return storyRepository.getLibraryStoryById(id, lang)
+            ?: storyRepository.getStoryById(id, TamixaConstants.STORY_SOURCE_GENERATED, lang)
     }
 
     fun generateStory(request: GenerateStoryRequest) {
@@ -349,8 +359,9 @@ class StoryViewModel(
             }
             _searchLoading.value = true
             _searchError.value = null
+            val lang = normalizeStoryLanguage(language)
             try {
-                storyRepository.searchStories(query, language, page, size)
+                storyRepository.searchStories(query, lang, page, size)
                     .fold(
                         onSuccess = { _searchResults.value = it.content },
                         onFailure = {
@@ -368,10 +379,11 @@ class StoryViewModel(
 
     fun loadRecommended(childId: Long? = null, language: String = TamixaConstants.DEFAULT_LANGUAGE, limit: Int = TamixaConstants.RECOMMENDED_LIMIT) {
         scope.launch {
-            storyRepository.getRecommended(childId, language, limit).fold(
+            val lang = normalizeStoryLanguage(language)
+            storyRepository.getRecommended(childId, lang, limit).fold(
                 onSuccess = { dtos ->
                     val pairs = dtos.map { dto ->
-                        val story = storyRepository.getStoryById(dto.storyId, dto.storySource, language)
+                        val story = storyRepository.getStoryById(dto.storyId, dto.storySource, lang)
                         Pair(dto, story)
                     }
                     _recommendedWithStories.value = pairs

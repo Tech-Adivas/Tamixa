@@ -3,6 +3,7 @@ package com.tamixa
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import com.tamixa.infrastructure.config.LocalDevPostgresPreference
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan
 import org.springframework.boot.runApplication
@@ -190,19 +191,47 @@ private fun applyDatasourceSecretsFromRailwayPgEnv(env: Map<String, String>) {
     }
 }
 
-private fun applyDatabaseUrlCompatibility() {
+private fun applyDatabaseUrlCompatibility(args: Array<String>) {
     val env = System.getenv()
     // URL choice when both Railway URLs exist:
     // - On Railway (RAILWAY_*): prefer private DATABASE_URL (postgres.railway.internal) — same DB, lower latency, no public proxy hop.
     // - Off Railway (e.g. laptop with railway.env): prefer DATABASE_PUBLIC_URL so internal hostnames are not tried first.
     val rawDatabaseUrl =
-        if (isRailwayDeployment(env)) {
+        if (LocalDevPostgresPreference.isRailwayDeploymentEnv(env)) {
             envValueIgnoringCase(env, "DATABASE_URL")
                 ?: envValueIgnoringCase(env, "DATABASE_PUBLIC_URL")
         } else {
             envValueIgnoringCase(env, "DATABASE_PUBLIC_URL")
                 ?: envValueIgnoringCase(env, "DATABASE_URL")
         }
+
+    if (
+        LocalDevPostgresPreference.shouldPreferLocalOverRailwayPublicUrlPreSpring(env, args) &&
+            !rawDatabaseUrl.isNullOrBlank() &&
+            LocalDevPostgresPreference.looksLikeRailwayPublicPostgresEndpoint(rawDatabaseUrl)
+    ) {
+        val localUrl = LocalDevPostgresPreference.buildLocalJdbcUrlFromEnvMap(env)
+        System.setProperty("spring.datasource.url", localUrl)
+        System.setProperty(
+            "spring.datasource.username",
+            LocalDevPostgresPreference.localDevDatasourceUsernameFromEnvMap(env),
+        )
+        System.setProperty(
+            "spring.datasource.password",
+            LocalDevPostgresPreference.localDevDatasourcePasswordFromEnvMapIgnoringPgp(env),
+        )
+        log.info(
+            "Local dev: ignoring Railway public DATABASE_URL/DATABASE_PUBLIC_URL; using {}. " +
+                "Set {}=true to force that remote URL from this machine. " +
+                "Default host is {} (override with {} or PGHOST). PGPASSWORD is not used; set DATABASE_PASSWORD or SPRING_DATASOURCE_PASSWORD for the dev DB, or use PGHOST=localhost with POSTGRES_PASSWORD for Docker Postgres.",
+            localUrl,
+            LocalDevPostgresPreference.USE_REMOTE_DATABASE_ENV,
+            LocalDevPostgresPreference.DEFAULT_TEAM_DEV_POSTGRES_HOST,
+            LocalDevPostgresPreference.DEV_POSTGRES_HOST_ENV,
+        )
+        applyDatasourceSecretsFromRailwayPgEnv(env)
+        return
+    }
 
     if (!rawDatabaseUrl.isNullOrBlank()) {
         when {
@@ -230,9 +259,6 @@ private fun applyDatabaseUrlCompatibility() {
  * already set (env, JVM -D, or CLI args). We also pass `--spring.profiles.active=staging` so it wins over YAML
  * defaults even if config resolution order differs from System.setProperty alone.
  */
-private fun isRailwayDeployment(env: Map<String, String>): Boolean =
-    env.entries.any { (key, value) -> key.startsWith("RAILWAY_") && !value.isNullOrBlank() }
-
 private fun springProfilesActiveExplicitlySet(args: Array<String>): Boolean {
     val env = System.getenv()
     if (!env["SPRING_PROFILES_ACTIVE"].isNullOrBlank()) {
@@ -259,7 +285,7 @@ private fun applyRailwayDefaultProfile(args: Array<String>): Array<String> {
         return args
     }
     val env = System.getenv()
-    if (!isRailwayDeployment(env)) {
+    if (!LocalDevPostgresPreference.isRailwayDeploymentEnv(env)) {
         return args
     }
     System.setProperty("spring.profiles.active", "staging")
@@ -397,7 +423,7 @@ private fun warnIfLikelyMissingDbCredentials() {
  */
 private fun haltIfRailwayMissingPostgresConnectionEnv() {
     val env = System.getenv()
-    if (!isRailwayDeployment(env)) {
+    if (!LocalDevPostgresPreference.isRailwayDeploymentEnv(env)) {
         return
     }
     val activeRaw = System.getProperty("spring.profiles.active") ?: env["SPRING_PROFILES_ACTIVE"] ?: ""
@@ -481,7 +507,7 @@ private fun logLikelyDatasourceTarget() {
 
 fun main(args: Array<String>) {
     val startupArgs = applyRailwayDefaultProfile(args)
-    applyDatabaseUrlCompatibility()
+    applyDatabaseUrlCompatibility(startupArgs)
     warnIfDatasourceEnvFamiliesOverlap()
     logLikelyDatasourceTarget()
     haltIfRailwayMissingPostgresConnectionEnv()

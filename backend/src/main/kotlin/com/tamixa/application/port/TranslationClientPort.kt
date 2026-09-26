@@ -19,7 +19,10 @@ interface TranslationClientPort {
         title: String?,
         content: String,
         moral: String?,
-        timeoutMs: Long
+        timeoutMs: Long,
+        parentContentNote: String? = null,
+        parentDiscussionPrompts: List<String>? = null,
+        speakAlongPrompt: String? = null,
     ): TranslatedContent
 }
 
@@ -35,5 +38,9 @@ data class TranslatedContent(
      */
     val titleBeforeParaphrase: String? = null,
     val contentBeforeParaphrase: String? = null,
-    val moralBeforeParaphrase: String? = null
+    val moralBeforeParaphrase: String? = null,
+    /** Translated parent-facing note; null when source had none or model omitted. */
+    val parentContentNote: String? = null,
+    val parentDiscussionPrompts: List<String>? = null,
+    val speakAlongPrompt: String? = null,
 )

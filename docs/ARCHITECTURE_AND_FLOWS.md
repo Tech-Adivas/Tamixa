@@ -99,7 +99,7 @@
 | **StreamUrlResponse.wordTimings** | Backend builds stream URL response but often does not set `wordTimings`. If transcript sync is required, backend should populate word-level timings where available. |
 | **Remix** | Confirm parent-facing `POST /api/v1/stories/{id}/remix` exists and is not admin-only; mobile calls this for remix. |
 | **Regenerate cover** | Mobile may call regenerate-cover; backend expose is under AdminController (admin) and StoryController (parent). |
-| **Logout** | Logout is local-only (TokenStorage.clear()). If backend supports token invalidation, add optional logout API call. |
+| **Logout** | ✅ **IMPLEMENTED:** `POST /api/v1/auth/logout` revokes the access token. Backend supports token invalidation via Redis. See `/JWT_REVOCATION_IMPLEMENTATION_SUMMARY.md`. |
 
 ### 6.2 Navigation and flows
 

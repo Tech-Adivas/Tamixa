@@ -43,8 +43,9 @@ export function lintInteractiveGraphJson(raw: string): InteractiveGraphLintResul
       }
       const s = seg as Record<string, unknown>;
       const audioUrl = s.audioUrl;
-      if (typeof audioUrl !== "string" || !audioUrl.trim()) {
-        errors.push(`Segment "${sid}": audioUrl is required`);
+      // Empty/missing audioUrl is allowed while editing; Segment Audio Studio fills URLs before publish.
+      if (audioUrl !== undefined && audioUrl !== null && typeof audioUrl !== "string") {
+        errors.push(`Segment "${sid}": audioUrl must be a string when set`);
       }
       const choices = s.choices;
       if (choices !== undefined) {

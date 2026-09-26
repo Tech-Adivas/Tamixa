@@ -221,7 +221,9 @@ export function resolveInteractiveSegmentAudioUrl(audioUrl: string): string | nu
 export async function prefetchInteractiveAudio(urls: string[]): Promise<void> {
   if (typeof window === "undefined") return;
   const token = localStorage.getItem("tamixa_access_token");
-  const distinct = [...new Set(urls.map((u) => u.trim()).filter(Boolean))];
+  // Resolve any bare storage keys (stories/...) that weren't pre-resolved by the caller.
+  const resolved = urls.map((u) => resolveLibraryAudioUrl(u) ?? u.trim()).filter(Boolean);
+  const distinct = [...new Set(resolved)];
   await Promise.all(
     distinct.map(async (url) => {
       try {

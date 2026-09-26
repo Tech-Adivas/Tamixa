@@ -37,10 +37,22 @@ class AuthViewModel(
     // it from being rendered in UI or leaked via state inspection.
     // Only used internally to auto-fill OTP in debug builds.
     private val _otpDevCode = MutableStateFlow<String?>(null)
-    internal val otpDevCode: StateFlow<String?> = _otpDevCode.asStateFlow()
+    val otpDevCode: StateFlow<String?> = _otpDevCode.asStateFlow()
 
     private val _passwordlessCodeSentToEmail = MutableStateFlow<String?>(null)
     val passwordlessCodeSentToEmail: StateFlow<String?> = _passwordlessCodeSentToEmail.asStateFlow()
+
+    /** Magic-link token from email (e.g. Android VIEW intent). Consumed after successful verify or on clear. */
+    private val _pendingPasswordlessMagicLinkToken = MutableStateFlow<String?>(null)
+    val pendingPasswordlessMagicLinkToken: StateFlow<String?> = _pendingPasswordlessMagicLinkToken.asStateFlow()
+
+    fun setPendingPasswordlessMagicLinkToken(token: String?) {
+        _pendingPasswordlessMagicLinkToken.value = token?.trim()?.lowercase()?.takeIf { it.length == 32 }
+    }
+
+    fun clearPendingPasswordlessMagicLinkToken() {
+        _pendingPasswordlessMagicLinkToken.value = null
+    }
 
     private val _registerState = MutableStateFlow<UiState<AuthTokens>>(UiState.Loading)
     val registerState: StateFlow<UiState<AuthTokens>> = _registerState.asStateFlow()
@@ -124,12 +136,13 @@ class AuthViewModel(
             _loginState.value = UiState.Error(Strings.invalidEmail(), null)
             return
         }
+        val normalized = email.trim().lowercase()
         scope.launch {
             _passwordlessCodeSentToEmail.value = null
-            authRepository.requestPasswordlessCode(email.trim())
+            authRepository.requestPasswordlessCode(normalized)
                 .fold(
                     onSuccess = { sent ->
-                        if (sent) _passwordlessCodeSentToEmail.value = email.trim()
+                        if (sent) _passwordlessCodeSentToEmail.value = normalized
                         else _loginState.value = UiState.Error("Could not send code. Please check your email and try again.", null)
                     },
                     onFailure = {
@@ -149,20 +162,62 @@ class AuthViewModel(
         acceptedPrivacy: Boolean = true,
         acceptedParentalAttestation: Boolean = false
     ) {
-        if (!AuthValidation.isOtpCodeValid(code)) {
+        if (!AuthValidation.isPasswordlessEmailCodeValid(code)) {
             _loginState.value = UiState.Error(Strings.invalidCode(), null)
             return
         }
         scope.launch {
             _loginState.value = UiState.Loading
-            authRepository.verifyPasswordlessCode(email, code.trim(), acceptedTerms, acceptedPrivacy, acceptedParentalAttestation)
+            authRepository.verifyPasswordlessCode(
+                email.trim().lowercase(),
+                code.trim(),
+                acceptedTerms,
+                acceptedPrivacy,
+                acceptedParentalAttestation
+            )
                 .fold(
                     onSuccess = {
                         _passwordlessCodeSentToEmail.value = null
+                        _pendingPasswordlessMagicLinkToken.value = null
                         _loginState.value = UiState.Success(it)
                     },
                     onFailure = {
                         TamixaLog.w("AuthViewModel", "verifyPasswordlessCode failed", it)
+                        val msg = errorMessageForUser(it)
+                        _loginState.value = UiState.Error(msg, it)
+                        appMessageNotifier.showError()
+                    }
+                )
+        }
+    }
+
+    fun verifyPasswordlessMagicLink(
+        loginToken: String,
+        acceptedTerms: Boolean,
+        acceptedPrivacy: Boolean,
+        acceptedParentalAttestation: Boolean
+    ) {
+        val normalized = loginToken.trim().lowercase()
+        if (normalized.length != 32 || !normalized.all { it in '0'..'9' || it in 'a'..'f' }) {
+            _loginState.value = UiState.Error(Strings.invalidCode(), null)
+            return
+        }
+        scope.launch {
+            _loginState.value = UiState.Loading
+            authRepository.verifyPasswordlessMagicLink(
+                normalized,
+                acceptedTerms,
+                acceptedPrivacy,
+                acceptedParentalAttestation
+            )
+                .fold(
+                    onSuccess = {
+                        _pendingPasswordlessMagicLinkToken.value = null
+                        _passwordlessCodeSentToEmail.value = null
+                        _loginState.value = UiState.Success(it)
+                    },
+                    onFailure = {
+                        TamixaLog.w("AuthViewModel", "verifyPasswordlessMagicLink failed", it)
                         val msg = errorMessageForUser(it)
                         _loginState.value = UiState.Error(msg, it)
                         appMessageNotifier.showError()
@@ -235,6 +290,7 @@ class AuthViewModel(
         _loginState.value = UiState.Error("", null)
         _registerState.value = UiState.Loading
         _passwordlessCodeSentToEmail.value = null
+        _pendingPasswordlessMagicLinkToken.value = null
         _otpSentToPhone.value = null
         _otpDevCode.value = null
     }

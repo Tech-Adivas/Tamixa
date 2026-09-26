@@ -24,5 +24,8 @@ data class CachedTranslation(
     val content: String = "",
     val moral: String? = null,
     val wordCount: Int = 0,
-    val readingTimeMinutes: Double = 0.0
+    val readingTimeMinutes: Double = 0.0,
+    val parentContentNote: String? = null,
+    val parentDiscussionPrompts: List<String>? = null,
+    val speakAlongPrompt: String? = null,
 )

@@ -165,7 +165,7 @@ fun ShortContentScreen(
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(
-                                text = error!!,
+                                text = error.orEmpty(),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TamixaColors.cream.copy(alpha = 0.9f)
                             )

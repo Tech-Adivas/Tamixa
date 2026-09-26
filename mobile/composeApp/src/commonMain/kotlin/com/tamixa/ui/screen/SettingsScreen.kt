@@ -87,6 +87,7 @@ fun SettingsScreen(
     onNavigateToLibrary: () -> Unit = {},
     onNavigateToShortContent: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
+    onNavigateToCrisisHelp: (() -> Unit)? = null,
     storyArtPersonalizationOptIn: Boolean = false,
     onStoryArtPersonalizationOptInChange: (Boolean) -> Unit = {},
     apiBaseUrlOverride: String = "",
@@ -223,6 +224,33 @@ fun SettingsScreen(
                                 onClick = { onLanguageChange("ml") },
                                 label = { Text(Strings.malayalam(), style = MaterialTheme.typography.labelLarge) }
                             )
+                        }
+                    }
+                }
+            }
+            onNavigateToCrisisHelp?.let { go ->
+                Spacer(Modifier.height(TamixaDesignTokens.sectionSpacing))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
+                    colors = TamixaCardColors.surface(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation + 2.dp),
+                ) {
+                    Column(modifier = Modifier.padding(TamixaDesignTokens.cardContentPadding)) {
+                        Text(
+                            Strings.crisisHelpSettingsTitle(),
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            Strings.crisisHelpSettingsSubtitle(),
+                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                            color = TamixaContentColors.cardSecondary(),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Button(onClick = go, shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius)) {
+                            Text(Strings.crisisHelpOpenDirectory())
                         }
                     }
                 }
@@ -429,76 +457,6 @@ fun SettingsScreen(
                                 checked = darkMode,
                                 onCheckedChange = onDarkModeChange
                             )
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(TamixaDesignTokens.cardSpacing))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
-                colors = TamixaCardColors.surfaceVariant(),
-                elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation)
-            ) {
-                Column(modifier = Modifier.padding(TamixaDesignTokens.cardContentPadding)) {
-                    Text(
-                        Strings.serverEnvironmentTitle(),
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        Strings.serverEnvironmentDescription(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TamixaContentColors.cardSecondary()
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = apiBaseUrlOverride,
-                        onValueChange = onApiBaseUrlOverrideChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(Strings.apiBaseUrlHint()) },
-                        singleLine = true
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = subscriptionWebUrlOverride,
-                        onValueChange = onSubscriptionWebUrlOverrideChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(Strings.subscriptionWebUrlHint()) },
-                        singleLine = true
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(onClick = onSaveServerEnvironment) {
-                            Text(Strings.saveServerEnvironment())
-                        }
-                        OutlinedButton(onClick = onClearServerEnvironment) {
-                            Text(Strings.clearServerEnvironment())
-                        }
-                    }
-                    serverEnvironmentError?.let { err ->
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = err,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    serverEnvironmentMessage?.let { msg ->
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = msg,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TamixaContentColors.cardSecondary()
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        TextButton(onClick = onDismissServerEnvironmentMessage) {
-                            Text(Strings.close())
                         }
                     }
                 }

@@ -24,6 +24,7 @@ spring:
       ddl-auto: update
   datasource:
     # Same URL pattern as staging/prod. Precedence: DATABASE_URL (JDBC) → POSTGRES_* / PG* defaults.
+    # Off Railway, dev profile ignores Railway public proxy URLs and redirects JDBC to dev.db.tamixa.in (ssl) unless PGHOST/POSTGRES_HOST or TAMIXA_DEV_POSTGRES_HOST overrides; set TAMIXA_USE_REMOTE_DATABASE=true to force the Railway URL from your laptop.
     # If DATABASE_URL is unset, DATABASE_PUBLIC_URL (postgresql://...) is promoted to JDBC by PostgresqlUrlEnvironmentPostProcessor.
     url: ${DATABASE_URL:jdbc:postgresql://${POSTGRES_HOST:${PGHOST:localhost}}:${POSTGRES_PORT:${PGPORT:5432}}/${POSTGRES_DB:${PGDATABASE:araro_kids}}}
     username: ${DATABASE_USERNAME:${POSTGRES_USER:${PGUSER:postgres}}}

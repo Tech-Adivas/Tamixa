@@ -140,18 +140,7 @@ export default function Dashboard() {
               <p className="dash-hero-eyebrow">Your story nook</p>
               <h1>Welcome back, {name}</h1>
               <p className="dash-hero-subtitle">
-                Jump back into the tale you paused, see what Tamixa suggests next, or open the library for a brand-new
-                adventure.
-              </p>
-              <p className="dash-hero-library-map muted" style={{ marginTop: "0.65rem", fontSize: "0.88rem", lineHeight: 1.45 }}>
-                Library hubs:{" "}
-                <Link to="/stories?tab=library">Browse</Link>
-                {" · "}
-                <Link to="/stories?tab=library&hub=fun">Fun</Link>
-                {" · "}
-                <Link to="/stories?tab=library&hub=learn">Learn &amp; safety</Link>
-                {" · "}
-                <Link to="/stories?tab=library&hub=simulator">Practice</Link>
+                Jump back in, discover tonight&apos;s picks, or explore the library.
               </p>
             </div>
             <div className="dash-hero-actions">
@@ -198,8 +187,7 @@ export default function Dashboard() {
                 </Link>
               </div>
               <p className="dash-learn-subtitle muted">
-                Heart, vocabulary, and curiosity are woven into every Tamixa tale—tap to play. Pure laughs live under{" "}
-                <strong>Fun stories</strong> in the library filters.
+                Heart, vocabulary, and curiosity woven into every tale — tap to play.
               </p>
               <div className="dash-poster-row">
                 {libraryPicks.slice(0, 8).map((s) => {

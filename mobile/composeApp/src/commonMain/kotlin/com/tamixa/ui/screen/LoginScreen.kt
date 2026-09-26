@@ -131,8 +131,11 @@ fun LoginScreen(
     otpSentToPhone: String?,
     otpDevCode: String? = null,
     passwordlessCodeSentToEmail: String?,
+    passwordlessMagicLinkToken: String? = null,
     onRequestPasswordlessCode: (email: String) -> Unit,
     onVerifyPasswordlessCode: (email: String, code: String, acceptedTerms: Boolean, acceptedPrivacy: Boolean, acceptedParentalAttestation: Boolean) -> Unit,
+    onVerifyPasswordlessMagicLink: (loginToken: String, acceptedTerms: Boolean, acceptedPrivacy: Boolean, acceptedParentalAttestation: Boolean) -> Unit = { _, _, _, _ -> },
+    onDismissPasswordlessMagicLink: () -> Unit = {},
     onClearPasswordlessState: () -> Unit,
     onSendOtp: (phone: String) -> Unit,
     onVerifyOtp: (phone: String, code: String) -> Unit,
@@ -165,6 +168,17 @@ fun LoginScreen(
     Box(modifier = modifier.fillMaxSize()) {
         AppScreenBackground(showStars = true, showClouds = true, animateStars = false)
         when {
+            passwordlessMagicLinkToken != null -> {
+                PasswordlessMagicLinkContent(
+                    onVerify = { terms, privacy, parental ->
+                        onVerifyPasswordlessMagicLink(passwordlessMagicLinkToken, terms, privacy, parental)
+                    },
+                    onUseOtherMethod = {
+                        onDismissPasswordlessMagicLink()
+                    },
+                    loginState = loginState
+                )
+            }
             otpSentToPhone != null -> {
                 OtpVerificationContent(
                     phone = otpSentToPhone,
@@ -611,7 +625,7 @@ private fun PasswordlessCodeDialog(
             Button(
                 onClick = onVerify,
                 shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius),
-                enabled = code.length >= 4 && acceptedTerms && acceptedPrivacy && acceptedParentalAttestation
+                enabled = code.length == 6 && acceptedTerms && acceptedPrivacy && acceptedParentalAttestation
             ) {
                 Text(Strings.continueWith())
             }
@@ -620,4 +634,82 @@ private fun PasswordlessCodeDialog(
             TextButton(onClick = onDismiss) { Text(Strings.cancel()) }
         }
     )
+}
+
+@Composable
+private fun PasswordlessMagicLinkContent(
+    onVerify: (acceptedTerms: Boolean, acceptedPrivacy: Boolean, acceptedParentalAttestation: Boolean) -> Unit,
+    onUseOtherMethod: () -> Unit,
+    loginState: UiState<*>
+) {
+    var acceptedTerms by remember { mutableStateOf(false) }
+    var acceptedPrivacy by remember { mutableStateOf(false) }
+    var acceptedParentalAttestation by remember { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        TamixaFullLogo()
+        Spacer(Modifier.height(20.dp))
+        LoginThemeCard {
+            Text(
+                Strings.finishEmailLinkSignIn(),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = TamixaColors.deepTeal,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                Strings.passwordlessLogin(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { acceptedTerms = !acceptedTerms },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = acceptedTerms, onCheckedChange = { acceptedTerms = it })
+                Text(Strings.agreeTerms(), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { acceptedPrivacy = !acceptedPrivacy },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = acceptedPrivacy, onCheckedChange = { acceptedPrivacy = it })
+                Text(Strings.agreePrivacy(), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { acceptedParentalAttestation = !acceptedParentalAttestation },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = acceptedParentalAttestation, onCheckedChange = { acceptedParentalAttestation = it })
+                Text(Strings.parentalAttestation(), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
+            }
+            (loginState as? UiState.Error)?.message?.takeIf { it.isNotBlank() }?.let { err ->
+                Spacer(Modifier.height(8.dp))
+                Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(16.dp))
+            TamixaPrimaryButton(
+                onClick = { onVerify(acceptedTerms, acceptedPrivacy, acceptedParentalAttestation) },
+                text = Strings.continueWith(),
+                enabled = acceptedTerms && acceptedPrivacy && acceptedParentalAttestation && loginState !is UiState.Loading,
+                loading = loginState is UiState.Loading,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = onUseOtherMethod, modifier = Modifier.fillMaxWidth()) {
+                Text(Strings.chooseSignIn())
+            }
+        }
+    }
 }

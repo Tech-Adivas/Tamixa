@@ -30,6 +30,34 @@ class PostgresqlUrlEnvironmentPostProcessor : EnvironmentPostProcessor, Ordered 
 
         val updates = linkedMapOf<String, Any>()
 
+        if (LocalDevPostgresPreference.shouldPreferLocalOverRailwayPublicInSpring(environment)) {
+            val candidate =
+                when {
+                    databaseUrlEnv.isNotEmpty() -> databaseUrlEnv
+                    publicUrlEnv.isNotEmpty() -> publicUrlEnv
+                    else -> ""
+                }
+            if (candidate.isNotEmpty() && LocalDevPostgresPreference.looksLikeRailwayPublicPostgresEndpoint(candidate)) {
+                val localUrl = LocalDevPostgresPreference.buildLocalJdbcUrl(environment)
+                updates["spring.datasource.url"] = localUrl
+                updates["spring.datasource.username"] =
+                    LocalDevPostgresPreference.localDevDatasourceUsernameSpring(environment)
+                updates["spring.datasource.password"] =
+                    LocalDevPostgresPreference.localDevDatasourcePasswordSpringIgnoringPgp(environment)
+                log.info(
+                    "Dev profile, not on Railway: ignoring Railway public DATABASE_* URL; using spring.datasource.url={}. " +
+                        "Set {}=true to use the remote URL from this machine. PGPASSWORD is not applied for this redirect (default host {}).",
+                    localUrl,
+                    LocalDevPostgresPreference.USE_REMOTE_DATABASE_ENV,
+                    LocalDevPostgresPreference.DEFAULT_TEAM_DEV_POSTGRES_HOST,
+                )
+                environment.propertySources.addFirst(
+                    MapPropertySource("tamixaPostgresqlUrlOverrides", updates),
+                )
+                return
+            }
+        }
+
         when {
             databaseUrlEnv.isNotEmpty() -> {
                 val normalized = PostgresqlConnectionUriSupport.normalizeToJdbcUrl(databaseUrlEnv)

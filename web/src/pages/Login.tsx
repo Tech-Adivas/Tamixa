@@ -1,20 +1,23 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link, useSearchParams } from "react-router-dom";
 import {
   authStorage,
   getMe,
   requestPasswordlessCode,
   verifyPasswordlessCode,
+  verifyPasswordlessMagicLink,
 } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { logger } from "../lib/logger";
 
 const OTP_LENGTH = 6;
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
+const MAGIC_LINK_TOKEN_RE = /^[a-fA-F0-9]{32}$/;
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { setUser } = useAuth();
   const from = (location.state as { from?: string })?.from ?? "/stories";
   const [email, setEmail] = useState("");
@@ -27,6 +30,9 @@ export default function Login() {
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
   const [ambientPlaying, setAmbientPlaying] = useState(false);
   const ambientRef = useRef<HTMLAudioElement | null>(null);
+
+  const loginTokenParam = searchParams.get("token")?.trim() ?? "";
+  const magicLinkMode = MAGIC_LINK_TOKEN_RE.test(loginTokenParam);
 
   useEffect(() => {
     const audio = ambientRef.current;
@@ -74,6 +80,43 @@ export default function Login() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send code");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const leaveMagicLinkMode = () => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("token");
+      return next;
+    });
+    setError("");
+  };
+
+  const handleMagicLinkFinish = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!magicLinkMode) return;
+    if (!acceptedTerms || !acceptedPrivacy || !acceptedParentalAttestation) {
+      setError("Please accept the terms and confirm you are a parent or guardian.");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    try {
+      const tokens = await verifyPasswordlessMagicLink({
+        loginToken: loginTokenParam.toLowerCase(),
+        acceptedTerms,
+        acceptedPrivacy,
+        acceptedParentalAttestation,
+      });
+      authStorage.setTokens(tokens.accessToken, tokens.refreshToken, tokens.expiresInSeconds);
+      const user = await getMe();
+      setUser(user);
+      leaveMagicLinkMode();
+      navigate(from, { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid or expired sign-in link");
     } finally {
       setLoading(false);
     }
@@ -159,10 +202,54 @@ export default function Login() {
             Sign in
           </h1>
           <p id="login-desc" className="auth-card-subtitle muted">
-            Enter your email. We&apos;ll send a 6-digit code to sign in or create your account.
+            {magicLinkMode
+              ? "You opened a sign-in link from your email. Confirm below to continue (needed for new accounts)."
+              : "Enter your email. We'll send a 6-digit code to sign in or create your account."}
           </p>
 
-          {!codeSentTo ? (
+          {magicLinkMode ? (
+            <form onSubmit={handleMagicLinkFinish} className="form auth-form" aria-labelledby="login-heading">
+              {error ? <p className="error">{error}</p> : null}
+              <div className="field field--full">
+                <label className="auth-check-label">
+                  <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />
+                  <span>
+                    I agree to the{" "}
+                    <a href="/terms" target="_blank" rel="noopener noreferrer">
+                      Terms of Service
+                    </a>
+                  </span>
+                </label>
+              </div>
+              <div className="field field--full">
+                <label className="auth-check-label">
+                  <input type="checkbox" checked={acceptedPrivacy} onChange={(e) => setAcceptedPrivacy(e.target.checked)} />
+                  <span>
+                    I agree to the{" "}
+                    <a href="/privacy" target="_blank" rel="noopener noreferrer">
+                      Privacy Policy
+                    </a>
+                  </span>
+                </label>
+              </div>
+              <div className="field field--full">
+                <label className="auth-check-label">
+                  <input
+                    type="checkbox"
+                    checked={acceptedParentalAttestation}
+                    onChange={(e) => setAcceptedParentalAttestation(e.target.checked)}
+                  />
+                  <span>I am the parent or guardian and am at least 18 years old</span>
+                </label>
+              </div>
+              <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
+                {loading ? "Signing in…" : "Continue"}
+              </button>
+              <button type="button" className="btn btn-outline btn-block" onClick={leaveMagicLinkMode} disabled={loading}>
+                Use email and 6-digit code instead
+              </button>
+            </form>
+          ) : !codeSentTo ? (
             <form onSubmit={handleSendCode} className="form auth-form" aria-labelledby="login-heading" aria-describedby="login-desc">
               {error ? <p className="error">{error}</p> : null}
               <div className="field field--full">

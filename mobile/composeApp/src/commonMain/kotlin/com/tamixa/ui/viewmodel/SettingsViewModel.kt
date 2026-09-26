@@ -4,6 +4,7 @@ import com.tamixa.application.port.PreferencesPort
 import com.tamixa.runtime.ServerEnvironmentCache
 import com.tamixa.network.ConsentRecordDto
 import com.tamixa.repository.AuthRepository
+import com.tamixa.util.TamixaLog
 import com.tamixa.network.ExportJobDto
 import com.tamixa.network.ListeningProgressDto
 import com.tamixa.repository.SettingsRepository
@@ -51,29 +52,34 @@ class SettingsViewModel(
 
     init {
         scope.launch {
-            val useSystemTheme = preferencesPort.getUseSystemTheme()
-            val darkMode = preferencesPort.getDarkMode()
-            val languageCode = preferencesPort.getLanguageCode()
-            val hasCompletedLanguageSelection = preferencesPort.getHasCompletedLanguageSelection()
-            val hasCompletedOnboarding = preferencesPort.getHasCompletedOnboarding()
-            val preferredVoiceProfile = preferencesPort.getPreferredVoiceProfile()
-            val preferredThemes = preferencesPort.getPreferredThemes()
-            val storyArtOptIn = preferencesPort.getStoryArtPersonalizationOptIn()
-            val apiOverride = preferencesPort.getApiBaseUrlOverride()
-            val subOverride = preferencesPort.getSubscriptionWebUrlOverride()
-            _state.value = _state.value.copy(
-                useSystemTheme = useSystemTheme,
-                darkMode = darkMode,
-                languageCode = languageCode,
-                hasCompletedLanguageSelection = hasCompletedLanguageSelection,
-                hasCompletedOnboarding = hasCompletedOnboarding,
-                preferredVoiceProfile = preferredVoiceProfile.ifEmpty { com.tamixa.util.TamixaConstants.VOICE_PROFILE_DEFAULT },
-                preferredThemes = preferredThemes,
-                storyArtPersonalizationOptIn = storyArtOptIn,
-                apiBaseUrlOverride = apiOverride,
-                subscriptionWebUrlOverride = subOverride,
-                settingsLoaded = true
-            )
+            runCatching {
+                val useSystemTheme = preferencesPort.getUseSystemTheme()
+                val darkMode = preferencesPort.getDarkMode()
+                val languageCode = preferencesPort.getLanguageCode()
+                val hasCompletedLanguageSelection = preferencesPort.getHasCompletedLanguageSelection()
+                val hasCompletedOnboarding = preferencesPort.getHasCompletedOnboarding()
+                val preferredVoiceProfile = preferencesPort.getPreferredVoiceProfile()
+                val preferredThemes = preferencesPort.getPreferredThemes()
+                val storyArtOptIn = preferencesPort.getStoryArtPersonalizationOptIn()
+                val apiOverride = preferencesPort.getApiBaseUrlOverride()
+                val subOverride = preferencesPort.getSubscriptionWebUrlOverride()
+                _state.value = _state.value.copy(
+                    useSystemTheme = useSystemTheme,
+                    darkMode = darkMode,
+                    languageCode = languageCode,
+                    hasCompletedLanguageSelection = hasCompletedLanguageSelection,
+                    hasCompletedOnboarding = hasCompletedOnboarding,
+                    preferredVoiceProfile = preferredVoiceProfile.ifEmpty { com.tamixa.util.TamixaConstants.VOICE_PROFILE_DEFAULT },
+                    preferredThemes = preferredThemes,
+                    storyArtPersonalizationOptIn = storyArtOptIn,
+                    apiBaseUrlOverride = apiOverride,
+                    subscriptionWebUrlOverride = subOverride,
+                    settingsLoaded = true
+                )
+            }.onFailure { e ->
+                TamixaLog.w("SettingsViewModel", "Failed to load preferences", e)
+                _state.value = _state.value.copy(settingsLoaded = true)
+            }
         }
     }
 

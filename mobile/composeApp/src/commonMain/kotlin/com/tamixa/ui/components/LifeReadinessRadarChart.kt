@@ -16,13 +16,12 @@ import androidx.compose.ui.unit.dp
 import com.tamixa.domain.LIFE_READINESS_AXIS_ORDER
 import com.tamixa.domain.LifeReadinessSnapshot
 import com.tamixa.domain.valueForAxis
-import kotlin.math.cos
-import kotlin.math.min
-import kotlin.math.sin
 
 /**
  * Lightweight pentagon radar (Compose). Geometry mirrors the web SVG chart in
  * [web/src/components/LifeReadinessRadarChart.tsx].
+ *
+ * Uses [kotlin.math] only — never `java.lang.Math` — so this file compiles on Kotlin/Native (iOS).
  */
 @Composable
 fun LifeReadinessRadarChart(
@@ -39,13 +38,13 @@ fun LifeReadinessRadarChart(
         val h = this.size.height
         val cx = w / 2f
         val cy = h / 2f
-        val maxR = min(w, h) * 0.36f
-        val baseAngle = -Math.PI / 2.0
+        val maxR = kotlin.math.min(w, h) * 0.36f
+        val baseAngle = -kotlin.math.PI / 2.0
 
         fun point(angle: Double, r: Float): Offset {
             return Offset(
-                cx + (r * cos(angle)).toFloat(),
-                cy + (r * sin(angle)).toFloat(),
+                cx + (r * kotlin.math.cos(angle)).toFloat(),
+                cy + (r * kotlin.math.sin(angle)).toFloat(),
             )
         }
 
@@ -53,7 +52,7 @@ fun LifeReadinessRadarChart(
         for (t in rings) {
             val path = Path().apply {
                 for (i in 0 until n) {
-                    val ang = baseAngle + i * 2.0 * Math.PI / n
+                    val ang = baseAngle + i * 2.0 * kotlin.math.PI / n
                     val p = point(ang, maxR * t)
                     if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
                 }
@@ -67,7 +66,7 @@ fun LifeReadinessRadarChart(
         }
 
         for (i in 0 until n) {
-            val ang = baseAngle + i * 2.0 * Math.PI / n
+            val ang = baseAngle + i * 2.0 * kotlin.math.PI / n
             val end = point(ang, maxR)
             drawLine(
                 color = Color.White.copy(alpha = 0.18f),
@@ -79,7 +78,7 @@ fun LifeReadinessRadarChart(
 
         val dataPath = Path().apply {
             for (i in 0 until n) {
-                val ang = baseAngle + i * 2.0 * Math.PI / n
+                val ang = baseAngle + i * 2.0 * kotlin.math.PI / n
                 val r = maxR * values[i]
                 val p = point(ang, r)
                 if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)

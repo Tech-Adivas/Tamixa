@@ -85,14 +85,13 @@ class PlaybackPositionService(
     @Transactional(readOnly = true)
     fun getRecentEnriched(parentId: Long, limit: Int = 10): List<PlaybackPositionEnrichedDto> {
         val positions = getRecentWithPositions(parentId, limit)
-        val baseUrl = appProperties.audio.publicBaseUrl.trimEnd('/')
         return positions.map { pos ->
             val (title, coverPath, durationSeconds) = when (pos.storySource) {
                 "library" -> {
                     val story = storyLibraryRepository.findById(pos.storyId)
                     Triple(
                         story?.title ?: story?.theme ?: "Story",
-                        story?.coverImageUrl?.let { coverImageUrlResolver.resolveCoverPath(it) },
+                        story?.coverImageUrl,
                         (story?.readingTimeMinutes ?: 0.0).toInt() * 60
                     )
                 }
@@ -100,13 +99,16 @@ class PlaybackPositionService(
                     val story = storyRepository.findById(pos.storyId)
                     Triple(
                         story?.title ?: story?.theme ?: "Story",
-                        story?.coverImageUrl?.let { coverImageUrlResolver.resolveCoverPath(it) },
+                        story?.coverImageUrl,
                         (story?.readingTimeMinutes ?: 0.0).toInt() * 60
                     )
                 }
             }
             val progress = if (durationSeconds > 0) (pos.positionSeconds.toDouble() / durationSeconds).coerceIn(0.0, 1.0) else null
-            val coverImageUrl = coverPath?.let { if (it.startsWith("http")) it else "$baseUrl$it" }
+            
+            // Use CoverImageUrlResolver for consistent URL resolution (proxy URLs)
+            val coverImageUrl = coverImageUrlResolver.resolveCoverPath(coverPath)
+            
             PlaybackPositionEnrichedDto(
                 storyId = pos.storyId,
                 storySource = pos.storySource,

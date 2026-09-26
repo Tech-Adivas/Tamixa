@@ -55,7 +55,8 @@ class NarrationAsyncConfig(
         val executor = ThreadPoolTaskExecutor().apply {
             corePoolSize = 2
             maxPoolSize = 4
-            setQueueCapacity(16)
+            // Bulk submit can enqueue one processSync per story (up to 25); 32 avoids overflow to caller thread.
+            setQueueCapacity(32)
             setThreadNamePrefix("trigger-pipeline-")
             setRejectedExecutionHandler { _, e ->
                 log.error(

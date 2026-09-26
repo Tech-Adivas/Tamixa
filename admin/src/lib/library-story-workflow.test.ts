@@ -7,6 +7,7 @@ import {
   hasScriptForLibraryStoryLanguage,
   isLibraryStoryInReviewQueue,
   canSubmitLibraryStoryForReview,
+  buildLibraryStoryAdminProgressSteps,
 } from "./library-story-workflow";
 
 describe("library-story-workflow", () => {
@@ -53,6 +54,57 @@ describe("library-story-workflow", () => {
       expect(hasScriptForLibraryStoryLanguage(tamilStory, "ta")).toBe(true);
       expect(hasScriptForLibraryStoryLanguage(englishStory, "ta")).toBe(false);
       expect(getLibraryStoryMasterScriptContentError(englishStory, "ta")).toContain("Tamil");
+    });
+  });
+
+  describe("buildLibraryStoryAdminProgressSteps", () => {
+    it("marks submit when submitReady and prior gates", () => {
+      const steps = buildLibraryStoryAdminProgressSteps({
+        minWordCount: 50,
+        wordCount: 60,
+        titleTrimmed: true,
+        themeSet: true,
+        contentTrimmed: true,
+        simulatorSelected: false,
+        simulatorGraphFieldsOk: true,
+        onServer: true,
+        regenerateBusy: false,
+        hasCover: true,
+        submitReady: true,
+      });
+      expect(steps.every((s) => s.done)).toBe(true);
+    });
+    it("blocks form when simulator graph invalid", () => {
+      const steps = buildLibraryStoryAdminProgressSteps({
+        minWordCount: 50,
+        wordCount: 60,
+        titleTrimmed: true,
+        themeSet: true,
+        contentTrimmed: true,
+        simulatorSelected: true,
+        simulatorGraphFieldsOk: false,
+        onServer: true,
+        regenerateBusy: false,
+        hasCover: false,
+        submitReady: false,
+      });
+      expect(steps[0]?.done).toBe(false);
+    });
+    it("allows form ready for simulator when word count below min but content non-empty and graph ok", () => {
+      const steps = buildLibraryStoryAdminProgressSteps({
+        minWordCount: 50,
+        wordCount: 12,
+        titleTrimmed: true,
+        themeSet: true,
+        contentTrimmed: true,
+        simulatorSelected: true,
+        simulatorGraphFieldsOk: true,
+        onServer: true,
+        regenerateBusy: false,
+        hasCover: false,
+        submitReady: false,
+      });
+      expect(steps[0]?.done).toBe(true);
     });
   });
 

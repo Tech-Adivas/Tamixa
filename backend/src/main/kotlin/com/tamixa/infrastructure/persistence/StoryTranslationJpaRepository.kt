@@ -262,4 +262,23 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
     ): Int
 
     fun deleteByMasterStoryId(masterStoryId: Long)
+
+    /**
+     * Search translations by content (title, content, moral) for parent-facing search.
+     * Only returns translations where master story is PUBLISHED.
+     * Narration approval checked on master story level.
+     */
+    @Query(
+        "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
+            "AND c.deletedAt IS NULL AND c.status = 'PUBLISHED' " +
+            "AND t.language = :language " +
+            "AND (LOWER(COALESCE(t.title, '')) LIKE LOWER(CONCAT('%', :q, '%')) " +
+            "OR LOWER(COALESCE(t.content, '')) LIKE LOWER(CONCAT('%', :q, '%')) " +
+            "OR LOWER(COALESCE(t.moral, '')) LIKE LOWER(CONCAT('%', :q, '%')))"
+    )
+    fun searchByContent(
+        @Param("q") query: String,
+        @Param("language") language: String,
+        pageable: Pageable
+    ): Page<StoryTranslationEntity>
 }

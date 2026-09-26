@@ -1,7 +1,10 @@
 package com.tamixa.infrastructure.persistence
 
+import com.tamixa.domain.LibraryStoryStatus
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.Enumerated
+import jakarta.persistence.EnumType
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -51,8 +54,9 @@ class LibraryStoryEntity(
     @Column(name = "audio_file_url", length = 512)
     var audioFileUrl: String? = null,
 
-    @Column(nullable = false, length = 20)
-    var status: String = "DRAFT",
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    var status: LibraryStoryStatus = LibraryStoryStatus.DRAFT,
 
     @Column(name = "cover_image_url", length = 512)
     var coverImageUrl: String? = null,

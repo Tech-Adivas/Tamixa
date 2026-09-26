@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.ComposeUIViewController
 import com.tamixa.di.initKoin
 import com.tamixa.di.iosPlatformModule
+import com.tamixa.navigation.LaunchUriBus
 import com.tamixa.runtime.ServerEnvironmentCache
 import com.tamixa.ui.TamixaApp
 import com.tamixa.ui.theme.TamixaTheme
@@ -45,6 +46,12 @@ fun setHostViewControllerForPickers(vc: UIViewController?) {
  */
 fun warmupOnMainThread() {
     // No-op; the call itself loads the framework on the calling (main) thread.
+}
+
+/** Call from Swift ([onOpenURL] / universal links) so [LaunchUriBus] can route passwordless + story links. */
+fun emitLaunchUri(uri: String?) {
+    val u = uri?.trim()?.takeIf { it.isNotEmpty() } ?: return
+    LaunchUriBus.emit(u)
 }
 
 /**

@@ -15,6 +15,11 @@ interface StoryPlaybackController {
     val isReady: Boolean
     val isPlaying: Boolean
     val progress: Float
+    /**
+     * Media duration in milliseconds when known from the decoder (streaming file, local file).
+     * `0` if unknown (not loaded, live stream) or not applicable (e.g. TTS chunk mode).
+     */
+    val durationMillis: Long get() = 0L
     fun playPause()
     fun rewind()
     fun fastForward()

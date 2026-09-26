@@ -4,6 +4,7 @@ import {
   authStorage,
   clearStoredTokens,
   getStoredTokenExpiresAt,
+  performTokenRefresh,
   type CurrentUser,
 } from "../lib/api";
 import { logger } from "../lib/logger";
@@ -35,21 +36,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const delay = expiresAt - Date.now() - REFRESH_BEFORE_EXPIRY_MS;
     if (delay <= 0) return; // already expired or too close — let 401 handler deal with it
     refreshTimerRef.current = setTimeout(async () => {
-      const refresh = authStorage.getRefreshToken();
-      if (!refresh) return;
       try {
-        const res = await fetch("/api/v1/auth/refresh", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refreshToken: refresh }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          authStorage.setTokens(data.accessToken, data.refreshToken, data.expiresInSeconds);
-          scheduleProactiveRefresh();
-        }
+        const newToken = await performTokenRefresh();
+        if (newToken) scheduleProactiveRefresh();
+        // On null: token already expired or no refresh token — 401 handler in fetchWithAuth recovers
       } catch {
-        // Silently ignore — the 401 retry in fetchWithAuth will handle it
+        // Network error — silently ignore; fetchWithAuth 401 retry will handle it
       }
     }, delay);
   }, []);

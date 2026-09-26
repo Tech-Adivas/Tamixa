@@ -23,6 +23,16 @@ package com.tamixa.infrastructure.logging
  */
 object PiiMask {
 
+    /** Matches common email shapes in free-text audit/details fields (not RFC-complete; defensive redaction). */
+    private val EMAIL_IN_TEXT: Regex =
+        Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
+
+    /**
+     * Replaces every email-like substring with [maskEmail] so admin audit `details` never stores raw parent emails.
+     */
+    fun maskEmailsInFreeText(text: String): String =
+        EMAIL_IN_TEXT.replace(text) { match -> maskEmail(match.value) }
+
     /**
      * Mask email: ab***@domain.com
      */

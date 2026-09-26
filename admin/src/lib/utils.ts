@@ -79,3 +79,19 @@ export function parseJsonStoryContent(
     return null
   }
 }
+
+/**
+ * True when two interactive graph JSON strings match (trim + JSON parse/stringify normalization).
+ * Used to decide whether a locale-specific API graph differs from the master graph.
+ */
+export function interactiveGraphJsonRoughlyEqual(a: string, b: string): boolean {
+  const t1 = (a ?? "").trim()
+  const t2 = (b ?? "").trim()
+  if (t1 === t2) return true
+  if (!t1 || !t2) return false
+  try {
+    return JSON.stringify(JSON.parse(t1)) === JSON.stringify(JSON.parse(t2))
+  } catch {
+    return false
+  }
+}

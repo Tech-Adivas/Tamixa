@@ -141,31 +141,45 @@ fun LanguageSelectionScreen(
                     .padding(vertical = 2.dp),
                 contentAlignment = Alignment.Center
             ) {
-                val haloShape = RoundedCornerShape(100.dp)
-                Box(
-                    modifier = Modifier
-                        .size(108.dp)
-                        .shadow(
-                            elevation = TamixaDesignTokens.cardElevation,
-                            shape = haloShape,
-                            ambientColor = Color.Black.copy(alpha = 0.2f),
-                            spotColor = TamixaColors.deepTeal.copy(alpha = 0.22f),
-                        )
-                        .clip(haloShape)
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = 0.11f),
-                                    Color.White.copy(alpha = 0.03f),
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val haloShape = RoundedCornerShape(100.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(108.dp)
+                            .shadow(
+                                elevation = TamixaDesignTokens.cardElevation,
+                                shape = haloShape,
+                                ambientColor = Color.Black.copy(alpha = 0.2f),
+                                spotColor = TamixaColors.deepTeal.copy(alpha = 0.22f),
+                            )
+                            .clip(haloShape)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.11f),
+                                        Color.White.copy(alpha = 0.03f),
+                                    ),
                                 ),
                             ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        TamixaLanguageLogo(
+                            languageCode = effectiveCode,
+                            modifier = Modifier.size(92.dp),
+                            size = 92.dp
+                        )
+                    }
+                    Text(
+                        text = "Tamixa",
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.5).sp,
                         ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    TamixaLanguageLogo(
-                        languageCode = effectiveCode,
-                        modifier = Modifier.size(92.dp),
-                        size = 92.dp
+                        color = TamixaColors.cream,
+                        textAlign = TextAlign.Center,
                     )
                 }
             }

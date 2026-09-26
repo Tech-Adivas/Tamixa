@@ -57,5 +57,16 @@
 	<string>$(TAMIXA_SUBSCRIPTION_WEB_URL)</string>
 	<key>TAMIXA_ENVIRONMENT</key>
 	<string>$(TAMIXA_ENVIRONMENT)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.tamixa.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tamixa</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

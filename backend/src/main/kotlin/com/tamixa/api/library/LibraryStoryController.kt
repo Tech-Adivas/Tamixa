@@ -30,8 +30,10 @@ class LibraryStoryController(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    private fun forParentClient(story: LibraryStoryResponse): LibraryStoryResponse =
-        digitalSurvivalParentLibraryPostProcessor.ifAvailable?.apply(story) ?: story
+    private fun forParentClient(story: LibraryStoryResponse): LibraryStoryResponse {
+        val withoutOverlay = story.copy(translationInteractiveGraphOverlay = null)
+        return digitalSurvivalParentLibraryPostProcessor.ifAvailable?.apply(withoutOverlay) ?: withoutOverlay
+    }
 
     /**
      * Lists library stories approved for delivery (human-verified in admin "Story for review").
@@ -102,6 +104,7 @@ class LibraryStoryController(
             log.debug("LibraryStory id={} has no playable audio yet for language={}", id, language)
             return ResponseEntity.notFound().build()
         }
+        log.info("Library story delivered to parent id={} language={}", id, language.trim().lowercase())
         return ResponseEntity.ok(forParentClient(story))
     }
 

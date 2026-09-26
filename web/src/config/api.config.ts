@@ -16,6 +16,25 @@ export const API_PATH = "/api/v1"
 
 export const DEFAULT_FULL_API_URL = `${DEFAULT_API_BASE_URL}${API_PATH}`
 
+export function isLoopbackHostname(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase()
+  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "0:0:0:0:0:0:0:1"
+}
+
+/**
+ * Local Vite (`npm run dev`) should call same-origin `/api/v1` so the proxy talks to the backend.
+ * Cross-origin `http://localhost:8080` from the browser fails with "Failed to fetch" when CORS,
+ * mixed loopback hosts (localhost vs 127.0.0.1), or a stopped API block the request.
+ */
+export function shouldUseSameOriginApi(pageHostname: string, apiOrigin: string): boolean {
+  if (!isLoopbackHostname(pageHostname)) return false
+  try {
+    return isLoopbackHostname(new URL(apiOrigin).hostname)
+  } catch {
+    return true
+  }
+}
+
 export const DEFAULT_WEB_APP_URL = "http://localhost:3000"
 
 export const SUBSCRIPTION_PATH = "/subscription"

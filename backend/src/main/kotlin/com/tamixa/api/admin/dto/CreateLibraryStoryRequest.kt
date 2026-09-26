@@ -60,6 +60,12 @@ data class CreateLibraryStoryRequest(
     val translationContentEntries: Map<String, TranslationContentEntryDto>? = null,
 
     /**
+     * Optional per-locale interactive graph (full JSON). Keys are language codes (e.g. "hi").
+     * Omit a language to leave its overlay unchanged. Empty string clears overlay (inherit master graph).
+     */
+    val translationInteractiveGraphEntries: Map<String, String>? = null,
+
+    /**
      * When present in the JSON body, updates `story_narration_scripts.script_text` for this story’s language
      * (after save). Omit the property to leave the script unchanged. Empty string removes the script row.
      */

@@ -14,5 +14,22 @@ data class TranslationContentEntryDto(
     val title: String? = null,
 
     @field:Size(max = 500)
-    val moral: String? = null
+    val moral: String? = null,
+
+    /** Null = leave unchanged; blank after trim clears per-locale override (inherit master). */
+    @field:Size(max = 8000)
+    val postStoryMission: String? = null,
+
+    @field:Size(max = 512)
+    val postStoryResourceUrl: String? = null,
+
+    /** Null = leave unchanged; blank after trim clears per-locale value. */
+    @field:Size(max = 4000)
+    val parentContentNote: String? = null,
+
+    /** Null = leave unchanged; empty list clears. */
+    val parentDiscussionPrompts: List<String>? = null,
+
+    @field:Size(max = 500)
+    val speakAlongPrompt: String? = null,
 )

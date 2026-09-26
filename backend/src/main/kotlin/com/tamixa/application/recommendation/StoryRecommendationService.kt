@@ -66,7 +66,7 @@ class StoryRecommendationService(
                         readingTimeMinutes = listing.readingTimeMinutes,
                         moral = null,
                         audioFileUrl = listing.audioFileUrl,
-                        status = listing.status,
+                        status = com.tamixa.domain.LibraryStoryStatus.fromString(listing.status),
                         coverImageUrl = listing.coverImageUrl,
                         coverVideoUrl = listing.coverVideoUrl,
                         createdAt = listing.createdAt,

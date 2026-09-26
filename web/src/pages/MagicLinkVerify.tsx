@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { authStorage, getMe, verifyPasswordlessCode } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 
+const TOKEN_RE = /^[a-fA-F0-9]{32}$/;
+
+/**
+ * Handles legacy `?email=&code=` links and forwards magic-link `?token=` to `/login?token=`
+ * (where consent + verify run in one place).
+ */
 export default function MagicLinkVerify() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -12,17 +17,20 @@ export default function MagicLinkVerify() {
   const [errorMessage, setErrorMessage] = useState("Invalid or expired link. Please try again.");
 
   useEffect(() => {
+    const rawToken = searchParams.get("token")?.trim() ?? "";
+    if (rawToken && TOKEN_RE.test(rawToken)) {
+      navigate(`/login?token=${encodeURIComponent(rawToken.toLowerCase())}`, { replace: true });
+      return;
+    }
+
     const email = searchParams.get("email")?.trim() ?? "";
     const code = searchParams.get("code")?.trim() ?? "";
-    const token = searchParams.get("token");
     if (!email || !code) {
-      if (token) {
-        setErrorMessage("This sign-in link format is no longer supported. Please request a new code.");
-      }
+      setErrorMessage("Invalid or expired link. Please try again.");
       setStatus("error");
       return;
     }
-    verifyPasswordlessCode(email, code, true, true, false)
+    verifyPasswordlessCode(email, code, true, true, true)
       .then((data) => {
         authStorage.setTokens(data.accessToken, data.refreshToken, data.expiresInSeconds);
         return getMe();

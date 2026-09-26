@@ -41,6 +41,8 @@ class SecurityConfig(
     private val objectMapper: ObjectMapper
 ) {
 
+    private val log = org.slf4j.LoggerFactory.getLogger(SecurityConfig::class.java)
+
     /** Exactly one of [RedisRateLimitingFilter] / [RateLimitingFilter] is registered (see @ConditionalOnProperty). */
     private val rateLimitingFilter: OncePerRequestFilter =
         redisRateLimitingFilter.getIfAvailable()
@@ -81,6 +83,10 @@ class SecurityConfig(
             if (!hasCorsPolicy) {
                 if (environment.activeProfiles.contains("dev")) {
                     // Last resort if dev profile is active but cors was not bound from application-dev.yml
+                    log.warn(
+                        "SECURITY: CORS falling back to hardcoded localhost origins — " +
+                            "CORS_ALLOWED_ORIGINS is not set. Set it explicitly in application-dev.yml or via env var."
+                    )
                     allowedOrigins = listOf(
                         "http://localhost:3000",
                         "http://127.0.0.1:3000",
@@ -94,6 +100,17 @@ class SecurityConfig(
                             "defines app.cors in application-<profile>.yml (e.g. dev, staging)."
                     )
                 }
+            }
+            if (devProfileActive()) {
+                val loopbackOrigins = listOf(
+                    "http://localhost:3000",
+                    "http://127.0.0.1:3000",
+                    "http://localhost:3001",
+                    "http://127.0.0.1:3001",
+                    "http://[::1]:3000",
+                    "http://[::1]:3001"
+                )
+                allowedOrigins = ((allowedOrigins ?: emptyList()) + loopbackOrigins).distinct()
             }
             allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
             allowedHeaders = listOf("*")
@@ -128,11 +145,18 @@ class SecurityConfig(
                 it.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             }
             .authorizeHttpRequests { auth ->
+                auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 // Root: public JSON so API-only Railway URLs are not a confusing 401 in the browser
                 auth.requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/")).permitAll()
-                // Actuator: only health (and liveness/readiness) public for load balancers; rest require auth in prod
+                // Actuator: only health (and liveness/readiness) public for load balancers
                 auth.requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
-                auth.requestMatchers("/actuator/**").authenticated()
+                if (appProperties.apiExposure.actuatorRequiresAdminRole) {
+                    auth.requestMatchers("/actuator/**").hasAnyRole(
+                        "ADMIN", "SUPER_ADMIN", "CONTENT_MANAGER", "REVENUE_ANALYST", "SUPPORT"
+                    )
+                } else {
+                    auth.requestMatchers("/actuator/**").authenticated()
+                }
                 auth.requestMatchers("$v1/health").permitAll()
                 auth.requestMatchers(
                     "$v1/auth/register",
@@ -143,15 +167,25 @@ class SecurityConfig(
                     "$v1/auth/passwordless",
                     "$v1/auth/passwordless/verify"
                 ).permitAll()
+                // Logout requires authentication (must have valid token to revoke it)
+                auth.requestMatchers("$v1/auth/logout").authenticated()
                 // Dev controllers are @Profile("dev"); deny /dev/** in non-dev so misconfiguration cannot expose tooling.
                 if (devProfileActive()) {
                     auth.requestMatchers("$v1/dev/**").permitAll()
+                    auth.requestMatchers("$v1/debug/**").permitAll()
                 } else {
                     auth.requestMatchers("$v1/dev/**").denyAll()
+                    auth.requestMatchers("$v1/debug/**").denyAll()
                 }
                 auth.requestMatchers("$v1/webhooks/**").permitAll()
-                // Swagger and api-docs: require authenticated in prod to reduce reconnaissance
-                auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").authenticated()
+                // OpenAPI/Swagger: any authenticated user vs admin roles only (see app.api-exposure.swagger-requires-admin-role)
+                if (appProperties.apiExposure.swaggerRequiresAdminRole) {
+                    auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").hasAnyRole(
+                        "ADMIN", "SUPER_ADMIN", "CONTENT_MANAGER", "REVENUE_ANALYST", "SUPPORT"
+                    )
+                } else {
+                    auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").authenticated()
+                }
                 // Audio files: permit when CDN disabled for direct playback (ExoPlayer does not send auth headers)
                 auth.requestMatchers("/audio/**").permitAll()
                 // Cover images: proxy to S3; permit for unauthenticated img loads

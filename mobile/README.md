@@ -151,7 +151,7 @@ Values come from **target Build Settings** (`TAMIXA_API_BASE_URL`, `TAMIXA_SUBSC
 
 Swift passes plist values into Kotlin via `MainViewController(baseUrl:defaultSubscriptionWebUrl:environment:)`; `IosBuildTimeEnvironment` feeds the subscription default used by `getSubscriptionWebUrl()`.
 
-**Navigation & playback**: `TamixaNavHost` and much playback are Android-oriented; iOS still needs fuller navigation and AVPlayer-based streaming where applicable.
+**Deep links (shared `TamixaNavHost`)**: Passwordless magic-link tokens and story links are routed via `LaunchUriBus`. **Android** (`composeApp` `MainActivity`) forwards `intent.dataString`; **iOS** forwards `onOpenURL` and universal-link browsing activity to `IosAppKt.emitLaunchUri`. Supported examples: `https://…/login?token=<32-hex>` (after you enable HTTPS App Links / Associated Domains on the host), and **`tamixa://open?token=<32-hex>`** / **`tamixa://story/{id}`** (custom scheme is registered in `AndroidManifest.xml` and `Info.plist`). Marketing emails still typically use the HTTPS web URL; add an app link line that uses `tamixa://open?…` if you want open-in-app without universal links.
 
 ## API Base URL
 

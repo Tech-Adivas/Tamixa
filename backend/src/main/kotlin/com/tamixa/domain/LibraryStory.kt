@@ -16,7 +16,7 @@ data class LibraryStory(
     val readingTimeMinutes: Double,
     val moral: String?,
     val audioFileUrl: String?,
-    val status: String,
+    val status: LibraryStoryStatus,
     val coverImageUrl: String?,
     val coverVideoUrl: String? = null,
     val createdAt: Instant,

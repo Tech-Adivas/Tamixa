@@ -155,14 +155,14 @@ class StoryLibraryRepositoryAdapter(
         jpaRepository.save(entity)
     }
 
-    override fun updateStatus(id: Long, status: String) {
+    override fun updateStatus(id: Long, status: com.tamixa.domain.LibraryStoryStatus) {
         val entity = requireActiveEntity(id)
         entity.status = status
         touch(entity)
         jpaRepository.save(entity)
     }
 
-    override fun updateStatusAndReviewNotes(id: Long, status: String, reviewNotes: String?) {
+    override fun updateStatusAndReviewNotes(id: Long, status: com.tamixa.domain.LibraryStoryStatus, reviewNotes: String?) {
         val entity = requireActiveEntity(id)
         entity.status = status
         entity.reviewNotes = reviewNotes
@@ -171,11 +171,11 @@ class StoryLibraryRepositoryAdapter(
     }
 
     @Transactional
-    override fun updateStatusBulk(ids: List<Long>, status: String): Int {
+    override fun updateStatusBulk(ids: List<Long>, status: com.tamixa.domain.LibraryStoryStatus): Int {
         if (ids.isEmpty()) return 0
         val now = Instant.now()
         return ids.distinct().chunked(BULK_UPDATE_CHUNK).sumOf { chunk ->
-            jpaRepository.bulkUpdateStatusForActiveIds(chunk, status, now)
+            jpaRepository.bulkUpdateStatusForActiveIds(chunk, status.name, now)
         }
     }
 

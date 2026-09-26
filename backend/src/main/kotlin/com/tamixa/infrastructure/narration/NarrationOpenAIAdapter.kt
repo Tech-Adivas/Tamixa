@@ -13,7 +13,7 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.retry.annotation.Backoff
 import org.springframework.retry.annotation.Retryable
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.context.annotation.Conditional
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestTemplate
 
@@ -22,7 +22,7 @@ import org.springframework.web.client.RestTemplate
  * Uses strict prompt template; story content passed in user message only (no interpolation).
  */
 @Component
-@ConditionalOnProperty(name = ["app.llm.provider"], havingValue = "openai", matchIfMissing = true)
+@Conditional(OnNarrationOpenAiPrimaryAdapterCondition::class)
 class NarrationOpenAIAdapter(
     private val restTemplate: RestTemplate,
     private val objectMapper: ObjectMapper,

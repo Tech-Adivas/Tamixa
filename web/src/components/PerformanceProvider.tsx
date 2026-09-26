@@ -56,9 +56,9 @@ export function PerformanceProvider({ children }: PerformanceProviderProps) {
         }
       `;
       document.head.appendChild(style);
-      
+
       return () => {
-        document.head.removeChild(style);
+        style.remove();
       };
     }
   }, [prefersReducedMotion, isLowEnd]);

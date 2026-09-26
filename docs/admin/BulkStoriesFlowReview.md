@@ -108,10 +108,10 @@ Senior review (Mobile dev, AI/ML, UI/UX) of the bulk story generation flow: gaps
 
 ## 5. Checklist for Next Iteration
 
-- [ ] Timeout / long-run UX: message or async job + polling
-- [ ] Bulk max_tokens ≥ 2048 (config or code)
-- [ ] Duplicate title retry or unique title in bulk
-- [ ] “View in Stories” / “Story for review” after success
-- [ ] Optional: progress (SSE/WS) or “may take several minutes”
-- [ ] Optional: trigger executor queue size or batch job
-- [ ] Optional: better empty/failure copy, a11y, clickable rows
+- [x] Timeout / long-run UX: async job + polling; on-page long-run warning for all batch sizes
+- [x] Bulk max_tokens ≥ 2048: `app.openai.bulk-max-tokens` / `OPENAI_BULK_MAX_TOKENS` (default 2048, clamped 512–8192)
+- [x] Duplicate title retry: up to three title candidates (suffix + numeric stamp) before failing
+- [x] “View in Stories” / “Story for review” after success (plus queue link when not publish); created rows link to edit
+- [x] Progress: async poll shows “Story N/M”; helper text explains timing
+- [x] Trigger executor queue capacity increased to 32 for bulk publish fan-out
+- [x] Empty/partial failure copy; `aria-live` + summary; estimated read minutes on created rows when returned

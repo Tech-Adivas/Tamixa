@@ -16,6 +16,8 @@ data class InteractiveStoryGraph(
 @Serializable
 data class InteractiveSegment(
     val audioUrl: String,
+    /** Spoken narration for this node; matches segment TTS / what the player should show while audio plays. */
+    val text: String = "",
     val choices: List<InteractiveChoice> = emptyList(),
 )
 

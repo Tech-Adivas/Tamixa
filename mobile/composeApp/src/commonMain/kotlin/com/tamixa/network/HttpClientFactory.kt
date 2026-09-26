@@ -96,7 +96,7 @@ fun createKtorClient(
                     // Redact Authorization header so tokens are never logged
                     val sanitized = message
                         .replace(Regex("(Authorization|authorization):\\s*Bearer\\s+[^\\s\\]]+")) { "${it.groupValues[1]}: ***" }
-                        .replace(Regex("Bearer\\s+[A-Za-z0-9_.-]+")) { "Bearer ***" }
+                        .replace(Regex("Bearer\\s+[A-Za-z0-9\\-._~+/]+=*")) { "Bearer ***" }
                     TamixaLog.d("HttpClient", sanitized)
                 }
             }

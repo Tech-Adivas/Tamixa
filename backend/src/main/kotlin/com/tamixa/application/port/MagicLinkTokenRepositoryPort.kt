@@ -11,6 +11,9 @@ interface MagicLinkTokenRepositoryPort {
 
     fun findValidByEmailAndCode(email: String, shortCode: String): MagicLinkToken?
 
+    /** Opaque token from magic-link URL (UUID without dashes, 32 hex chars). */
+    fun findValidByLoginToken(loginToken: String): MagicLinkToken?
+
     fun markUsed(id: Long)
 }
 

@@ -69,7 +69,7 @@ class VoiceViewModel(
 
     fun loadProfiles() {
         scope.launch {
-            if (_profiles.value !is UiState.Success) _profiles.value = UiState.Loading
+            _profiles.value = UiState.Loading
             voiceRepository.list()
                 .fold(
                     onSuccess = { _profiles.value = UiState.Success(it) },
