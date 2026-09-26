@@ -6,6 +6,10 @@ import com.tamixa.application.auth.AccountSuspendedException
 import com.tamixa.application.auth.ConsentRequiredException
 import com.tamixa.application.auth.InvalidCredentialsException
 import com.tamixa.application.auth.InvalidOtpException
+import com.tamixa.application.auth.InvalidRefreshTokenException
+import com.tamixa.application.auth.EmailAlreadyExistsException
+import com.tamixa.application.auth.PhoneAlreadyInUseException
+import com.tamixa.application.auth.ParentNotFoundException
 import com.tamixa.application.guardrail.ExternalGuardrailUnavailableException
 import com.tamixa.application.story.ContentModerationException
 import com.tamixa.application.story.FreeStoryLimitReachedException
@@ -24,6 +28,8 @@ import com.tamixa.application.avatar.AvatarFileTooLargeException
 import com.tamixa.application.avatar.AvatarPremiumRequiredException
 import com.tamixa.application.avatar.InvalidAvatarFileException
 import com.tamixa.application.avatar.AvatarNotFoundException
+import com.tamixa.application.avatar.AvatarAccessDeniedException
+import com.tamixa.application.story.StoryAccessDeniedException
 import com.tamixa.api.exception.LimitReachedResponse
 import com.tamixa.domain.narration.NarrationJobCapacityExceededException
 import com.tamixa.domain.subscription.UpgradeRequiredException
@@ -40,6 +46,14 @@ import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.security.access.AccessDeniedException
+import org.springframework.web.HttpMediaTypeNotSupportedException
+import org.springframework.web.bind.MissingRequestHeaderException
+import org.springframework.web.bind.MissingServletRequestParameterException
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
+import org.springframework.web.servlet.NoHandlerFoundException
+import org.springframework.web.servlet.resource.NoResourceFoundException
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice
@@ -196,6 +210,108 @@ class GlobalExceptionHandler {
     @ExceptionHandler(HttpRequestMethodNotSupportedException::class)
     fun handleMethodNotAllowed(e: HttpRequestMethodNotSupportedException): ResponseEntity<Map<String, Any>> {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(errorBody(e.message ?: "Method not allowed", HttpStatus.METHOD_NOT_ALLOWED))
+    }
+
+    /** Expired/revoked refresh token — client must log in again (was 500; admin/web treat 401 as "session expired"). */
+    @ExceptionHandler(InvalidRefreshTokenException::class)
+    fun handleInvalidRefresh(e: InvalidRefreshTokenException): ResponseEntity<Map<String, Any>> {
+        log.debug("Refresh rejected: {}", e.message)
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+            .body(errorBody(e.message ?: "Invalid or expired refresh token", HttpStatus.UNAUTHORIZED))
+    }
+
+    @ExceptionHandler(EmailAlreadyExistsException::class, PhoneAlreadyInUseException::class)
+    fun handleAlreadyExists(e: RuntimeException): ResponseEntity<Map<String, Any>> {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorBody(e.message ?: "Already exists", HttpStatus.CONFLICT))
+    }
+
+    @ExceptionHandler(ParentNotFoundException::class)
+    fun handleParentNotFound(e: ParentNotFoundException): ResponseEntity<Map<String, Any>> {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorBody("Account not found", HttpStatus.NOT_FOUND))
+    }
+
+    /** Authenticated but not allowed (e.g. @PreAuthorize role mismatch). Was falling through to the 500 catch-all. */
+    @ExceptionHandler(AccessDeniedException::class)
+    fun handleAccessDenied(e: AccessDeniedException): ResponseEntity<Map<String, Any>> {
+        log.debug("Access denied: {}", e.message)
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorBody("Access denied", HttpStatus.FORBIDDEN))
+    }
+
+    /** Missing required query parameter (e.g. /stories/search without q). */
+    @ExceptionHandler(MissingServletRequestParameterException::class)
+    fun handleMissingParam(e: MissingServletRequestParameterException): ResponseEntity<Map<String, Any>> {
+        val msg = "Required request parameter '${e.parameterName}' is missing"
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(errorBody(msg, HttpStatus.BAD_REQUEST, mapOf(e.parameterName to "required")))
+    }
+
+    /** Missing required header (e.g. Authorization on logout). */
+    @ExceptionHandler(MissingRequestHeaderException::class)
+    fun handleMissingHeader(e: MissingRequestHeaderException): ResponseEntity<Map<String, Any>> {
+        val msg = "Required header '${e.headerName}' is missing"
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBody(msg, HttpStatus.BAD_REQUEST))
+    }
+
+    /** Path/query value of the wrong type or an unknown enum value (e.g. status=FOO). */
+    @ExceptionHandler(MethodArgumentTypeMismatchException::class)
+    fun handleTypeMismatch(e: MethodArgumentTypeMismatchException): ResponseEntity<Map<String, Any>> {
+        val msg = "Invalid value '${e.value}' for parameter '${e.name}'"
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(errorBody(msg, HttpStatus.BAD_REQUEST, mapOf(e.name to "invalid")))
+    }
+
+    /** Malformed or missing JSON body. */
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    fun handleUnreadableBody(e: HttpMessageNotReadableException): ResponseEntity<Map<String, Any>> {
+        log.debug("Unreadable request body: {}", e.message)
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBody("Malformed or missing request body", HttpStatus.BAD_REQUEST))
+    }
+
+    /** Unsupported Content-Type. */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException::class)
+    fun handleMediaType(e: HttpMediaTypeNotSupportedException): ResponseEntity<Map<String, Any>> {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+            .body(errorBody(e.message ?: "Unsupported media type", HttpStatus.UNSUPPORTED_MEDIA_TYPE))
+    }
+
+    /** Unknown URL. Spring 6.1+ raises NoResourceFoundException; was returned as 500. */
+    @ExceptionHandler(NoResourceFoundException::class, NoHandlerFoundException::class)
+    fun handleNotFound(e: Exception): ResponseEntity<Map<String, Any>> {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorBody("Resource not found", HttpStatus.NOT_FOUND))
+    }
+
+    /** Domain "not yours" errors — previously unhandled (500). */
+    @ExceptionHandler(StoryAccessDeniedException::class, FamilyVoiceAccessDeniedException::class, AvatarAccessDeniedException::class)
+    fun handleDomainAccessDenied(e: RuntimeException): ResponseEntity<Map<String, Any>> {
+        log.debug("Domain access denied: {}", e.message)
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorBody("Access denied", HttpStatus.FORBIDDEN))
+    }
+
+    /** Domain "not found" errors — previously unhandled (500). */
+    @ExceptionHandler(FamilyVoiceNotFoundException::class, SubscriptionNotFoundException::class)
+    fun handleDomainNotFound(e: RuntimeException): ResponseEntity<Map<String, Any>> {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorBody(e.message ?: "Not found", HttpStatus.NOT_FOUND))
+    }
+
+    @ExceptionHandler(FamilyVoiceFileTooLargeException::class)
+    fun handleFamilyVoiceTooLarge(e: FamilyVoiceFileTooLargeException): ResponseEntity<Map<String, Any>> {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+            .body(errorBody(e.message ?: "File too large", HttpStatus.PAYLOAD_TOO_LARGE))
+    }
+
+    @ExceptionHandler(FamilyInvalidVoiceFileException::class)
+    fun handleFamilyInvalidVoiceFile(e: FamilyInvalidVoiceFileException): ResponseEntity<Map<String, Any>> {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(errorBody(e.message ?: "Invalid voice file", HttpStatus.BAD_REQUEST))
+    }
+
+    /** Narration queue full — client should retry later. */
+    @ExceptionHandler(NarrationJobCapacityExceededException::class)
+    fun handleNarrationCapacity(e: NarrationJobCapacityExceededException): ResponseEntity<Map<String, Any>> {
+        log.warn("Narration capacity exceeded: {}", e.message)
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .header("Retry-After", "30")
+            .body(errorBody(e.message ?: "Narration is busy, please retry shortly", HttpStatus.SERVICE_UNAVAILABLE))
     }
 
     /** OpenAI API errors (rate limit, model error, timeout). */

@@ -182,25 +182,25 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
 
     @Query(
         "SELECT c FROM LibraryStoryEntity c WHERE c.deletedAt IS NULL " +
-            "ORDER BY CASE WHEN c.status = 'PROCESSING' THEN 0 ELSE 1 END, c.id DESC"
+            "ORDER BY CASE WHEN c.status IN ('SUBMITTED', 'TRANSLATING', 'AUDIO_GENERATING') THEN 0 ELSE 1 END, c.id DESC"
     )
     fun findAllWithProcessingFirst(pageable: Pageable): Page<LibraryStoryEntity>
 
     @Query(
         "SELECT c FROM LibraryStoryEntity c WHERE c.deletedAt IS NULL AND c.narrationApprovedAt IS NOT NULL " +
-            "ORDER BY CASE WHEN c.status = 'PROCESSING' THEN 0 ELSE 1 END, c.id DESC"
+            "ORDER BY CASE WHEN c.status IN ('SUBMITTED', 'TRANSLATING', 'AUDIO_GENERATING') THEN 0 ELSE 1 END, c.id DESC"
     )
     fun findAllWithProcessingFirstAndNarrationApprovedAtNotNull(pageable: Pageable): Page<LibraryStoryEntity>
 
     @Query(
         "SELECT c FROM LibraryStoryEntity c WHERE c.deletedAt IS NULL AND c.narrationApprovedAt IS NULL " +
-            "ORDER BY CASE WHEN c.status = 'PROCESSING' THEN 0 ELSE 1 END, c.id DESC"
+            "ORDER BY CASE WHEN c.status IN ('SUBMITTED', 'TRANSLATING', 'AUDIO_GENERATING') THEN 0 ELSE 1 END, c.id DESC"
     )
     fun findAllWithProcessingFirstAndNarrationApprovedAtNull(pageable: Pageable): Page<LibraryStoryEntity>
 
     @Query(
         "SELECT c FROM LibraryStoryEntity c WHERE c.deletedAt IS NULL AND c.status IN :statuses " +
-            "ORDER BY CASE WHEN c.status = 'PROCESSING' THEN 0 ELSE 1 END, c.id DESC"
+            "ORDER BY CASE WHEN c.status IN ('SUBMITTED', 'TRANSLATING', 'AUDIO_GENERATING') THEN 0 ELSE 1 END, c.id DESC"
     )
     fun findByStatusInWithProcessingFirst(
         @Param("statuses") statuses: List<String>,
@@ -209,7 +209,7 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
 
     @Query(
         "SELECT c FROM LibraryStoryEntity c WHERE c.deletedAt IS NULL AND c.status IN :statuses AND c.narrationApprovedAt IS NOT NULL " +
-            "ORDER BY CASE WHEN c.status = 'PROCESSING' THEN 0 ELSE 1 END, c.id DESC"
+            "ORDER BY CASE WHEN c.status IN ('SUBMITTED', 'TRANSLATING', 'AUDIO_GENERATING') THEN 0 ELSE 1 END, c.id DESC"
     )
     fun findByStatusInWithProcessingFirstAndNarrationApprovedAtNotNull(
         @Param("statuses") statuses: List<String>,
@@ -218,7 +218,7 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
 
     @Query(
         "SELECT c FROM LibraryStoryEntity c WHERE c.deletedAt IS NULL AND c.status IN :statuses AND c.narrationApprovedAt IS NULL " +
-            "ORDER BY CASE WHEN c.status = 'PROCESSING' THEN 0 ELSE 1 END, c.id DESC"
+            "ORDER BY CASE WHEN c.status IN ('SUBMITTED', 'TRANSLATING', 'AUDIO_GENERATING') THEN 0 ELSE 1 END, c.id DESC"
     )
     fun findByStatusInWithProcessingFirstAndNarrationApprovedAtNull(
         @Param("statuses") statuses: List<String>,
@@ -226,7 +226,7 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
     ): Page<LibraryStoryEntity>
 
     @Query(
-        "SELECT c FROM LibraryStoryEntity c WHERE c.deletedAt IS NULL AND c.status IN ('PUBLISHED', 'PROCESSING', 'READY') " +
+        "SELECT c FROM LibraryStoryEntity c WHERE c.deletedAt IS NULL AND c.status IN ('SUBMITTED', 'TRANSLATING', 'CONTENT_REVIEW') " +
             "AND c.narrationApprovedAt IS NULL ORDER BY c.id DESC"
     )
     fun findByStatusPublishedAndNarrationApprovedAtNull(pageable: Pageable): Page<LibraryStoryEntity>

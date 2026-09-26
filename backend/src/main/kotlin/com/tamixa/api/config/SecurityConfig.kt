@@ -179,7 +179,9 @@ class SecurityConfig(
                 }
                 auth.requestMatchers("$v1/webhooks/**").permitAll()
                 // OpenAPI/Swagger: any authenticated user vs admin roles only (see app.api-exposure.swagger-requires-admin-role)
-                if (appProperties.apiExposure.swaggerRequiresAdminRole) {
+                if (appProperties.apiExposure.swaggerPublic) {
+                    auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                } else if (appProperties.apiExposure.swaggerRequiresAdminRole) {
                     auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").hasAnyRole(
                         "ADMIN", "SUPER_ADMIN", "CONTENT_MANAGER", "REVENUE_ANALYST", "SUPPORT"
                     )

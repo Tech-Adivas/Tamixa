@@ -262,7 +262,7 @@ export default function NewLibraryStoryPage() {
   const [segmentStudioActivity, setSegmentStudioActivity] = useState<SegmentStudioActivity>({ kind: "idle" });
   const segmentStudioBusy = segmentStudioActivity.kind !== "idle";
   const segmentVoiceAutoLoadedRef = useRef(false);
-  const autosaveRef = useRef<ReturnType<typeof setTimeout>>();
+  const autosaveRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** Client-only: last time the unpublished form was written to `AUTOSAVE_KEY`. */
   const [localDraftSavedAt, setLocalDraftSavedAt] = useState<number | null>(null);
   /** Master key + per-locale full graph JSON (same model as Edit). */

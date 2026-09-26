@@ -31,7 +31,8 @@ class SubscriptionService(
     private val auditLog: AuditLogPort,
     private val appProperties: AppProperties,
     private val subscriptionCheckoutPort: SubscriptionCheckoutPort,
-    private val referralCodeService: ReferralCodeService
+    private val referralCodeService: ReferralCodeService,
+    private val freeSubscriptionCreator: FreeSubscriptionCreator
 ) {
 
     fun validateReferralCode(shortcode: String): ReferralCodeInfo? = referralCodeService.validate(shortcode)
@@ -59,29 +60,17 @@ class SubscriptionService(
             ?: createFreeSubscription(parentId)
     }
 
-    @Transactional
+    /**
+     * Creates the FREE subscription if the parent has none. Safe under concurrent first requests:
+     * the loser of the unique-key race re-reads the row the winner committed instead of failing with 500.
+     */
     fun createFreeSubscription(parentId: Long): Subscription {
-        val now = Instant.now()
-        val sub = Subscription(
-            id = 0,
-            parentId = parentId,
-            plan = SubscriptionPlan.FREE,
-            status = SubscriptionStatus.FREE,
-            provider = PaymentProvider.STRIPE,
-            externalSubscriptionId = null,
-            externalCustomerId = null,
-            currentPeriodStart = now,
-            currentPeriodEnd = null,
-            trialEnd = null,
-            cancelAtPeriodEnd = false,
-            canceledAt = null,
-            pastDueAt = null,
-            maxChildren = 1,
-            voicePremium = false,
-            createdAt = now,
-            updatedAt = now
-        )
-        val saved = subscriptionRepository.save(sub)
+        val saved = try {
+            freeSubscriptionCreator.insertFree(parentId)
+        } catch (e: org.springframework.dao.DataIntegrityViolationException) {
+            log.debug("Free subscription already created concurrently for parentId={}", parentId)
+            return subscriptionRepository.findByParentId(parentId) ?: throw e
+        }
         appendEvent(saved, "subscription_created", null, SubscriptionStatus.FREE, null, null)
         auditLog.logSubscriptionChange(parentId, "created_free", "plan=FREE", null)
         return saved

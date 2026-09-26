@@ -33,7 +33,7 @@ describe("applyFinancialChoice + crisis", () => {
 
 describe("simulateTimePassage", () => {
   it("advances months and returns summary", () => {
-    let e = {
+    const e = {
       ...DEFAULT_FAMILY_ECONOMY,
       outstandingBadDebtPrincipal: 50_000,
     };

@@ -5,6 +5,9 @@ SEED_ADMIN_ENABLED: "true"
 # Dev passwordless: use code "123456" for web app login with any email (no email send needed)
 # Narration: longer TTS timeout for dev
 app:
+  api-exposure:
+    # Local dev: open Swagger UI at /swagger-ui.html without a JWT. Never enabled outside the dev profile.
+    swagger-public: ${SWAGGER_PUBLIC:true}
   digital-survival-dev:
     # After Flyway V86–V90, POST /api/v1/dev/digital-survival/prepare-e2e-seed (no auth) then open mobile Library → Practice (language=en).
     rewrite-interactive-graph-audio-to-dev-placeholder: true

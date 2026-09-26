@@ -81,8 +81,11 @@ function parsePipelineStatus(value: string): { status: string; error?: string } 
   return { status: value.slice(0, idx).trim(), error: value.slice(idx + 3).trim() };
 }
 
+/** Review queue under unified statuses (V99). Legacy PROCESSING/READY kept for rows not yet migrated. */
+const REVIEW_QUEUE_STATUSES = new Set(["SUBMITTED", "TRANSLATING", "CONTENT_REVIEW", "PROCESSING", "READY"]);
+
 function isReviewQueueStatus(status: string | null | undefined): boolean {
-  return status === "PUBLISHED" || status === "PROCESSING" || status === "READY";
+  return status != null && REVIEW_QUEUE_STATUSES.has(status);
 }
 
 export default function LibraryStoriesPage() {
@@ -638,11 +641,14 @@ export default function LibraryStoriesPage() {
               <SelectContent>
                 <SelectItem value="ALL">All status</SelectItem>
                 <SelectItem value="DRAFT">Draft</SelectItem>
-                <SelectItem value="PUBLISHED">In review queue (+ processing)</SelectItem>
-                <SelectItem value="PROCESSING">Pipeline processing</SelectItem>
-                <SelectItem value="READY">Ready for human review</SelectItem>
+                <SelectItem value="SUBMITTED,TRANSLATING">Pipeline processing</SelectItem>
+                <SelectItem value="TRANSLATION_FAILED">Translation failed</SelectItem>
+                <SelectItem value="CONTENT_REVIEW">Ready for content review</SelectItem>
                 <SelectItem value="CHANGES_REQUESTED">Changes requested</SelectItem>
                 <SelectItem value="REJECTED">Rejected</SelectItem>
+                <SelectItem value="APPROVED">Approved (needs audio)</SelectItem>
+                <SelectItem value="AUDIO_GENERATING,AUDIO_FAILED,AUDIO_REVIEW">Audio in progress / review</SelectItem>
+                <SelectItem value="PUBLISHED">Published (live on app)</SelectItem>
               </SelectContent>
             </Select>
             <Select value={approvedFilter} onValueChange={(v: "all" | "approved" | "not_approved") => setApprovedFilter(v)}>

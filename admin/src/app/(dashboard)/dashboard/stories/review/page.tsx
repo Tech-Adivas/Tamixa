@@ -113,9 +113,9 @@ export default function ContentReviewPage() {
         setError(null);
       }
 
-      // Fetch stories with status=READY (ready for review)
+      // Unified statuses (V99): stories whose translations are done and await human content review
       api.admin
-        .getLibraryStories(page, PAGE_SIZE, "READY", undefined)
+        .getLibraryStories(page, PAGE_SIZE, "CONTENT_REVIEW", undefined)
         .then((res) => {
           // Apply client-side filters for category and language
           let filtered = res.content;
@@ -154,7 +154,7 @@ export default function ContentReviewPage() {
     loadPipelineStatuses(data.content.map((r) => r.id));
   }, [data?.content, loadPipelineStatuses]);
 
-  // Poll pipeline status for READY stories
+  // Poll pipeline status for CONTENT_REVIEW stories
   useEffect(() => {
     if (!data?.content?.length) return;
     const ids = data.content.map((r) => r.id);
@@ -189,7 +189,7 @@ export default function ContentReviewPage() {
         await api.admin.approveLibraryStory(storyId);
         showSuccess(
           "Story approved",
-          "Story moved to PUBLISHED status. You can now generate audio from the Narration tab."
+          "Story moved to APPROVED status. You can now generate audio from the Narration tab."
         );
         setActionStoryId(null);
         setActionType(null);
@@ -309,7 +309,7 @@ export default function ContentReviewPage() {
 
       <div className="rounded-lg border border-border/80 bg-muted/20 px-4 py-2.5 text-sm text-muted-foreground">
         <span className="font-medium text-foreground">Review workflow:</span> Stories in{" "}
-        <strong>READY</strong> status have completed pipeline processing (translation, rewriting,
+        <strong>CONTENT_REVIEW</strong> status have completed pipeline processing (translation, rewriting,
         TTS prep). Review content quality, approve for publication, request changes, or reject.
         After approval, generate audio from the <strong>Narration</strong> tab.
       </div>
@@ -693,7 +693,7 @@ export default function ContentReviewPage() {
             </DialogTitle>
             <DialogDescription>
               {actionType === "approve"
-                ? "Approve this story for publication. It will move to PUBLISHED status and be ready for audio generation."
+                ? "Approve this story for publication. It will move to APPROVED status and be ready for audio generation."
                 : actionType === "reject"
                   ? "Reject this story. It will be marked as REJECTED and removed from the review queue."
                   : "Request changes to this story. It will move to CHANGES_REQUESTED status and the content team will revise it."}

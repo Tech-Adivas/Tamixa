@@ -505,7 +505,27 @@ private fun logLikelyDatasourceTarget() {
     }
 }
 
+/**
+ * PostgreSQL rejects legacy IANA aliases (e.g. "Asia/Calcutta") that some JVMs/OS images still report,
+ * failing every JDBC connection with `FATAL: invalid value for parameter "TimeZone"`. pgJDBC sends the JVM
+ * default zone at connect time, so normalise it to the canonical id before any connection is opened.
+ */
+internal fun normalizeLegacyDefaultTimeZone() {
+    val legacyToCanonical = mapOf(
+        "Asia/Calcutta" to "Asia/Kolkata",
+        "Asia/Katmandu" to "Asia/Kathmandu",
+        "Asia/Saigon" to "Asia/Ho_Chi_Minh",
+        "Asia/Rangoon" to "Asia/Yangon",
+    )
+    val current = java.util.TimeZone.getDefault().id
+    val canonical = legacyToCanonical[current] ?: return
+    java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(canonical))
+    System.setProperty("user.timezone", canonical)
+    LoggerFactory.getLogger("TamixaStartup").info("JVM default time zone {} normalised to {} for PostgreSQL", current, canonical)
+}
+
 fun main(args: Array<String>) {
+    normalizeLegacyDefaultTimeZone()
     val startupArgs = applyRailwayDefaultProfile(args)
     applyDatabaseUrlCompatibility(startupArgs)
     warnIfDatasourceEnvFamiliesOverlap()

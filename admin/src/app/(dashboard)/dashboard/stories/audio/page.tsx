@@ -29,18 +29,20 @@ import {
 } from "@/lib/library-story-workflow";
 
 const PAGE_SIZE = 20;
+/** Stories that need, are getting, or just got narration audio (comma list understood by GET /admin/stories). */
+const AUDIO_QUEUE_STATUSES = "APPROVED,AUDIO_GENERATING,AUDIO_FAILED,AUDIO_REVIEW";
 const POLL_INTERVAL_MS = 3000;
 const POLL_DURATION_MS = 6 * 60 * 1000;
 
 /** Supported languages for audio generation */
 const SUPPORTED_LANGUAGES = ["ta", "en", "hi", "te", "kn", "ml"] as const;
 
-function getLanguageStatus(status?: PipelineStatusResponse | null, language: string): string {
+function getLanguageStatus(status: PipelineStatusResponse | null | undefined, language: string): string {
   if (!status || typeof status !== "object") return "PENDING";
   return status[language] ?? "PENDING";
 }
 
-function isLanguageCompleted(status?: PipelineStatusResponse | null, language: string): boolean {
+function isLanguageCompleted(status: PipelineStatusResponse | null | undefined, language: string): boolean {
   return getLanguageStatus(status, language) === "COMPLETED";
 }
 
@@ -57,7 +59,7 @@ function mapErrorMessage(raw: unknown): string {
   const lower = msg.toLowerCase();
   if (!msg) return "Operation failed";
   if (lower.includes("not approved yet") || lower.includes("not in ready status")) {
-    return "Story must be in READY status before audio generation. Approve the story first in Content Review.";
+    return "Story must be approved (APPROVED status) before audio generation. Approve the story first in Content Review.";
   }
   if (lower.includes("not found")) {
     return "Story not found. Refresh the list and try again.";
@@ -118,9 +120,9 @@ export default function AudioGenerationPage() {
     if (!silent) setLoading(true);
     setError(null);
 
-    // Fetch stories with status=PUBLISHED (approved for audio generation)
+    // Unified statuses (V99): content-approved stories and those in the audio phase
     api.admin
-      .getLibraryStories(page, PAGE_SIZE, "PUBLISHED")
+      .getLibraryStories(page, PAGE_SIZE, AUDIO_QUEUE_STATUSES)
       .then((res) => setData(res))
       .catch((e) => {
         if (!silent) {
@@ -281,7 +283,7 @@ export default function AudioGenerationPage() {
         <h1 className="page-header">Audio Generation</h1>
         <p className="page-subheader mt-1">
           Generate and manage TTS (text-to-speech) audio for approved stories across all supported languages.
-          Stories must be in <strong>PUBLISHED</strong> status (approved for audio generation).
+          Stories must be in <strong>APPROVED</strong> or an audio status (generating, failed, review).
         </p>
       </div>
 
@@ -330,7 +332,7 @@ export default function AudioGenerationPage() {
                   : "No stories ready for audio generation."}
               </p>
               <p className="text-sm text-muted-foreground mb-4">
-                Stories must be approved and in PUBLISHED status to appear here.
+                Stories must be approved and in APPROVED or an audio status to appear here.
               </p>
               <Link href="/dashboard/stories/review">
                 <Button variant="outline" size="sm">

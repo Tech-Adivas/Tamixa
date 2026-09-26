@@ -165,6 +165,8 @@ app:
   api-exposure:
     swagger-requires-admin-role: ${SWAGGER_REQUIRES_ADMIN_ROLE:false}
     actuator-requires-admin-role: ${ACTUATOR_REQUIRES_ADMIN_ROLE:false}
+    # true only in application-dev.yml (Swagger without login for local development)
+    swagger-public: false
   rate-limit:
     enabled: ${RATE_LIMIT_ENABLED:true}
     # Set true for multi-instance: uses Redis. Requires Redis. Default false.

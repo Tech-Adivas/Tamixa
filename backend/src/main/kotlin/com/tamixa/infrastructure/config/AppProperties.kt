@@ -279,6 +279,11 @@ data class AppProperties(
          * Disable (e.g. ACTUATOR_REQUIRES_ADMIN_ROLE=false) if Prometheus scrapes metrics without a Bearer token.
          */
         val actuatorRequiresAdminRole: Boolean = false,
+        /**
+         * When true, OpenAPI/Swagger UI is reachable without a JWT. Local dev only (application-dev.yml);
+         * forced false in staging/prod profiles.
+         */
+        val swaggerPublic: Boolean = false,
     )
 
     data class RateLimitProperties(

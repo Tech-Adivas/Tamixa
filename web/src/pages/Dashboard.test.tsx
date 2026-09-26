@@ -52,7 +52,7 @@ describe("Dashboard", () => {
     );
     await flushDashboard();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Welcome back/i);
-    expect(screen.getByText(/Jump back into the tale you paused/i)).toBeInTheDocument();
+    expect(screen.getByText(/Jump back in, discover tonight.s picks/i)).toBeInTheDocument();
   });
 
   it("shows Continue listening section", async () => {

@@ -596,10 +596,21 @@ export async function register(
   return res.json();
 }
 
+/** Shown when a staff/admin account signs in to the parent web app (all parent APIs would return 403). */
+export const NON_PARENT_ACCOUNT_MESSAGE =
+  "This is a Tamixa staff/admin account. Parent features (stories, children, voice) need a parent account — " +
+  "sign in here with a parent email, or use the Tamixa Admin dashboard for this account.";
+
 export async function getMe(): Promise<CurrentUser> {
   const res = await fetchWithAuth("/auth/me");
   if (!res.ok) throw new Error("Unauthorized");
-  return res.json();
+  const user = (await res.json()) as CurrentUser;
+  // Parent web only serves PARENT accounts; admin roles get 403 "Access denied" on every parent endpoint.
+  if (user.role && user.role.toUpperCase() !== "PARENT") {
+    clearStoredTokens();
+    throw new Error(NON_PARENT_ACCOUNT_MESSAGE);
+  }
+  return user;
 }
 
 export async function updateStoryArtPersonalizationOptIn(optIn: boolean): Promise<boolean> {

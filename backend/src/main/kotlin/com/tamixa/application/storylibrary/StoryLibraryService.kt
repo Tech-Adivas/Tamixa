@@ -1765,7 +1765,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
 
     /**
      * Stories pending narration review.
-     * Includes PUBLISHED (queued), PROCESSING (pipeline running), READY (pipeline done, awaiting approve).
+     * Includes SUBMITTED / TRANSLATING (pipeline running) and CONTENT_REVIEW (awaiting approve) — unified statuses since V99.
      * Excludes approved (narrationApprovedAt not null), CHANGES_REQUESTED, REJECTED, DRAFT.
      * Used by admin "Story for review" queue.
      */
@@ -1790,21 +1790,13 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         narrationApproved: Boolean? = null
     ): Page<LibraryStory> {
         val pageable = PageRequest.of(page.coerceAtLeast(0), size.coerceIn(1, 100))
-        return if (status != null && status.isNotBlank()) {
-            val s = status.trim().uppercase()
-            if (s == "PUBLISHED") {
-                val statuses = listOf("PUBLISHED", "PROCESSING", "READY")
-                when (narrationApproved) {
-                    true -> repository.findByStatusInWithProcessingFirstAndNarrationApprovedAtNotNull(statuses, pageable)
-                    false -> repository.findByStatusInWithProcessingFirstAndNarrationApprovedAtNull(statuses, pageable)
-                    null -> repository.findByStatusInWithProcessingFirst(statuses, pageable)
-                }
-            } else {
-                when (narrationApproved) {
-                    true -> repository.findByStatusAndNarrationApprovedAtNotNull(s, pageable)
-                    false -> repository.findByStatusAndNarrationApprovedAtNull(s, pageable)
-                    null -> repository.findByStatus(s, pageable)
-                }
+        val statuses = parseLibraryStatusFilter(status)
+        return if (statuses.isNotEmpty()) {
+            val names = statuses.map { it.name }
+            when (narrationApproved) {
+                true -> repository.findByStatusInWithProcessingFirstAndNarrationApprovedAtNotNull(names, pageable)
+                false -> repository.findByStatusInWithProcessingFirstAndNarrationApprovedAtNull(names, pageable)
+                null -> repository.findByStatusInWithProcessingFirst(names, pageable)
             }
         } else {
             when (narrationApproved) {
@@ -1813,6 +1805,28 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
                 null -> repository.findAllWithProcessingFirst(pageable)
             }
         }
+    }
+
+    /**
+     * Parses the admin `status` filter into unified [com.tamixa.domain.LibraryStoryStatus] values.
+     * Accepts one value or a comma-separated list (e.g. `APPROVED,AUDIO_GENERATING`).
+     * Legacy pre-V99 names are mapped as in the V99 migration: PROCESSING → TRANSLATING, READY → APPROVED.
+     * Unknown values → [IllegalArgumentException] (HTTP 400) instead of a 500 from JPA enum binding.
+     */
+    internal fun parseLibraryStatusFilter(raw: String?): Set<com.tamixa.domain.LibraryStoryStatus> {
+        if (raw.isNullOrBlank()) return emptySet()
+        return raw.split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() && it != "ALL" }.map { token ->
+            when (token) {
+                "PROCESSING" -> com.tamixa.domain.LibraryStoryStatus.TRANSLATING
+                "READY" -> com.tamixa.domain.LibraryStoryStatus.APPROVED
+                else -> runCatching { com.tamixa.domain.LibraryStoryStatus.valueOf(token) }.getOrElse {
+                    throw IllegalArgumentException(
+                        "Unknown story status '$token'. Allowed: " +
+                            com.tamixa.domain.LibraryStoryStatus.entries.joinToString(",") { it.name }
+                    )
+                }
+            }
+        }.toSet()
     }
 
     fun bulkPublish(ids: List<Long>): Int =

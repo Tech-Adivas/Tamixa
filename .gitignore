@@ -62,3 +62,7 @@ out/
 
 # Vite / build
 dist/
+
+# Local-only (Claude fix backups, per-user tool settings)
+_fixes-*/
+.claude/settings.local.json

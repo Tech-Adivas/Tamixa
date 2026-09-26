@@ -25,6 +25,7 @@ app:
   api-exposure:
     swagger-requires-admin-role: ${SWAGGER_REQUIRES_ADMIN_ROLE:true}
     actuator-requires-admin-role: ${ACTUATOR_REQUIRES_ADMIN_ROLE:true}
+    swagger-public: false
   openai:
     # Production: require moderation API unless explicitly disabled (never ship without a key in prod).
     moderation-required: ${OPENAI_MODERATION_REQUIRED:true}

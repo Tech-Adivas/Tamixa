@@ -729,22 +729,31 @@ class DevVerifyConnectionsController(
         }
         return try {
             val enc = java.net.URLEncoder.encode(apiKey, java.nio.charset.StandardCharsets.UTF_8)
-            val listUrl = GeminiUrlBuilder.modelsListUrl(
+            // A tiny generateContent call: works for both URL styles (Vertex publisher API has no list endpoint
+            // for API keys, so the old models-list probe reported a false 404).
+            val url = GeminiUrlBuilder.generateContentUrl(
                 baseUrl,
+                appProperties.llm.gemini.model,
                 enc,
                 appProperties.llm.gemini.apiUrlStyle,
             )
-            restTemplate.getForObject(listUrl, Map::class.java)
+            val body = mapOf(
+                "contents" to listOf(mapOf("role" to "user", "parts" to listOf(mapOf("text" to "Reply with OK")))),
+                "generationConfig" to mapOf("maxOutputTokens" to 8),
+            )
+            val headers = HttpHeaders().apply { contentType = MediaType.APPLICATION_JSON }
+            restTemplate.postForObject(url, org.springframework.http.HttpEntity(body, headers), Map::class.java)
             mapOf(
                 "status" to "OK",
-                "message" to "Gemini API reachable",
+                "message" to "Gemini generateContent OK (model ${appProperties.llm.gemini.model})",
                 "baseUrl" to baseUrl,
                 "configured" to true,
             )
         } catch (e: Exception) {
             mapOf(
                 "status" to "ERROR",
-                "message" to (e.message ?: "Unknown error"),
+                // Never echo the API key (it is in the request URL and ends up in exception messages).
+                "message" to DevLlmVerifyController.redact(e.message ?: "Unknown error"),
                 "baseUrl" to baseUrl,
                 "configured" to true,
             )

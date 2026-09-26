@@ -29,7 +29,11 @@ services:
       timeout: 3s
       retries: 5
 
+  # Kafka + Zookeeper are optional: the backend publishes pipeline events inline (no Kafka client today).
+  # Start them only if you need them:  docker compose --profile kafka up -d
   zookeeper:
+    profiles:
+      - kafka
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: tamixa-zookeeper
     environment:
@@ -44,6 +48,8 @@ services:
       retries: 5
 
   kafka:
+    profiles:
+      - kafka
     image: confluentinc/cp-kafka:7.5.0
     container_name: tamixa-kafka
     depends_on:
@@ -95,8 +101,6 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      kafka:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}

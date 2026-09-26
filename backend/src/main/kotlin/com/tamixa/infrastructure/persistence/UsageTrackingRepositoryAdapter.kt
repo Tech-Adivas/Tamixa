@@ -21,11 +21,11 @@ class UsageTrackingRepositoryAdapter(
 
     @Transactional
     override fun getOrCreate(parentId: Long, month: String): UsageTracking {
-        val parent = parentJpaRepository.findById(parentId).orElseThrow { IllegalArgumentException("Parent not found: $parentId") }
+        usageTrackingJpaRepository.findByParent_IdAndMonth(parentId, month)?.let { return it.toDomain() }
+        if (!parentJpaRepository.existsById(parentId)) throw IllegalArgumentException("Parent not found: $parentId")
+        usageTrackingJpaRepository.insertIfAbsent(parentId, month)
         val entity = usageTrackingJpaRepository.findByParent_IdAndMonth(parentId, month)
-            ?: usageTrackingJpaRepository.save(
-                UsageTrackingEntity(parent = parent, month = month)
-            )
+            ?: throw IllegalStateException("usage_tracking row missing after insert for parentId=$parentId month=$month")
         return entity.toDomain()
     }
 

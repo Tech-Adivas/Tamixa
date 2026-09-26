@@ -21,8 +21,7 @@ cp .env.example .env
 ## 2. Start infrastructure (Docker)
 
 ```bash
-docker run -d --name postgres -p 5432:5432 -e POSTGRES_DB=araro_kids -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres postgres:16
-docker run -d --name redis -p 6379:6379 redis:7-alpine
+docker compose up -d postgres redis   # Kafka is optional: docker compose --profile kafka up -d
 ```
 
 ## 3. Backend
@@ -32,7 +31,7 @@ docker run -d --name redis -p 6379:6379 redis:7-alpine
 ```
 
 - API: http://localhost:8080
-- Swagger: http://localhost:8080/swagger-ui.html
+- Swagger: http://localhost:8080/swagger-ui.html (open without login in the `dev` profile only; staging/prod require an admin JWT)
 - Health: http://localhost:8080/actuator/health
 
 ## 4. Web (parent app)
@@ -55,8 +54,8 @@ cd admin && npm ci && npm run dev
 ## 6. Mobile (optional)
 
 ```bash
-# Android
-./gradlew :mobile:androidApp:assembleDebug
+# Android (module is :mobile:composeApp; default flavor = dev)
+./gradlew :mobile:composeApp:assembleDevDebug
 
 # Set BASE_URL in mobile config to http://10.0.2.2:8080 (emulator) or your machine IP
 ```

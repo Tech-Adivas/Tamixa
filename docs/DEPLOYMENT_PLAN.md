@@ -195,13 +195,14 @@ Before any deployment work:
 
 1. **Build**
    ```bash
-   ./gradlew :composeApp:assembleRelease \
+   cd mobile
+   ./gradlew :composeApp:bundleProdRelease \
      -PTAMIXA_API_BASE_URL=https://api.tamixa.com \
      -PTAMIXA_WEB_APP_URL=https://app.tamixa.com
    ```
 
 2. **Signing**
-   - Configure keystore in `mobile/composeApp/build.gradle.kts`
+   - Set `TAMIXA_UPLOAD_STORE_FILE`, `TAMIXA_UPLOAD_STORE_PASSWORD`, `TAMIXA_UPLOAD_KEY_ALIAS`, `TAMIXA_UPLOAD_KEY_PASSWORD` in `mobile/local.properties` or CI env (read by `mobile/composeApp/build.gradle.kts`)
    - Produce signed AAB for Play Console
 
 3. **Distribute**
@@ -285,5 +286,5 @@ cd web && VITE_API_URL=https://api.tamixa.com npm run build
 cd admin && NEXT_PUBLIC_API_URL=https://api.tamixa.com npm run build
 
 # Mobile release
-./gradlew :composeApp:assembleRelease -PTAMIXA_API_BASE_URL=https://api.tamixa.com -PTAMIXA_WEB_APP_URL=https://app.tamixa.com
+cd mobile && ./gradlew :composeApp:bundleProdRelease -PTAMIXA_API_BASE_URL=https://api.tamixa.com -PTAMIXA_WEB_APP_URL=https://app.tamixa.com
 ```

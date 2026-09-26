@@ -512,7 +512,7 @@ Text-based data flow for Tamixa (parent and child data).
 - `AccountDeletionService` calls `tokenRevocationPort.revokeAllForUser(email)` before deletion
 - All access and refresh tokens issued before deletion timestamp are invalidated
 - Redis stores user-level revocation timestamp with 30-day TTL
-- See `/JWT_REVOCATION_IMPLEMENTATION_SUMMARY.md` for full details
+- See `docs/archive/JWT_REVOCATION_IMPLEMENTATION_SUMMARY.md` for full details
 
 ### 13.3 Child-only deletion
 

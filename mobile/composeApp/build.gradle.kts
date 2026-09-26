@@ -137,6 +137,20 @@ fun tamixaDevWebRoot(): String {
         ?: api.replaceAfterLast(":", "3000")
 }
 
+/**
+ * Play Store upload key. Read from local.properties or environment (CI) — never commit the keystore or passwords.
+ *   TAMIXA_UPLOAD_STORE_FILE=/abs/path/tamixa-upload.jks
+ *   TAMIXA_UPLOAD_STORE_PASSWORD=...
+ *   TAMIXA_UPLOAD_KEY_ALIAS=tamixa
+ *   TAMIXA_UPLOAD_KEY_PASSWORD=...
+ * When unset, release builds stay unsigned (debug builds are unaffected).
+ */
+fun tamixaSigningValue(key: String): String? =
+    ((tamixaLocalProps[key] as? String) ?: System.getenv(key))?.trim()?.takeIf { it.isNotEmpty() }
+
+val tamixaUploadStoreFile: File? =
+    tamixaSigningValue("TAMIXA_UPLOAD_STORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+
 android {
     namespace = "com.tamixa.android"
     compileSdk = 35
@@ -187,8 +201,22 @@ android {
         }
     }
 
+    signingConfigs {
+        if (tamixaUploadStoreFile != null) {
+            create("release") {
+                storeFile = tamixaUploadStoreFile
+                storePassword = tamixaSigningValue("TAMIXA_UPLOAD_STORE_PASSWORD")
+                keyAlias = tamixaSigningValue("TAMIXA_UPLOAD_KEY_ALIAS")
+                keyPassword = tamixaSigningValue("TAMIXA_UPLOAD_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (tamixaUploadStoreFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

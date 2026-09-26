@@ -169,15 +169,16 @@ export function StoryStatusIcon({
     : config.description;
 
   return (
-    <Icon
-      className={cn(
-        "h-5 w-5 shrink-0",
-        displayColorClass,
-        status === "PROCESSING" && "animate-pulse",
-        className
-      )}
-      title={displayDescription}
-    />
+    <span className="inline-flex" title={displayDescription} aria-label={displayDescription}>
+      <Icon
+        className={cn(
+          "h-5 w-5 shrink-0",
+          displayColorClass,
+          status === "PROCESSING" && "animate-pulse",
+          className
+        )}
+      />
+    </span>
   );
 }
 

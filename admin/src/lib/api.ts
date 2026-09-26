@@ -1375,8 +1375,10 @@ const admin = {
   },
 
   approveLibraryStory: async (id: number) => {
+    // Library content approval (CONTENT_REVIEW → APPROVED). `/admin/stories/{id}/approve` is the AI-story
+    // moderation endpoint (different table) and must not be used for library stories.
     const res = await fetchWithAuth(
-      `/api/v1/admin/stories/${id}/approve`,
+      `/api/v1/library/stories/${id}/approve`,
       { method: "POST" }
     );
     if (!res.ok) {
