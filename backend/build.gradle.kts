@@ -11,7 +11,7 @@ plugins {
     kotlin("jvm") version "1.9.24"
     kotlin("plugin.spring") version "1.9.24"
     kotlin("plugin.jpa") version "1.9.24"
-    id("org.flywaydb.flyway") version "10.8.1"
+    id("org.flywaydb.flyway") version "12.3.0"
 }
 
 import java.net.URI
