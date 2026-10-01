@@ -354,6 +354,8 @@ data class AppProperties(
     data class LlmProperties(
         /** openai (default) | gemini */
         val provider: String = "openai",
+        /** Backup LLM when the primary fails: openai | gemini | none (default). See ProviderFallbackSettings. */
+        val fallbackProvider: String = "none",
         val gemini: GeminiLlmProperties = GeminiLlmProperties(),
     ) {
         data class GeminiLlmProperties(

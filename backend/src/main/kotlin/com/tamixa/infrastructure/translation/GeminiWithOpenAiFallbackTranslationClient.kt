@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.tamixa.application.port.TranslationClientPort
 import com.tamixa.infrastructure.config.AppProperties
 import com.tamixa.infrastructure.gemini.GeminiApiClient
+import com.tamixa.infrastructure.llm.OnTranslationGeminiWithOpenAiFallbackCondition
 import com.tamixa.infrastructure.llm.ProviderFallbackRunner
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.beans.factory.annotation.Value
@@ -12,13 +13,12 @@ import org.springframework.stereotype.Component
 import org.springframework.web.client.RestTemplate
 
 /**
- * Tries [OpenAITranslationClient] first; when OpenAI fails (quota, key, billing, outage, empty answer)
- * uses [GeminiTranslationClient].
- * Enable with `TRANSLATION_PROVIDER=openai` and `TRANSLATION_OPENAI_FALLBACK_TO_GEMINI=true` (requires `GEMINI_API_KEY`).
+ * Tries [GeminiTranslationClient] first; when Gemini fails uses [OpenAITranslationClient].
+ * Enable with `TRANSLATION_PROVIDER=gemini` and `TRANSLATION_GEMINI_FALLBACK_TO_OPENAI=true` (requires `OPENAI_API_KEY`).
  */
 @Component
-@Conditional(OnTranslationOpenAiWithGeminiFallbackCondition::class)
-class OpenAiWithGeminiFallbackTranslationClient(
+@Conditional(OnTranslationGeminiWithOpenAiFallbackCondition::class)
+class GeminiWithOpenAiFallbackTranslationClient(
     restTemplate: RestTemplate,
     objectMapper: ObjectMapper,
     meterRegistry: MeterRegistry,
@@ -30,10 +30,10 @@ class OpenAiWithGeminiFallbackTranslationClient(
     @Value("\${app.translation-pipeline.translation-timeout-ms:30000}") defaultTimeoutMs: Long,
     @Value("\${app.story.max-words:900}") maxStoryWords: Int,
 ) : TranslationClientPort by FallbackTranslationClient(
-    primary = OpenAITranslationClient(
+    primary = GeminiTranslationClient(geminiApiClient, objectMapper, meterRegistry, appProperties, maxStoryWords),
+    fallback = OpenAITranslationClient(
         restTemplate, objectMapper, meterRegistry, openaiApiKey, openaiBaseUrl, openaiModel,
         defaultTimeoutMs, maxStoryWords,
     ),
-    fallback = GeminiTranslationClient(geminiApiClient, objectMapper, meterRegistry, appProperties, maxStoryWords),
-    runner = ProviderFallbackRunner("translation", "openai", "gemini", meterRegistry),
+    runner = ProviderFallbackRunner("translation", "gemini", "openai", meterRegistry),
 )

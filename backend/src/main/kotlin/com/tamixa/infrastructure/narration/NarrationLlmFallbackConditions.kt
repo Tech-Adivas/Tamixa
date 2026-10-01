@@ -1,26 +1,24 @@
 package com.tamixa.infrastructure.narration
 
-import com.tamixa.infrastructure.llm.OpenAiGeminiFallbackPolicies
+import com.tamixa.infrastructure.llm.ProviderFallbackSettings
 import org.springframework.context.annotation.Condition
 import org.springframework.context.annotation.ConditionContext
 import org.springframework.core.type.AnnotatedTypeMetadata
 
-/** Primary OpenAI narration adapter when LLM is OpenAI and rewrite Gemini fallback is off. */
+/** Primary OpenAI narration adapter when LLM is OpenAI and no Gemini backup is configured. */
 class OnNarrationOpenAiPrimaryAdapterCondition : Condition {
     override fun matches(context: ConditionContext, metadata: AnnotatedTypeMetadata): Boolean {
-        val llm = context.environment.getProperty("app.llm.provider", "openai")?.trim()?.lowercase() ?: "openai"
-        if (llm != "openai") return false
-        val fb = context.environment.getProperty("app.narration.openai-rewrite-fallback-to-gemini", "false")
-        return !OpenAiGeminiFallbackPolicies.isTruthyProperty(fb)
+        val env = context.environment
+        return ProviderFallbackSettings.llmProvider(env) == "openai" &&
+            !ProviderFallbackSettings.narrationOpenAiThenGemini(env)
     }
 }
 
-/** OpenAI rewrite with Gemini fallback when LLM stays OpenAI but OpenAI quota/rate limits break rewrite. */
+/**
+ * OpenAI rewrite with Gemini backup: `AI_LLM_PROVIDER=openai` and either
+ * `NARRATION_OPENAI_REWRITE_FALLBACK_TO_GEMINI=true` or `AI_LLM_FALLBACK_PROVIDER=gemini`.
+ */
 class OnNarrationOpenAiGeminiFallbackAdapterCondition : Condition {
-    override fun matches(context: ConditionContext, metadata: AnnotatedTypeMetadata): Boolean {
-        val llm = context.environment.getProperty("app.llm.provider", "openai")?.trim()?.lowercase() ?: "openai"
-        if (llm != "openai") return false
-        val fb = context.environment.getProperty("app.narration.openai-rewrite-fallback-to-gemini", "false")
-        return OpenAiGeminiFallbackPolicies.isTruthyProperty(fb)
-    }
+    override fun matches(context: ConditionContext, metadata: AnnotatedTypeMetadata): Boolean =
+        ProviderFallbackSettings.narrationOpenAiThenGemini(context.environment)
 }

@@ -4,6 +4,10 @@ import com.tamixa.api.ApiVersion
 import com.tamixa.application.port.OpenAIPort
 import com.tamixa.application.port.TranslationClientPort
 import com.tamixa.application.port.narration.NarrationLLMPort
+import com.tamixa.application.port.narration.TtsClientPort
+import com.tamixa.infrastructure.llm.ProviderFallbackSettings
+import com.tamixa.infrastructure.narration.FallbackTtsClient
+import org.springframework.core.env.Environment
 import com.tamixa.infrastructure.config.AppProperties
 import com.tamixa.infrastructure.gemini.GeminiUrlBuilder
 import org.slf4j.LoggerFactory
@@ -43,6 +47,8 @@ class DevLlmVerifyController(
     private val storyLlmProvider: ObjectProvider<OpenAIPort>,
     private val translationProvider: ObjectProvider<TranslationClientPort>,
     private val narrationProvider: ObjectProvider<NarrationLLMPort>,
+    private val ttsProvider: ObjectProvider<TtsClientPort>,
+    private val env: Environment,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -62,6 +68,7 @@ class DevLlmVerifyController(
             "narration" to runPath(narrationProvider.ifAvailable) { p ->
                 p.transformWithCustomPrompt("The cat sat on the mat.", "Repeat the text exactly.", 40).formattedText
             },
+            "tts" to checkTts(),
         )
         val all = providers.values + paths.values
         val failed = all.count { (it as? Map<*, *>)?.get("status") == "ERROR" }
@@ -70,10 +77,73 @@ class DevLlmVerifyController(
             "translationProvider" to appProperties.translation.provider,
             "geminiUrlStyle" to appProperties.llm.gemini.apiUrlStyle,
             "geminiBaseUrl" to appProperties.llm.gemini.baseUrl,
+            "fallback" to linkedMapOf(
+                "storyLlm" to "${ProviderFallbackSettings.llmProvider(env)} -> ${ProviderFallbackSettings.llmFallbackProvider(env)}",
+                "narrationRewrite" to when {
+                    ProviderFallbackSettings.narrationOpenAiThenGemini(env) -> "openai -> gemini"
+                    ProviderFallbackSettings.narrationGeminiThenOpenAi(env) -> "gemini -> openai"
+                    else -> "${ProviderFallbackSettings.llmProvider(env)} -> none"
+                },
+                "translation" to when {
+                    ProviderFallbackSettings.translationOpenAiThenGemini(env) -> "openai -> gemini"
+                    ProviderFallbackSettings.translationGeminiThenOpenAi(env) -> "gemini -> openai"
+                    else -> "${ProviderFallbackSettings.translationProvider(env)} -> none"
+                },
+                "tts" to "${ProviderFallbackSettings.ttsProvider(env)} -> ${ProviderFallbackSettings.ttsFallback(env)}",
+            ),
             "providers" to providers,
             "paths" to paths,
             "overall" to if (failed == 0) "OK" else "DEGRADED ($failed failing)",
         )
+        return if (failed == 0) ResponseEntity.ok(body) else ResponseEntity.status(503).body(body)
+    }
+
+    /**
+     * GET /api/v1/dev/verify-ai-services — every third-party AI/voice/avatar/email key in .env, one cheap
+     * read-only call each (account / quota / list endpoints; nothing is generated or billed).
+     */
+    @GetMapping("/verify-ai-services")
+    fun verifyAiServices(): ResponseEntity<Map<String, Any>> {
+        fun env(k: String) = System.getenv(k)?.trim().orEmpty()
+        fun get(label: String, key: String, url: String, headers: HttpHeaders.() -> Unit): Map<String, Any?> {
+            if (key.isBlank()) return mapOf("status" to "SKIPPED", "message" to "key not set in .env")
+            return timed(label) {
+                val h = HttpHeaders().apply(headers)
+                val res = restTemplate.exchange(url, HttpMethod.GET, HttpEntity<Any>(h), String::class.java)
+                "HTTP ${res.statusCode.value()}"
+            }
+        }
+        val gtts = env("GOOGLE_CLOUD_TTS_API_KEY")
+        val did = env("DID_API_KEY")
+        val results = linkedMapOf<String, Any?>(
+            "openai (GPT)" to checkOpenAi(),
+            "gemini" to checkGemini(appProperties.llm.gemini.model),
+            "googleCloudTts" to get("texttospeech", gtts, "https://texttospeech.googleapis.com/v1/voices?languageCode=ta-IN&key=" +
+                URLEncoder.encode(gtts, StandardCharsets.UTF_8)) {},
+            "elevenLabs" to get("elevenlabs /v2/voices", env("ELEVENLABS_API_KEY"), "https://api.elevenlabs.io/v2/voices?page_size=1") {
+                set("xi-api-key", env("ELEVENLABS_API_KEY"))
+            },
+            "fishAudio" to get("fish.audio /model", env("FISH_AUDIO_API_KEY"), "https://api.fish.audio/model?page_size=1&self=true") {
+                setBearerAuth(env("FISH_AUDIO_API_KEY"))
+            },
+            "heygen" to get("heygen remaining_quota", env("HEYGEN_API_KEY"), "https://api.heygen.com/v2/user/remaining_quota") {
+                set("X-Api-Key", env("HEYGEN_API_KEY"))
+            },
+            "dId" to get("d-id /credits", did, "https://api.d-id.com/credits") {
+                set("Authorization", "Basic " + java.util.Base64.getEncoder().encodeToString("$did:".toByteArray()))
+            },
+            "gooey" to get("gooey /v1/balance", env("GOOEY_API_KEY"), "https://api.gooey.ai/v1/balance/") {
+                setBearerAuth(env("GOOEY_API_KEY"))
+            },
+            "sendgrid" to get("sendgrid /v3/scopes", env("SENDGRID_API_KEY"), "https://api.sendgrid.com/v3/scopes") {
+                setBearerAuth(env("SENDGRID_API_KEY"))
+            },
+            "replicate" to get("replicate /v1/account", env("REPLICATE_API_TOKEN"), "https://api.replicate.com/v1/account") {
+                setBearerAuth(env("REPLICATE_API_TOKEN"))
+            },
+        )
+        val failed = results.values.count { (it as? Map<*, *>)?.get("status") == "ERROR" }
+        val body = linkedMapOf<String, Any>("services" to results, "overall" to if (failed == 0) "OK" else "DEGRADED ($failed failing)")
         return if (failed == 0) ResponseEntity.ok(body) else ResponseEntity.status(503).body(body)
     }
 
@@ -124,6 +194,26 @@ class DevLlmVerifyController(
         }
     }
 
+    /**
+     * Speaks one short Tamil word. With a Google→OpenAI fallback bean, each engine is tested on its own
+     * and the combined path is reported, so you can see whether the backup is covering for Google.
+     */
+    private fun checkTts(): Map<String, Any?> {
+        val bean = ttsProvider.ifAvailable ?: return mapOf("status" to "SKIPPED", "message" to "no TTS bean")
+        fun speak(p: TtsClientPort): String {
+            val bytes = p.synthesizeToMp3("<speak>வணக்கம்</speak>", "ta", "default")
+                ?: throw IllegalStateException("no audio returned")
+            if (bytes.isEmpty()) throw IllegalStateException("empty audio")
+            return "${bytes.size} bytes"
+        }
+        val combined = runPath(bean) { speak(it) }
+        if (bean !is FallbackTtsClient) return combined
+        return combined + mapOf(
+            "primary" to timed(AopUtils.getTargetClass(bean.primary).simpleName) { speak(bean.primary) },
+            "backup" to timed(AopUtils.getTargetClass(bean.fallback).simpleName) { speak(bean.fallback) },
+        )
+    }
+
     private fun <T : Any> runPath(bean: T?, call: (T) -> String): Map<String, Any?> {
         if (bean == null) return mapOf("status" to "SKIPPED", "message" to "no bean configured")
         val impl = AopUtils.getTargetClass(bean).simpleName
@@ -150,12 +240,13 @@ class DevLlmVerifyController(
             s.replace(KEY_PARAM, "$1***").replace(BEARER, "$1***").replace(Regex("\\s+"), " ").take(600)
 
         fun hintFor(msg: String): String? = when {
-            msg.contains("billing", ignoreCase = true) ->
+            msg.contains("insufficient_quota", ignoreCase = true) || msg.contains("credit_balance_exhausted", ignoreCase = true) ||
+                msg.contains("429") || msg.contains("quota", ignoreCase = true) ->
+                "Quota/credit exhausted — add credit (OpenAI: platform.openai.com → Billing) or raise the quota"
+            msg.contains("BILLING_DISABLED") || msg.contains("requires billing", ignoreCase = true) ->
                 "Google Cloud project has billing disabled. Enable billing, or use a Google AI Studio key with GEMINI_BASE_URL=https://generativelanguage.googleapis.com and GEMINI_API_URL_STYLE=google-ai"
             msg.contains("401") || msg.contains("invalid_api_key", ignoreCase = true) || msg.contains("API key not valid", ignoreCase = true) ->
                 "API key rejected — create a new key and update .env"
-            msg.contains("429") || msg.contains("quota", ignoreCase = true) || msg.contains("insufficient_quota", ignoreCase = true) ->
-                "Quota/credit exhausted — add credit or raise the quota"
             msg.contains("404") -> "Model or endpoint not found — check the model name and GEMINI_API_URL_STYLE / base URL pair"
             msg.contains("403") -> "Key lacks permission for this API/model"
             else -> null

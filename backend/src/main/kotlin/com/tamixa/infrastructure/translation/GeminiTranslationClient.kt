@@ -10,7 +10,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import com.tamixa.infrastructure.llm.OnTranslationGeminiOnlyCondition
+import org.springframework.context.annotation.Conditional
 import org.springframework.retry.annotation.Backoff
 import org.springframework.retry.annotation.Retryable
 import org.springframework.stereotype.Component
@@ -20,7 +21,7 @@ import org.springframework.stereotype.Component
  * Enable with `app.translation.provider=gemini` and `GEMINI_API_KEY` set.
  */
 @Component
-@ConditionalOnProperty(name = ["app.translation.provider"], havingValue = "gemini")
+@Conditional(OnTranslationGeminiOnlyCondition::class)
 class GeminiTranslationClient(
     private val geminiApiClient: GeminiApiClient,
     private val objectMapper: ObjectMapper,

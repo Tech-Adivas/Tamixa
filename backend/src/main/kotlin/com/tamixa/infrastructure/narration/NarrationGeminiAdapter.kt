@@ -8,7 +8,8 @@ import com.tamixa.infrastructure.gemini.GeminiApiClient
 import com.tamixa.infrastructure.gemini.GeminiApiException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import com.tamixa.infrastructure.llm.OnNarrationGeminiPrimaryAdapterCondition
+import org.springframework.context.annotation.Conditional
 import org.springframework.retry.annotation.Backoff
 import org.springframework.retry.annotation.Retryable
 import org.springframework.stereotype.Component
@@ -17,7 +18,7 @@ import org.springframework.stereotype.Component
  * Gemini adapter for narration formatting (pipeline rewrite). Mirrors [NarrationOpenAIAdapter] prompts.
  */
 @Component
-@ConditionalOnProperty(name = ["app.llm.provider"], havingValue = "gemini")
+@Conditional(OnNarrationGeminiPrimaryAdapterCondition::class)
 class NarrationGeminiAdapter(
     private val geminiApiClient: GeminiApiClient,
     private val appProperties: AppProperties,

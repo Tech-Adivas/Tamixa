@@ -22,7 +22,7 @@ class OpenAiGeminiFallbackPoliciesTest {
     }
 
     @Test
-    fun `401 does not trigger fallback`() {
+    fun `401 now triggers fallback (Gemini has its own key)`() {
         val e = HttpClientErrorException.create(
             HttpStatus.UNAUTHORIZED,
             "Unauthorized",
@@ -30,7 +30,12 @@ class OpenAiGeminiFallbackPoliciesTest {
             ByteArray(0),
             null,
         )
-        assertFalse(OpenAiGeminiFallbackPolicies.shouldTryGeminiAfterOpenAiFailure(e))
+        assertTrue(OpenAiGeminiFallbackPolicies.shouldTryGeminiAfterOpenAiFailure(e))
+    }
+
+    @Test
+    fun `input error does not trigger fallback`() {
+        assertFalse(OpenAiGeminiFallbackPolicies.shouldTryGeminiAfterOpenAiFailure(IllegalArgumentException("bad input")))
     }
 
     @Test

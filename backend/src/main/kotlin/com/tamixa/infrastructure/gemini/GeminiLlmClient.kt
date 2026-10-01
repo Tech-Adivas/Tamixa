@@ -11,7 +11,8 @@ import com.tamixa.application.story.StructuredStoryPayload
 import com.tamixa.infrastructure.config.AppProperties
 import com.tamixa.infrastructure.observability.ApplicationMetrics
 import org.slf4j.LoggerFactory
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import com.tamixa.infrastructure.llm.OnGeminiStoryLlmCondition
+import org.springframework.context.annotation.Conditional
 import org.springframework.retry.annotation.Backoff
 import org.springframework.retry.annotation.Retryable
 import org.springframework.stereotype.Component
@@ -20,7 +21,7 @@ import org.springframework.stereotype.Component
  * [OpenAIPort] backed by Google Gemini generateContent (JSON mode for structured stories).
  */
 @Component
-@ConditionalOnProperty(name = ["app.llm.provider"], havingValue = "gemini")
+@Conditional(OnGeminiStoryLlmCondition::class)
 class GeminiLlmClient(
     private val geminiApiClient: GeminiApiClient,
     private val objectMapper: ObjectMapper,

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.tamixa.application.port.narration.NarrationLLMPort
 import com.tamixa.infrastructure.config.AppProperties
 import com.tamixa.infrastructure.gemini.GeminiApiClient
+import com.tamixa.infrastructure.llm.OnNarrationGeminiOpenAiFallbackAdapterCondition
 import com.tamixa.infrastructure.llm.ProviderFallbackRunner
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.beans.factory.annotation.Value
@@ -12,13 +13,12 @@ import org.springframework.stereotype.Component
 import org.springframework.web.client.RestTemplate
 
 /**
- * Pipeline rewrite + Regenerate: OpenAI first, Gemini when OpenAI fails.
- * Enable with `AI_LLM_PROVIDER=openai` and either `AI_LLM_FALLBACK_PROVIDER=gemini`
- * or `NARRATION_OPENAI_REWRITE_FALLBACK_TO_GEMINI=true` (requires `GEMINI_API_KEY`).
+ * Pipeline rewrite + Regenerate: Gemini first, OpenAI when Gemini fails (billing, quota, retired model, outage).
+ * Enable with `AI_LLM_PROVIDER=gemini` and `AI_LLM_FALLBACK_PROVIDER=openai` (requires `OPENAI_API_KEY`).
  */
 @Component
-@Conditional(OnNarrationOpenAiGeminiFallbackAdapterCondition::class)
-class OpenAiWithGeminiFallbackNarrationLlmAdapter(
+@Conditional(OnNarrationGeminiOpenAiFallbackAdapterCondition::class)
+class GeminiWithOpenAiFallbackNarrationLlmAdapter(
     restTemplate: RestTemplate,
     objectMapper: ObjectMapper,
     geminiApiClient: GeminiApiClient,
@@ -31,12 +31,12 @@ class OpenAiWithGeminiFallbackNarrationLlmAdapter(
     @Value("\${app.narration.rewrite-temperature:0.7}") rewriteTemperature: Double,
     @Value("\${app.story.max-words:900}") maxStoryWords: Int,
 ) : NarrationLLMPort by FallbackNarrationLlm(
-    primary = NarrationOpenAIAdapter(
+    primary = NarrationGeminiAdapter(
+        geminiApiClient, appProperties, maxNarrationTokens, rewriteTemperature, maxStoryWords,
+    ),
+    fallback = NarrationOpenAIAdapter(
         restTemplate, objectMapper, openaiApiKey, openaiBaseUrl, rewriteModel,
         maxNarrationTokens, rewriteTemperature, maxStoryWords,
     ),
-    fallback = NarrationGeminiAdapter(
-        geminiApiClient, appProperties, maxNarrationTokens, rewriteTemperature, maxStoryWords,
-    ),
-    runner = ProviderFallbackRunner("narration", "openai", "gemini", meterRegistry),
+    runner = ProviderFallbackRunner("narration", "gemini", "openai", meterRegistry),
 )
