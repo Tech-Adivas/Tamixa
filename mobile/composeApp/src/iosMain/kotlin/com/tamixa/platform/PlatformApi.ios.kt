@@ -38,6 +38,33 @@ actual fun openUrl(url: String) {
 actual fun getSubscriptionWebUrl(): String =
     ServerEnvironmentCache.effectiveSubscriptionWebUrl(IosBuildTimeEnvironment.defaultSubscriptionWebUrl)
 
+actual fun isLocalVoiceRecordingTestEnabled(): Boolean = false
+
+// Local voice recording test is Android-only (flag above is always false on iOS), so these are no-ops.
+actual suspend fun saveLocalVoiceRecording(bytes: ByteArray): LocalVoiceRecording? = null
+
+actual suspend fun listLocalVoiceRecordings(): List<LocalVoiceRecording> = emptyList()
+
+actual suspend fun deleteLocalVoiceRecording(uri: String): Boolean = false
+
+actual suspend fun saveLocalAvatarImage(bytes: ByteArray, contentType: String?): LocalAvatarImage? = null
+
+actual suspend fun listLocalAvatarImages(): List<LocalAvatarImage> = emptyList()
+
+actual suspend fun deleteLocalAvatarImage(uri: String): Boolean = false
+
+actual suspend fun setActiveLocalAvatarImage(uri: String) {}
+
+actual suspend fun getActiveLocalAvatarImageUri(): String? = null
+
+actual suspend fun readLocalMediaBytes(uri: String): ByteArray? = null
+
+actual suspend fun readLocalAvatarForUpload(uri: String): Pair<ByteArray, String>? = null
+
+actual suspend fun markLocalMediaBackedUp(uri: String, remoteId: Long?) {}
+
+actual suspend fun takeDeletedBackedUpVoiceRecordings(): List<Pair<String, Long?>> = emptyList()
+
 @OptIn(ExperimentalForeignApi::class)
 actual fun shareStory(title: String, text: String) {
     val window = UIApplication.sharedApplication.keyWindow
@@ -115,6 +142,18 @@ actual suspend fun synthesizeStoryToFile(text: String, languageCode: String): St
     // For now return null; app falls back to streaming audio when available.
     return null
 }
+
+actual suspend fun writeTempAudioFile(bytes: ByteArray, fileName: String): String? =
+    withContext(Dispatchers.Default) {
+        if (bytes.isEmpty()) return@withContext null
+        val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "audio.m4a" }
+        val path = NSTemporaryDirectory().trimEnd('/') + "/" + safeName
+        if (bytes.writeToPath(path)) "file://$path"
+        else {
+            TamixaLog.w("PlatformIOS", "writeTempAudioFile failed for $safeName", null)
+            null
+        }
+    }
 
 private fun languageCodeToLocaleId(code: String): String? = when (code.lowercase()) {
     "ta" -> "ta-IN"

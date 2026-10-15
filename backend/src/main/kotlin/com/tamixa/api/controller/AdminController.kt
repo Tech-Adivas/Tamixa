@@ -1498,7 +1498,7 @@ class AdminController(
             } else {
                 basePrompt
             }
-            val transformed = try {
+            val rawTransformed = try {
                 adminTtsPreviewService.transformContent(contentStr, prompt, outputLang)
             } catch (e: IllegalArgumentException) {
                 log.warn(
@@ -1517,6 +1517,12 @@ class AdminController(
                     speakAlongPrompt = story.speakAlongPrompt,
                 )
             }
+            // The model sometimes returns the title in another language (e.g. a Telugu title for a Tamil rewrite).
+            val transformed = rawTransformed.copy(
+                title = translationService.titleInLanguage(rawTransformed.title, outputLang)
+                    ?: story.title.takeIf { com.tamixa.common.ScriptLanguage.matches(it, outputLang) }
+                    ?: rawTransformed.title
+            )
             val paraphraseBefore = mapOf(
                 "content" to sanitizeModelOutput(transformed.content, contentStr),
                 "title" to (transformed.title ?: ""),
@@ -2076,9 +2082,9 @@ class AdminController(
         }
         val url = when {
             voiceProfile != null && voiceProfile.isNotBlank() && parentId != null ->
-                audioStreamService.getLibraryNarrationStreamUrl(id, language, voiceProfile.trim(), parentId)
+                audioStreamService.getLibraryNarrationStreamUrl(id, language, voiceProfile.trim(), parentId, requirePublished = false)
             else ->
-                audioStreamService.getLibraryStreamUrl(id, language, null)
+                audioStreamService.getLibraryStreamUrl(id, language, null, requirePublished = false)
         }
         if (url == null) return ResponseEntity.notFound().build()
         val voice = voiceProfile?.takeIf { it.isNotBlank() } ?: "default"
@@ -2843,13 +2849,15 @@ class AdminController(
             log.info("Narration approved for story id={}; post-approval TTS runs only when auto-tts-on-approve=true", id)
             val message =
                 if (appProperties.translationPipeline.autoTtsOnApprove && appProperties.translationPipeline.audioAfterApproval) {
-                    "Story approved. If audio was not ready yet, narration may be generating in the background. Story is visible on the app when audio is ready."
+                    "Story approved. Audio is being generated in the background; when it is ready, review it under Audio and click Publish to make the story live in the app."
                 } else {
                     "Story approved for delivery. Open Narration (Story to Speech) and use Generate audio when you are ready to produce narration MP3s."
                 }
             ResponseEntity.ok(mapOf("message" to message))
         } else {
-            ResponseEntity.badRequest().body(mapOf("message" to "Story not found or not in review queue"))
+            val reason = storyLibraryService.approvalBlockReason(id) ?: "Story could not be approved. Refresh the page and try again."
+            log.info("Narration approval refused story id={}: {}", id, reason)
+            ResponseEntity.badRequest().body(mapOf("message" to reason))
         }
     }
 

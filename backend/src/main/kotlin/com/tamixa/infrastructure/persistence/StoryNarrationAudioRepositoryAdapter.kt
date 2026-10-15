@@ -63,6 +63,17 @@ class StoryNarrationAudioRepositoryAdapter(
         jpaRepository.deleteByTranslationIdAndVoiceProfile(translationId, voiceProfile)
     }
 
+    override fun findAllByVoiceProfileIn(voiceProfiles: Collection<String>): List<StoryNarrationAudio> =
+        if (voiceProfiles.isEmpty()) emptyList()
+        else jpaRepository.findAllByVoiceProfileIn(voiceProfiles).map { it.toDomain() }
+
+    override fun findAllByVoiceProfileStartingWith(prefix: String): List<StoryNarrationAudio> =
+        jpaRepository.findAllByVoiceProfileStartingWith(prefix).map { it.toDomain() }
+
+    override fun deleteAllById(ids: Collection<Long>) {
+        if (ids.isNotEmpty()) jpaRepository.deleteAllByIdInBatch(ids)
+    }
+
     override fun findAll(): List<StoryNarrationAudio> =
         jpaRepository.findAll().map { it.toDomain() }
 

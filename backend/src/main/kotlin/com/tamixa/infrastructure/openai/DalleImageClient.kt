@@ -22,7 +22,9 @@ import java.net.URI
 class DalleImageClient(
     private val restTemplate: RestTemplate,
     @Value("\${app.openai.api-key:}") private val apiKey: String,
-    @Value("\${app.openai.base-url:https://api.openai.com}") private val baseUrl: String
+    @Value("\${app.openai.base-url:https://api.openai.com}") private val baseUrl: String,
+    // GPT Image models replace the retired DALL·E 3; "dall-e-*" is still accepted for accounts that have it.
+    @Value("\${app.openai.image-model:gpt-image-1}") private val imageModel: String
 ) : ImageGenerationPort {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -33,14 +35,21 @@ class DalleImageClient(
             return null
         }
         return try {
-            val request = ImageGenRequest(
-                model = "dall-e-3",
-                prompt = CoverIllustrationPrompts.buildChildSafeCoverPrompt(prompt),
-                n = 1,
-                size = "1024x1024",
-                quality = "standard",
-                style = "vivid"
-            )
+            val model = imageModel.trim().ifBlank { "gpt-image-1" }
+            val isDalle = model.startsWith("dall-e", ignoreCase = true)
+            val request = buildMap<String, Any> {
+                put("model", model)
+                put("prompt", CoverIllustrationPrompts.buildChildSafeCoverPrompt(prompt))
+                put("n", 1)
+                put("size", "1024x1024")
+                if (isDalle) {
+                    // DALL·E-only parameters; GPT Image models reject "style" (400 unknown_parameter).
+                    put("quality", "standard")
+                    put("style", "vivid")
+                } else {
+                    put("quality", "medium")
+                }
+            }
             val headers = HttpHeaders().apply {
                 setBearerAuth(apiKey)
                 contentType = MediaType.APPLICATION_JSON
@@ -50,7 +59,10 @@ class DalleImageClient(
                 HttpEntity(request, headers),
                 ImageGenResponse::class.java
             )
-            val imageUrl = response?.data?.firstOrNull()?.url ?: return null
+            val image = response?.data?.firstOrNull() ?: return null
+            // GPT Image models return base64 data; DALL·E returns a temporary URL.
+            image.b64Json?.takeIf { it.isNotBlank() }?.let { return java.util.Base64.getDecoder().decode(it) }
+            val imageUrl = image.url ?: return null
             restTemplate.getForObject(URI(imageUrl), ByteArray::class.java)
         } catch (e: HttpClientErrorException.BadRequest) {
             val responseBody = e.responseBodyAsString
@@ -71,16 +83,10 @@ class DalleImageClient(
         }
     }
 
-    private data class ImageGenRequest(
-        val model: String,
-        val prompt: String,
-        val n: Int,
-        val size: String,
-        val quality: String,
-        val style: String
-    )
-
     private data class ImageGenResponse(val data: List<ImageData>?)
 
-    private data class ImageData(val url: String?)
+    private data class ImageData(
+        val url: String? = null,
+        @com.fasterxml.jackson.annotation.JsonProperty("b64_json") val b64Json: String? = null
+    )
 }

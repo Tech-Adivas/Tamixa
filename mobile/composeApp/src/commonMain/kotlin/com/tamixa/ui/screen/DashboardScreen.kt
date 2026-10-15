@@ -39,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
@@ -304,7 +305,6 @@ private fun DashboardHeroTopBar(
     onRefresh: () -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToSettings: () -> Unit,
-    onNewStory: () -> Unit,
     onNavigateToMyVoiceAndAvatar: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -454,6 +454,48 @@ private fun DashboardHeroStreakAndSpark(listeningStreakDays: Int?) {
             modifier = Modifier.padding(top = 8.dp),
             lineHeight = 18.sp,
         )
+    }
+}
+
+/** Home entry to story generation (StoryGenerationScreen): labelled, full width, right under the hero. */
+@Composable
+private fun GenerateStoryCard(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = TamixaColors.goldAccent,
+        shadowElevation = 6.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "✨",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(end = 12.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = Strings.generateStory(),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = Color.White,
+                )
+                Text(
+                    text = Strings.generateStoryHint(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.88f),
+                    lineHeight = 18.sp,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.padding(start = 8.dp).size(28.dp),
+            )
+        }
     }
 }
 
@@ -694,7 +736,6 @@ fun DashboardScreen(
                                                 onRefresh = onRefresh,
                                                 onNavigateToSearch = onNavigateToSearch,
                                                 onNavigateToSettings = onNavigateToSettings,
-                                                onNewStory = onNewStory,
                                                 onNavigateToMyVoiceAndAvatar = onNavigateToMyVoiceAndAvatar,
                                             )
                                         }
@@ -705,6 +746,8 @@ fun DashboardScreen(
                                             .padding(horizontal = TamixaDesignTokens.contentPaddingHorizontal)
                                             .padding(top = 12.dp, bottom = 4.dp)
                                     ) {
+                                        GenerateStoryCard(onClick = onNewStory)
+                                        Spacer(Modifier.height(12.dp))
                                         DashboardHeroStreakAndSpark(listeningStreakDays = listeningStreakDays)
                                     }
                                 }

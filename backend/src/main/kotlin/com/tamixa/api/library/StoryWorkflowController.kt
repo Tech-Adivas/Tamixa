@@ -300,7 +300,8 @@ class StoryWorkflowController(
             ResponseEntity.badRequest().body(
                 StoryWorkflowResponse(
                     success = false,
-                    message = "Cannot publish story. Story must be in AUDIO_REVIEW status and have audio available.",
+                    message = storyLibraryService.publishBlockReason(id)
+                        ?: "Cannot publish story. Story must be in AUDIO_REVIEW status and have audio available.",
                     storyId = id
                 )
             )
@@ -340,7 +341,7 @@ class StoryWorkflowController(
                 StoryWorkflowResponse(
                     success = true,
                     message = "Story unpublished successfully. No longer visible to users.",
-                    status = "DRAFT",
+                    status = "AUDIO_REVIEW",
                     storyId = id
                 )
             )

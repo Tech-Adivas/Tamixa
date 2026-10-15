@@ -49,7 +49,7 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
 
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND EXISTS (" +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' AND EXISTS (" +
             "SELECT 1 FROM StoryNarrationAudioEntity a WHERE a.translationId = t.id " +
             "AND a.voiceProfile = 'default' AND a.status = 'READY' AND LENGTH(a.audioUrl) > 0)"
     )
@@ -64,7 +64,7 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
      */
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND (" +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' AND (" +
             "EXISTS (" +
             "SELECT 1 FROM StoryTranslationEntity tm, StoryNarrationAudioEntity a " +
             "WHERE tm.masterStoryId = c.id AND LOWER(tm.language) = LOWER(c.language) " +
@@ -78,7 +78,7 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
 
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL"
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED'"
     )
     fun findListingByLanguageAndMasterNarrationApproved(
         @Param("language") language: String,
@@ -88,7 +88,7 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
     /** Same as [findListingByLanguageAndMasterNarrationApproved] with master-language narration readiness (master-only mode). */
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND (" +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' AND (" +
             "EXISTS (" +
             "SELECT 1 FROM StoryTranslationEntity tm, StoryNarrationAudioEntity a " +
             "WHERE tm.masterStoryId = c.id AND LOWER(tm.language) = LOWER(c.language) " +
@@ -102,7 +102,7 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
 
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' " +
             "AND LOWER(c.theme) = LOWER(:theme)"
     )
     fun findListingByLanguageAndMasterNarrationApprovedAndTheme(
@@ -113,7 +113,7 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
 
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' " +
             "AND LOWER(c.theme) = LOWER(:theme) AND EXISTS (" +
             "SELECT 1 FROM StoryNarrationAudioEntity a WHERE a.translationId = t.id " +
             "AND a.voiceProfile = 'default' AND a.status = 'READY' AND LENGTH(a.audioUrl) > 0)"
@@ -126,7 +126,7 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
 
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' " +
             "AND LOWER(c.theme) = LOWER(:theme) AND (" +
             "EXISTS (" +
             "SELECT 1 FROM StoryTranslationEntity tm, StoryNarrationAudioEntity a " +
@@ -142,7 +142,7 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
 
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' " +
             "AND (LOWER(COALESCE(c.category, '')) LIKE LOWER(CONCAT(:prefix, '%')) OR LOWER(c.theme) LIKE LOWER(CONCAT(:prefix, '%'))) " +
             "AND EXISTS (" +
             "SELECT 1 FROM StoryNarrationAudioEntity a WHERE a.translationId = t.id " +
@@ -156,7 +156,7 @@ interface StoryTranslationJpaRepository : JpaRepository<StoryTranslationEntity, 
 
     @Query(
         "SELECT t FROM StoryTranslationEntity t, LibraryStoryEntity c WHERE c.id = t.masterStoryId " +
-            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+            "AND c.deletedAt IS NULL AND t.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' " +
             "AND (LOWER(COALESCE(c.category, '')) LIKE LOWER(CONCAT(:prefix, '%')) OR LOWER(c.theme) LIKE LOWER(CONCAT(:prefix, '%'))) " +
             "AND (" +
             "EXISTS (" +

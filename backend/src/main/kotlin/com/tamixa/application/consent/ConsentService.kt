@@ -24,6 +24,12 @@ class ConsentService(
         consentJpaRepository.save(entity)
     }
 
+    /** True when the parent has ever granted [consentType] (e.g. "voice_cloning"). */
+    fun hasConsent(parentEmail: String, consentType: String): Boolean {
+        val parent = parentJpaRepository.findByEmail(parentEmail) ?: throw com.tamixa.application.auth.ParentNotFoundException(parentEmail)
+        return consentJpaRepository.existsByParent_IdAndConsentType(parent.id, consentType)
+    }
+
     fun listByParent(parentEmail: String, limit: Int = 50): List<ConsentRecord> {
         val parent = parentJpaRepository.findByEmail(parentEmail) ?: throw com.tamixa.application.auth.ParentNotFoundException(parentEmail)
         return consentJpaRepository.findByParent_IdOrderByGrantedAtDesc(parent.id, PageRequest.of(0, limit))

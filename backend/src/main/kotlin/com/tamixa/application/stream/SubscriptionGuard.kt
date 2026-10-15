@@ -1,12 +1,14 @@
 package com.tamixa.application.stream
 
 import com.tamixa.application.port.narration.NarrationVoiceCatalogRepositoryPort
+import com.tamixa.application.narration.NarrationPremiumVoiceValidator
 import com.tamixa.application.subscription.SubscriptionService
 import com.tamixa.domain.subscription.UpgradeRequiredException
 import org.springframework.stereotype.Component
 
 /**
- * Server-side enforcement: premium voice access requires subscription.voicePremium.
+ * Server-side enforcement: premium catalog voices require subscription.voicePremium; cloned parent voices
+ * ("cloned:{id}") require a plan that includes voice cloning.
  * Prevents client-side bypass of monetization gating.
  *
  * Architecture: Why server-enforced? Clients cannot be trusted—modified apps or
@@ -16,7 +18,8 @@ import org.springframework.stereotype.Component
 @Component
 class SubscriptionGuard(
     private val voiceCatalog: NarrationVoiceCatalogRepositoryPort,
-    private val subscriptionService: SubscriptionService
+    private val subscriptionService: SubscriptionService,
+    private val premiumVoiceValidator: NarrationPremiumVoiceValidator
 ) {
 
     /**
@@ -25,6 +28,13 @@ class SubscriptionGuard(
      */
     fun enforcePremiumVoiceAccess(voiceProfile: String, parentId: Long?, language: String = "en") {
         if (voiceProfile == "default") return
+        // Cloned parent voice: needs a plan with voice cloning (narrating it may also create the paid provider clone).
+        if (voiceProfile.startsWith("cloned:")) {
+            if (parentId == null || !premiumVoiceValidator.canCloneVoice(parentId)) {
+                throw UpgradeRequiredException("Upgrade required for your cloned voice")
+            }
+            return
+        }
         val catalog = voiceCatalog.findByToneMode(voiceProfile)
             ?: return  // Unknown voice: allow (fail later if no audio)
         if (!catalog.isPremium) return

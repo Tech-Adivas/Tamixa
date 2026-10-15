@@ -18,6 +18,9 @@ interface FishAudioVoiceCloningPort {
      */
     fun synthesize(text: String, modelId: String, language: String): ByteArray?
 
+    /** Delete a cloned model at Fish Audio. @return true when deleted or already gone, false on failure */
+    fun deleteModel(modelId: String): Boolean
+
     fun hadRecentAuthFailure(modelId: String): Boolean
 
     fun hadRecentQuotaFailure(modelId: String): Boolean

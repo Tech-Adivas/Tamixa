@@ -1,6 +1,7 @@
 package com.tamixa.api.stream
 
 import com.tamixa.application.port.ProxyStoragePort
+import com.tamixa.application.stream.AudioLinkSigner
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -16,12 +17,14 @@ import com.fasterxml.jackson.databind.ObjectMapper
 // Proxies GET /audio/stories/... to backing storage when presigned URLs fall back to direct URLs.
 // Supports HTTP Range requests (206 Partial Content) so iOS AVPlayer does not fail with -12939.
 // Content-Type is derived from file extension so multiple audio formats (MP3, M4A, AAC, OGG, WAV) are supported.
+// Cloned-voice audio (cloned_*) is served only with a valid signature from AudioLinkSigner.
 @RestController
 @RequestMapping("/audio")
 @ConditionalOnProperty(name = ["app.storage.type"], havingValue = "s3")
 class AudioStreamProxyController(
     private val proxyStorage: ProxyStoragePort,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val audioLinkSigner: AudioLinkSigner
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -46,6 +49,13 @@ class AudioStreamProxyController(
         if (!key.startsWith("stories/")) {
             log.warn("Rejected invalid audio path: {}", key)
             return jsonError(HttpStatus.BAD_REQUEST, "Invalid path")
+        }
+        // A parent's cloned-voice audio needs the signed link from the authenticated stream-url call.
+        if (audioLinkSigner.requiresSignature(key) &&
+            !audioLinkSigner.isValid(key, request.getParameter("exp"), request.getParameter("sig"))
+        ) {
+            log.warn("Audio proxy: refused unsigned or expired link to private audio key={}", key)
+            return jsonError(HttpStatus.FORBIDDEN, "Link expired or invalid")
         }
         val rangeHeader = request.getHeader(HttpHeaders.RANGE)?.trim()?.takeIf { it.lowercase().startsWith("bytes=") }
         return if (rangeHeader != null) {

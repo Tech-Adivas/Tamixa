@@ -52,18 +52,19 @@ import com.tamixa.ui.strings.Strings
 import com.tamixa.ui.theme.TamixaColors
 import com.tamixa.ui.theme.TamixaDesignTokens
 
+/** [Interactive] is its own section; the other tabs are filters inside "Stories" (stories without questions). */
 enum class LibraryHubTab {
     Browse,
     FunCorner,
     LearnSafety,
-    Simulator,
+    Interactive,
 }
 
 fun LibraryHubTab.toAnalyticsHubKey(): String = when (this) {
     LibraryHubTab.Browse -> "browse"
     LibraryHubTab.FunCorner -> "fun"
     LibraryHubTab.LearnSafety -> "learn"
-    LibraryHubTab.Simulator -> "simulator"
+    LibraryHubTab.Interactive -> "simulator"
 }
 
 @Composable
@@ -120,15 +121,13 @@ private fun LibrarySearchBar(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** "Stories" | "Interactive stories"; under Stories, All / Fun / Be Smart filters. */
 @Composable
-private fun LibraryHubPickerGrid(
+private fun LibraryHubPicker(
     selected: LibraryHubTab,
-    onBrowse: () -> Unit,
-    onFunCorner: () -> Unit,
-    onLearnSafety: () -> Unit,
-    onSimulator: () -> Unit,
+    onSelect: (LibraryHubTab) -> Unit,
 ) {
+    val interactive = selected == LibraryHubTab.Interactive
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -138,34 +137,37 @@ private fun LibraryHubPickerGrid(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             LibraryHubSegment(
-                label = Strings.libraryBrowseTab(),
-                selected = selected == LibraryHubTab.Browse,
-                onClick = onBrowse,
+                label = Strings.libraryStoriesSection(),
+                selected = !interactive,
+                onClick = { if (interactive) onSelect(LibraryHubTab.Browse) },
                 modifier = Modifier.weight(1f),
             )
             LibraryHubSegment(
-                label = Strings.libraryFunCornerTab(),
-                selected = selected == LibraryHubTab.FunCorner,
-                onClick = onFunCorner,
+                label = Strings.libraryInteractiveSection(),
+                selected = interactive,
+                onClick = { onSelect(LibraryHubTab.Interactive) },
                 modifier = Modifier.weight(1f),
             )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            LibraryHubSegment(
-                label = Strings.libraryLearnSafetyTab(),
-                selected = selected == LibraryHubTab.LearnSafety,
-                onClick = onLearnSafety,
-                modifier = Modifier.weight(1f),
-            )
-            LibraryHubSegment(
-                label = Strings.librarySimulatorTab(),
-                selected = selected == LibraryHubTab.Simulator,
-                onClick = onSimulator,
-                modifier = Modifier.weight(1f),
-            )
+        if (!interactive) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf(
+                    LibraryHubTab.Browse to Strings.libraryBrowseTab(),
+                    LibraryHubTab.FunCorner to Strings.libraryFunCornerTab(),
+                    LibraryHubTab.LearnSafety to Strings.libraryLearnSafetyTab(),
+                ).forEach { (tab, label) ->
+                    LibraryHubSegment(
+                        label = label,
+                        selected = selected == tab,
+                        onClick = { onSelect(tab) },
+                        modifier = Modifier.weight(1f),
+                        compact = true,
+                    )
+                }
+            }
         }
     }
 }
@@ -177,8 +179,10 @@ private fun LibraryHubSegment(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Smaller filter chip (used under "Stories"). */
+    compact: Boolean = false,
 ) {
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(if (compact) 14.dp else 18.dp)
     val hubSpot = Color(0xFFE8E4DC).copy(alpha = if (selected) 0.14f else 0.09f)
     Surface(
         onClick = onClick,
@@ -214,13 +218,14 @@ private fun LibraryHubSegment(
             modifier = Modifier
                 .background(brush)
                 .fillMaxWidth()
-                .padding(vertical = 12.dp, horizontal = 10.dp),
+                .padding(vertical = if (compact) 8.dp else 12.dp, horizontal = 10.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = label,
                 modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                style = (if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge)
+                    .copy(fontWeight = FontWeight.Bold),
                 color = Color.White,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
@@ -230,7 +235,8 @@ private fun LibraryHubSegment(
 }
 
 /**
- * Story Library: full catalog by default; **Fun corner** and **Learn & safety** filters.
+ * Story Library in two sections: **Stories** (no questions; All / Fun / Be Smart filters) and **Interactive stories**
+ * (the child answers questions while listening).
  */
 @Composable
 fun LibraryScreen(
@@ -263,11 +269,12 @@ fun LibraryScreen(
         onHubTabChange(hubTab)
     }
     
+    val (interactiveStories, plainStories) = cachedStories.partition { isInteractivePracticeLibraryStory(it) }
     val filteredByHub = when (hubTab) {
-        LibraryHubTab.Browse -> cachedStories
-        LibraryHubTab.FunCorner -> cachedStories.filter { isFunStory(it) }
-        LibraryHubTab.LearnSafety -> cachedStories.filter { isLearnOrDigitalSafetyStory(it) }
-        LibraryHubTab.Simulator -> cachedStories.filter { isInteractivePracticeLibraryStory(it) }
+        LibraryHubTab.Browse -> plainStories
+        LibraryHubTab.FunCorner -> plainStories.filter { isFunStory(it) }
+        LibraryHubTab.LearnSafety -> plainStories.filter { isLearnOrDigitalSafetyStory(it) }
+        LibraryHubTab.Interactive -> interactiveStories
     }
     
     val displayStories = if (searchQuery.isNotBlank()) {
@@ -297,7 +304,7 @@ fun LibraryScreen(
             hubTab == LibraryHubTab.Browse -> Strings.generateFirstStoryPrompt()
             hubTab == LibraryHubTab.FunCorner -> Strings.funCornerEmptyHint()
             hubTab == LibraryHubTab.LearnSafety -> Strings.learnSafetyEmptyHint()
-            hubTab == LibraryHubTab.Simulator -> Strings.simulatorHubEmptyHint()
+            hubTab == LibraryHubTab.Interactive -> Strings.simulatorHubEmptyHint()
             else -> Strings.generateFirstStoryPrompt()
         },
         listLayout = StorySelectionListLayout.LibraryPosterGrid,
@@ -312,14 +319,11 @@ fun LibraryScreen(
                     onSearchQueryChange = { searchQuery = it },
                     onSearch = { /* Search is reactive, no action needed */ },
                 )
-                LibraryHubPickerGrid(
+                LibraryHubPicker(
                     selected = hubTab,
-                    onBrowse = { hubTab = LibraryHubTab.Browse },
-                    onFunCorner = { hubTab = LibraryHubTab.FunCorner },
-                    onLearnSafety = { hubTab = LibraryHubTab.LearnSafety },
-                    onSimulator = { hubTab = LibraryHubTab.Simulator },
+                    onSelect = { hubTab = it },
                 )
-                if (hubTab == LibraryHubTab.Simulator) {
+                if (hubTab == LibraryHubTab.Interactive) {
                     onNavigateToCrisisHelp?.let { go ->
                         Surface(
                             onClick = go,

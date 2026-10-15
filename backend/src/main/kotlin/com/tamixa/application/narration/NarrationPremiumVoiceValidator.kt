@@ -13,4 +13,7 @@ interface NarrationPremiumVoiceValidator {
      * @return true if voice can be used
      */
     fun canUseVoice(voiceProfile: String, parentId: Long?): Boolean
+
+    /** True when the parent's plan includes voice cloning (same rule as narrating with a "cloned:{id}" voice). */
+    fun canCloneVoice(parentId: Long): Boolean
 }

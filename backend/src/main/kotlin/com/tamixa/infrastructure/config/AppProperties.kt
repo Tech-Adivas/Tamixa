@@ -157,6 +157,8 @@ data class AppProperties(
 
     data class AvatarVideoProperties(
         val enabled: Boolean = false,
+        /** When true, non-premium parents may upload a profile avatar (skips the premium check). Dev profile only; keep false elsewhere. */
+        val allowFreeAvatarUpload: Boolean = false,
         val provider: String = "sadtalker",
         val heygenApiKey: String = "",
         val replicateApiToken: String = "",
@@ -197,6 +199,8 @@ data class AppProperties(
         val googleCloudApiKey: String = "",
         /** Base URL for self-hosted XTTS-style voice cloning service (optional). */
         val xttsBaseUrl: String = "",
+        /** Shared secret sent as X-XTTS-Api-Key; must match XTTS_API_KEY on the XTTS service. */
+        val xttsApiKey: String = "",
         /** Timeout for XTTS synthesize calls in seconds (synthesis + model load can take 2–3 min). */
         val xttsTimeoutSeconds: Int = 300
     )
@@ -469,8 +473,8 @@ data class AppProperties(
         val pipelineOnSubmitOnly: Boolean = true,
         /** When true (default): Submit for review only saves content; edit-page rebuild does translate+rewrite only (no TTS on submit). When false: full pipeline can run on submit. */
         val audioAfterApproval: Boolean = true,
-        /** When true: Approve for delivery also starts background TTS if audio is still needed. When false (default): ops must use Narration (Story to Speech) → Generate audio after approval. */
-        val autoTtsOnApprove: Boolean = false,
+        /** When true (default): Approve also starts background TTS if audio is still needed (the story goes live only after audio review + Publish). When false: ops must use Narration (Story to Speech) → Generate audio after approval. */
+        val autoTtsOnApprove: Boolean = true,
         /** TTS thread pool size for pipeline. Was 1 (bottleneck); 4 allows ~4x faster multi-story throughput. Stays under app.narration.max-concurrent-tts. */
         val ttsPoolSize: Int = 4,
         /** Rewrite (OpenAI) step timeout. Prevents indefinite hang when API is slow/unresponsive. 1 min fails fast. */
@@ -500,14 +504,29 @@ data class AppProperties(
          * Phase 4: optional short host / brand clip (MP4 URL). When non-blank, included in stream-url
          * responses for the app to show muted alongside story audio. Use https or a path joined with [publicBaseUrl].
          */
-        val hostStoryClipUrl: String = ""
+        val hostStoryClipUrl: String = "",
+        /**
+         * HMAC secret for signed /audio links to cloned-voice audio (files named cloned_*). Must be set and shared
+         * by all backend instances in production; when blank a random per-process secret is used (links break on restart).
+         */
+        val linkSigningSecret: String = "",
+        /** How long a signed cloned-voice audio link stays valid. */
+        val linkExpiryMinutes: Long = 360
     )
 
     /** CDN/signed URLs: S3 presigned URLs (10 min expiry). Not a data class: includes derived [effectiveS3Bucket]. */
     class StorageProperties(
         val type: String = "s3",
         val s3Bucket: String = "tamixa-audio",
-        val s3Region: String = "us-east-1"
+        val s3Region: String = "us-east-1",
+        /**
+         * Optional S3-compatible endpoint (e.g. local MinIO http://minio:9000 for dev without AWS access).
+         * Blank = real AWS S3 (default; production behaviour unchanged).
+         */
+        val s3Endpoint: String = "",
+        /** Credentials for [s3Endpoint] only (e.g. MinIO keys), so AWS keys are never sent to a custom endpoint. */
+        val s3EndpointAccessKey: String = "",
+        val s3EndpointSecretKey: String = ""
     ) {
         val effectiveS3Bucket: String get() = s3Bucket.ifBlank { "tamixa-audio" }
     }

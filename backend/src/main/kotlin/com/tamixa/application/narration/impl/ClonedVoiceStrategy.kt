@@ -11,10 +11,12 @@ import com.tamixa.application.port.voice.GoogleCloudVoiceCloningPort
 import com.tamixa.application.port.voice.HeyGenVoiceTtsPort
 import com.tamixa.application.port.voice.SelfHostedVoiceCloningPort
 import com.tamixa.application.port.voice.VoiceReferenceStoragePort
+import com.tamixa.application.voice.referenceAudioExtension
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
 import jakarta.annotation.PostConstruct
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Synthesizes speech using parent's cloned voice.
@@ -142,53 +144,10 @@ class ClonedVoiceStrategy(
                 canFishRef
             )
             val refBytes = voiceReferenceStorage.getReferenceAudio(referencePath)
-            if (refBytes != null && refBytes.isNotEmpty()) {
-                if (canElevenRef) {
-                    val el = elevenLabs!!
-                    log.info("Cloned voice: creating ElevenLabs voice from reference profileId={} refBytes={} lang={}", profileId, refBytes.size, language)
-                    val newVoiceId = el.addVoice(refBytes, "reference.mp3", "clone-$profileId")
-                    if (newVoiceId != null) {
-                        voiceRepository.save(profile.copy(elevenlabsVoiceId = newVoiceId))
-                        log.info("Cloned voice: ElevenLabs voice created profileId={} voiceId={}", profileId, newVoiceId.take(8))
-                        val bytes = el.synthesize(plainText, newVoiceId, language)
-                        if (bytes != null && bytes.isNotEmpty()) {
-                            log.info("Cloned voice: ElevenLabs synthesis completed profileId={} lang={} bytes={}", profileId, language, bytes.size)
-                            return bytes
-                        }
-                        if (VoiceCloningLanguagePolicy.requiresElevenLabsForCloned(language)) {
-                            log.warn("Cloned voice: Tamil failed — ElevenLabs synthesize returned empty for profileId={}. Check ElevenLabs quota and language support. profileId={}", profileId, profileId)
-                        }
-                    } else {
-                        if (VoiceCloningLanguagePolicy.requiresElevenLabsForCloned(language)) {
-                            log.warn("Cloned voice: Tamil failed — ElevenLabs addVoice failed for profileId={}. Check API key and reference audio format (MP3/WAV). profileId={}", profileId, profileId)
-                        } else {
-                            log.warn("Cloned voice: ElevenLabs addVoice failed for profileId={} (check API key), falling back to XTTS if configured", profileId)
-                        }
-                    }
-                } else if (canFishRef) {
-                    val fish = fishAudio!!
-                    log.info("Cloned voice: creating Fish Audio model from reference profileId={} refBytes={} lang={}", profileId, refBytes.size, language)
-                    val newModelId = fish.createModelFromSample(refBytes, "reference.mp3", "clone-$profileId")
-                    if (newModelId != null) {
-                        voiceRepository.save(profile.copy(fishAudioModelId = newModelId))
-                        log.info("Cloned voice: Fish Audio model created profileId={} modelId={}", profileId, newModelId.take(12))
-                        val bytes = fish.synthesize(plainText, newModelId, language)
-                        if (bytes != null && bytes.isNotEmpty()) {
-                            log.info("Cloned voice: Fish Audio synthesis completed profileId={} lang={} bytes={}", profileId, language, bytes.size)
-                            return bytes
-                        }
-                        if (VoiceCloningLanguagePolicy.requiresElevenLabsForCloned(language)) {
-                            log.warn("Cloned voice: Tamil failed — Fish Audio synthesize returned empty for profileId={}. Check credits and FISH_AUDIO_API_KEY. profileId={}", profileId, profileId)
-                        }
-                    } else {
-                        if (VoiceCloningLanguagePolicy.requiresElevenLabsForCloned(language)) {
-                            log.warn("Cloned voice: Tamil failed — Fish Audio model creation failed for profileId={}. Check FISH_AUDIO_API_KEY and reference audio. profileId={}", profileId, profileId)
-                        } else {
-                            log.warn("Cloned voice: Fish Audio createModel failed for profileId={} (check API key), falling back to XTTS if configured", profileId)
-                        }
-                    }
-                }
-            } else {
+            if (refBytes != null && refBytes.isNotEmpty() && (canElevenRef || canFishRef)) {
+                createFromReference(profileId, refBytes, referencePath, plainText, language, canElevenRef)
+                    ?.let { return it }
+            } else if (refBytes == null || refBytes.isEmpty()) {
                 if (VoiceCloningLanguagePolicy.requiresElevenLabsForCloned(language)) {
                     log.warn("Cloned voice: Tamil failed — reference audio not found at path={}. Ensure STORAGE_TYPE=s3, S3 is configured, and the file exists in S3. profileId={}", referencePath, profileId)
                 } else {
@@ -258,6 +217,89 @@ class ClonedVoiceStrategy(
             )
         }
         return null
+    }
+
+    private val createLocks = ConcurrentHashMap<Long, Any>()
+
+    /**
+     * First cloned narration of a profile without a cloud voice: creates one from its stored recording (ElevenLabs
+     * when [preferElevenLabs], else Fish Audio) and synthesizes [plainText]. Concurrent first plays of the same
+     * profile wait here and reuse the voice the first one created, instead of each creating a provider voice (only
+     * one id is saved; the others would occupy the account's custom voice slots). A new voice that can't synthesize
+     * is deleted again and not saved, as on upload (VoiceCloningService). The lock is per backend instance.
+     * @return the audio, or null to fall through to the remaining fallbacks
+     */
+    private fun createFromReference(
+        profileId: Long,
+        refBytes: ByteArray,
+        referencePath: String,
+        plainText: String,
+        language: String,
+        preferElevenLabs: Boolean
+    ): ByteArray? = synchronized(createLocks.computeIfAbsent(profileId) { Any() }) {
+        val current = voiceRepository.findById(profileId) ?: return@synchronized null
+        val tamil = VoiceCloningLanguagePolicy.requiresElevenLabsForCloned(language)
+        val fileName = "reference.${referenceAudioExtension(referencePath)}"
+
+        // Created by a concurrent request (or the upload's cloning job) while this one waited.
+        current.elevenlabsVoiceId?.takeIf { it.isNotBlank() && elevenLabs != null }?.let { existing ->
+            log.info("Cloned voice: reusing ElevenLabs voice created meanwhile profileId={}", profileId)
+            return@synchronized elevenLabs!!.synthesize(plainText, existing, language)?.takeIf { it.isNotEmpty() }
+        }
+        current.fishAudioModelId?.takeIf { it.isNotBlank() && fishAudio != null }?.let { existing ->
+            log.info("Cloned voice: reusing Fish Audio model created meanwhile profileId={}", profileId)
+            return@synchronized fishAudio!!.synthesize(plainText, existing, language)?.takeIf { it.isNotEmpty() }
+        }
+
+        if (preferElevenLabs) {
+            val el = elevenLabs!!
+            log.info("Cloned voice: creating ElevenLabs voice from reference profileId={} refBytes={} lang={}", profileId, refBytes.size, language)
+            val newVoiceId = el.addVoice(refBytes, fileName, "clone-$profileId")
+            if (newVoiceId == null) {
+                if (tamil) {
+                    log.warn("Cloned voice: Tamil failed — ElevenLabs addVoice failed for profileId={}. Check API key and reference audio format (MP3/WAV).", profileId)
+                } else {
+                    log.warn("Cloned voice: ElevenLabs addVoice failed for profileId={} (check API key), falling back to XTTS if configured", profileId)
+                }
+                return@synchronized null
+            }
+            val bytes = el.synthesize(plainText, newVoiceId, language)
+            if (bytes == null || bytes.isEmpty()) {
+                el.deleteVoice(newVoiceId)
+                log.warn(
+                    "Cloned voice: new ElevenLabs voice could not synthesize, deleted it profileId={} lang={}{}",
+                    profileId, language, if (tamil) " (Tamil: check ElevenLabs quota and language support)" else ""
+                )
+                return@synchronized null
+            }
+            voiceRepository.save(current.copy(elevenlabsVoiceId = newVoiceId))
+            log.info("Cloned voice: ElevenLabs voice created and synthesized profileId={} voiceId={} lang={} bytes={}", profileId, newVoiceId.take(8), language, bytes.size)
+            bytes
+        } else {
+            val fish = fishAudio!!
+            log.info("Cloned voice: creating Fish Audio model from reference profileId={} refBytes={} lang={}", profileId, refBytes.size, language)
+            val newModelId = fish.createModelFromSample(refBytes, fileName, "clone-$profileId")
+            if (newModelId == null) {
+                if (tamil) {
+                    log.warn("Cloned voice: Tamil failed — Fish Audio model creation failed for profileId={}. Check FISH_AUDIO_API_KEY and reference audio.", profileId)
+                } else {
+                    log.warn("Cloned voice: Fish Audio createModel failed for profileId={} (check API key), falling back to XTTS if configured", profileId)
+                }
+                return@synchronized null
+            }
+            val bytes = fish.synthesize(plainText, newModelId, language)
+            if (bytes == null || bytes.isEmpty()) {
+                fish.deleteModel(newModelId)
+                log.warn(
+                    "Cloned voice: new Fish Audio model could not synthesize, deleted it profileId={} lang={}{}",
+                    profileId, language, if (tamil) " (Tamil: check credits and FISH_AUDIO_API_KEY)" else ""
+                )
+                return@synchronized null
+            }
+            voiceRepository.save(current.copy(fishAudioModelId = newModelId))
+            log.info("Cloned voice: Fish Audio model created and synthesized profileId={} modelId={} lang={} bytes={}", profileId, newModelId.take(12), language, bytes.size)
+            bytes
+        }
     }
 
     companion object {

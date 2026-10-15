@@ -46,7 +46,7 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
     fun findListingByLanguage(@Param("language") language: String, pageable: Pageable): Page<LibraryStoryListingProjection>
 
     @Query(
-        "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.deletedAt IS NULL"
+        "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' AND c.deletedAt IS NULL"
     )
     fun findListingByLanguageAndNarrationApprovedAtNotNull(
         @Param("language") language: String,
@@ -54,7 +54,7 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
     ): Page<LibraryStoryListingProjection>
 
     @Query(
-        "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+        "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' " +
             "AND LOWER(c.theme) = LOWER(:theme) AND c.deletedAt IS NULL"
     )
     fun findListingByLanguageAndNarrationApprovedAndTheme(
@@ -64,7 +64,7 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
     ): Page<LibraryStoryListingProjection>
 
     @Query(
-        "SELECT DISTINCT c.theme FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+        "SELECT DISTINCT c.theme FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' " +
             "AND c.deletedAt IS NULL " +
             "AND ((c.audioFileUrl IS NOT NULL AND LENGTH(c.audioFileUrl) > 0) OR EXISTS (" +
             "SELECT 1 FROM StoryNarrationAudioEntity a, StoryTranslationEntity t " +
@@ -77,7 +77,7 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
     @Query(
         "SELECT DISTINCT c.theme FROM LibraryStoryEntity c " +
             "JOIN StoryTranslationEntity t ON t.masterStoryId = c.id AND t.language = :language " +
-            "WHERE c.narrationApprovedAt IS NOT NULL AND c.deletedAt IS NULL AND EXISTS (" +
+            "WHERE c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' AND c.deletedAt IS NULL AND EXISTS (" +
             "SELECT 1 FROM StoryNarrationAudioEntity a WHERE a.translationId = t.id " +
             "AND a.voiceProfile = 'default' AND a.status = 'READY' AND LENGTH(a.audioUrl) > 0) " +
             "ORDER BY c.theme"
@@ -91,7 +91,7 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
     @Query(
         "SELECT DISTINCT c.theme FROM LibraryStoryEntity c " +
             "JOIN StoryTranslationEntity t ON t.masterStoryId = c.id AND t.language = :language " +
-            "WHERE c.narrationApprovedAt IS NOT NULL AND c.deletedAt IS NULL AND (" +
+            "WHERE c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' AND c.deletedAt IS NULL AND (" +
             "EXISTS (" +
             "SELECT 1 FROM StoryTranslationEntity tm, StoryNarrationAudioEntity a " +
             "WHERE tm.masterStoryId = c.id AND LOWER(tm.language) = LOWER(c.language) " +
@@ -104,7 +104,7 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
     ): List<String>
 
     @Query(
-        "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+        "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' " +
             "AND c.deletedAt IS NULL " +
             "AND ((c.audioFileUrl IS NOT NULL AND LENGTH(c.audioFileUrl) > 0) OR EXISTS (" +
             "SELECT 1 FROM StoryNarrationAudioEntity a, StoryTranslationEntity t " +
@@ -117,7 +117,7 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
     ): Page<LibraryStoryEntity>
 
     @Query(
-        "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+        "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' " +
             "AND LOWER(c.theme) = LOWER(:theme) AND c.deletedAt IS NULL " +
             "AND ((c.audioFileUrl IS NOT NULL AND LENGTH(c.audioFileUrl) > 0) OR EXISTS (" +
             "SELECT 1 FROM StoryNarrationAudioEntity a, StoryTranslationEntity t " +
@@ -131,7 +131,7 @@ interface LibraryStoryJpaRepository : JpaRepository<LibraryStoryEntity, Long> {
     ): Page<LibraryStoryEntity>
 
     @Query(
-        "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL " +
+        "SELECT c FROM LibraryStoryEntity c WHERE c.language = :language AND c.narrationApprovedAt IS NOT NULL AND c.status = 'PUBLISHED' " +
             "AND c.deletedAt IS NULL " +
             "AND (LOWER(COALESCE(c.category, '')) LIKE LOWER(CONCAT(:prefix, '%')) OR LOWER(c.theme) LIKE LOWER(CONCAT(:prefix, '%'))) " +
             "AND ((c.audioFileUrl IS NOT NULL AND LENGTH(c.audioFileUrl) > 0) OR EXISTS (" +

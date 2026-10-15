@@ -159,7 +159,30 @@ export default function StoryToSpeechTabPage() {
   const [focusedStoryLoading, setFocusedStoryLoading] = useState(false);
   const audioRef = useRef<{ element: HTMLAudioElement; objectUrl: string } | null>(null);
   const { showSuccess, showError } = useActionResult();
+  const [publishingId, setPublishingId] = useState<number | null>(null);
   const { refresh: refreshPipelineActive, registerTriggered } = usePipelineActive();
+
+  const handlePublish = async (storyId: number, title: string, publish: boolean) => {
+    const question = publish
+      ? `Publish "${title}"? It becomes visible to all parents in the app.`
+      : `Unpublish "${title}"? It disappears from the app until you publish it again.`;
+    if (!window.confirm(question)) return;
+    setPublishingId(storyId);
+    try {
+      if (publish) {
+        await api.admin.publishLibraryStory(storyId);
+        showSuccess("Story published", `"${title}" is now live in the app.`);
+      } else {
+        await api.admin.unpublishLibraryStory(storyId);
+        showSuccess("Story unpublished", `"${title}" is no longer visible in the app.`);
+      }
+      load(true);
+    } catch (e) {
+      showError(publish ? "Publish failed" : "Unpublish failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      setPublishingId(null);
+    }
+  };
 
   const load = useCallback((silent = false) => {
     if (typeof window === "undefined") return;
@@ -616,6 +639,17 @@ export default function StoryToSpeechTabPage() {
                             <span className="truncate block max-w-[280px]" title={row.title ?? undefined}>
                               {row.title || "—"}
                             </span>
+                            {row.status === "PUBLISHED" ? (
+                              <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                                Live in app
+                              </span>
+                            ) : row.status === "AUDIO_REVIEW" ? (
+                              <span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                Ready to publish
+                              </span>
+                            ) : (
+                              <span className="mt-1 block text-[11px] text-muted-foreground">Not in app</span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-left align-middle text-muted-foreground text-xs">
                             {(isRunning || showStarting) ? (
@@ -760,6 +794,18 @@ export default function StoryToSpeechTabPage() {
                           </td>
                           <td className="px-4 py-3 text-right align-middle">
                             <div className="flex items-center justify-end gap-2">
+                              {(row.status === "AUDIO_REVIEW" || row.status === "PUBLISHED") && (
+                                <Button
+                                  size="sm"
+                                  variant={row.status === "PUBLISHED" ? "outline" : "default"}
+                                  className="h-8 px-3"
+                                  disabled={publishingId === row.id || isRunning || showStarting}
+                                  onClick={() => handlePublish(row.id, row.title || "Untitled", row.status !== "PUBLISHED")}
+                                  title={row.status === "PUBLISHED" ? "Remove from the app" : "Make live in the app"}
+                                >
+                                  {row.status === "PUBLISHED" ? "Unpublish" : "Publish"}
+                                </Button>
+                              )}
                               {hasAudio(rowId) && statusObj?.audioCoverageWarnings && isMarkedComplete ? (
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>

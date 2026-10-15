@@ -4,6 +4,7 @@ import com.tamixa.api.ApiVersion
 import com.tamixa.api.admin.dto.LibraryStoryResponse
 import com.tamixa.api.admin.dto.PagedResponse
 import com.tamixa.application.storylibrary.StoryLibraryService
+import com.tamixa.domain.LibraryStoryStatus
 import com.tamixa.api.dev.DevDigitalSurvivalParentLibraryPostProcessor
 import com.tamixa.infrastructure.config.AppProperties
 import org.slf4j.LoggerFactory
@@ -36,9 +37,8 @@ class LibraryStoryController(
     }
 
     /**
-     * Lists library stories approved for delivery (human-verified in admin "Story for review").
-     * Only stories with narration approved **and** ready default-voice audio appear on the app
-     * (re-edits stay hidden until new MP3s exist after approval + TTS).
+     * Lists library stories live on the app: status PUBLISHED (admin approved the content, then reviewed the audio and
+     * published) **and** ready default-voice audio for the language.
      * Optional theme filter (category) for browse by category.
      * Returns paginated response for load-more support.
      */
@@ -83,7 +83,7 @@ class LibraryStoryController(
     }
 
     /**
-     * Returns a library story only if it has been approved for delivery (human-verified).
+     * Returns a library story only if it is published (content approved, audio generated and reviewed, then published).
      */
     @GetMapping("/{id}")
     fun getById(
@@ -96,8 +96,8 @@ class LibraryStoryController(
             log.debug("LibraryStory not found id={} language={}", id, language)
             return ResponseEntity.notFound().build()
         }
-        if (story.narrationApprovedAt == null) {
-            log.debug("LibraryStory id={} not approved for delivery", id)
+        if (story.narrationApprovedAt == null || story.status != LibraryStoryStatus.PUBLISHED.name) {
+            log.debug("LibraryStory id={} not published (status={})", id, story.status)
             return ResponseEntity.notFound().build()
         }
         if (story.audioFileUrl.isNullOrBlank()) {
@@ -117,7 +117,9 @@ class LibraryStoryController(
         @PathVariable id: Long
     ): ResponseEntity<ShareUrlResponse> {
         val story = storyLibraryService.findByIdAndLanguage(id, "ta")
-        if (story == null || story.narrationApprovedAt == null || story.audioFileUrl.isNullOrBlank()) {
+        if (story == null || story.narrationApprovedAt == null || story.status != LibraryStoryStatus.PUBLISHED.name ||
+            story.audioFileUrl.isNullOrBlank()
+        ) {
             return ResponseEntity.notFound().build()
         }
         val baseUrl = appProperties.shareClip.shareBaseUrl.trimEnd('/')

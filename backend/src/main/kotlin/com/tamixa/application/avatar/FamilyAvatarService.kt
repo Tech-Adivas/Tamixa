@@ -45,10 +45,12 @@ class FamilyAvatarService(
             ?: throw AvatarAccessDeniedException("Parent not found")
         enforcePremium(parent.id)
         if (imageBytes.size > MAX_AVATAR_BYTES) {
+            log.warn("Avatar upload rejected: too large parentId={} bytes={}", parent.id, imageBytes.size)
             throw AvatarFileTooLargeException("Image exceeds ${MAX_AVATAR_BYTES / 1024 / 1024}MB limit")
         }
         val normalizedContentType = contentType.trim().lowercase()
         if (normalizedContentType !in ALLOWED_CONTENT_TYPES) {
+            log.warn("Avatar upload rejected: unsupported contentType={} parentId={}", normalizedContentType, parent.id)
             throw InvalidAvatarFileException("Invalid image format (JPEG or PNG required)")
         }
 
@@ -141,6 +143,10 @@ class FamilyAvatarService(
     }
 
     private fun enforcePremium(parentId: Long) {
+        if (appProperties.avatarVideo.allowFreeAvatarUpload) {
+            log.info("Avatar premium check skipped (app.avatar-video.allow-free-avatar-upload=true) parentId={}", parentId)
+            return
+        }
         val sub = subscriptionService.getOrCreateSubscription(parentId)
         if (!sub.isEntitledToUnlimitedStories()) {
             throw AvatarPremiumRequiredException("Premium subscription required for storytelling avatar")

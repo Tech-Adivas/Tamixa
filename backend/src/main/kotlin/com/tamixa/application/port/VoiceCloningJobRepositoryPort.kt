@@ -8,6 +8,8 @@ interface VoiceCloningJobRepositoryPort {
     fun findById(id: Long): VoiceCloningJob?
     fun findByParentId(parentId: Long): List<VoiceCloningJob>
     fun findByStatus(status: VoiceCloningStatus): List<VoiceCloningJob>
+    /** Removes jobs, e.g. those of a deleted voice. */
+    fun deleteAllById(ids: Collection<Long>)
     fun updateStatus(
         id: Long,
         status: VoiceCloningStatus,

@@ -10,6 +10,7 @@ import com.tamixa.application.port.StoryRepositoryPort
 import com.tamixa.application.port.VoiceRepositoryPort
 import com.tamixa.application.port.narration.StoryNarrationAudioRepositoryPort
 import com.tamixa.application.port.StoryTranslationRepositoryPort
+import com.tamixa.domain.LibraryStoryStatus
 import com.tamixa.domain.Story
 import com.tamixa.domain.StoryStatus
 import com.tamixa.domain.narration.NarrationAudioStatus
@@ -52,7 +53,8 @@ class AudioStreamService(
     private val narrationOrchestrator: StoryProcessingOrchestrator,
     @Autowired(required = false) private val ttsService: TTSService?,
     @Autowired(required = false) private val audioStorage: AudioStorageService?,
-    @Autowired(required = false) private val s3SignedUrlGenerator: S3SignedUrlGenerator?
+    @Autowired(required = false) private val s3SignedUrlGenerator: S3SignedUrlGenerator?,
+    private val audioLinkSigner: AudioLinkSigner
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -75,8 +77,11 @@ class AudioStreamService(
     fun getLibraryStreamUrl(
         storyId: Long,
         language: String,
-        parentId: Long?
+        parentId: Long?,
+        /** False only for admin previews: parents can stream published stories only. */
+        requirePublished: Boolean = true
     ): String? {
+        if (requirePublished && !isPublishedLibraryStory(storyId)) return null
         val start = System.nanoTime()
         return try {
             val effectiveLang = normalizeLanguage(language)
@@ -112,6 +117,7 @@ class AudioStreamService(
      * Returns signed URL for family recorded voice. Private path; parent-only.
      */
     fun getFamilyVoiceStreamUrl(storyId: Long, language: String, parentId: Long): String? {
+        if (!isPublishedLibraryStory(storyId)) return null
         val effectiveLang = normalizeLanguage(language)
         val voice = familyVoiceRepository.findByStoryIdAndParentIdAndLanguage(storyId, parentId, effectiveLang)
             ?: return null
@@ -132,10 +138,15 @@ class AudioStreamService(
         storyId: Long,
         language: String,
         voiceProfile: String,
-        parentId: Long?
+        parentId: Long?,
+        /** False only for admin previews: parents can stream published stories only. */
+        requirePublished: Boolean = true
     ): String? {
+        if (requirePublished && !isPublishedLibraryStory(storyId)) return null
         val start = System.nanoTime()
         return try {
+            // A parent's cloned voice is private: only its owner may play it, even when audio already exists.
+            if (!mayUseClonedVoice(voiceProfile, parentId)) return null
             subscriptionGuard.enforcePremiumVoiceAccess(voiceProfile, parentId, language)
             val effectiveLang = normalizeLanguage(language)
             val translation = translationRepository.findByMasterStoryIdAndLanguage(storyId, effectiveLang)
@@ -177,8 +188,11 @@ class AudioStreamService(
         voiceProfile: String,
         parentId: Long?
     ): String? {
+        if (!isPublishedLibraryStory(storyId)) return null
         val start = System.nanoTime()
         return try {
+            // A parent's cloned voice is private: only its owner may play it, even when audio already exists.
+            if (!mayUseClonedVoice(voiceProfile, parentId)) return null
             subscriptionGuard.enforcePremiumVoiceAccess(voiceProfile, parentId, language)
             val effectiveLang = normalizeLanguage(language)
             val translation = translationRepository.findByMasterStoryIdAndLanguage(storyId, effectiveLang)
@@ -215,7 +229,10 @@ class AudioStreamService(
         voiceProfile: String,
         parentId: Long?
     ): String? {
-        subscriptionGuard.enforcePremiumVoiceAccess(voiceProfile, parentId, language)
+        // A parent's cloned voice is private: only its owner may play it, even when audio already exists.
+        if (!mayUseClonedVoice(voiceProfile, parentId)) return null
+        // Admin preview: a parent's cloned voice is not gated by that parent's plan.
+        if (!voiceProfile.startsWith(CLONED_PREFIX)) subscriptionGuard.enforcePremiumVoiceAccess(voiceProfile, parentId, language)
         val effectiveLang = normalizeLanguage(language)
         val translation = translationRepository.findByMasterStoryIdAndLanguage(storyId, effectiveLang)
             ?: return null
@@ -250,7 +267,8 @@ class AudioStreamService(
         voiceProfile: String,
         parentId: Long?
     ): Boolean {
-        subscriptionGuard.enforcePremiumVoiceAccess(voiceProfile, parentId, language)
+        // Deleting stored cloned narration never needs the voice cloning plan.
+        if (!voiceProfile.startsWith(CLONED_PREFIX)) subscriptionGuard.enforcePremiumVoiceAccess(voiceProfile, parentId, language)
         val effectiveLang = normalizeLanguage(language)
         if (voiceProfile.startsWith(CLONED_PREFIX) && parentId == null) {
             log.warn("deleteLibraryStoryNarrationAudio: parentId required for cloned voice profile")
@@ -269,6 +287,15 @@ class AudioStreamService(
         narrationAudioRepository.deleteByTranslationIdAndVoiceProfile(translation.id, voiceProfile)
         log.info("Deleted narration audio storyId={} lang={} voiceProfile={} (next preview will regenerate)", storyId, effectiveLang, voiceProfile)
         return true
+    }
+
+    /** True unless [voiceProfile] is a cloned voice that [parentId] doesn't own. */
+    private fun mayUseClonedVoice(voiceProfile: String, parentId: Long?): Boolean {
+        if (!voiceProfile.startsWith(CLONED_PREFIX)) return true
+        val profileId = voiceProfile.removePrefix(CLONED_PREFIX).trim().toLongOrNull()
+        val owned = parentId != null && profileId != null && voiceRepository.findByIdAndParentId(profileId, parentId) != null
+        if (!owned) log.warn("Cloned voice access denied: voiceProfile={} parentId={}", voiceProfile, parentId)
+        return owned
     }
 
     /**
@@ -402,6 +429,15 @@ class AudioStreamService(
         return true
     }
 
+    private fun isPublishedLibraryStory(storyId: Long): Boolean {
+        val status = storyLibraryRepository.findById(storyId)?.status
+        if (status != LibraryStoryStatus.PUBLISHED) {
+            log.info("Library stream refused: story not published storyId={} status={}", storyId, status)
+            return false
+        }
+        return true
+    }
+
     private fun preferProxy(): Boolean {
         val b = appProperties.audio.publicBaseUrl
         return b.isNotBlank() && (b.contains("10.0.2.2") || b.contains("localhost") || b.contains("127.0.0.1"))
@@ -430,6 +466,12 @@ class AudioStreamService(
             }
             audioFileUrl.startsWith("/") -> base + audioFileUrl
             else -> "$base/audio/$audioFileUrl"
+        }
+        // Cloned-voice audio is private: the /audio proxy serves it only with a signature (see AudioLinkSigner).
+        val proxyKey = raw.substringAfter("$base/audio/", "").substringBefore('?')
+        if (proxyKey.isNotEmpty() && audioLinkSigner.requiresSignature(proxyKey)) {
+            val signature = audioLinkSigner.signatureQuery(proxyKey)
+            return raw + (if (suffix.isEmpty()) "?$signature" else "$suffix&$signature")
         }
         return raw + suffix
     }

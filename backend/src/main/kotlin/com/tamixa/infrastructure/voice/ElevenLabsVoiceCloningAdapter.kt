@@ -36,7 +36,12 @@ class ElevenLabsVoiceCloningAdapter(
     private val objectMapper: ObjectMapper,
     // Must match application.yml keys: eleven-labs-api-key / eleven-labs-base-url (kebab-case).
     @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-api-key:}") apiKeyRaw: String,
-    @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-base-url:https://api.elevenlabs.io}") private val baseUrl: String
+    @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-base-url:https://api.elevenlabs.io}") private val baseUrl: String,
+    // Likeness of cloned narration (TTS voice_settings); see application.yml app.voice-cloning.eleven-labs-*.
+    @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-stability:0.5}") private val stability: Double = 0.5,
+    @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-similarity-boost:0.9}") private val similarityBoost: Double = 0.9,
+    @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-style:0.0}") private val style: Double = 0.0,
+    @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-speaker-boost:true}") private val speakerBoost: Boolean = true
 ) : ElevenLabsVoiceCloningPort {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -45,6 +50,17 @@ class ElevenLabsVoiceCloningAdapter(
     private data class ProviderFailure(val at: Instant, val kind: String, val message: String)
     private val failuresByVoiceId: ConcurrentHashMap<String, ProviderFailure> = ConcurrentHashMap()
     private val authFailureWindow: Duration = Duration.ofHours(6)
+
+    /**
+     * TTS voice_settings for cloned voices. Without them ElevenLabs uses its defaults, which follow the recording
+     * less closely; a high similarity boost plus speaker boost keeps narration closer to the parent's own voice.
+     */
+    private val voiceSettings: Map<String, Any> = mapOf(
+        "stability" to stability.coerceIn(0.0, 1.0),
+        "similarity_boost" to similarityBoost.coerceIn(0.0, 1.0),
+        "style" to style.coerceIn(0.0, 1.0),
+        "use_speaker_boost" to speakerBoost
+    )
 
     @PostConstruct
     fun logStartup() {
@@ -135,7 +151,8 @@ class ElevenLabsVoiceCloningAdapter(
             request = mapOf(
                 "text" to plainText,
                 "model_id" to "eleven_multilingual_v2",
-                "language_code" to langCode
+                "language_code" to langCode,
+                "voice_settings" to voiceSettings
             )
         )
         if (firstAttempt != null && firstAttempt.isNotEmpty()) {
@@ -153,10 +170,29 @@ class ElevenLabsVoiceCloningAdapter(
             voiceId = voiceId,
             request = mapOf(
                 "text" to plainText,
-                "model_id" to "eleven_multilingual_v2"
+                "model_id" to "eleven_multilingual_v2",
+                "voice_settings" to voiceSettings
             )
         )
         return if (fallbackAttempt != null && fallbackAttempt.isNotEmpty()) fallbackAttempt else null
+    }
+
+    /** DELETE /v1/voices/{voice_id}. A 404 means the voice is already gone, which counts as deleted. */
+    override fun deleteVoice(voiceId: String): Boolean {
+        if (apiKey.isBlank() || voiceId.isBlank()) return false
+        return try {
+            val headers = HttpHeaders().apply { set("xi-api-key", apiKey) }
+            restTemplate.exchange("$baseUrl/v1/voices/$voiceId", HttpMethod.DELETE, HttpEntity<Unit>(headers), String::class.java)
+            failuresByVoiceId.remove(voiceId)
+            log.info("ElevenLabs voice deleted voiceId={}", voiceId.take(8))
+            true
+        } catch (e: HttpClientErrorException.NotFound) {
+            log.info("ElevenLabs voice already deleted voiceId={}", voiceId.take(8))
+            true
+        } catch (e: Exception) {
+            log.warn("ElevenLabs deleteVoice failed voiceId={}: {}", voiceId.take(8), e.message)
+            false
+        }
     }
 
     override fun hadRecentAuthFailure(voiceId: String): Boolean {

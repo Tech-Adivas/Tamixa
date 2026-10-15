@@ -200,6 +200,20 @@ class GlobalExceptionHandler {
     }
 
     /** Business rule violations (duplicate title, etc.). */
+    /** Parent already has the maximum number of voices; 409 so clients can tell it apart from a bad request. */
+    @ExceptionHandler(com.tamixa.application.voice.MaxClonedVoicesReachedException::class)
+    fun handleMaxClonedVoices(e: com.tamixa.application.voice.MaxClonedVoicesReachedException): ResponseEntity<Map<String, Any>> {
+        log.info("Voice upload refused: voice limit reached")
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorBody(e.message ?: "Voice limit reached", HttpStatus.CONFLICT))
+    }
+
+    /** The recording is already cloned or a clone is in progress; 409 so a repeat request creates nothing. */
+    @ExceptionHandler(com.tamixa.application.voice.VoiceAlreadyClonedException::class)
+    fun handleVoiceAlreadyCloned(e: com.tamixa.application.voice.VoiceAlreadyClonedException): ResponseEntity<Map<String, Any>> {
+        log.info("Voice clone request refused: {}", e.message)
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorBody(e.message ?: "Voice already cloned", HttpStatus.CONFLICT))
+    }
+
     @ExceptionHandler(IllegalArgumentException::class)
     fun handleIllegalArgument(e: IllegalArgumentException): ResponseEntity<Map<String, Any>> {
         log.debug("Invalid request: {}", e.message)

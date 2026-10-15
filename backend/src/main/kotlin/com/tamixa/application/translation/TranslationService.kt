@@ -4,6 +4,7 @@ import com.tamixa.application.port.CachedTranslation
 import com.tamixa.application.port.TranslationCachePort
 import com.tamixa.application.port.TranslationClientPort
 import com.tamixa.application.port.TranslatedContent
+import com.tamixa.common.ScriptLanguage
 import com.tamixa.infrastructure.config.AppProperties
 import org.springframework.beans.factory.annotation.Autowired
 import org.slf4j.LoggerFactory
@@ -59,7 +60,8 @@ class TranslationService(
         if (src == tgt && !forceParaphraseForSameLanguage) {
             log.debug("Translation skipped: source==target ({})", tgt)
             return TranslationResult(
-                title = title,
+                // Same language: the text is kept, but a title typed in another language is translated.
+                title = titleInLanguage(title, tgt) ?: title,
                 content = content,
                 moral = moral,
                 translated = false,
@@ -76,7 +78,7 @@ class TranslationService(
             translationCache?.getByContentHash(sourceHash, tgt)?.let { cached ->
                 log.info("Translation cache HIT {}->{} (hash={})", src, tgt, sourceHash.take(8))
                 return TranslationResult(
-                    title = cached.title,
+                    title = titleFor(cached.title, title, tgt),
                     content = cached.content,
                     moral = cached.moral,
                     translated = true,
@@ -103,7 +105,7 @@ class TranslationService(
         val beforeContent = translated.contentBeforeParaphrase?.let { trimLeadingSpecialSymbols(it) }
         val beforeMoral = translated.moralBeforeParaphrase?.let { trimLeadingSpecialSymbols(it) }
         val result = TranslationResult(
-            title = translated.title?.let { trimLeadingSpecialSymbols(it) },
+            title = titleFor(translated.title?.let { trimLeadingSpecialSymbols(it) }, title, tgt),
             content = trimLeadingSpecialSymbols(translated.content),
             moral = translated.moral?.let { trimLeadingSpecialSymbols(it) },
             translated = true,
@@ -134,6 +136,30 @@ class TranslationService(
         }
         return result
     }
+
+    /**
+     * [title] written in [language]: returned as is when its script already fits, otherwise translated from the
+     * language its script shows (a "[xx] " tag from the test translator is dropped first). Null when even that
+     * doesn't give a title in [language]; callers then keep what they had and the admin save check flags it.
+     */
+    fun titleInLanguage(title: String?, language: String): String? {
+        if (title.isNullOrBlank() || ScriptLanguage.matches(title, language)) return title
+        val cleaned = title.replace(Regex("^\\[[a-z]{2}]\\s*"), "").trim()
+        if (ScriptLanguage.matches(cleaned, language)) return cleaned
+        val from = ScriptLanguage.detect(cleaned) ?: "en"
+        val fixed = runCatching { trimLeadingSpecialSymbols(translationClient.translate(from, language, cleaned, baseTimeoutMs)) }
+            .onFailure { log.warn("Title translation {}->{} failed: {}", from, language, it.message) }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() && ScriptLanguage.matches(it, language) }
+        if (fixed == null) log.warn("Title is in {} and could not be put into {}", ScriptLanguage.nameOf(from), language)
+        else log.info("Title was in {}; translated to {}", ScriptLanguage.nameOf(from), language)
+        return fixed
+    }
+
+    /** [candidate] when it is in [language]; else the [original] title (then [candidate]) put into [language]. */
+    private fun titleFor(candidate: String?, original: String?, language: String): String? =
+        if (ScriptLanguage.matches(candidate, language)) candidate
+        else titleInLanguage(original, language) ?: titleInLanguage(candidate, language) ?: candidate
 
     private fun contentHash(
         title: String?,

@@ -198,4 +198,34 @@ class LibraryStoryControllerTest : IntegrationTestBase() {
 
         verify(storyLibraryService).findByIdAndLanguage(42L, "hi")
     }
+
+    @Test
+    @WithMockUser(username = "parent@test.com", roles = ["PARENT"])
+    fun `getById hides an approved story that is not published yet`() {
+        val now = Instant.now()
+        val inAudioReview = LibraryStoryResponse(
+            id = 71L,
+            title = "Awaiting publish",
+            content = "body",
+            theme = "Bedtime",
+            category = null,
+            language = "ta",
+            age = 6,
+            childName = "Child",
+            wordCount = 20,
+            readingTimeMinutes = 1.0,
+            moral = null,
+            audioFileUrl = "https://cdn.example/audio.mp3",
+            status = "AUDIO_REVIEW",
+            coverImageUrl = null,
+            coverVideoUrl = null,
+            createdAt = now,
+            modifiedAt = now,
+            narrationApprovedAt = now,
+        )
+        whenever(storyLibraryService.findByIdAndLanguage(71L, "ta")).thenReturn(inAudioReview)
+
+        mockMvc.perform(get("${ApiVersion.V1}/stories/library/71").param("language", "ta"))
+            .andExpect(status().isNotFound)
+    }
 }

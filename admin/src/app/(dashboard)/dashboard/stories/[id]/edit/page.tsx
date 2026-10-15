@@ -937,7 +937,7 @@ export default function EditLibraryStoryPage() {
         id,
         form.content,
         true,
-        form.language ?? DEFAULT_LIBRARY_SOURCE_LANGUAGE,
+        activeLangTab,
         regenerateCustomPrompt.trim() || null
       );
       if (result.paraphraseBefore) {

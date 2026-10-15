@@ -1251,9 +1251,10 @@ def main() -> None:
         '["Where do you save your bank helpline number?",'
         '"Would RBI or your bank ask for KYC through a random SMS link?"]'
     )
-    # Flyway treats "${" as a placeholder at $tag$ boundaries. Insert an extra "$" so the file
-    # contains $tag$$... — Flyway collapses "$$" to "$" and the JSON body still starts with "{".
-    ep02_interactive_sql = "$ep02$" + "$" + ep02_graph_compact + "$ep02$"
+    # Flyway treats "${" as a placeholder, so "$tag${...}" can't be written as is. Put a space between the tag and
+    # the JSON: the stored text is " {...}", which every reader trims. (An extra "$" here used to end up stored in
+    # the column, breaking the graph; V101 repaired the rows written by V87–V90.)
+    ep02_interactive_sql = "$ep02$" + " " + ep02_graph_compact + "$ep02$"
     v87_body = f"""-- Digital Survival Guide Ep02 (KYC Countdown): attach interactive_graph to English pilot row from V86.
 -- Requires V86 applied first. Audio URLs are placeholders until CDN upload.
 
@@ -1288,7 +1289,7 @@ WHERE story_owner = {sql_string_literal(STORY_OWNER)}
     ) -> str:
         gc = json.dumps(graph_dict, ensure_ascii=False, separators=(",", ":"))
         # See V87: extra "$" before JSON so Flyway does not parse $tag${"..." as a placeholder.
-        ig_sql = f"${graph_tag}$" + "$" + gc + f"${graph_tag}$"
+        ig_sql = f"${graph_tag}$" + " " + gc + f"${graph_tag}$"  # space, not "$": see ep02_interactive_sql
         return f"""UPDATE library_stories
 SET
   interactive_graph = {ig_sql},

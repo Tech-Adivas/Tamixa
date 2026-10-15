@@ -421,7 +421,7 @@ fun TamixaNavHost(
             val initialLibraryHub = when (hubArg) {
                 Screen.Library.HUB_FUN -> com.tamixa.ui.screen.LibraryHubTab.FunCorner
                 Screen.Library.HUB_LEARN, Screen.Library.HUB_LEARN_SAFETY -> com.tamixa.ui.screen.LibraryHubTab.LearnSafety
-                Screen.Library.HUB_SIMULATOR -> com.tamixa.ui.screen.LibraryHubTab.Simulator
+                Screen.Library.HUB_SIMULATOR -> com.tamixa.ui.screen.LibraryHubTab.Interactive
                 else -> com.tamixa.ui.screen.LibraryHubTab.Browse
             }
             val prefLangLib = settingsState.languageCode.ifEmpty { "ta" }

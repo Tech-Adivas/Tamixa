@@ -10,4 +10,11 @@ interface StoryVoicePreferenceJpaRepository : JpaRepository<StoryVoicePreference
     ): StoryVoicePreferenceEntity?
 
     fun deleteByParent_IdAndStoryIdAndStorySource(parentId: Long, storyId: Long, storySource: String)
+
+    fun deleteByVoiceProfileIn(voiceProfiles: Collection<String>)
+
+    @org.springframework.data.jpa.repository.Query(
+        "select distinct p.voiceProfile from StoryVoicePreferenceEntity p where p.voiceProfile like concat(:prefix, '%')"
+    )
+    fun findDistinctVoiceProfilesStartingWith(@org.springframework.data.repository.query.Param("prefix") prefix: String): List<String>
 }

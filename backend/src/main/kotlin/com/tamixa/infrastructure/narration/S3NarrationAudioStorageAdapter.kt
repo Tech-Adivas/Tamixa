@@ -7,6 +7,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import java.io.File
 import java.nio.file.Files
@@ -54,6 +56,22 @@ class S3NarrationAudioStorageAdapter(
             throw IllegalStateException("Audio storage failed: ${msg.take(250)}", e)
         }
     }
+
+    override fun deleteNarrationAudio(key: String): Boolean {
+        if (!key.startsWith("stories/")) return false
+        return try {
+            s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build())
+            log.info("Narration audio deleted key={}", key)
+            true
+        } catch (e: Exception) {
+            log.warn("Narration audio delete failed key={}: {}", key, e.message)
+            false
+        }
+    }
+
+    override fun listNarrationKeys(prefix: String): Sequence<String> =
+        s3Client.listObjectsV2Paginator(ListObjectsV2Request.builder().bucket(bucket).prefix(prefix).build())
+            .contents().asSequence().map { it.key() }
 
     private fun voiceProfileSlug(profile: String): String =
         profile.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(50).ifBlank { "v1" }

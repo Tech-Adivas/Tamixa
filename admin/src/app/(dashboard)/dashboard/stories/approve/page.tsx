@@ -1,5 +1,6 @@
 "use client";
 
+import { titleLanguageMismatch } from "@/lib/script-language";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -237,7 +238,7 @@ export default function ApproveTabPage() {
       });
       showSuccess(
         "Approved for delivery",
-        "Story is approved for the app. Open Narration (Story to Speech) and use Generate audio when you are ready to produce narration MP3s."
+        "Audio is being generated now. When it is ready, review it under Stories → Audio and click Publish to make the story live."
       );
       load(true);
       setPipelineStatusMap((m) => {
@@ -249,6 +250,8 @@ export default function ApproveTabPage() {
       setTimeout(refreshPipelineActive, 1500);
     } catch (e) {
       showError("Approve failed", e instanceof Error ? e.message : "Failed to approve");
+      // The list may be out of date (e.g. approved in another tab); reload so it shows the current queue.
+      load(true);
     } finally {
       setApprovingId(null);
     }
@@ -443,6 +446,11 @@ export default function ApproveTabPage() {
                             <span className="truncate block max-w-[220px]" title={row.title ?? undefined}>
                               {row.title || "—"}
                             </span>
+                            {titleLanguageMismatch(row.title, row.language) && (
+                              <span className="mt-1 inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                                Title language mismatch
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-left align-middle">
                             <div className="flex flex-wrap items-center gap-1">
@@ -699,6 +707,11 @@ export default function ApproveTabPage() {
                 <div className="mt-1 rounded-md border border-input bg-muted/30 px-3 py-2 text-sm">
                   {translationForm.title || "—"}
                 </div>
+                {titleLanguageMismatch(translationForm.title, translationLang) && (
+                  <p className="mt-1 text-xs font-medium text-red-700 dark:text-red-400">
+                    Title language mismatch: {titleLanguageMismatch(translationForm.title, translationLang)}. Fix it in the story editor before approving.
+                  </p>
+                )}
               </div>
               <div>
                 <Label className="text-muted-foreground">Story content</Label>

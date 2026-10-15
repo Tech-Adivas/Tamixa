@@ -2,6 +2,7 @@ package com.tamixa.ui
 
 import com.tamixa.domain.Story
 import com.tamixa.util.TamixaConstants
+import kotlinx.serialization.json.JsonObject
 
 private val funStoryLabels = setOf("fun stories", "funny stories")
 
@@ -47,16 +48,14 @@ fun isSimulatorStory(theme: String, category: String?): Boolean {
 
 fun isSimulatorStory(story: Story): Boolean = isSimulatorStory(story.theme, story.category)
 
-/** Library “Practice” hub: naming convention or non-empty interactive graph from API. */
+/**
+ * Library “Interactive stories” section: the story has questions the child answers while listening, i.e. the API sent
+ * an interactive graph with segments for this language. The API drops graphs that aren't in the playback language,
+ * so names like "Learn · Simulator" or "[DSG]" alone don't make a story interactive.
+ */
 fun isInteractivePracticeLibraryStory(story: Story): Boolean {
-    if (isSimulatorStory(story)) return true
-    val g = story.interactiveGraph
-    if (g != null && g.isNotEmpty()) return true
-    val title = story.title?.trim().orEmpty()
-    if (title.contains("[dsg]", ignoreCase = true)) return true
-    val mission = story.postStoryMission?.trim().orEmpty()
-    return mission.contains("edustory", ignoreCase = true) ||
-        mission.contains("simulator", ignoreCase = true)
+    val segments = story.interactiveGraph?.get("segments") as? JsonObject
+    return !segments.isNullOrEmpty()
 }
 
 private const val MAX_CONTEXT = 120

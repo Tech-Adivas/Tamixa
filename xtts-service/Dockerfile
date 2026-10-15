@@ -1,7 +1,7 @@
 # XTTS voice cloning service with Coqui TTS (Python 3.11).
 # Build: docker build -t xtts-service .
-# Run:   docker run -p 9000:9000 xtts-service
-# Backend sets XTTS_BASE_URL=http://<host>:9000
+# Run:   docker run -p 9000:9000 -e XTTS_API_KEY=<secret> xtts-service
+# Backend sets XTTS_BASE_URL=http://<host>:9000 and the same XTTS_API_KEY
 
 FROM python:3.11-slim
 

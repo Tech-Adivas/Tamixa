@@ -427,7 +427,13 @@ private fun ProfileHeaderCard(
         ) {
             Spacer(Modifier.height(4.dp))
             
-            // Avatar placeholder
+            // Avatar: in the dev local test, show the active locally saved photo (picked on My voice & Avatar);
+            // otherwise, or when no photo is saved, the default person icon.
+            val localAvatarUri by androidx.compose.runtime.produceState<String?>(initialValue = null) {
+                if (com.tamixa.platform.isLocalVoiceRecordingTestEnabled()) {
+                    value = com.tamixa.platform.getActiveLocalAvatarImageUri()
+                }
+            }
             Box(
                 modifier = Modifier
                     .size(80.dp)
@@ -442,12 +448,25 @@ private fun ProfileHeaderCard(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Person,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = TamixaColors.deepTeal
-                )
+                val photoUri = localAvatarUri
+                if (photoUri != null) {
+                    coil3.compose.AsyncImage(
+                        model = photoUri,
+                        contentDescription = null,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(3.dp)
+                            .clip(CircleShape)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = TamixaColors.deepTeal
+                    )
+                }
             }
             
             if (isEditing) {

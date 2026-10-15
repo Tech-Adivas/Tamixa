@@ -45,6 +45,11 @@ class VoiceCloningJobRepositoryAdapter(
         return voiceCloningJobJpaRepository.findByStatus(status).map { toDomain(it) }
     }
 
+    @Transactional
+    override fun deleteAllById(ids: Collection<Long>) {
+        if (ids.isNotEmpty()) voiceCloningJobJpaRepository.deleteAllById(ids)
+    }
+
     private fun toDomain(it: VoiceCloningJobEntity) = VoiceCloningJob(
         id = it.id,
         parentId = it.parentId,

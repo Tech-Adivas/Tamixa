@@ -7,6 +7,10 @@ interface StoryNarrationAudioJpaRepository : JpaRepository<StoryNarrationAudioEn
 
     fun findByTranslationId(translationId: Long): StoryNarrationAudioEntity?
 
+    fun findAllByVoiceProfileIn(voiceProfiles: Collection<String>): List<StoryNarrationAudioEntity>
+
+    fun findAllByVoiceProfileStartingWith(prefix: String): List<StoryNarrationAudioEntity>
+
     fun findAllByTranslationId(translationId: Long): List<StoryNarrationAudioEntity>
 
     fun findAllByTranslationIdAndStatus(translationId: Long, status: NarrationAudioStatus): List<StoryNarrationAudioEntity>

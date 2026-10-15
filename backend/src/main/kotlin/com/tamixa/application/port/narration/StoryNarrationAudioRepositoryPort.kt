@@ -31,6 +31,14 @@ interface StoryNarrationAudioRepositoryPort {
     /** Delete narration for (translation, voiceProfile) so next request regenerates (e.g. after deleting cloned-voice cache). */
     fun deleteByTranslationIdAndVoiceProfile(translationId: Long, voiceProfile: String)
 
+    /** Narration recorded in any of [voiceProfiles] (e.g. "cloned:12"), across all stories and languages. */
+    fun findAllByVoiceProfileIn(voiceProfiles: Collection<String>): List<StoryNarrationAudio>
+
+    /** Narration whose voice profile starts with [prefix] (e.g. all "cloned:" rows, for orphan cleanup). */
+    fun findAllByVoiceProfileStartingWith(prefix: String): List<StoryNarrationAudio>
+
+    fun deleteAllById(ids: Collection<Long>)
+
     /** Find all narration audio (for admin cleanup). */
     fun findAll(): List<StoryNarrationAudio>
 

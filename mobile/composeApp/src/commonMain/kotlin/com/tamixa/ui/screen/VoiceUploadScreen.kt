@@ -16,9 +16,11 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +48,8 @@ import androidx.compose.ui.unit.sp
 import com.tamixa.domain.Story
 import com.tamixa.domain.StoryStatus
 import com.tamixa.domain.VoiceProfile
+import com.tamixa.platform.currentTimeMillis
+import com.tamixa.platform.rememberLocalFileController
 import com.tamixa.ui.components.StoryCard
 import com.tamixa.ui.components.TamixaBottomBar
 import com.tamixa.ui.components.TamixaTab
@@ -57,6 +62,8 @@ import com.tamixa.ui.theme.TamixaCardColors
 import com.tamixa.ui.theme.TamixaColors
 import com.tamixa.ui.theme.TamixaContentColors
 import com.tamixa.ui.theme.TamixaDesignTokens
+import com.tamixa.ui.viewmodel.SavedVoicePlayback
+import com.tamixa.util.TamixaLog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,7 +72,6 @@ fun VoiceUploadScreen(
     profilesState: UiState<List<VoiceProfile>>,
     voiceStories: List<Story>,
     onUpload: (ByteArray, String) -> Unit,
-    onPickAudio: () -> Unit,
     onLoadProfiles: () -> Unit,
     onStoryClick: (Story) -> Unit,
     onBack: () -> Unit,
@@ -79,9 +85,76 @@ fun VoiceUploadScreen(
     onNavigateToMyVoiceAndAvatarHub: () -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
     onNavigateToShortContent: () -> Unit = {},
-    onNavigateToProfile: () -> Unit = {}
+    onNavigateToProfile: () -> Unit = {},
+    savedPlayback: SavedVoicePlayback? = null,
+    onPlayProfile: (Long) -> Unit = {},
+    onStopProfile: () -> Unit = {},
+    /** Dev-only: record and preview on-device without a subscription; recordings are never uploaded. */
+    allowLocalRecordingTest: Boolean = false,
+    /** Deletes a voice on the server (after the user confirms). */
+    onDeleteProfile: (Long) -> Unit = {},
+    /** Voices whose delete is in progress. */
+    deletingProfileIds: Set<Long> = emptySet(),
+    /** Whether the parent agreed to voice cloning; otherwise recording / picking asks first. */
+    hasVoiceConsent: Boolean = false,
+    /** Records voice cloning consent on the server; false when that failed. */
+    onGiveVoiceConsent: suspend () -> Boolean = { false }
 ) {
+    val withVoiceConsent = com.tamixa.ui.components.rememberVoiceConsentGate(hasVoiceConsent, onGiveVoiceConsent)
     var showRecordDialog by remember { mutableStateOf(false) }
+    // No new recording or upload while one is being sent, so a double tap can't upload it twice.
+    val isUploading = uploadState is UiState.Loading
+    val canRecord = (isPremium || allowLocalRecordingTest) && !isUploading
+    var profileToDelete by remember { mutableStateOf<Long?>(null) }
+
+    profileToDelete?.let { profileId ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { profileToDelete = null },
+            shape = com.tamixa.ui.theme.TamixaDialogDefaults.shape,
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(Strings.deleteRecordingTitle(), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+            },
+            text = {
+                Text(Strings.deleteRecordingMessage(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    profileToDelete = null
+                    onDeleteProfile(profileId)
+                }) {
+                    Text(Strings.yes(), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { profileToDelete = null }) {
+                    Text(Strings.no())
+                }
+            }
+        )
+    }
+
+    // Saved-recording playback: the controller is mounted only while a downloaded file is available.
+    val playbackScope = rememberCoroutineScope()
+    val savedFileUri = savedPlayback?.fileUri
+    val savedController = rememberLocalFileController(
+        fileUri = savedFileUri,
+        storyTitle = Strings.playSavedRecording(),
+        storyTheme = "",
+        scope = playbackScope,
+        onProgressChanged = { p -> if (p >= 1f) onStopProfile() }
+    )
+    var savedPlaybackStarted by remember(savedFileUri) { mutableStateOf(false) }
+    LaunchedEffect(savedFileUri, savedController.isReady) {
+        // Android's MediaPlayer starts on load; AVPlayer may not — start once if it is ready but idle.
+        if (savedFileUri != null && savedController.isReady && !savedPlaybackStarted) {
+            savedPlaybackStarted = true
+            if (!savedController.isPlaying) savedController.playPause()
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { onStopProfile() }
+    }
 
     LaunchedEffect(Unit) { onLoadProfiles() }
     LaunchedEffect(uploadState) {
@@ -93,7 +166,13 @@ fun VoiceUploadScreen(
             onDismiss = { showRecordDialog = false },
             onRecordingComplete = { bytes ->
                 showRecordDialog = false
-                onUpload(bytes, "recorded_voice.m4a")
+                if (isPremium) {
+                    // Unique name: the backend stores reference audio under voices/{parentId}/{fileName}.
+                    onUpload(bytes, "recorded_voice_${currentTimeMillis()}.m4a")
+                } else {
+                    // Local recording test: keep upload out of the loop.
+                    TamixaLog.i("VoiceUploadScreen", "Local recording test complete (${bytes.size} bytes); not uploaded")
+                }
             }
         )
     }
@@ -173,8 +252,8 @@ fun VoiceUploadScreen(
                 }
                 item(key = "record") {
             Card(
-                modifier = Modifier.fillMaxWidth().alpha(if (isPremium) 1f else 0.75f),
-                onClick = if (isPremium) { { showRecordDialog = true } } else ({ }),
+                modifier = Modifier.fillMaxWidth().alpha(if (canRecord) 1f else 0.75f),
+                onClick = if (canRecord) { { withVoiceConsent { showRecordDialog = true } } } else ({ }),
                 shape = RoundedCornerShape(TamixaDesignTokens.dialogRadius),
                 colors = TamixaCardColors.surface(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
@@ -208,34 +287,6 @@ fun VoiceUploadScreen(
             }
                     Spacer(Modifier.height(14.dp))
                 }
-                item(key = "upload") {
-                    Card(
-                        modifier = Modifier.fillMaxWidth().alpha(if (isPremium) 1f else 0.75f),
-                        onClick = if (isPremium) onPickAudio else ({}),
-                        shape = RoundedCornerShape(TamixaDesignTokens.dialogRadius),
-                        colors = TamixaCardColors.surface(),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(TamixaDesignTokens.cardSpacing),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Upload,
-                                contentDescription = Strings.tapToUploadAudio(),
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(36.dp)
-                            )
-                            Spacer(Modifier.width(16.dp))
-                            Column {
-                                Text(Strings.tapToUploadAudio(), style = MaterialTheme.typography.titleMedium, color = TamixaContentColors.cardPrimary())
-                                Text(Strings.useVoiceForStories(), style = MaterialTheme.typography.bodySmall, color = TamixaContentColors.cardSecondary())
-                            }
-                        }
-                    }
-                }
                 when (uploadState) {
                     is UiState.Idle -> {}
                     is UiState.Loading -> item(key = "upload-loading") {
@@ -254,7 +305,7 @@ fun VoiceUploadScreen(
                             shape = RoundedCornerShape(TamixaDesignTokens.inputRadius)
                         ) {
                             Text(
-                                Strings.voiceProfileCreated(),
+                                Strings.recordingSaved(),
                                 color = TamixaContentColors.onPrimaryContainer(),
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(12.dp)
@@ -293,6 +344,96 @@ fun VoiceUploadScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(12.dp)
                             )
+                        }
+                    }
+                }
+                item(key = "profiles-title") {
+                    Spacer(Modifier.height(24.dp))
+                    Text(
+                        Strings.myRecordings(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TamixaColors.cream
+                    )
+                    Spacer(Modifier.height(14.dp))
+                }
+                when (val state = profilesState) {
+                    is UiState.Idle -> {}
+                    is UiState.Loading -> item(key = "profiles-loading") {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                            CircularProgressIndicator(Modifier.size(32.dp))
+                        }
+                    }
+                    is UiState.Success -> {
+                        if (state.data.isEmpty()) {
+                            item(key = "profiles-empty") {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius),
+                                    colors = TamixaCardColors.surface()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(32.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        TamixaEmojiDisplay(emoji = "🎤", fontSize = 48.sp)
+                                        Spacer(Modifier.height(12.dp))
+                                        Text(Strings.noRecordingsYet(), style = MaterialTheme.typography.bodyMedium, color = TamixaContentColors.cardSecondary())
+                                        Text(Strings.tapMicToRecordFirst(), style = MaterialTheme.typography.bodySmall, color = TamixaContentColors.cardSecondary())
+                                    }
+                                }
+                            }
+                        } else {
+                            // "Recording 1" is the oldest; numbers follow the order they were recorded.
+                            val recordingNumbers = state.data.sortedBy { it.id }
+                                .withIndex().associate { (index, p) -> p.id to index + 1 }
+                            items(state.data, key = { it.id }) { profile ->
+                                Card(
+                                    shape = RoundedCornerShape(TamixaDesignTokens.inputRadius),
+                                    colors = TamixaCardColors.surface(),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                                ) {
+                                    val isActive = savedPlayback?.profileId == profile.id
+                                    ListItem(
+                                        headlineContent = { Text(Strings.savedRecordingNumber(recordingNumbers.getValue(profile.id)), color = TamixaContentColors.cardPrimary()) },
+                                        supportingContent = savedPlayback?.errorMessage?.takeIf { isActive }?.let { msg ->
+                                            { Text(msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                                        },
+                                        leadingContent = { Icon(Icons.Default.Mic, contentDescription = Strings.voiceCtaCloneYourVoice(), tint = MaterialTheme.colorScheme.primary) },
+                                        trailingContent = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                when {
+                                                    isActive && savedPlayback?.isLoading == true ->
+                                                        CircularProgressIndicator(Modifier.size(24.dp))
+                                                    isActive && savedPlayback?.fileUri != null ->
+                                                        IconButton(onClick = onStopProfile) {
+                                                            Icon(Icons.Default.Stop, contentDescription = Strings.stopPlayback(), tint = MaterialTheme.colorScheme.primary)
+                                                        }
+                                                    else ->
+                                                        IconButton(onClick = { onPlayProfile(profile.id) }) {
+                                                            Icon(Icons.Default.PlayArrow, contentDescription = Strings.playSavedRecording(), tint = MaterialTheme.colorScheme.primary)
+                                                        }
+                                                }
+                                                if (profile.id in deletingProfileIds) {
+                                                    CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp))
+                                                } else {
+                                                    IconButton(onClick = { profileToDelete = profile.id }) {
+                                                        Icon(Icons.Default.Delete, contentDescription = Strings.deleteVoice(), tint = MaterialTheme.colorScheme.error)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                                Spacer(Modifier.height(10.dp))
+                            }
+                        }
+                    }
+                    is UiState.Error -> item(key = "profiles-error") {
+                        Card(
+                            colors = TamixaCardColors.errorContainer(),
+                            shape = RoundedCornerShape(TamixaDesignTokens.inputRadius)
+                        ) {
+                            Text(state.message, color = TamixaContentColors.onErrorContainer(), modifier = Modifier.padding(12.dp))
                         }
                     }
                 }
@@ -338,65 +479,6 @@ fun VoiceUploadScreen(
                         }
                     }
                     Spacer(Modifier.height(24.dp))
-                }
-                item(key = "profiles-title") {
-                    Text(
-                        Strings.yourVoiceProfiles(),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TamixaColors.cream
-                    )
-                    Spacer(Modifier.height(14.dp))
-                }
-                when (val state = profilesState) {
-                    is UiState.Idle -> {}
-                    is UiState.Loading -> item(key = "profiles-loading") {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                            CircularProgressIndicator(Modifier.size(32.dp))
-                        }
-                    }
-                    is UiState.Success -> {
-                        if (state.data.isEmpty()) {
-                            item(key = "profiles-empty") {
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius),
-                                    colors = TamixaCardColors.surface()
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(32.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        TamixaEmojiDisplay(emoji = "🎤", fontSize = 48.sp)
-                                        Spacer(Modifier.height(12.dp))
-                                        Text(Strings.noProfilesYet(), style = MaterialTheme.typography.bodyMedium, color = TamixaContentColors.cardSecondary())
-                                        Text(Strings.uploadAudioForFirstProfile(), style = MaterialTheme.typography.bodySmall, color = TamixaContentColors.cardSecondary())
-                                    }
-                                }
-                            }
-                        } else {
-                            items(state.data, key = { it.id }) { profile ->
-                                Card(
-                                    shape = RoundedCornerShape(TamixaDesignTokens.inputRadius),
-                                    colors = TamixaCardColors.surface(),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                                ) {
-                                    ListItem(
-                                        headlineContent = { Text(Strings.profileNumber(profile.id), color = TamixaContentColors.cardPrimary()) },
-                                        leadingContent = { Icon(Icons.Default.Mic, contentDescription = Strings.voiceCtaCloneYourVoice(), tint = MaterialTheme.colorScheme.primary) }
-                                    )
-                                }
-                                Spacer(Modifier.height(10.dp))
-                            }
-                        }
-                    }
-                    is UiState.Error -> item(key = "profiles-error") {
-                        Card(
-                            colors = TamixaCardColors.errorContainer(),
-                            shape = RoundedCornerShape(TamixaDesignTokens.inputRadius)
-                        ) {
-                            Text(state.message, color = TamixaContentColors.onErrorContainer(), modifier = Modifier.padding(12.dp))
-                        }
-                    }
                 }
             }
         }

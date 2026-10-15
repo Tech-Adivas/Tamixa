@@ -314,12 +314,51 @@ class StoryApi(private val client: HttpClient) {
             try {
                 client.get(url) {
                     timeout { requestTimeoutMillis = 25_000 }
+                    // Default request headers ask for JSON only; audio responses would get 406 without this.
+                    accept(ContentType.Audio.Any)
+                    accept(ContentType.Any)
                 }.body<ByteArray>()
             } catch (e: Exception) {
                 TamixaLog.w("StoryApi", "prefetchInteractiveSegmentAudio failed", e)
             }
         }
     }
+
+    /**
+     * One interactive segment spoken in the parent's own voice ([voiceProfile] "cloned:<id>").
+     * The server makes it on first request (several seconds), then reuses it. [StreamUrlResult.NotFound] means
+     * "play the default-voice segment instead" (voice service failed, offline, or not available for this story).
+     */
+    suspend fun getInteractiveSegmentVoiceUrl(
+        storyId: Long,
+        language: String,
+        segmentId: String,
+        voiceProfile: String,
+    ): StreamUrlResult =
+        try {
+            val resp = client.get("${ApiConfig.API_VERSION}/stories/library/$storyId/interactive-segments/${segmentId.encodeURLPathPart()}/audio-url") {
+                parameter("language", language)
+                parameter("voiceProfile", voiceProfile)
+                timeout {
+                    requestTimeoutMillis = CLONED_VOICE_REQUEST_TIMEOUT_MS
+                    socketTimeoutMillis = CLONED_VOICE_REQUEST_TIMEOUT_MS
+                }
+            }
+            when (resp.status.value) {
+                402 -> StreamUrlResult.UpgradeRequired
+                in 200..299 -> resp.body<Map<String, String>>()["url"]?.takeIf { it.isNotBlank() }
+                    ?.let { StreamUrlResult.Url(it) } ?: StreamUrlResult.NotFound
+                else -> {
+                    TamixaLog.w("StoryApi", "Interactive segment in own voice unavailable (storyId=$storyId, segment=$segmentId, HTTP ${resp.status.value})")
+                    StreamUrlResult.NotFound
+                }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            TamixaLog.w("StoryApi", "getInteractiveSegmentVoiceUrl(storyId=$storyId, segment=$segmentId) failed", e)
+            StreamUrlResult.NotFound
+        }
 
     /** Soft pillar counters for the signed-in parent’s child (practice signals, not grades). */
     suspend fun getLifeSkillCounters(childId: Long): LifeSkillCountersResponseDto? =
@@ -466,7 +505,12 @@ class StoryApi(private val client: HttpClient) {
                 storySource?.takeIf { it in listOf("library", "generated") }?.let { parameter("storySource", it) }
                 playbackMode?.takeIf { it in setOf("default", "my_voice", "avatar") }?.let { parameter("playbackMode", it) }
                 if (voiceProfile?.startsWith("cloned:") == true) {
-                    timeout { requestTimeoutMillis = CLONED_VOICE_REQUEST_TIMEOUT_MS }
+                    // First play generates the narration server-side (often 30–60s) with no bytes sent meanwhile,
+                    // so the global 30s socket timeout must be raised too or we silently fall back to the default voice.
+                    timeout {
+                        requestTimeoutMillis = CLONED_VOICE_REQUEST_TIMEOUT_MS
+                        socketTimeoutMillis = CLONED_VOICE_REQUEST_TIMEOUT_MS
+                    }
                 }
             }
             when (resp.status.value) {

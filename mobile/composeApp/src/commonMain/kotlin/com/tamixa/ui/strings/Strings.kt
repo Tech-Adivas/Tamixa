@@ -370,6 +370,13 @@ object Strings {
         else -> "Generate Story"
     }
 
+    /** Home "Generate Story" card: what tapping it does. */
+    fun generateStoryHint(): String = when (languageCode) {
+        "ta" -> "ஒரு சிறிய யோசனை சொல்லுங்கள் — AI உங்கள் குழந்தைக்கான ஆடியோ கதையை உருவாக்கும்"
+        "hi" -> "एक छोटा-सा विचार बताएं — AI आपके बच्चे के लिए ऑडियो कहानी बनाएगा"
+        else -> "Share a short idea — AI creates an audio story for your child"
+    }
+
     fun theme(): String = when (languageCode) {
         "ta" -> "தீம்"
         "hi" -> "थीम"
@@ -996,19 +1003,15 @@ object Strings {
         else -> "Add your first child to get started"
     }
 
-    fun tapToUploadAudio(): String = when (languageCode) {
-        "ta" -> "ஆடியோ பதிவேற்ற கிளிக் செய்யுங்கள்"
-        else -> "Tap to upload audio"
-    }
-
     fun useVoiceForStories(): String = when (languageCode) {
         "ta" -> "தனிப்பட்ட கதைகளுக்கு உங்கள் குரலைப் பயன்படுத்துங்கள்"
         else -> "Use your voice for personalized stories"
     }
 
-    fun voiceProfileCreated(): String = when (languageCode) {
-        "ta" -> "குரல் சுயவிவரம் உருவாக்கப்பட்டது!"
-        else -> "Voice profile created!"
+    fun recordingSaved(): String = when (languageCode) {
+        "ta" -> "உங்கள் குரல் சேமிக்கப்பட்டது!"
+        "hi" -> "आपकी आवाज़ सहेज ली गई!"
+        else -> "Your voice is saved!"
     }
 
     fun noVoiceProfiles(): String = when (languageCode) {
@@ -1346,9 +1349,9 @@ object Strings {
     }
 
     fun voiceScreenSubline(): String = when (languageCode) {
-        "ta" -> "குரலை குளோன் செய்யுங்கள் — குழந்தைகள் உங்கள் குரலில் கதைகள் கேட்பார்கள்"
-        "hi" -> "अपनी आवाज़ क्लोन करें — बच्चे आपकी आवाज़ में कहानियाँ सुनेंगे"
-        else -> "Clone your voice — kids hear stories in the voice they love"
+        "ta" -> "உங்கள் குரலைப் பதிவு செய்யுங்கள் — குழந்தைகள் உங்கள் குரலில் கதைகள் கேட்பார்கள்"
+        "hi" -> "अपनी आवाज़ रिकॉर्ड करें — बच्चे आपकी आवाज़ में कहानियाँ सुनेंगे"
+        else -> "Record your voice — kids hear stories in the voice they love"
     }
 
     fun voiceSectionStoriesWithYourVoice(): String = when (languageCode) {
@@ -1853,14 +1856,24 @@ object Strings {
         else -> "Be Smart"
     }
 
-    /** Library fourth lane: Learn · Simulator and interactive graph stories. */
-    fun librarySimulatorTab(): String = when (languageCode) {
-        "ta" -> "பயிற்சி"  // Practice (already casual!)
-        "ka" -> "ಅಭ್ಯಾಸ"  // Practice
-        "ml" -> "പരിശീലനം"  // Practice
-        "te" -> "అభ్యాసం"  // Practice
-        "hi" -> "अभ्यास"  // Practice
-        else -> "Practice"
+    /** Library section: stories without questions (All / Fun / Be Smart filters inside). */
+    fun libraryStoriesSection(): String = when (languageCode) {
+        "ta" -> "கதைகள்"
+        "ka" -> "ಕಥೆಗಳು"
+        "ml" -> "കഥകൾ"
+        "te" -> "కథలు"
+        "hi" -> "कहानियाँ"
+        else -> "Stories"
+    }
+
+    /** Library section: stories where the child answers questions while listening. */
+    fun libraryInteractiveSection(): String = when (languageCode) {
+        "ta" -> "ஊடாடும் கதைகள்"
+        "ka" -> "ಸಂವಾದಾತ್ಮಕ ಕಥೆಗಳು"
+        "ml" -> "ഇന്ററാക്ടീവ് കഥകൾ"
+        "te" -> "ఇంటరాక్టివ్ కథలు"
+        "hi" -> "इंटरैक्टिव कहानियाँ"
+        else -> "Interactive stories"
     }
 
     fun spotlightEmptyHint(): String = when (languageCode) {
@@ -1882,9 +1895,12 @@ object Strings {
     }
 
     fun simulatorHubEmptyHint(): String = when (languageCode) {
-        "ta" -> "இங்கே 'Learn · Simulator' தலைப்பு அல்லது தேர்வுகளுடன் கூடிய ஊடாடும் நூலகக் கதைகள் தோன்றும்."
-        "hi" -> "यहाँ 'Learn · Simulator' शीर्षक या चुनाव वाली इंटरैक्टिव लाइब्रेरी कहानियाँ दिखेंगी।"
-        else -> "Stories labeled Learn · Simulator or with interactive choices appear here—assign metadata in admin if missing."
+        "ta" -> "கேட்கும்போதே உங்கள் குழந்தை பதில் சொல்லும் கதைகள் தயாரானதும் இங்கே தோன்றும்."
+        "ka" -> "ಕೇಳುತ್ತಲೇ ನಿಮ್ಮ ಮಗು ಉತ್ತರಿಸುವ ಕಥೆಗಳು ಸಿದ್ಧವಾದಾಗ ಇಲ್ಲಿ ಕಾಣಿಸುತ್ತವೆ."
+        "ml" -> "കേൾക്കുമ്പോൾ തന്നെ കുട്ടി ഉത്തരം നൽകുന്ന കഥകൾ തയ്യാറാകുമ്പോൾ ഇവിടെ കാണാം."
+        "te" -> "వింటూనే మీ పిల్లలు సమాధానం చెప్పే కథలు సిద్ధమైనప్పుడు ఇక్కడ కనిపిస్తాయి."
+        "hi" -> "सुनते-सुनते आपका बच्चा जिन कहानियों में जवाब चुनता है, वे तैयार होते ही यहाँ दिखेंगी।"
+        else -> "Stories where your child answers questions while listening will appear here when they're ready."
     }
 
     fun crisisHelpTitle(): String = when (languageCode) {
@@ -3017,35 +3033,34 @@ object Strings {
         else -> "Try another category or select All"
     }
 
-    fun sendStory(): String = when (languageCode) {
-        "ta" -> "கதை அனுப்பு"
-        "hi" -> "कहानी भेजें"
-        else -> "Send Story"
-    }
-
+    // Story generation form: the parent gives a short idea (the backend takes at most 200 characters) and the AI
+    // writes the full story from it.
     fun sendStoryInTextFormat(): String = when (languageCode) {
-        "ta" -> "உங்கள் கதையை உரை வடிவத்தில் அனுப்புங்கள்"
-        "hi" -> "अपनी कहानी टेक्स्ट फॉर्मैट में भेजें"
-        else -> "Send your story in text format"
+        "ta" -> "உங்கள் குழந்தைக்கு ஒரு புதிய கதை"
+        "hi" -> "आपके बच्चे के लिए एक नई कहानी"
+        else -> "A new story for your child"
     }
 
     fun sendStoryHint(): String = when (languageCode) {
-        "ta" -> "உங்கள் கதையை தட்டச்சு செய்யுங்கள் அல்லது ஒட்டவும். நாங்கள் அதை ஆடியோ கதையாக மாற்றுவோம்."
-        "hi" -> "अपनी कहानी टाइप करें या पेस्ट करें। हम इसे ऑडियो कहानी में बदल देंगे।"
-        else -> "Type or paste your story below. We'll turn it into an audio story for your child."
+        "ta" -> "கதைக்கான சிறிய யோசனையைச் சொல்லுங்கள், தீம் தேர்ந்தெடுங்கள் — AI முழுக் கதையையும் எழுதி ஆடியோவாக மாற்றும்."
+        "hi" -> "कहानी का छोटा-सा विचार बताएं और थीम चुनें — AI पूरी कहानी लिखकर उसे ऑडियो बना देगा।"
+        else -> "Give a short story idea and pick a theme — AI writes the full story and turns it into audio."
     }
 
     fun yourStoryText(): String = when (languageCode) {
-        "ta" -> "உங்கள் கதை"
-        "hi" -> "आपकी कहानी"
-        else -> "Your story"
+        "ta" -> "கதைக்கான யோசனை (விரும்பினால்)"
+        "hi" -> "कहानी का विचार (वैकल्पिक)"
+        else -> "Story idea (optional)"
     }
 
     fun storyTextPlaceholder(): String = when (languageCode) {
-        "ta" -> "உங்கள் கதையை இங்கே தட்டச்சு செய்யவும் அல்லது ஒட்டவும்..."
-        "hi" -> "अपनी कहानी यहाँ टाइप करें या पेस्ट करें..."
-        else -> "Type or paste your story here..."
+        "ta" -> "எ.கா. காட்டில் நண்பனைத் தேடும் ஒரு சிறிய முயல்"
+        "hi" -> "जैसे: जंगल में दोस्त ढूँढता एक छोटा खरगोश"
+        else -> "e.g. a little rabbit looking for a friend in the forest"
     }
+
+    /** Characters used of the story-idea limit, shown under the field. */
+    fun storyIdeaCharacterCount(used: Int, max: Int): String = "$used / $max"
 
     fun categories(): String = when (languageCode) {
         "ta" -> "வகைகள்"
@@ -3749,28 +3764,218 @@ object Strings {
         else -> "Enter phone number"
     }
 
-    fun yourVoiceProfiles(): String = when (languageCode) {
-        "ta" -> "உங்கள் குரல் சுயவிவரங்கள்"
-        "hi" -> "आपकी आवाज़ प्रोफ़ाइल"
-        else -> "Your voice profiles"
+    fun myRecordings(): String = when (languageCode) {
+        "ta" -> "என் பதிவுகள்"
+        "hi" -> "मेरी रिकॉर्डिंग"
+        else -> "My recordings"
     }
 
-    fun noProfilesYet(): String = when (languageCode) {
-        "ta" -> "இன்னும் சுயவிவரங்கள் இல்லை"
-        "hi" -> "अभी तक कोई प्रोफ़ाइल नहीं"
-        else -> "No profiles yet"
+    fun noRecordingsYet(): String = when (languageCode) {
+        "ta" -> "இன்னும் பதிவுகள் இல்லை"
+        "hi" -> "अभी तक कोई रिकॉर्डिंग नहीं"
+        else -> "No recordings yet"
     }
 
-    fun uploadAudioForFirstProfile(): String = when (languageCode) {
-        "ta" -> "உங்களின் முதல் சொந்தக் குரலை உருவாக்க ஆடியோ பதிவேற்றம் செய்யுங்கள்"
-        "hi" -> "पहली आवाज़ प्रोफ़ाइल बनाने के लिए ऑडियो अपलोड करें"
-        else -> "Upload audio to create your first voice profile"
+    fun tapMicToRecordFirst(): String = when (languageCode) {
+        "ta" -> "உங்கள் குரலைப் பதிவு செய்ய மைக்கைத் தட்டுங்கள்"
+        "hi" -> "अपनी आवाज़ रिकॉर्ड करने के लिए माइक पर टैप करें"
+        else -> "Tap the mic to record your voice"
     }
 
-    fun profileNumber(id: Long): String = when (languageCode) {
-        "ta" -> "சுயவிவரம் #$id"
-        "hi" -> "प्रोफ़ाइल #$id"
-        else -> "Profile #$id"
+    fun previewRecording(): String = when (languageCode) {
+        "ta" -> "உங்கள் பதிவைக் கேளுங்கள்"
+        "hi" -> "अपनी रिकॉर्डिंग सुनें"
+        else -> "Preview your recording"
+    }
+
+    fun recordAgain(): String = when (languageCode) {
+        "ta" -> "மீண்டும் பதிவு செய்"
+        "hi" -> "फिर से रिकॉर्ड करें"
+        else -> "Record again"
+    }
+
+    fun micPermissionRequired(): String = when (languageCode) {
+        "ta" -> "உங்கள் குரலைப் பதிவு செய்ய மைக்ரோஃபோன் அனுமதி தேவை."
+        "hi" -> "अपनी आवाज़ रिकॉर्ड करने के लिए माइक्रोफ़ोन की अनुमति चाहिए।"
+        else -> "Microphone access is needed to record your voice."
+    }
+
+    fun micPermissionSettingsHint(): String = when (languageCode) {
+        "ta" -> "மைக்ரோஃபோன் அனுமதி முடக்கப்பட்டுள்ளது. அமைப்புகள் → ஆப்ஸ் → Tamixa → அனுமதிகள் → மைக்ரோஃபோன் → அனுமதி என்பதில் இயக்கவும்."
+        "hi" -> "माइक्रोफ़ोन की अनुमति बंद है। सेटिंग्स → ऐप्स → Tamixa → अनुमतियां → माइक्रोफ़ोन → अनुमति दें में इसे चालू करें।"
+        else -> "Microphone access is turned off. Enable it in Settings → Apps → Tamixa → Permissions → Microphone → Allow."
+    }
+
+    fun openSettings(): String = when (languageCode) {
+        "ta" -> "அமைப்புகளைத் திற"
+        "hi" -> "सेटिंग्स खोलें"
+        else -> "Open settings"
+    }
+
+    fun recordingStartFailed(): String = when (languageCode) {
+        "ta" -> "பதிவைத் தொடங்க முடியவில்லை. மைக்ரோஃபோனைச் சரிபார்த்து மீண்டும் முயலவும்."
+        "hi" -> "रिकॉर्डिंग शुरू नहीं हो सकी। माइक्रोफ़ोन जांचें और फिर से कोशिश करें।"
+        else -> "Couldn't start recording. Check the microphone and try again."
+    }
+
+    fun recordingSeconds(seconds: Int): String = when (languageCode) {
+        "ta" -> "பதிவு செய்கிறது… ${seconds} வி"
+        "hi" -> "रिकॉर्ड हो रहा है… ${seconds} से"
+        else -> "Recording… ${seconds}s"
+    }
+
+    /** Voice-clone recording: elapsed time while still short of the minimum length. */
+    fun recordingKeepGoing(seconds: Int, minimumSeconds: Int): String = when (languageCode) {
+        "ta" -> "பதிவு செய்கிறது… ${seconds} / ${minimumSeconds} வி — தொடர்ந்து பேசுங்கள்"
+        "hi" -> "रिकॉर्ड हो रहा है… ${seconds} / ${minimumSeconds} से — बोलते रहें"
+        else -> "Recording… ${seconds} / ${minimumSeconds}s — keep talking"
+    }
+
+    /** Voice-clone recording: elapsed time once the minimum length is reached. */
+    fun recordingLongEnough(seconds: Int): String = when (languageCode) {
+        "ta" -> "பதிவு செய்கிறது… ${seconds} வி — போதுமானது, எப்போது வேண்டுமானாலும் நிறுத்தலாம்"
+        "hi" -> "रिकॉर्ड हो रहा है… ${seconds} से — काफ़ी है, अब कभी भी रोक सकते हैं"
+        else -> "Recording… ${seconds}s — long enough, stop any time"
+    }
+
+    /** Voice-clone recording stopped before the minimum length; it can't be saved. */
+    fun recordingTooShort(minimumSeconds: Int): String = when (languageCode) {
+        "ta" -> "பதிவு மிகவும் குறுகியது. உங்கள் குரல் உங்களைப் போலவே ஒலிக்க குறைந்தது $minimumSeconds வினாடிகள் பதிவு செய்யுங்கள்."
+        "hi" -> "रिकॉर्डिंग बहुत छोटी है। आवाज़ आप जैसी सुनाई दे, इसके लिए कम से कम $minimumSeconds सेकंड रिकॉर्ड करें।"
+        else -> "Too short. Record at least $minimumSeconds seconds so the voice sounds like you."
+    }
+
+    fun playSavedRecording(): String = when (languageCode) {
+        "ta" -> "சேமித்த பதிவை இயக்கு"
+        "hi" -> "सहेजी गई रिकॉर्डिंग चलाएं"
+        else -> "Play saved recording"
+    }
+
+    fun deleteSavedPhoto(): String = when (languageCode) {
+        "ta" -> "சேமித்த படத்தை நீக்கு"
+        "hi" -> "सहेजी गई फोटो हटाएं"
+        else -> "Delete saved photo"
+    }
+
+    fun profileSavedOffline(): String = when (languageCode) {
+        "ta" -> "சேமிக்கப்பட்டது. இணைய இணைப்பு வந்ததும் புதுப்பிக்கப்படும்."
+        "hi" -> "सहेजा गया। इंटरनेट मिलने पर अपडेट हो जाएगा।"
+        else -> "Saved. We'll finish updating it when you're back online."
+    }
+
+    fun mediaSaved(): String = when (languageCode) {
+        "ta" -> "சேமிக்கப்பட்டது"
+        "hi" -> "सहेजा गया"
+        else -> "Saved"
+    }
+
+    fun mediaNotSavedYet(): String = when (languageCode) {
+        "ta" -> "இன்னும் சேமிக்கப்படவில்லை"
+        "hi" -> "अभी सहेजा नहीं गया"
+        else -> "Not saved yet"
+    }
+
+    fun mediaSaving(): String = when (languageCode) {
+        "ta" -> "சேமிக்கிறது…"
+        "hi" -> "सहेजा जा रहा है…"
+        else -> "Saving…"
+    }
+
+    fun deleteRecordingTitle(): String = when (languageCode) {
+        "ta" -> "இந்த பதிவை நிச்சயமாக நீக்க வேண்டுமா?"
+        "hi" -> "क्या आप वाकई यह रिकॉर्डिंग हटाना चाहते हैं?"
+        else -> "Are you sure you want to delete this recording?"
+    }
+
+    fun deleteRecordingMessage(): String = when (languageCode) {
+        "ta" -> "இதை மீட்டெடுக்க முடியாது."
+        "hi" -> "इसे वापस नहीं लाया जा सकता।"
+        else -> "This can't be undone."
+    }
+
+    fun yes(): String = when (languageCode) {
+        "ta" -> "ஆம்"
+        "hi" -> "हाँ"
+        else -> "Yes"
+    }
+
+    fun no(): String = when (languageCode) {
+        "ta" -> "இல்லை"
+        "hi" -> "नहीं"
+        else -> "No"
+    }
+
+    fun voiceConsentTitle(): String = when (languageCode) {
+        "ta" -> "உங்கள் குரலைப் பயன்படுத்த அனுமதி"
+        "hi" -> "आपकी आवाज़ के उपयोग की अनुमति"
+        else -> "Allow us to use your voice"
+    }
+
+    fun voiceConsentMessage(): String = when (languageCode) {
+        "ta" -> "உங்கள் பதிவு பாதுகாப்பாகச் சேமிக்கப்பட்டு, உங்கள் குழந்தைக்குக் கதைகளைச் சொல்ல உங்கள் குரலின் நகல் உருவாக்கப் பயன்படும். இது உங்கள் சொந்தக் குரல் மட்டுமே என்பதை உறுதிப்படுத்துங்கள். எப்போது வேண்டுமானாலும் குரலை நீக்கலாம்."
+        "hi" -> "आपकी रिकॉर्डिंग सुरक्षित रूप से संग्रहीत की जाएगी और आपके बच्चे को कहानियाँ सुनाने के लिए आपकी आवाज़ की प्रति बनाने में उपयोग होगी। पुष्टि करें कि यह केवल आपकी अपनी आवाज़ है। आप कभी भी आवाज़ हटा सकते हैं।"
+        else -> "Your recording is stored securely and used to create a copy of your voice that narrates stories for your child. Please confirm this is your own voice. You can delete it anytime."
+    }
+
+    fun voiceConsentAgree(): String = when (languageCode) {
+        "ta" -> "ஒப்புக்கொள்கிறேன்"
+        "hi" -> "मैं सहमत हूँ"
+        else -> "I agree"
+    }
+
+    fun recordingDeleted(): String = when (languageCode) {
+        "ta" -> "பதிவு நீக்கப்பட்டது"
+        "hi" -> "रिकॉर्डिंग हटा दी गई"
+        else -> "Recording deleted"
+    }
+
+    /** A recording stays on the phone because the account already has the maximum number of voices. */
+    fun voiceLimitReachedKeepOnPhone(): String = when (languageCode) {
+        "ta" -> "அதிகபட்ச குரல்கள் சேமிக்கப்பட்டுள்ளன. புதிய பதிவைச் சேமிக்க ஒரு குரலை நீக்கவும்; அதுவரை இது தொலைபேசியில் மட்டும் இருக்கும்."
+        "hi" -> "अधिकतम आवाज़ें सेव हो चुकी हैं। नई रिकॉर्डिंग सेव करने के लिए एक आवाज़ हटाएँ; तब तक यह सिर्फ़ फ़ोन पर रहेगी।"
+        else -> "You've reached the maximum number of voices. Delete one to back up this recording; until then it stays on your phone."
+    }
+
+    fun voiceLimitReached(): String = when (languageCode) {
+        "ta" -> "அதிகபட்ச குரல்கள் சேமிக்கப்பட்டுள்ளன. புதியதைச் சேர்க்க ஒரு குரலை நீக்கவும்."
+        "hi" -> "अधिकतम आवाज़ें सेव हो चुकी हैं। नई जोड़ने के लिए एक आवाज़ हटाएँ।"
+        else -> "You've reached the maximum number of voices. Delete one to add a new one."
+    }
+
+    fun voiceDeleted(): String = when (languageCode) {
+        "ta" -> "குரல் நீக்கப்பட்டது"
+        "hi" -> "आवाज़ हटा दी गई"
+        else -> "Voice deleted"
+    }
+
+    fun voiceInUseCannotDelete(): String = when (languageCode) {
+        "ta" -> "இந்த குரல் ஒரு கதையில் பயன்படுத்தப்படுவதால் நீக்க முடியாது."
+        "hi" -> "यह आवाज़ एक कहानी में इस्तेमाल हो रही है, इसलिए हटाई नहीं जा सकती।"
+        else -> "This voice is used by a story and can't be deleted."
+    }
+
+    fun deleteVoice(): String = when (languageCode) {
+        "ta" -> "குரலை நீக்கு"
+        "hi" -> "आवाज़ हटाएँ"
+        else -> "Delete voice"
+    }
+
+    fun savedRecordingNumber(number: Int): String = when (languageCode) {
+        "ta" -> "பதிவு $number"
+        "hi" -> "रिकॉर्डिंग $number"
+        else -> "Recording $number"
+    }
+
+    fun deleteSavedRecording(): String = when (languageCode) {
+        "ta" -> "சேமித்த பதிவை நீக்கு"
+        "hi" -> "सहेजी गई रिकॉर्डिंग हटाएं"
+        else -> "Delete saved recording"
+    }
+
+    fun stopPlayback(): String = when (languageCode) {
+        "ta" -> "இயக்கத்தை நிறுத்து"
+        "hi" -> "प्लेबैक रोकें"
+        else -> "Stop playback"
     }
 
     fun generateFirstStoryPrompt(): String = when (languageCode) {
@@ -3923,10 +4128,10 @@ object Strings {
         else -> "Enable reminder"
     }
 
-    fun saveProgressCloneVoiceUploadAvatar(): String = when (languageCode) {
-        "ta" -> "முன்னேற்றத்தை சேமிக்கவும் • குரலை குளோன் செய்யவும் • அவதாரம் பதிவேற்றவும்"
-        "hi" -> "प्रगति सहेजें • आवाज़ क्लोन करें • अवतार अपलोड करें"
-        else -> "Save progress • Clone voice • Upload avatar"
+    fun saveProgressRecordVoiceUploadAvatar(): String = when (languageCode) {
+        "ta" -> "முன்னேற்றத்தை சேமிக்கவும் • குரலைப் பதிவு செய்யவும் • அவதாரம் பதிவேற்றவும்"
+        "hi" -> "प्रगति सहेजें • आवाज़ रिकॉर्ड करें • अवतार अपलोड करें"
+        else -> "Save progress • Record voice • Upload avatar"
     }
 
     fun yourHomeScreen(): String = when (languageCode) {

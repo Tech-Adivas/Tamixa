@@ -9,16 +9,26 @@ import com.tamixa.ui.strings.Strings
 import com.tamixa.repository.AuthRepository
 import com.tamixa.security.SessionExpiredNotifier
 import com.tamixa.ui.AppMessageNotifier
+import com.tamixa.application.port.PreferencesPort
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+/** Profile edit kept on the device until the server accepts it (see [PreferencesPort.getPendingProfileUpdate]). */
+@Serializable
+private data class PendingProfileUpdate(val nickname: String? = null, val displayName: String? = null)
+
+private val pendingProfileJson = Json { ignoreUnknownKeys = true }
 
 class AuthViewModel(
     private val sessionExpiredNotifier: SessionExpiredNotifier,
     private val authRepository: AuthRepository,
     private val appMessageNotifier: AppMessageNotifier,
+    private val preferences: PreferencesPort,
     private val scope: CoroutineScope
 ) {
     val sessionExpired = sessionExpiredNotifier.sessionExpired
@@ -105,7 +115,12 @@ class AuthViewModel(
             _currentUser.value = UiState.Loading
             authRepository.me()
                 .fold(
-                    onSuccess = { _currentUser.value = UiState.Success(it) },
+                    onSuccess = { user ->
+                        // A local edit the server hasn't confirmed yet wins over the server copy; retry sending it.
+                        val pending = readPendingProfile()
+                        _currentUser.value = UiState.Success(pending?.let { user.withProfile(it) } ?: user)
+                        if (pending != null) pushPendingProfile(pending, showResult = false)
+                    },
                     onFailure = {
                         val msg = errorMessageForUser(it)
                         _currentUser.value = UiState.Error(msg, it)
@@ -115,21 +130,61 @@ class AuthViewModel(
         }
     }
 
+    /**
+     * Local first: the edit is saved on the device and shown right away, then sent to the server.
+     * If the server can't be reached it stays pending and is retried on the next [loadCurrentUser].
+     */
     fun updateProfile(nickname: String?, displayName: String?) {
         scope.launch {
-            authRepository.updateProfile(nickname, displayName)
-                .fold(
-                    onSuccess = {
-                        loadCurrentUser()
-                        appMessageNotifier.show(Strings.profileUpdated())
-                    },
-                    onFailure = {
-                        TamixaLog.w("AuthViewModel", "updateProfile failed", it)
-                        appMessageNotifier.showError()
-                    }
-                )
+            val pending = PendingProfileUpdate(nickname, displayName)
+            runCatching { preferences.setPendingProfileUpdate(pendingProfileJson.encodeToString(PendingProfileUpdate.serializer(), pending)) }
+                .onFailure { TamixaLog.w("AuthViewModel", "Saving profile on device failed", it) }
+            (_currentUser.value as? UiState.Success)?.let { _currentUser.value = UiState.Success(it.data.withProfile(pending)) }
+            pushPendingProfile(pending, showResult = true)
         }
     }
+
+    private suspend fun readPendingProfile(): PendingProfileUpdate? {
+        val raw = runCatching { preferences.getPendingProfileUpdate() }.getOrDefault("")
+        if (raw.isBlank()) return null
+        return runCatching { pendingProfileJson.decodeFromString(PendingProfileUpdate.serializer(), raw) }
+            .onFailure {
+                TamixaLog.w("AuthViewModel", "Discarding unreadable pending profile edit", it)
+                preferences.setPendingProfileUpdate("")
+            }
+            .getOrNull()
+    }
+
+    private suspend fun pushPendingProfile(pending: PendingProfileUpdate, showResult: Boolean) {
+        authRepository.updateProfile(pending.nickname, pending.displayName)
+            .fold(
+                onSuccess = {
+                    preferences.setPendingProfileUpdate("")
+                    TamixaLog.i("AuthViewModel", "Profile synced to server")
+                    if (showResult) {
+                        loadCurrentUser()
+                        appMessageNotifier.show(Strings.profileUpdated())
+                    }
+                },
+                onFailure = {
+                    val status = (it as? com.tamixa.network.AuthApiException)?.statusCode
+                    val rejected = status != null && status in 400..499 && status !in setOf(401, 408, 429)
+                    if (rejected) {
+                        // The server refused this edit (e.g. invalid nickname); retrying won't help, so drop it.
+                        TamixaLog.w("AuthViewModel", "Profile edit rejected by server ($status); discarded", it)
+                        preferences.setPendingProfileUpdate("")
+                        loadCurrentUser()
+                        if (showResult) appMessageNotifier.showError()
+                    } else {
+                        TamixaLog.w("AuthViewModel", "Profile sync failed; kept on device for retry", it)
+                        if (showResult) appMessageNotifier.show(Strings.profileSavedOffline())
+                    }
+                }
+            )
+    }
+
+    private fun com.tamixa.domain.CurrentUser.withProfile(p: PendingProfileUpdate) =
+        copy(nickname = p.nickname ?: nickname, displayName = p.displayName ?: displayName)
 
     fun requestPasswordlessCode(email: String) {
         if (!AuthValidation.isEmailValid(email)) {

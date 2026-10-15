@@ -198,6 +198,15 @@ fun AudioPlayerScreen(
     onPlayPause: () -> Unit,
     onBack: () -> Unit,
     progress: Float = 0f,
+    /**
+     * Interactive stories: whole-story progress across the scene clips (see InteractiveStoryTimeline). Drives the
+     * progress bar, clock and completion; [progress] (the current clip) still drives the scene's read-along.
+     */
+    storyProgress: Float? = null,
+    /** Interactive stories: estimated whole-story length for the clock; see [storyProgress]. */
+    storyDurationSeconds: Int? = null,
+    /** Interactive stories: question points on the progress bar (0..1). */
+    questionMarks: List<Float> = emptyList(),
     isLoading: Boolean = false,
     /** Optional message shown during loading (e.g. "Preparing audio..."). */
     loadingMessage: String? = null,
@@ -242,6 +251,8 @@ fun AudioPlayerScreen(
     onBottomNavProfile: () -> Unit = {},
     /** Optional: open story quiz (e.g. when story is linked to a child). */
     onOpenQuiz: (() -> Unit)? = null,
+    /** Optional extra action in the player's top bar, left of the ⋮ menu (e.g. the interactive story's help chip). */
+    topBarAction: (@Composable () -> Unit)? = null,
     /** Optional line under the title (Learn cue or theme for generated). */
     playbackSubtitle: String? = null,
     /** Library interactive graph: small parent-facing cue near the title. */
@@ -369,6 +380,7 @@ fun AudioPlayerScreen(
                                 onBack = onBack,
                                 onOpenVoiceMenu = onVoiceAndModeChange?.let { { playMenuExpanded = true } },
                                 onOpenQuiz = onOpenQuiz,
+                                topBarAction = topBarAction,
                                 isFavorite = isFavorite,
                                 onFavoriteToggle = onFavoriteToggle,
                                 onAddToList = onAddToList,
@@ -384,6 +396,9 @@ fun AudioPlayerScreen(
                                 onSpeedChange = onSpeedChange,
                                 relatedStories = relatedStories,
                                 onRelatedStoryClick = onRelatedStoryClick,
+                                storyProgress = storyProgress,
+                                storyDurationSeconds = storyDurationSeconds,
+                                questionMarks = questionMarks,
                             )
                         }
                     }
@@ -465,6 +480,11 @@ private fun AudioPlayerVoiceMenuSheet(
         else if (familyVoice != null) listOf(familyVoice)
         else emptyList()
     }
+    // Same names as the "My recordings" list: "Recording 1" is the oldest (lowest profile id).
+    val recordingNumbers = remember(clonedVoices) {
+        clonedVoices.sortedBy { it.voiceProfile.substringAfter(':').toLongOrNull() ?: Long.MAX_VALUE }
+            .withIndex().associate { (index, v) -> v.voiceProfile to index + 1 }
+    }
     val hasMyVoice = myVoiceOptions.isNotEmpty()
     val firstMyVoiceProfile = myVoiceOptions.firstOrNull()?.voiceProfile
     val isDefaultSelected = playbackMode == "default"
@@ -529,7 +549,9 @@ private fun AudioPlayerVoiceMenuSheet(
             )
             Spacer(Modifier.height(8.dp))
             myVoiceOptions.forEach { voiceOpt ->
-                val label = voiceOpt.displayLabel?.takeIf { it.isNotBlank() } ?: Strings.playScreenMyVoice()
+                val label = recordingNumbers[voiceOpt.voiceProfile]?.let { Strings.savedRecordingNumber(it) }
+                    ?: voiceOpt.displayLabel?.takeIf { it.isNotBlank() }
+                    ?: Strings.playScreenMyVoice()
                 val isThisSelected = isMyVoiceSelected && voiceOpt.voiceProfile.equals(selectedVoice, ignoreCase = true)
                 Row(
                     modifier = Modifier
@@ -723,6 +745,7 @@ private fun PlayerContent(
     onBack: () -> Unit,
     onOpenVoiceMenu: (() -> Unit)? = null,
     onOpenQuiz: (() -> Unit)? = null,
+    topBarAction: (@Composable () -> Unit)? = null,
     isFavorite: Boolean = false,
     onFavoriteToggle: (() -> Unit)? = null,
     onAddToList: (() -> Unit)? = null,
@@ -738,6 +761,9 @@ private fun PlayerContent(
     onSpeedChange: ((Float) -> Unit)? = null,
     relatedStories: List<Story> = emptyList(),
     onRelatedStoryClick: ((Story) -> Unit)? = null,
+    storyProgress: Float? = null,
+    storyDurationSeconds: Int? = null,
+    questionMarks: List<Float> = emptyList(),
 ) {
     val storyTextForDisplay = remember(story.id, story.content) {
         NarrationTextUtils.stripRemainingMarkers(story.content)
@@ -788,19 +814,23 @@ private fun PlayerContent(
     LaunchedEffect(story.id) {
         analytics?.onStoryStarted?.invoke(story, 0)
     }
-    LaunchedEffect(progress) {
-        val positionSec = (progress * totalSec).toInt()
-        analytics?.onProgress?.invoke(story, progress, positionSec)
-        if (progress >= 0.99f) analytics?.onCompleted?.invoke(story, totalSec)
+    // Bar, clock and completion follow the whole story; for an interactive story that spans all its scene clips,
+    // so it isn't "completed" when the first scene ends.
+    val barProgress = storyProgress ?: progress
+    val barTotalSec = storyDurationSeconds?.takeIf { storyProgress != null && it > 0 } ?: totalSec
+    LaunchedEffect(barProgress) {
+        val positionSec = (barProgress * barTotalSec).toInt()
+        analytics?.onProgress?.invoke(story, barProgress, positionSec)
+        if (barProgress >= 0.99f) analytics?.onCompleted?.invoke(story, barTotalSec)
     }
     val scrollState = rememberScrollState()
-    val posSec = (progress * totalSec).toInt()
+    val posSec = (barProgress * barTotalSec).toInt()
     val seekSec = (TamixaConstants.SEEK_MS / 1000).toInt()
     val snippetSurface = TamixaColors.nightSkySurface
     val heroControlTint = TamixaColors.onInputSurface
     val narrativeVisuals = narrativeScenes.orEmpty()
-    val chapterTicks = remember(narrativeVisuals) {
-        narrativeVisuals.map { it.startProgress }.filter { it in 0.02f..0.98f }.distinct().sorted()
+    val chapterTicks = remember(narrativeVisuals, questionMarks) {
+        (narrativeVisuals.map { it.startProgress } + questionMarks).filter { it in 0.02f..0.98f }.distinct().sorted()
     }
     val learnStory = story.theme.contains("Learn", ignoreCase = true) ||
         (story.category?.contains("Learn", ignoreCase = true) == true)
@@ -935,6 +965,12 @@ private fun PlayerContent(
                     )
                 }
                 val showOverflowMenu = onOpenVoiceMenu != null || onOpenQuiz != null
+                // Extra action and ⋮ menu share one row so they sit side by side instead of overlapping.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                topBarAction?.invoke()
                 if (showOverflowMenu) {
                     Box(modifier = Modifier.wrapContentSize(Alignment.TopEnd)) {
                         PlayerHeroCircleButton(
@@ -979,8 +1015,9 @@ private fun PlayerContent(
                             }
                         }
                     }
-                } else {
+                } else if (topBarAction == null) {
                     Spacer(Modifier.size(48.dp))
+                }
                 }
             }
         }
@@ -1369,7 +1406,7 @@ private fun PlayerContent(
                             .height(22.dp)
                             .padding(horizontal = 6.dp)
                     ) {
-                        val frac = progress.coerceIn(0f, 1f)
+                        val frac = barProgress.coerceIn(0f, 1f)
                         val thumb = 14.dp
                         if (chapterTicks.isNotEmpty()) {
                             Canvas(
@@ -1417,7 +1454,7 @@ private fun PlayerContent(
                         )
                     }
                     Text(
-                        text = formatPlaybackClock(totalSec),
+                        text = formatPlaybackClock(barTotalSec),
                         style = MaterialTheme.typography.labelMedium,
                         color = PlayerScreenMuted,
                         modifier = Modifier.width(44.dp),

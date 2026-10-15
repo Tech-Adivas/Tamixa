@@ -102,6 +102,24 @@ class FishAudioVoiceCloningAdapter(
         }
     }
 
+    /** DELETE /model/{id}. A 404 means the model is already gone, which counts as deleted. */
+    override fun deleteModel(modelId: String): Boolean {
+        if (apiKey.isBlank() || modelId.isBlank()) return false
+        return try {
+            val headers = HttpHeaders().apply { setBearerAuth(apiKey) }
+            restTemplate.exchange("${baseUrl.trimEnd('/')}/model/$modelId", HttpMethod.DELETE, HttpEntity<Unit>(headers), String::class.java)
+            failuresByModelId.remove(modelId)
+            log.info("Fish Audio model deleted modelId={}", modelId.take(12))
+            true
+        } catch (e: HttpClientErrorException.NotFound) {
+            log.info("Fish Audio model already deleted modelId={}", modelId.take(12))
+            true
+        } catch (e: Exception) {
+            log.warn("Fish Audio deleteModel failed modelId={}: {}", modelId.take(12), e.message)
+            false
+        }
+    }
+
     @Suppress("UNUSED_PARAMETER")
     override fun synthesize(text: String, modelId: String, language: String): ByteArray? {
         if (apiKey.isBlank()) {

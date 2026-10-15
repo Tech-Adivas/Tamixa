@@ -67,6 +67,7 @@ fun sharedModule(
     single { StoryRepository(get(), get()) }
     single { VoiceRepository(get()) }
     single { AvatarRepository(get()) }
+    single { com.tamixa.repository.LocalMediaSyncRepository(get(), get(), get()) }
     single { SubscriptionRepository(get()) }
     single { AppMessageNotifier() }
 }

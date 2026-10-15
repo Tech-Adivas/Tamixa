@@ -30,7 +30,8 @@ import {
 
 const PAGE_SIZE = 20;
 /** Stories that need, are getting, or just got narration audio (comma list understood by GET /admin/stories). */
-const AUDIO_QUEUE_STATUSES = "APPROVED,AUDIO_GENERATING,AUDIO_FAILED,AUDIO_REVIEW";
+// PUBLISHED is listed too so live stories can be unpublished or have their audio regenerated.
+const AUDIO_QUEUE_STATUSES = "APPROVED,AUDIO_GENERATING,AUDIO_FAILED,AUDIO_REVIEW,PUBLISHED";
 const POLL_INTERVAL_MS = 3000;
 const POLL_DURATION_MS = 6 * 60 * 1000;
 
@@ -106,6 +107,7 @@ export default function AudioGenerationPage() {
     generatedAt?: string;
   } | null>(null);
   const [isApproving, setIsApproving] = useState(false);
+  const [publishingId, setPublishingId] = useState<number | null>(null);
 
   const { showSuccess, showError } = useActionResult();
   const { refresh: refreshPipelineActive, registerTriggered } = usePipelineActive();
@@ -274,6 +276,28 @@ export default function AudioGenerationPage() {
     }
   };
 
+  const handlePublish = async (storyId: number, title: string, publish: boolean) => {
+    const question = publish
+      ? `Publish "${title}"? It becomes visible to all parents in the app.`
+      : `Unpublish "${title}"? It disappears from the app until you publish it again.`;
+    if (!window.confirm(question)) return;
+    setPublishingId(storyId);
+    try {
+      if (publish) {
+        await api.admin.publishLibraryStory(storyId);
+        showSuccess("Story published", `"${title}" is now live in the app.`);
+      } else {
+        await api.admin.unpublishLibraryStory(storyId);
+        showSuccess("Story unpublished", `"${title}" is no longer visible in the app.`);
+      }
+      load(true);
+    } catch (e) {
+      showError(publish ? "Publish failed" : "Unpublish failed", mapErrorMessage(e));
+    } finally {
+      setPublishingId(null);
+    }
+  };
+
   const rows = data?.content ?? [];
   const visibleRows = focusedStoryId == null ? rows : rows.filter((row) => row.id === focusedStoryId);
 
@@ -283,7 +307,8 @@ export default function AudioGenerationPage() {
         <h1 className="page-header">Audio Generation</h1>
         <p className="page-subheader mt-1">
           Generate and manage TTS (text-to-speech) audio for approved stories across all supported languages.
-          Stories must be in <strong>APPROVED</strong> or an audio status (generating, failed, review).
+          Stories must be in <strong>APPROVED</strong> or an audio status (generating, failed, review). After listening,
+          click <strong>Publish</strong> to make a story live in the app; <strong>Unpublish</strong> takes it back out.
         </p>
       </div>
 
@@ -372,6 +397,19 @@ export default function AudioGenerationPage() {
                             </Link>
                             <div className="text-xs text-muted-foreground mt-1">
                               {row.category && <span>{row.category}</span>}
+                            </div>
+                            <div className="mt-1">
+                              {row.status === "PUBLISHED" ? (
+                                <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                                  Live in app
+                                </span>
+                              ) : row.status === "AUDIO_REVIEW" ? (
+                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                  Ready to publish
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">Not in app</span>
+                              )}
                             </div>
                           </td>
                           <td className="px-4 py-3 text-left align-top">
@@ -500,6 +538,19 @@ export default function AudioGenerationPage() {
                                   })}
                                 </DropdownMenuContent>
                               </DropdownMenu>
+
+                              {(row.status === "AUDIO_REVIEW" || row.status === "PUBLISHED") && (
+                                <Button
+                                  size="sm"
+                                  variant={row.status === "PUBLISHED" ? "outline" : "default"}
+                                  className="h-8 px-3"
+                                  disabled={publishingId === row.id || isRunning}
+                                  onClick={() => handlePublish(row.id, row.title || "Untitled", row.status !== "PUBLISHED")}
+                                  title={row.status === "PUBLISHED" ? "Remove from the app" : "Make live in the app"}
+                                >
+                                  {row.status === "PUBLISHED" ? "Unpublish" : "Publish"}
+                                </Button>
+                              )}
                             </div>
                           </td>
                         </tr>

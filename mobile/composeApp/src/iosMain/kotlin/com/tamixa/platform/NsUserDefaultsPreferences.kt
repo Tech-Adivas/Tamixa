@@ -128,6 +128,32 @@ class NsUserDefaultsPreferences : PreferencesPort {
         defaults.synchronize()
     }
 
+    override suspend fun getPendingProfileUpdate(): String =
+        defaults.stringForKey("${prefix}pending_profile_update")?.trim().orEmpty()
+
+    override suspend fun setPendingProfileUpdate(json: String) {
+        val t = json.trim()
+        if (t.isEmpty()) {
+            defaults.removeObjectForKey("${prefix}pending_profile_update")
+        } else {
+            defaults.setObject(t, forKey = "${prefix}pending_profile_update")
+        }
+        defaults.synchronize()
+    }
+
+    override suspend fun getPendingVoiceDeletes(): String =
+        defaults.stringForKey("${prefix}pending_voice_deletes")?.trim().orEmpty()
+
+    override suspend fun setPendingVoiceDeletes(value: String) {
+        val t = value.trim()
+        if (t.isEmpty()) {
+            defaults.removeObjectForKey("${prefix}pending_voice_deletes")
+        } else {
+            defaults.setObject(t, forKey = "${prefix}pending_voice_deletes")
+        }
+        defaults.synchronize()
+    }
+
     override suspend fun getLifeSkillPreferredChildId(): Long? {
         val s = defaults.stringForKey("${prefix}life_skill_preferred_child_id")?.trim().orEmpty()
         if (s.isEmpty()) return null

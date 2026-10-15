@@ -3,6 +3,7 @@ package com.tamixa.application.account
 import com.tamixa.application.port.AccountDeletionPort
 import com.tamixa.application.port.ParentRepositoryPort
 import com.tamixa.application.port.TokenRevocationPort
+import com.tamixa.application.voice.VoiceCloningService
 import com.tamixa.domain.Role
 import com.tamixa.infrastructure.logging.PiiMask
 import org.slf4j.LoggerFactory
@@ -16,7 +17,8 @@ import org.springframework.stereotype.Service
 class AccountDeletionService(
     private val accountDeletionPort: AccountDeletionPort,
     private val parentRepository: ParentRepositoryPort,
-    private val tokenRevocationPort: TokenRevocationPort
+    private val tokenRevocationPort: TokenRevocationPort,
+    private val voiceCloningService: VoiceCloningService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -45,10 +47,14 @@ class AccountDeletionService(
             // Continue with deletion even if revocation fails
         }
 
+        // The parent's voice recordings (S3) and cloned voices (ElevenLabs / Fish Audio) live outside the database:
+        // collect them first, remove them only once the account rows are deleted.
+        val voiceData = voiceCloningService.collectVoiceData(parent.id)
         val deleted = accountDeletionPort.deleteAccount(email)
         if (!deleted) {
             throw AccountDeletionException("Account could not be deleted")
         }
+        voiceCloningService.purgeVoiceData(parent.id, voiceData)
         log.info("Account deleted successfully email={}", PiiMask.maskEmail(email))
     }
 }

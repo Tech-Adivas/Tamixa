@@ -71,6 +71,22 @@ interface PreferencesPort {
     suspend fun setSubscriptionWebUrlOverride(value: String)
 
     /**
+     * Profile edit (nickname, display name) saved on the device first and not yet confirmed by the server,
+     * as JSON. Empty when nothing is pending. Cleared once the server accepts it.
+     */
+    suspend fun getPendingProfileUpdate(): String
+
+    suspend fun setPendingProfileUpdate(json: String)
+
+    /**
+     * Server-side voice deletes still to do (recording already deleted on the device), one entry per line:
+     * "id:<voiceProfileId>" or "file:<recording file name>". Empty when nothing is pending.
+     */
+    suspend fun getPendingVoiceDeletes(): String
+
+    suspend fun setPendingVoiceDeletes(value: String)
+
+    /**
      * Profile → life-skill counters: which child id the parent last chose when multiple children exist.
      * Null clears storage (use first available child in UI).
      */

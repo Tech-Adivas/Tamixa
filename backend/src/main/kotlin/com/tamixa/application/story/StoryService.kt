@@ -180,7 +180,7 @@ class StoryService(
 
         try {
         var payloadFromCache = false
-        val payload = metrics.recordStoryGenerationLatency {
+        var payload = metrics.recordStoryGenerationLatency {
             val cached = if (cacheKey != null) storyCache.get(cacheKey) else null
             if (cached != null) {
                 metrics.recordCacheHit()
@@ -207,7 +207,7 @@ class StoryService(
         // Fresh generations are validated before cache write inside generateWithRetryAndFallback; re-validate cache hits
         // so policy changes and corrupt/legacy cache entries cannot bypass StoryValidation.
         if (payloadFromCache) {
-            storyValidation.validate(payload, childContext.age)
+            payload = storyValidation.validate(payload, childContext.age)
         }
 
         val (wordCount, readingTimeMinutes) = computeReadingMeta(payload.storyText)
@@ -378,9 +378,9 @@ class StoryService(
                     String.format("%.2f", modelEstimatedMinutes),
                     WORDS_PER_MINUTE
                 )
-                storyValidation.validate(result.payload, age)
-                cacheKey?.let { storyCache.set(it, objectMapper.writeValueAsString(result.payload)) }
-                result.payload
+                val validated = storyValidation.validate(result.payload, age)
+                cacheKey?.let { storyCache.set(it, objectMapper.writeValueAsString(validated)) }
+                validated
             } catch (e: Exception) {
                 if (e is ContentModerationException || e is InvalidStoryRequestException || e is StoryTooLongException) throw e
                 null

@@ -192,6 +192,8 @@ app:
     api-key: ${OPENAI_API_KEY:}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com}
     model: ${OPENAI_MODEL:gpt-4o-mini}
+    # Cover images when image-generation.provider=openai. GPT Image models replace the retired dall-e-3.
+    image-model: ${OPENAI_IMAGE_MODEL:gpt-image-1}
     max-tokens: ${OPENAI_MAX_TOKENS:1024}
     bulk-max-tokens: ${OPENAI_BULK_MAX_TOKENS:2048}
     connect-timeout-ms: ${OPENAI_CONNECT_TIMEOUT_MS:15000}
@@ -218,7 +220,7 @@ app:
       connect-timeout-ms: ${GEMINI_CONNECT_TIMEOUT_MS:15000}
       read-timeout-ms: ${GEMINI_READ_TIMEOUT_MS:180000}
       moderation-required: ${GEMINI_MODERATION_REQUIRED:false}
-  # Still cover image: openai (DALL·E 3, default) or gemini (Gemini native image; same GEMINI_API_KEY as Veo/LLM when gemini).
+  # Still cover image: openai (GPT Image via app.openai.image-model, default) or gemini (Gemini native image; same GEMINI_API_KEY as Veo/LLM when gemini).
   image-generation:
     provider: ${AI_COVER_IMAGE_PROVIDER:openai}
     gemini:
@@ -311,8 +313,9 @@ app:
     pipeline-on-submit-only: ${PIPELINE_ON_SUBMIT_ONLY:true}
     # When true (default): Submit for review does not run translate/TTS; use Generate translations on story edit first, then Submit for review. When false: legacy full pipeline can run on submit.
     audio-after-approval: ${AUDIO_AFTER_APPROVAL:true}
-    # When false (default): Approve does not start TTS — use Narration (Story to Speech) → Generate audio. When true: Approve kicks off background TTS when audio is still missing.
-    auto-tts-on-approve: ${AUTO_TTS_ON_APPROVE:false}
+    # When true (default): Approve (content) starts background TTS when audio is still missing; the story stays off the app
+    # until its audio is reviewed and an admin clicks Publish. When false: generate audio manually from Narration.
+    auto-tts-on-approve: ${AUTO_TTS_ON_APPROVE:true}
     # TTS thread pool size (was 1). Increase to 4 for ~4x faster multi-story throughput. Must stay <= app.narration.max-concurrent-tts.
     tts-pool-size: ${TRANSLATION_PIPELINE_TTS_POOL_SIZE:4}
     # Rewrite step timeout (minutes). Prevents indefinite hang when OpenAI is slow. Fails to REWRITE_FAILED, retries.
@@ -333,11 +336,18 @@ app:
     public-base-url: ${AUDIO_PUBLIC_BASE_URL:http://localhost:8080}
     # Phase 4: optional MP4 URL (https or path under public-base-url); stream-url returns as hostStoryClipUrl (muted in app)
     host-story-clip-url: ${AUDIO_HOST_STORY_CLIP_URL:}
+    # HMAC secret for signed links to cloned-voice audio via /audio (required in production, same on every instance)
+    link-signing-secret: ${AUDIO_LINK_SIGNING_SECRET:}
+    link-expiry-minutes: ${AUDIO_LINK_EXPIRY_MINUTES:360}
   storage:
     type: ${STORAGE_TYPE:s3}
     # S3_BUCKET: bucket name (e.g. tamixa-audio) OR Access Point ARN (e.g. arn:aws:s3:us-east-1:ACCOUNT:accesspoint/name)
     s3-bucket: ${S3_BUCKET:tamixa-audio}
     s3-region: ${S3_REGION:us-east-1}
+    # Optional S3-compatible endpoint for local dev (e.g. MinIO: http://minio:9000). Leave blank for real AWS S3.
+    s3-endpoint: ${S3_ENDPOINT:}
+    s3-endpoint-access-key: ${S3_ENDPOINT_ACCESS_KEY:}
+    s3-endpoint-secret-key: ${S3_ENDPOINT_SECRET_KEY:}
   cdn:
     enabled: ${CDN_STREAM_ENABLED:false}
     # Max 10 min per security requirements (S3 presigned URLs)
@@ -448,11 +458,19 @@ app:
     google-cloud-api-key: ${GOOGLE_CLOUD_TTS_API_KEY:}
     eleven-labs-api-key: ${ELEVENLABS_API_KEY:}
     eleven-labs-base-url: ${ELEVENLABS_BASE_URL:https://api.elevenlabs.io}
+    # Cloned-voice likeness (ElevenLabs TTS voice_settings, 0..1). Higher similarity follows the parent's recording
+    # more closely; too high can copy its background noise. Stability: lower = more expressive, higher = steadier.
+    eleven-labs-stability: ${ELEVENLABS_STABILITY:0.5}
+    eleven-labs-similarity-boost: ${ELEVENLABS_SIMILARITY_BOOST:0.9}
+    eleven-labs-style: ${ELEVENLABS_STYLE:0.0}
+    eleven-labs-speaker-boost: ${ELEVENLABS_SPEAKER_BOOST:true}
     fish-audio-api-key: ${FISH_AUDIO_API_KEY:}
     fish-audio-base-url: ${FISH_AUDIO_BASE_URL:https://api.fish.audio}
     fish-audio-tts-model: ${FISH_AUDIO_TTS_MODEL:s2-pro}
     # Default localhost:9000 when backend runs on host. Use 10.0.2.2:9000 only when backend runs inside Android emulator (emulator's alias for host).
     xtts-base-url: ${XTTS_BASE_URL:http://localhost:9000}
+    # Shared secret for the XTTS service (header X-XTTS-Api-Key); must match XTTS_API_KEY on xtts-service.
+    xtts-api-key: ${XTTS_API_KEY:}
     # Read timeout for XTTS /synthesize (seconds). Full-story cloned synthesis can take 5–30+ min; increase if you see "Read timed out".
     xtts-timeout-seconds: ${XTTS_TIMEOUT_SECONDS:1800}
   subscription:

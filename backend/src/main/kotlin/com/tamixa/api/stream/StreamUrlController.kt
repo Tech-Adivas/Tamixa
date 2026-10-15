@@ -66,7 +66,8 @@ class StreamUrlController(
     private val playbackManifestService: PlaybackManifestService,
     private val parentRepository: ParentRepositoryPort,
     private val subscriptionService: SubscriptionService,
-    private val appProperties: AppProperties
+    private val appProperties: AppProperties,
+    private val interactiveSegmentVoiceService: com.tamixa.application.stream.InteractiveSegmentVoiceService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -369,6 +370,32 @@ class StreamUrlController(
         val script = narrationScriptService.getNarrationScript(id, language, parentId)
         return if (script != null) ResponseEntity.ok(NarrationScriptResponse(script))
         else ResponseEntity.notFound().build()
+    }
+
+    /**
+     * GET /stories/library/{id}/interactive-segments/{segmentId}/audio-url?language=ta&voiceProfile=cloned:14
+     * Signed URL of one interactive segment spoken in the caller's own voice; made on first request (can take
+     * several seconds), then reused. 404 when the story/segment/voice isn't available to the caller (the app keeps
+     * the default-voice segment), 402 without voice cloning on the plan, 502 when the voice service failed.
+     */
+    @GetMapping("/library/{id}/interactive-segments/{segmentId}/audio-url")
+    fun getInteractiveSegmentAudioUrl(
+        @PathVariable id: Long,
+        @PathVariable segmentId: String,
+        @RequestParam(defaultValue = "ta") language: String,
+        @RequestParam voiceProfile: String,
+        @AuthenticationPrincipal user: UserDetails?
+    ): ResponseEntity<Map<String, String>> {
+        val parentId = resolveParentId(user) ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
+        if (segmentId.length > 80 || language.length > 10 || voiceProfile.length > 40) return ResponseEntity.badRequest().build()
+        return when (val result = interactiveSegmentVoiceService.segmentUrl(id, language, segmentId, voiceProfile, parentId)) {
+            is com.tamixa.application.stream.InteractiveSegmentVoiceService.Result.Ready ->
+                ResponseEntity.ok(mapOf("url" to result.url))
+            com.tamixa.application.stream.InteractiveSegmentVoiceService.Result.NotFound ->
+                ResponseEntity.notFound().build()
+            com.tamixa.application.stream.InteractiveSegmentVoiceService.Result.Failed ->
+                ResponseEntity.status(HttpStatus.BAD_GATEWAY).build()
+        }
     }
 
     /**

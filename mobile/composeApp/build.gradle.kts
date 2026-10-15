@@ -47,6 +47,8 @@ kotlin {
         val commonTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(libs.kotlinx.coroutines.test)
+                implementation(libs.ktor.client.mock)
             }
         }
         val commonMain by getting {
@@ -154,6 +156,11 @@ val tamixaUploadStoreFile: File? =
 android {
     namespace = "com.tamixa.android"
     compileSdk = 35
+
+    // Local unit tests: android.util.Log (TamixaLog, Ktor) returns defaults instead of throwing "not mocked".
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 
 
     defaultConfig {

@@ -146,6 +146,26 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
         }
     }
 
+    override suspend fun getPendingProfileUpdate(): String =
+        context.dataStore.data.first()[PENDING_PROFILE_UPDATE_KEY]?.trim().orEmpty()
+
+    override suspend fun setPendingProfileUpdate(json: String) {
+        context.dataStore.edit { prefs ->
+            val t = json.trim()
+            if (t.isEmpty()) prefs.remove(PENDING_PROFILE_UPDATE_KEY) else prefs[PENDING_PROFILE_UPDATE_KEY] = t
+        }
+    }
+
+    override suspend fun getPendingVoiceDeletes(): String =
+        context.dataStore.data.first()[PENDING_VOICE_DELETES_KEY]?.trim().orEmpty()
+
+    override suspend fun setPendingVoiceDeletes(value: String) {
+        context.dataStore.edit { prefs ->
+            val t = value.trim()
+            if (t.isEmpty()) prefs.remove(PENDING_VOICE_DELETES_KEY) else prefs[PENDING_VOICE_DELETES_KEY] = t
+        }
+    }
+
     override suspend fun getLifeSkillPreferredChildId(): Long? {
         val s = context.dataStore.data.first()[LIFE_SKILL_PREFERRED_CHILD_ID_KEY]?.trim().orEmpty()
         if (s.isEmpty()) return null
@@ -183,6 +203,8 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
         private val STORY_ART_PERSONALIZATION_OPT_IN_KEY = booleanPreferencesKey("story_art_personalization_opt_in")
         private val API_BASE_URL_OVERRIDE_KEY = stringPreferencesKey("api_base_url_override")
         private val SUBSCRIPTION_WEB_URL_OVERRIDE_KEY = stringPreferencesKey("subscription_web_url_override")
+        private val PENDING_PROFILE_UPDATE_KEY = stringPreferencesKey("pending_profile_update")
+        private val PENDING_VOICE_DELETES_KEY = stringPreferencesKey("pending_voice_deletes")
         private val LIFE_SKILL_PREFERRED_CHILD_ID_KEY = stringPreferencesKey("life_skill_preferred_child_id")
         private val CRISIS_SAFETY_VAULT_KEY = stringPreferencesKey("crisis_safety_vault_text")
     }

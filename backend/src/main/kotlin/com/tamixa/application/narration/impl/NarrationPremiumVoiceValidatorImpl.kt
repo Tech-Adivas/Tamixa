@@ -27,13 +27,16 @@ class NarrationPremiumVoiceValidatorImpl(
         if (voiceProfile == "default") return true
         // Cloned voice: gate by plan (PREMIUM/FAMILY/VOICE_PREMIUM only; FREE/STARTER must upgrade)
         if (voiceProfile.startsWith("cloned:")) {
-            if (parentId == null) return false
-            val sub = subscriptionService.getOrCreateSubscription(parentId)
-            return sub.plan in plansWithVoiceCloning && sub.isInGraceOrActive()
+            return parentId != null && canCloneVoice(parentId)
         }
         // Premium catalog voice (calm, etc.): need parentId and voicePremium flag
         if (parentId == null) return false
         val sub = subscriptionService.getOrCreateSubscription(parentId)
         return sub.allowsVoicePremium()
+    }
+
+    override fun canCloneVoice(parentId: Long): Boolean {
+        val sub = subscriptionService.getOrCreateSubscription(parentId)
+        return sub.plan in plansWithVoiceCloning && sub.isInGraceOrActive()
     }
 }

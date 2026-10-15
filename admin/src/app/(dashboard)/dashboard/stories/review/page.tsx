@@ -1,5 +1,6 @@
 "use client";
 
+import { titleLanguageMismatch } from "@/lib/script-language";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -424,6 +425,11 @@ export default function ContentReviewPage() {
                                     <h3 className="text-lg font-semibold mb-1 truncate">
                                       {story.title || `Story #${story.id}`}
                                     </h3>
+                                    {titleLanguageMismatch(story.title, story.language) && (
+                                      <p className="mb-1 inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                                        Title language mismatch: {titleLanguageMismatch(story.title, story.language)}
+                                      </p>
+                                    )}
                                     <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                                       <Badge variant="outline">{story.theme}</Badge>
                                       <span>•</span>

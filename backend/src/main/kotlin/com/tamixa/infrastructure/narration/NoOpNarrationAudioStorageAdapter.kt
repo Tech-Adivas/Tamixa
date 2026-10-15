@@ -25,4 +25,9 @@ class NoOpNarrationAudioStorageAdapter : AudioStorageService {
         log.warn("NoOp storage: S3 not configured. Returning placeholder path for storyId={} lang={} voice={}", storyId, language, voiceProfile)
         return "stories/$storyId/$language/$slug.mp3"
     }
+
+    /** Nothing is stored without S3, so there is nothing to delete. */
+    override fun deleteNarrationAudio(key: String): Boolean = true
+
+    override fun listNarrationKeys(prefix: String): Sequence<String> = emptySequence()
 }

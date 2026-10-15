@@ -3,6 +3,7 @@ package com.tamixa.api
 import com.tamixa.api.dto.CreateVoiceCloningJobRequest
 import com.tamixa.api.dto.VoiceCloningJobDto
 import com.tamixa.api.dto.VoiceTierDto
+import com.tamixa.application.narration.NarrationPremiumVoiceValidator
 import com.tamixa.application.port.ParentRepositoryPort
 import com.tamixa.application.subscription.SubscriptionTierService
 import com.tamixa.application.voice.VoiceCloningService
@@ -17,7 +18,8 @@ import org.springframework.web.bind.annotation.*
 class VoiceCloningController(
     private val voiceCloningService: VoiceCloningService,
     private val subscriptionTierService: SubscriptionTierService,
-    private val parentRepository: ParentRepositoryPort
+    private val parentRepository: ParentRepositoryPort,
+    private val premiumVoiceValidator: NarrationPremiumVoiceValidator
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -55,8 +57,20 @@ class VoiceCloningController(
     @PostMapping
     @PreAuthorize("hasRole('PARENT')")
     fun createVoiceCloningJob(@jakarta.validation.Valid @RequestBody request: CreateVoiceCloningJobRequest): ResponseEntity<VoiceCloningJobDto> {
-        val job = voiceCloningService.createVoiceCloningJob(
-            parentId = getCurrentParentId(),
+        val parentId = getCurrentParentId()
+        // Recordings live under voices/{parentId}/ (see S3VoiceReferenceStorageAdapter); a parent may only clone their own.
+        val ownPrefix = "voices/$parentId/"
+        val paths = listOfNotNull(request.audioStoragePath, request.consentAudioStoragePath?.takeIf { it.isNotBlank() })
+        if (paths.any { !it.startsWith(ownPrefix) || ".." in it }) {
+            log.warn("Voice cloning job refused: audio path outside the caller's storage parentId={}", parentId)
+            return ResponseEntity.status(403).build()
+        }
+        if (!premiumVoiceValidator.canCloneVoice(parentId)) {
+            log.info("Voice cloning job refused: plan has no voice cloning parentId={}", parentId)
+            return ResponseEntity.status(402).build()
+        }
+        val job = voiceCloningService.requestCloneOfRecording(
+            parentId = parentId,
             audioStoragePath = request.audioStoragePath,
             consentAudioStoragePath = request.consentAudioStoragePath,
             audioFileSizeBytes = request.audioFileSizeBytes,

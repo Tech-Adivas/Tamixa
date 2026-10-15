@@ -1387,6 +1387,24 @@ const admin = {
     }
   },
 
+  /** AUDIO_REVIEW → PUBLISHED: the story goes live on the app (backend checks audio is ready). */
+  publishLibraryStory: async (id: number) => {
+    const res = await fetchWithAuth(`/api/v1/library/stories/${id}/publish`, { method: "POST" });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { message?: string };
+      throw new Error(err?.message ?? "Failed to publish story");
+    }
+  },
+
+  /** PUBLISHED → AUDIO_REVIEW: removes the story from the app; approval and audio are kept. */
+  unpublishLibraryStory: async (id: number) => {
+    const res = await fetchWithAuth(`/api/v1/library/stories/${id}/unpublish`, { method: "POST" });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { message?: string };
+      throw new Error(err?.message ?? "Failed to unpublish story");
+    }
+  },
+
   approveLibraryStoryTranslationNarration: async (id: number, language: string) => {
     const res = await fetchWithAuth(
       `/api/v1/admin/stories/${id}/translations/${encodeURIComponent(language)}/approve-narration`,

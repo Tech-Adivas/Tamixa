@@ -139,6 +139,7 @@ class XttsVoiceCloningAdapter(
             }
             val headers = HttpHeaders().apply {
                 contentType = MediaType.APPLICATION_JSON
+                appProperties.voiceCloning.xttsApiKey.takeIf { it.isNotBlank() }?.let { set("X-XTTS-Api-Key", it) }
             }
             val entity = HttpEntity(objectMapper.writeValueAsString(request), headers)
             val url = baseUrl.trimEnd('/') + "/synthesize"

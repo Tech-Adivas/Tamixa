@@ -5,9 +5,12 @@
 This service is for **self-hosted** voice cloning when you prefer not to use ElevenLabs. The backend calls `POST /synthesize` with:
 
 - **text** – story content to narrate (plain text, SSML stripped)
-- **reference_path** – storage path for the voice reference (e.g. `voices/18/file.mp3`)
+- **reference_path** – storage key for the voice reference (e.g. `voices/18/file.mp3`); a label only, never read from disk unless `XTTS_LOCAL_REFERENCE_DIR` is set (see below)
 - **language** – e.g. `ta`, `en`
+- **reference_audio_base64** – (optional) reference audio bytes; preferred source
 - **reference_url** – (optional) presigned URL to download the reference audio; when present, the service uses this to fetch the file and synthesize the story in that voice
+
+Reference audio from any source is capped at `XTTS_MAX_REFERENCE_BYTES` (default 20 MB).
 
 ## Two modes
 
@@ -102,6 +105,7 @@ First request after startup may be slow while the model loads. `GET /health` rep
 ```bash
 pip install -r requirements.txt
 # Optional: pip install -r requirements-xtts.txt
+export XTTS_API_KEY=<long-random-secret>   # same value as backend XTTS_API_KEY
 uvicorn main:app --host 0.0.0.0 --port 9000
 ```
 
@@ -109,8 +113,20 @@ uvicorn main:app --host 0.0.0.0 --port 9000
 
 ```bash
 docker build -t xtts-service .
-docker run -p 9000:9000 xtts-service
+docker run -p 9000:9000 -e XTTS_API_KEY=<long-random-secret> xtts-service
 ```
+
+### Security settings
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `XTTS_API_KEY` | *(empty)* | **Required.** `/synthesize` and `/preload` need header `X-XTTS-Api-Key` with this value; the backend sends it from its own `XTTS_API_KEY`. If unset, those endpoints return 503. |
+| `XTTS_ALLOW_UNAUTHENTICATED` | `false` | Local dev only: `true` skips the key check when `XTTS_API_KEY` is unset. |
+| `XTTS_REFERENCE_URL_ALLOWED_HOSTS` | *(empty)* | Comma-separated hosts `reference_url` may be fetched from (e.g. `my-bucket.s3.us-east-1.amazonaws.com`). Empty = `reference_url` is rejected; the backend's `reference_audio_base64` is used instead. Redirects are never followed. |
+| `XTTS_MAX_REFERENCE_BYTES` | `20971520` | Max reference audio size (20 MB). |
+| `XTTS_LOCAL_REFERENCE_DIR` | *(empty)* | Dev only; see below. |
+
+`/health` stays unauthenticated for container health checks.
 
 Ensure `tamixa.mp3` exists for stub mode. The backend uses `XTTS_BASE_URL` (default `http://localhost:9000`) to reach this service.
 
@@ -118,5 +134,7 @@ Ensure `tamixa.mp3` exists for stub mode. The backend uses `XTTS_BASE_URL` (defa
 
 ## Backend integration
 
-- When **S3** is enabled, the backend sends **reference_url** (presigned) so the XTTS service can fetch the reference file without S3 credentials.
-- Without **reference_url** (and without a local file at `reference_path`), the service falls back to returning `tamixa.mp3` (stub).
+- The backend sends **reference_audio_base64** (preferred) and, when S3 is enabled, a presigned **reference_url**. The URL is only fetched if its host is in `XTTS_REFERENCE_URL_ALLOWED_HOSTS`.
+- Set the same `XTTS_API_KEY` on the backend and this service, or every `/synthesize` call fails with 401/503.
+- Without **reference_audio_base64** / **reference_url**, the service falls back to returning `tamixa.mp3` (stub).
+- **Dev only – local reference files:** set `XTTS_LOCAL_REFERENCE_DIR=/path/to/refs` to let `reference_path` be read as a file *relative to that directory*. Paths that escape the directory, symlinks, and non-audio extensions (allowed: wav, mp3, m4a, aac, ogg, flac, webm) are ignored. Leave it unset in any shared or production environment.

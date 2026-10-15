@@ -25,6 +25,12 @@ interface ElevenLabsVoiceCloningPort {
     fun synthesize(text: String, voiceId: String, language: String): ByteArray?
 
     /**
+     * Delete a cloned voice at ElevenLabs (frees one of the account's custom voice slots).
+     * @return true when deleted or already gone, false on failure
+     */
+    fun deleteVoice(voiceId: String): Boolean
+
+    /**
      * True when this voice recently received provider-auth failures (for example HTTP 401).
      * Helps admin surfaces show actionable status without digging through logs.
      */

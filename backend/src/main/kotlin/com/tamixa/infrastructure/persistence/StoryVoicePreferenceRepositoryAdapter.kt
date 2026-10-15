@@ -45,6 +45,14 @@ class StoryVoicePreferenceRepositoryAdapter(
     override fun delete(parentId: Long, storyId: Long, storySource: String) {
         jpaRepository.deleteByParent_IdAndStoryIdAndStorySource(parentId, storyId, storySource)
     }
+
+    @org.springframework.transaction.annotation.Transactional
+    override fun deleteByVoiceProfileIn(voiceProfiles: Collection<String>) {
+        if (voiceProfiles.isNotEmpty()) jpaRepository.deleteByVoiceProfileIn(voiceProfiles)
+    }
+
+    override fun findDistinctVoiceProfilesStartingWith(prefix: String): List<String> =
+        jpaRepository.findDistinctVoiceProfilesStartingWith(prefix)
 }
 
 private fun StoryVoicePreferenceEntity.toDomain() = StoryVoicePreference(

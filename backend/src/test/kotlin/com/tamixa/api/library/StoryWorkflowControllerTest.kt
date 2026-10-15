@@ -164,7 +164,7 @@ class StoryWorkflowControllerTest {
         assertEquals(200, response.statusCode.value())
         assertNotNull(response.body)
         assertTrue(response.body!!.success)
-        assertEquals("DRAFT", response.body!!.status)
+        assertEquals("AUDIO_REVIEW", response.body!!.status)
         
         verify(storyLibraryService).unpublishStory(storyId)
     }

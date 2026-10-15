@@ -52,6 +52,15 @@ private val STORY_THEMES = listOf(
     "History & heroes", "Festivals", "Science & discovery",
 )
 
+/** Longest story idea the backend accepts (GenerateStoryRequest.parentCustomPrompt, @Size(max = 200)). */
+private const val STORY_IDEA_MAX_CHARS = 200
+
+/**
+ * AI story generation is Tamil only on the backend (any other language is rejected with
+ * GENERATION_LANGUAGE_NOT_SUPPORTED), so the request always asks for Tamil whatever the app language is.
+ */
+private const val STORY_GENERATION_LANGUAGE = "ta"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StoryGenerationScreen(
@@ -77,7 +86,7 @@ fun StoryGenerationScreen(
     var bedtimeMode by remember { mutableStateOf(false) }
     /** null = no learning-focus hint sent to API. */
     var learningFocusSelection by remember { mutableStateOf<String?>(null) }
-    val language = com.tamixa.util.TamixaConstants.DEFAULT_LANGUAGE
+    val language = STORY_GENERATION_LANGUAGE
     val scrollState = rememberScrollState()
     val effectiveListenerName = listenerName.trim().ifBlank { Strings.listener() }
 
@@ -87,7 +96,7 @@ fun StoryGenerationScreen(
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
             topBar = {
                 com.tamixa.ui.components.TamixaScreenTopBar(
-                    title = Strings.sendStory(),
+                    title = Strings.generateStory(),
                     onBack = onBack,
                     useTransparentBackground = true
                 )
@@ -144,16 +153,24 @@ fun StoryGenerationScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(8.dp))
+                        // A short idea for the AI: the backend rejects (HTTP 400) more than STORY_IDEA_MAX_CHARS.
                         OutlinedTextField(
                             value = parentCustomPrompt,
-                            onValueChange = { parentCustomPrompt = it.take(5000) },
+                            onValueChange = { parentCustomPrompt = it.take(STORY_IDEA_MAX_CHARS) },
                             placeholder = { Text(Strings.storyTextPlaceholder()) },
+                            supportingText = {
+                                Text(
+                                    Strings.storyIdeaCharacterCount(parentCustomPrompt.length, STORY_IDEA_MAX_CHARS),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.End
+                                )
+                            },
                             singleLine = false,
-                            minLines = 6,
-                            maxLines = 16,
+                            minLines = 3,
+                            maxLines = 6,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 180.dp)
+                                .heightIn(min = 100.dp)
                         )
                         Spacer(Modifier.height(20.dp))
                         Text(
@@ -405,7 +422,7 @@ fun StoryGenerationScreen(
                                     }
                                 )
                             },
-                            text = Strings.sendStory(),
+                            text = Strings.generateStory(),
                             modifier = Modifier.fillMaxWidth(),
                             enabled = true,
                             loading = generateState is UiState.Loading

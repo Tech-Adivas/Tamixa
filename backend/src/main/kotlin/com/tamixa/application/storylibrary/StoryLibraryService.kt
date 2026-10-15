@@ -5,6 +5,7 @@ import com.tamixa.api.admin.LibraryStoryMapper.toResponse
 import com.tamixa.api.admin.dto.LibraryStoryListingResponse
 import com.tamixa.api.admin.dto.LibraryStoryResponse
 import com.tamixa.api.admin.dto.TranslationContentEntryDto
+import com.tamixa.common.ScriptLanguage
 import com.tamixa.application.narration.StoryProcessingService
 import com.tamixa.application.port.ProxyStoragePort
 import com.tamixa.application.port.StoryLibraryEventPublisherPort
@@ -428,6 +429,7 @@ class StoryLibraryService(
         StoryLibraryValidation.validateMinWordCount(content).getOrElse { throw it }
         // Script validation: ensure content matches selected language (bulk generator + manual create)
         StoryLibraryValidation.validateScriptForLanguage(content, language).getOrElse { throw it }
+        requireTitlesInLanguage(title, language.trim().lowercase().take(10), translationContentEntries)
         // Duplicate title (when title provided)
         title?.takeIf { it.isNotBlank() }?.let { t ->
             if (repository.existsByTitle(t)) {
@@ -559,8 +561,36 @@ class StoryLibraryService(
     fun findById(id: Long): LibraryStory? = repository.findById(id)
 
     /**
-     * Maintenance normalization:
-     * if narration has been approved, master status should be PUBLISHED.
+     * Refuses a story title, or a per-language title, written in another language than its story
+     * (e.g. a Telugu title on a Tamil story) — such titles otherwise reach review and the app unnoticed.
+     */
+    private fun requireTitlesInLanguage(
+        masterTitle: String?,
+        masterLang: String,
+        translationEntries: Map<String, TranslationContentEntryDto>?,
+    ) {
+        if (!masterTitle.isNullOrBlank() && !ScriptLanguage.matches(masterTitle, masterLang)) {
+            throw IllegalArgumentException(ScriptLanguage.titleMismatchMessage(masterTitle, masterLang))
+        }
+        translationEntries?.forEach { (lang, entry) ->
+            val t = entry.title
+            if (!t.isNullOrBlank() && !ScriptLanguage.matches(t, lang)) {
+                throw IllegalArgumentException("${ScriptLanguage.nameOf(lang)} version: ${ScriptLanguage.titleMismatchMessage(t, lang)}")
+            }
+        }
+    }
+
+    private val preApprovalStatuses = setOf(
+        com.tamixa.domain.LibraryStoryStatus.DRAFT,
+        com.tamixa.domain.LibraryStoryStatus.SUBMITTED,
+        com.tamixa.domain.LibraryStoryStatus.TRANSLATING,
+        com.tamixa.domain.LibraryStoryStatus.TRANSLATION_FAILED,
+        com.tamixa.domain.LibraryStoryStatus.CONTENT_REVIEW,
+    )
+
+    /**
+     * Maintenance normalization: an approved story still in a pre-approval status (draft / translation / content
+     * review) moves to AUDIO_REVIEW. It never publishes: going live is the admin's Publish action after audio review.
      */
     @Transactional
     fun normalizeMasterStatusesForApprovedStories(pageSize: Int = 200): Map<String, Any> {
@@ -572,8 +602,8 @@ class StoryLibraryService(
             val result = repository.findAll(PageRequest.of(page, pageSize.coerceIn(20, 500)))
             scanned += result.numberOfElements
             result.content.forEach { story ->
-                if (story.narrationApprovedAt != null && story.status != com.tamixa.domain.LibraryStoryStatus.PUBLISHED) {
-                    repository.updateStatus(story.id, com.tamixa.domain.LibraryStoryStatus.PUBLISHED)
+                if (story.narrationApprovedAt != null && story.status in preApprovalStatuses) {
+                    repository.updateStatus(story.id, com.tamixa.domain.LibraryStoryStatus.AUDIO_REVIEW)
                     changed++
                     changedIds += story.id
                 }
@@ -1100,7 +1130,33 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
      * target storage key exists so clients do not 404. When false (admin editor), always rewrite paths so the JSON
      * matches the selected source language even before English (etc.) segment TTS is uploaded.
      */
+    /**
+     * Interactive graph for [localeLang]. For parent playback ([requireExistingSegmentAudioForRewrite]) a graph whose
+     * narration/answers are in another language is dropped, so the story plays as a normal narrated story instead
+     * (e.g. English questions left on a story regenerated in Tamil). The admin editor still gets it to fix it.
+     */
     private fun interactiveGraphJsonNodeForLocale(
+        master: LibraryStory,
+        translation: StoryTranslation?,
+        localeLang: String,
+        requireExistingSegmentAudioForRewrite: Boolean,
+    ): JsonNode? {
+        val graph = interactiveGraphJsonNodeForLocaleUnchecked(master, translation, localeLang, requireExistingSegmentAudioForRewrite)
+            ?: return null
+        if (!requireExistingSegmentAudioForRewrite) return graph
+        val lang = effectiveLanguage(localeLang)
+        val spoken = interactiveGraphSpokenText(graph)
+        if (spoken.isNotBlank() && !ScriptLanguage.matches(spoken, lang)) {
+            log.warn(
+                "Interactive part of story id={} is in {} but playback language is {}; serving it as a normal story",
+                master.id, ScriptLanguage.nameOf(ScriptLanguage.detect(spoken)), lang
+            )
+            return null
+        }
+        return graph
+    }
+
+    private fun interactiveGraphJsonNodeForLocaleUnchecked(
         master: LibraryStory,
         translation: StoryTranslation?,
         localeLang: String,
@@ -1136,6 +1192,36 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         translation: StoryTranslation?,
         playbackLang: String,
     ): JsonNode? = interactiveGraphJsonNodeForLocale(master, translation, playbackLang, requireExistingSegmentAudioForRewrite = true)
+
+    /** Narration text and answer labels of an interactive graph, joined; blank when the graph has none. */
+    private fun interactiveGraphSpokenText(graph: JsonNode): String =
+        graph.path("segments").elements().asSequence().flatMap { seg ->
+            sequenceOf(seg.path("text").asText("")) +
+                seg.path("choices").elements().asSequence().map { it.path("label").asText("") }
+        }.filter { it.isNotBlank() }.joinToString(" ")
+
+    /**
+     * Why [publishStory] would refuse this story, as a message for the admin; null when it can be published.
+     */
+    fun publishBlockReason(id: Long): String? {
+        val story = repository.findById(id) ?: return "Story #$id was not found."
+        if (story.status != com.tamixa.domain.LibraryStoryStatus.AUDIO_REVIEW) {
+            return "Story #$id is in status ${story.status}; only stories in audio review (approved, audio generated) can be published."
+        }
+        if (resolveAudioFileUrl(id, story.language) == null) return "Story #$id has no narration audio yet."
+        interactiveGraphLanguageProblem(story)?.let { return it }
+        return null
+    }
+
+    /** Message when the story's own interactive part is written in another language than the story, else null. */
+    private fun interactiveGraphLanguageProblem(story: LibraryStory): String? {
+        val graph = LibraryStoryMapper.parseInteractiveGraphJson(story.interactiveGraphJson) ?: return null
+        val spoken = interactiveGraphSpokenText(graph)
+        if (spoken.isBlank() || ScriptLanguage.matches(spoken, story.language)) return null
+        return "The interactive questions of story #${story.id} are in ${ScriptLanguage.nameOf(ScriptLanguage.detect(spoken))} " +
+            "but the story is ${ScriptLanguage.nameOf(story.language)}. Update the segment scripts, answers and segment audio " +
+            "in the editor (or remove the interactive part) before publishing."
+    }
 
     fun findByIdAndLanguage(
         id: Long,
@@ -1896,28 +1982,50 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             log.warn("Narration approval blocked for story id={} because not all languages are reviewed", id)
             return false
         }
-        repository.updateNarrationApprovedAt(id, java.time.Instant.now())
-        repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.PUBLISHED)
-        repository.updateRejectMarkedAt(id, null)
-        log.info("Narration approved for story id={}; story is now published and visible on the app", id)
-        if (appProperties.translationPipeline.autoTtsOnApprove &&
-            appProperties.translationPipeline.audioAfterApproval &&
-            needsPostApprovalNarrationAudio(id)
-        ) {
-            triggerPipelineExecutor.execute {
-                try {
-                    storyProcessingService.regenerateNarration(id, null)
-                    log.info("Post-approval TTS finished for story id={}", id)
-                } catch (e: Exception) {
-                    log.error("Post-approval TTS failed for story id={}: {}", id, e.message, e)
-                }
-            }
-        } else if (appProperties.translationPipeline.audioAfterApproval && appProperties.translationPipeline.autoTtsOnApprove) {
-            log.info("Post-approval TTS skipped for story id={} (narration audio already ready for all languages)", id)
-        } else if (appProperties.translationPipeline.audioAfterApproval && !appProperties.translationPipeline.autoTtsOnApprove) {
-            log.info("Post-approval TTS not auto-started for story id={} (auto-tts-on-approve=false; use Narration → Generate audio)", id)
-        }
+        onContentApproved(id)
         return true
+    }
+
+    /**
+     * Content approved (either approve action): records the approval and starts audio generation. It does not go
+     * live: once audio is ready an admin reviews it in AUDIO_REVIEW and clicks Publish (see publishStory and the
+     * PUBLISHED-only app queries).
+     */
+    private fun onContentApproved(id: Long) {
+        repository.updateNarrationApprovedAt(id, java.time.Instant.now())
+        repository.updateRejectMarkedAt(id, null)
+        val needsAudio = needsPostApprovalNarrationAudio(id)
+        if (!needsAudio) {
+            repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.AUDIO_REVIEW)
+            log.info("Content approved for story id={}; audio already ready for all languages, awaiting audio review + Publish", id)
+        } else {
+            repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.APPROVED)
+            if (appProperties.translationPipeline.autoTtsOnApprove) {
+                log.info("Content approved for story id={}; generating audio (live only after audio review + Publish)", id)
+                val startAudio = Runnable {
+                    triggerPipelineExecutor.execute {
+                        try {
+                            storyProcessingService.regenerateNarration(id, null)
+                            log.info("Post-approval TTS finished for story id={}", id)
+                        } catch (e: Exception) {
+                            log.error("Post-approval TTS failed for story id={}: {}", id, e.message, e)
+                        }
+                    }
+                }
+                // Start only once the approval is committed, so the pipeline sees it and can't race the status update.
+                if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                    org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                        object : org.springframework.transaction.support.TransactionSynchronization {
+                            override fun afterCommit() = startAudio.run()
+                        }
+                    )
+                } else {
+                    startAudio.run()
+                }
+            } else {
+                log.info("Content approved for story id={}; auto-tts-on-approve=false, generate audio from Narration", id)
+            }
+        }
     }
 
     /**
@@ -1953,6 +2061,35 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             if (!hasReady) return true
         }
         return false
+    }
+
+    /**
+     * Why [approveNarration] would refuse this story, as a message for the admin; null when it can be approved.
+     */
+    fun approvalBlockReason(id: Long): String? {
+        val story = repository.findById(id) ?: return "Story #$id was not found."
+        if (story.narrationApprovedAt != null) {
+            return when (story.status) {
+                com.tamixa.domain.LibraryStoryStatus.PUBLISHED -> "Story #$id is already approved and live in the app."
+                else -> "Story #$id is already approved (status ${story.status}). Review its audio under Stories → Audio and click Publish."
+            }
+        }
+        if (story.status !in reviewQueueStatuses) {
+            return "Story #$id is not in review (status ${story.status}). Open it in the editor, generate translations and submit it for review first."
+        }
+        if (!allPipelineLanguagesReviewed(id, story)) {
+            return "Mark every language as reviewed before approving story #$id (some languages are not reviewed yet, or changed after review)."
+        }
+        return null
+    }
+
+    /** True when every pipeline language has a translated script, so the story can be reviewed right away. */
+    private fun allPipelineScriptsPresent(masterStoryId: Long): Boolean {
+        val sourceLang = appProperties.translationPipeline.sourceLanguage.trim().lowercase()
+        val supportedLangs = (listOf(sourceLang) + appProperties.translationPipeline.targetLanguages
+            .split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }).distinct()
+        val byLang = storyTranslationRepository.findByMasterStoryId(masterStoryId).associateBy { it.language.trim().lowercase() }
+        return supportedLangs.isNotEmpty() && supportedLangs.all { lang -> byLang[lang]?.content?.isNotBlank() == true }
     }
 
     private fun allPipelineLanguagesReviewed(masterStoryId: Long, story: LibraryStory): Boolean {
@@ -2787,6 +2924,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             log.info("Library story update id={}: content has {} script, migrating master language {} -> {}", id, inferredLang, requestedLang, inferredLang)
             inferredLang
         } else requestedLang
+        requireTitlesInLanguage(title?.takeIf { it.isNotBlank() } ?: existing.title, effectiveLang, translationContentEntries)
         val effectiveEmotion = emotionMode?.trim()?.uppercase()?.take(20)
             ?.let { if (it in listOf("CALM", "SOOTHING", "ADVENTUROUS")) it else existing.emotionMode ?: "CALM" }
             ?: (existing.emotionMode ?: "CALM")
@@ -3019,7 +3157,19 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             effectiveLang,
             toApply.size
         )
-            val saved = repository.update(updatedWithApprovalPolicy)
+            // The editor sends status PUBLISHED for "Submit for review" (and when editing an approved story). Since the
+            // unified workflow, review happens in SUBMITTED / CONTENT_REVIEW and only the Publish action goes live:
+            // a not-approved story enters the review queue; an approved one keeps its status (edits never publish).
+            val workflowStatus = when {
+                effectiveStatus != com.tamixa.domain.LibraryStoryStatus.PUBLISHED -> effectiveStatus
+                updatedWithApprovalPolicy.narrationApprovedAt != null -> existing.status
+                allPipelineScriptsPresent(id) -> com.tamixa.domain.LibraryStoryStatus.CONTENT_REVIEW
+                else -> com.tamixa.domain.LibraryStoryStatus.SUBMITTED
+            }
+            if (workflowStatus != effectiveStatus) {
+                log.info("Library story update id={}: requested {} stored as {}", id, effectiveStatus, workflowStatus)
+            }
+            val saved = repository.update(updatedWithApprovalPolicy.copy(status = workflowStatus))
             val totalMs = elapsedMs()
             storyPipelineMetrics.recordAdminStoryUpdateLatency(totalMs, scope = "service", outcome = "success", status = effectiveStatus.name)
             when {
@@ -3482,8 +3632,8 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
      * Approve story content: transition from CONTENT_REVIEW to APPROVED.
      * Valid only when story is in CONTENT_REVIEW status.
      * 
-     * After approval, story is ready for audio generation.
-     * Admin must then use Narration → Generate audio to produce TTS.
+     * After approval, audio generation starts automatically (auto-tts-on-approve); the story goes live only after
+     * audio review and Publish.
      * 
      * @param id Story ID to approve
      * @return true if approved successfully, false if story not found or invalid status
@@ -3504,10 +3654,7 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             return false
         }
         
-        // Update status to APPROVED
-        repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.APPROVED)
-        repository.updateRejectMarkedAt(id, null)
-        log.info("Story id={} content approved, status updated to APPROVED (ready for audio generation)", id)
+        onContentApproved(id)
         
         return true
     }
@@ -3607,6 +3754,10 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             log.warn("Cannot publish story id={}: no audio available", id)
             return false
         }
+        interactiveGraphLanguageProblem(story)?.let {
+            log.warn("Cannot publish story id={}: {}", id, it)
+            return false
+        }
         
         // Update status to PUBLISHED
         repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.PUBLISHED)
@@ -3617,8 +3768,8 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
     }
 
     /**
-     * Unpublish story: transition from PUBLISHED to DRAFT.
-     * Removes story from user-facing app.
+     * Unpublish story: transition from PUBLISHED back to AUDIO_REVIEW.
+     * Removes story from user-facing app; approval and audio are kept, so Publish brings it back.
      * 
      * @param id Story ID to unpublish
      * @return true if unpublished successfully, false if story not found or invalid status
@@ -3633,10 +3784,9 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             return false
         }
         
-        // Update status to DRAFT
-        repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.DRAFT)
-        repository.updateNarrationApprovedAt(id, null)
-        log.info("Story id={} unpublished and removed from app", id)
+        // Back to audio review: off the app, but content approval and audio are kept so Publish brings it back.
+        repository.updateStatus(id, com.tamixa.domain.LibraryStoryStatus.AUDIO_REVIEW)
+        log.info("Story id={} unpublished and removed from app (back in audio review)", id)
         
         return true
     }

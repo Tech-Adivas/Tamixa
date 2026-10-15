@@ -112,6 +112,15 @@ class StoryProcessingService(
 
     private val terminalReviewStatuses = setOf(LibraryStoryStatus.CHANGES_REQUESTED, LibraryStoryStatus.REJECTED)
 
+    /**
+     * Status after a pipeline run that did not finish every language. An approved story goes to AUDIO_FAILED so it
+     * never goes live without its audio being reviewed and published; a not-yet-approved one goes to
+     * TRANSLATION_FAILED so admins see it needs a retry (the old PUBLISHED-not-approved state was in no queue).
+     */
+    private fun incompletePipelineStatus(masterStoryId: Long): LibraryStoryStatus =
+        if (storyLibraryRepository.findById(masterStoryId)?.narrationApprovedAt != null) LibraryStoryStatus.AUDIO_FAILED
+        else LibraryStoryStatus.TRANSLATION_FAILED
+
     private fun canPipelineUpdateStatus(masterStoryId: Long): Boolean =
         storyLibraryRepository.findById(masterStoryId)?.status !in terminalReviewStatuses
     private val supportedLanguages: List<String>
@@ -341,7 +350,7 @@ class StoryProcessingService(
                     } else {
                         val statusesStr = translationsAfter.joinToString(",") { "${it.language}=${it.status}" }
                         log.warn("Story masterStoryId={} translation-only incomplete: [{}]", masterStoryId, statusesStr)
-                        storyLibraryRepository.updateStatus(masterStoryId, LibraryStoryStatus.PUBLISHED)
+                        storyLibraryRepository.updateStatus(masterStoryId, incompletePipelineStatus(masterStoryId))
                         jobId?.let {
                             processingJobRepository?.updateStatus(
                                 it, "FAILED", 0, Instant.now(), "Translation-only: not all languages have scripts: $statusesStr"
@@ -351,7 +360,7 @@ class StoryProcessingService(
                 } else {
                     val statusesStr = translationsAfter.joinToString(",") { "${it.language}=${it.status}" }
                     log.warn("Story masterStoryId={} not ready: statusByLang=[{}]", masterStoryId, statusesStr)
-                    storyLibraryRepository.updateStatus(masterStoryId, LibraryStoryStatus.PUBLISHED)
+                    storyLibraryRepository.updateStatus(masterStoryId, incompletePipelineStatus(masterStoryId))
                     jobId?.let {
                         processingJobRepository?.updateStatus(
                             it, "FAILED", 0, Instant.now(), "Not all languages have audio: $statusesStr"
@@ -393,6 +402,8 @@ class StoryProcessingService(
                     when {
                         t == null -> true
                         t.content.isBlank() || t.content.startsWith(failedPlaceholderContent) -> true
+                        // Saving/submitting the story resets changed languages to PENDING; they still need translation.
+                        t.status == TranslationPipelineStatus.PENDING -> true
                         t.status == TranslationPipelineStatus.AWAITING_AUDIO -> false
                         t.status.isFailed() -> t.retryCount < maxRetries
                         else -> t.status.canRetry() && t.retryCount < maxRetries
@@ -422,7 +433,7 @@ class StoryProcessingService(
             }
             pipelineMetrics.recordNarrationFailure()
             if (canPipelineUpdateStatus(masterStoryId)) {
-                storyLibraryRepository.updateStatus(masterStoryId, LibraryStoryStatus.PUBLISHED)
+                storyLibraryRepository.updateStatus(masterStoryId, incompletePipelineStatus(masterStoryId))
             }
         } finally {
             progressTracker.clearProcessing(masterStoryId)
@@ -445,7 +456,7 @@ class StoryProcessingService(
             }
             pipelineMetrics.recordNarrationFailure()
             if (canPipelineUpdateStatus(masterStoryId)) {
-                storyLibraryRepository.updateStatus(masterStoryId, LibraryStoryStatus.PUBLISHED)
+                storyLibraryRepository.updateStatus(masterStoryId, incompletePipelineStatus(masterStoryId))
             }
         } finally {
             progressTracker.clearProcessing(masterStoryId)
@@ -527,13 +538,13 @@ class StoryProcessingService(
                 val allTranslations = translationRepository.findByMasterStoryId(masterStoryId)
                 val statusesStr = allTranslations.joinToString(",") { "${it.language}=${it.status}" }
                 log.warn("Story masterStoryId={} not ready: missing languages {} statusByLang=[{}]", masterStoryId, missingLangs, statusesStr)
-                storyLibraryRepository.updateStatus(masterStoryId, LibraryStoryStatus.PUBLISHED)
+                storyLibraryRepository.updateStatus(masterStoryId, incompletePipelineStatus(masterStoryId))
             }
         } catch (e: Exception) {
             log.error("Story processing failed for masterStoryId={} error={} cause={}", masterStoryId, e.message, e.cause?.message, e)
             pipelineMetrics.recordNarrationFailure()
             if (canPipelineUpdateStatus(masterStoryId)) {
-                storyLibraryRepository.updateStatus(masterStoryId, LibraryStoryStatus.PUBLISHED)
+                storyLibraryRepository.updateStatus(masterStoryId, incompletePipelineStatus(masterStoryId))
             }
         } finally {
             progressTracker.clearProcessing(masterStoryId)
@@ -946,10 +957,13 @@ class StoryProcessingService(
             val forceParaphraseForSameLanguageInThisStep =
                 isSameLanguage && (existing == null || existing.status == TranslationPipelineStatus.PENDING)
 
+            // SimulatedTranslationClient output ("[en] <source text>") is not a real translation; translate it again.
+            val isSimulatedPlaceholder = !isSameLanguage && existing?.content?.startsWith("[${language.trim()}] ") == true
             if (
                 existing != null &&
                     existing.content.isNotBlank() &&
                     !existing.content.startsWith(failedPlaceholderContent) &&
+                    !isSimulatedPlaceholder &&
                     !forceParaphraseForSameLanguageInThisStep
             ) {
                 var existingForProcessing = existing
@@ -1251,7 +1265,7 @@ class StoryProcessingService(
                 pipelineMetrics.recordNarrationFailure()
                 storyLibraryRepository.findById(masterStoryId)?.let { s ->
                     if (s.status !in listOf(LibraryStoryStatus.CHANGES_REQUESTED, LibraryStoryStatus.REJECTED)) {
-                        storyLibraryRepository.updateStatus(masterStoryId, LibraryStoryStatus.PUBLISHED)
+                        storyLibraryRepository.updateStatus(masterStoryId, incompletePipelineStatus(masterStoryId))
                     }
                 }
             } finally {
@@ -1335,11 +1349,12 @@ class StoryProcessingService(
         storyLibraryRepository.clearAudioUrl(masterStoryId)
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    // No @Transactional here (see processSync): an outer transaction would hold the uncommitted deletes while
+    // per-language threads write story_translations on their own connections, deadlocking the pipeline.
     fun invalidateAndReprocess(masterStoryId: Long) {
         log.info("Invalidate and reprocess masterStoryId={} (story content edited)", masterStoryId)
         try {
-            invalidateContent(masterStoryId)  // commits on return
+            self.invalidateContent(masterStoryId)  // via proxy so REQUIRES_NEW applies and the deletes commit first
             val translationOnly = appProperties.translationPipeline.audioAfterApproval
             processSync(masterStoryId, translationOnly = translationOnly)
             log.info("InvalidateAndReprocess pipeline completed for story id={}", masterStoryId)
@@ -1347,7 +1362,7 @@ class StoryProcessingService(
             log.error("invalidateAndReprocess FAILED for masterStoryId={} error={} cause={}", masterStoryId, e.message, e.cause?.message, e)
             pipelineMetrics.recordNarrationFailure()
             if (canPipelineUpdateStatus(masterStoryId)) {
-                storyLibraryRepository.updateStatus(masterStoryId, LibraryStoryStatus.PUBLISHED)
+                storyLibraryRepository.updateStatus(masterStoryId, incompletePipelineStatus(masterStoryId))
             }
         } finally {
             progressTracker.clearProcessing(masterStoryId)

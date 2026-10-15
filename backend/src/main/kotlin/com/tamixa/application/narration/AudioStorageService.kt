@@ -34,4 +34,10 @@ interface AudioStorageService {
         segmentIndex: Int,
         mp3Bytes: ByteArray
     ): String = uploadNarrationAudio(storyId, language, "seg_$segmentIndex", mp3Bytes)
+
+    /** Delete one stored narration file by its key (e.g. "stories/71/ta/cloned_12.mp3"). True when gone. */
+    fun deleteNarrationAudio(key: String): Boolean
+
+    /** Keys of all stored narration files under [prefix] (paged internally); used for orphan cleanup. */
+    fun listNarrationKeys(prefix: String = "stories/"): Sequence<String>
 }

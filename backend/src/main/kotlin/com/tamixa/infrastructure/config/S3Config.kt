@@ -9,8 +9,10 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.S3Configuration
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import java.io.File
+import java.net.URI
 
 @Configuration
 @ConditionalOnExpression("@environment.getProperty('app.storage.type','s3').trim().toLowerCase() == 's3'")
@@ -62,10 +64,34 @@ class S3Config {
         return accessKey to secretKey
     }
 
+    /** Custom S3-compatible endpoint (e.g. local MinIO), or null for real AWS S3. */
+    private fun customEndpoint(appProperties: AppProperties): URI? =
+        appProperties.storage.s3Endpoint.trim().takeIf { it.isNotEmpty() }?.let { URI.create(it) }
+
+    /** Endpoint-only credentials, so AWS keys are never sent to a custom endpoint. */
+    private fun endpointCredentials(appProperties: AppProperties): StaticCredentialsProvider? {
+        val accessKey = appProperties.storage.s3EndpointAccessKey.trim()
+        val secretKey = appProperties.storage.s3EndpointSecretKey.trim()
+        if (accessKey.isEmpty() || secretKey.isEmpty()) return null
+        return StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+    }
+
     @Bean
     fun s3Client(appProperties: AppProperties, env: Environment): S3Client {
         log.info("S3Config: initializing S3Client (storage.type={})", appProperties.storage.type)
         val region = Region.of(appProperties.storage.s3Region.ifBlank { "us-east-1" })
+        val endpoint = customEndpoint(appProperties)
+        if (endpoint != null) {
+            // S3-compatible server (MinIO): path-style addressing, endpoint-only credentials.
+            val builder = S3Client.builder()
+                .region(region)
+                .endpointOverride(endpoint)
+                .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
+            endpointCredentials(appProperties)?.let { builder.credentialsProvider(it) }
+                ?: log.warn("S3 custom endpoint {} set but S3_ENDPOINT_ACCESS_KEY/S3_ENDPOINT_SECRET_KEY are missing", endpoint)
+            log.info("S3 client configured: bucket={} endpoint={} (custom S3-compatible endpoint)", appProperties.storage.s3Bucket, endpoint)
+            return builder.build()
+        }
         val (accessKey, secretKey) = resolveAwsCredentials(env)
         val builder = S3Client.builder().region(region)
         if (!accessKey.isNullOrBlank() && !secretKey.isNullOrBlank()) {
@@ -80,6 +106,15 @@ class S3Config {
     @Bean
     fun s3Presigner(appProperties: AppProperties, env: Environment): S3Presigner {
         val region = Region.of(appProperties.storage.s3Region.ifBlank { "us-east-1" })
+        val endpoint = customEndpoint(appProperties)
+        if (endpoint != null) {
+            val builder = S3Presigner.builder()
+                .region(region)
+                .endpointOverride(endpoint)
+                .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
+            endpointCredentials(appProperties)?.let { builder.credentialsProvider(it) }
+            return builder.build()
+        }
         val (accessKey, secretKey) = resolveAwsCredentials(env)
         val builder = S3Presigner.builder().region(region)
         if (!accessKey.isNullOrBlank() && !secretKey.isNullOrBlank()) {

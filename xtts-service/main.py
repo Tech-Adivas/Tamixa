@@ -1,28 +1,37 @@
 """
 XTTS-style voice cloning service.
 
-- If Coqui TTS is installed and reference audio is provided (reference_audio_base64, reference_url,
-  or local reference_path), synthesizes the story text in the cloned voice and returns WAV audio.
+- If Coqui TTS is installed and reference audio is provided (reference_audio_base64 or reference_url),
+  synthesizes the story text in the cloned voice and returns WAV audio.
 - If reference is provided but TTS is not loaded (e.g. Python 3.13): returns 503 with instructions.
 - If no reference: returns tamixa.mp3 (stub).
 
-Backend can send reference_audio_base64 (bytes as base64), reference_url (presigned S3), or use local reference_path.
+Backend sends reference_audio_base64 (bytes as base64) and/or reference_url (presigned S3). reference_path is a
+storage key label; it is read from disk only in dev when XTTS_LOCAL_REFERENCE_DIR is set, and only for audio
+files inside that directory. Reference audio is capped at XTTS_MAX_REFERENCE_BYTES (default 20 MB).
+reference_url is fetched only from XTTS_REFERENCE_URL_ALLOWED_HOSTS, without following redirects.
+
+/synthesize and /preload require header X-XTTS-Api-Key matching XTTS_API_KEY (or XTTS_ALLOW_UNAUTHENTICATED=true
+for local dev). /health stays open for container health checks.
 """
 
 from __future__ import annotations
 
 import base64
 import contextlib
+import hmac
 import html
 import io
 import os
 import re
 import sys
 import tempfile
+import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import contextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from starlette.responses import Response
 
@@ -37,6 +46,26 @@ _XTTS_CHUNK_MAX_CHARS = 240
 # Short silence between chunks (seconds) so concatenation sounds natural
 _XTTS_CHUNK_GAP_SEC = 0.12
 
+# Local reference files are a dev-only convenience: disabled unless XTTS_LOCAL_REFERENCE_DIR is set, and then
+# only regular (non-symlink) audio files inside that directory are read. reference_path is otherwise just a label.
+_LOCAL_REFERENCE_DIR = (os.environ.get("XTTS_LOCAL_REFERENCE_DIR") or "").strip()
+_ALLOWED_REFERENCE_EXTENSIONS = {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac", ".webm"}
+# Max reference audio size for every source (base64, url, local file). Voice samples are well under this.
+_MAX_REFERENCE_BYTES = int(os.environ.get("XTTS_MAX_REFERENCE_BYTES") or 20 * 1024 * 1024)
+
+# Shared secret the backend sends as X-XTTS-Api-Key. Without it, /synthesize and /preload refuse requests unless
+# XTTS_ALLOW_UNAUTHENTICATED=true (local dev only).
+_API_KEY = (os.environ.get("XTTS_API_KEY") or "").strip()
+_ALLOW_UNAUTHENTICATED = (os.environ.get("XTTS_ALLOW_UNAUTHENTICATED") or "").strip().lower() == "true"
+
+# reference_url is fetched only from these hosts (comma-separated, e.g. your S3 bucket host). Empty = never fetch;
+# the backend sends reference_audio_base64 anyway. Redirects are not followed.
+_REFERENCE_URL_ALLOWED_HOSTS = {
+    h.strip().lower()
+    for h in (os.environ.get("XTTS_REFERENCE_URL_ALLOWED_HOSTS") or "").split(",")
+    if h.strip()
+}
+
 TTS_REQUIRED_MSG = (
     "Real story-in-cloned-voice requires Coqui TTS (Python 3.9–3.11). "
     "Use: python3.11 -m venv venv-xtts && source venv-xtts/bin/activate && pip install -r requirements.txt -r requirements-xtts.txt"
@@ -45,7 +74,8 @@ TTS_REQUIRED_MSG = (
 
 class SynthesizeRequest(BaseModel):
     text: str
-    reference_path: str
+    # Storage key sent by the backend (used for logging); only read from disk under XTTS_LOCAL_REFERENCE_DIR.
+    reference_path: str = ""
     language: str = "en"
     reference_url: str | None = None  # Presigned URL to fetch reference audio
     reference_audio_base64: str | None = None  # Reference audio bytes (backend sends when S3 available)
@@ -112,21 +142,119 @@ def _get_tts():
 
 
 def _ensure_wav(path: str) -> str:
-    """Convert MP3 (or other) to WAV so Coqui TTS does not need torchcodec. Returns path to WAV."""
+    """Convert MP3 (or other) to WAV so Coqui TTS does not need torchcodec. Returns path to WAV (a new temp file)."""
     if path.lower().endswith(".wav"):
         return path
     try:
         from pydub import AudioSegment
         seg = AudioSegment.from_file(path)
-        base, _ = os.path.splitext(path)
-        wav_path = base + ".wav"
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            wav_path = f.name
         seg.export(wav_path, format="wav")
         return wav_path
     except Exception as e:
+        print("[XTTS] Reference audio conversion failed: %s" % e)
         raise HTTPException(
             status_code=400,
-            detail="Reference audio is not WAV and conversion failed (install pydub and ffmpeg for MP3): %s" % e,
+            detail="Reference audio is not WAV and could not be converted (needs pydub + ffmpeg for MP3).",
         )
+
+
+def require_api_key(x_xtts_api_key: str | None = Header(default=None)) -> None:
+    """Reject callers that do not present the shared XTTS_API_KEY (constant-time compare)."""
+    if not _API_KEY:
+        if _ALLOW_UNAUTHENTICATED:
+            return
+        raise HTTPException(status_code=503, detail="XTTS_API_KEY is not configured on the service.")
+    if not x_xtts_api_key or not hmac.compare_digest(x_xtts_api_key.encode(), _API_KEY.encode()):
+        raise HTTPException(status_code=401, detail="Invalid or missing X-XTTS-Api-Key.")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "Redirects are not allowed", headers, fp)
+
+
+_url_opener = urllib.request.build_opener(_NoRedirect)
+
+
+def _check_reference_url(reference_url: str) -> None:
+    """Allow only http(s) URLs to an allow-listed host, with no embedded credentials."""
+    parsed = urllib.parse.urlsplit(reference_url)
+    host = (parsed.hostname or "").lower()
+    if (
+        parsed.scheme not in ("http", "https")
+        or parsed.username
+        or parsed.password
+        or not host
+        or host not in _REFERENCE_URL_ALLOWED_HOSTS
+    ):
+        raise HTTPException(status_code=400, detail="reference_url host is not allowed.")
+
+
+def _check_reference_size(size: int) -> None:
+    if size > _MAX_REFERENCE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="Reference audio too large (max %d bytes)." % _MAX_REFERENCE_BYTES,
+        )
+
+
+def _resolve_local_reference(reference_path: str) -> str | None:
+    """
+    Return the real path of an allowed local reference file, or None when local references are disabled
+    or the path is not a regular audio file inside XTTS_LOCAL_REFERENCE_DIR (no symlinks, no traversal).
+    """
+    if not _LOCAL_REFERENCE_DIR or not reference_path:
+        return None
+    base = os.path.realpath(_LOCAL_REFERENCE_DIR)
+    candidate = os.path.join(base, reference_path.lstrip("/\\"))
+    real = os.path.realpath(candidate)
+    try:
+        if os.path.commonpath([base, real]) != base:
+            return None
+    except ValueError:
+        return None  # e.g. different drive on Windows
+    if os.path.islink(candidate) or not os.path.isfile(real):
+        return None
+    if os.path.splitext(real)[1].lower() not in _ALLOWED_REFERENCE_EXTENSIONS:
+        return None
+    return real
+
+
+def _load_reference_bytes(
+    reference_audio_base64: str | None,
+    reference_url: str | None,
+    reference_path: str,
+) -> bytes:
+    """Read reference audio: prefer reference_audio_base64, then reference_url, then an allowed local file."""
+    if reference_audio_base64:
+        # base64 is ~4/3 of the decoded size; reject oversized payloads before decoding
+        _check_reference_size(len(reference_audio_base64) * 3 // 4)
+        try:
+            return base64.b64decode(reference_audio_base64)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid reference_audio_base64.")
+    if reference_url:
+        _check_reference_url(reference_url)
+        try:
+            req = urllib.request.Request(reference_url, headers={"User-Agent": "TamixaXTTS/1.0"})
+            with _url_opener.open(req, timeout=30) as resp:
+                data = resp.read(_MAX_REFERENCE_BYTES + 1)
+        except Exception as e:
+            print("[XTTS] Failed to fetch reference_url: %s" % e)
+            raise HTTPException(status_code=400, detail="Failed to fetch reference_url.")
+        _check_reference_size(len(data))
+        return data
+    local = _resolve_local_reference(reference_path)
+    if local:
+        _check_reference_size(os.path.getsize(local))
+        with open(local, "rb") as f:
+            return f.read()
+    raise HTTPException(
+        status_code=400,
+        detail="Need reference_audio_base64 or reference_url.",
+    )
 
 
 @contextmanager
@@ -136,66 +264,24 @@ def _reference_audio_path(
     reference_path: str,
 ):
     """
-    Yield a path to the reference audio file (always WAV so Coqui TTS does not need torchcodec).
-    Prefer reference_audio_base64, then reference_url, then local reference_path.
+    Yield a path to a temp copy of the reference audio (always WAV so Coqui TTS does not need torchcodec).
+    Source files are never converted in place.
     """
-    if reference_audio_base64:
-        try:
-            data = base64.b64decode(reference_audio_base64)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail="Invalid reference_audio_base64: %s" % e)
-        suffix = ".wav" if data[:4] == b"RIFF" else ".mp3"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-            tmp = f.name
-            f.write(data)
+    data = _load_reference_bytes(reference_audio_base64, reference_url, reference_path)
+    suffix = ".wav" if data[:4] == b"RIFF" else ".mp3"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        tmp = f.name
+        f.write(data)
+    wav_path = tmp
+    try:
         wav_path = _ensure_wav(tmp)
-        try:
-            yield wav_path
-        finally:
+        yield wav_path
+    finally:
+        for p in {tmp, wav_path}:
             try:
-                os.unlink(tmp)
+                os.unlink(p)
             except OSError:
                 pass
-            if wav_path != tmp:
-                try:
-                    os.unlink(wav_path)
-                except OSError:
-                    pass
-        return
-    if reference_url:
-        try:
-            req = urllib.request.Request(reference_url, headers={"User-Agent": "TamixaXTTS/1.0"})
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = resp.read()
-        except Exception as e:
-            raise HTTPException(status_code=400, detail="Failed to fetch reference_url: %s" % e)
-        suffix = ".wav" if data[:4] == b"RIFF" else ".mp3"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-            tmp = f.name
-            f.write(data)
-        wav_path = tmp
-        try:
-            wav_path = _ensure_wav(tmp)
-            yield wav_path
-        finally:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            if wav_path != tmp:
-                try:
-                    os.unlink(wav_path)
-                except OSError:
-                    pass
-        return
-    if reference_path and os.path.isfile(reference_path):
-        # Coqui expects WAV; convert if local file is MP3/other to avoid "TorchCodec is required"
-        yield _ensure_wav(reference_path)
-        return
-    raise HTTPException(
-        status_code=400,
-        detail="Need reference_audio_base64, reference_url, or a local reference_path file."
-    )
 
 
 def _normalize_tts_text(text: str) -> str:
@@ -347,11 +433,11 @@ def _has_reference(req: SynthesizeRequest) -> bool:
     return bool(
         req.reference_audio_base64
         or req.reference_url
-        or (req.reference_path and os.path.isfile(req.reference_path))
+        or _resolve_local_reference(req.reference_path)
     )
 
 
-@app.post("/synthesize")
+@app.post("/synthesize", dependencies=[Depends(require_api_key)])
 async def synthesize(req: SynthesizeRequest):
     """
     Synthesize story text in the cloned voice.
@@ -399,10 +485,10 @@ async def synthesize(req: SynthesizeRequest):
         raise
     except Exception as e:
         print("[XTTS] SYNTHESIS_NOT_COMPLETED error=%s" % e)
-        raise HTTPException(status_code=500, detail="Synthesis failed: %s" % e)
+        raise HTTPException(status_code=500, detail="Synthesis failed.")
 
 
-@app.get("/preload")
+@app.get("/preload", dependencies=[Depends(require_api_key)])
 async def preload():
     """Load the Coqui XTTS model now so the first /synthesize request doesn't wait. Returns whether the model loaded."""
     loaded = _get_tts() is not None
