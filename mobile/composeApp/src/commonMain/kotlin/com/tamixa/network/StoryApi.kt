@@ -22,6 +22,8 @@ import io.ktor.http.*
 
 /** Extended timeout for cloned voice (on-demand TTS can take 60–90s). */
 private const val CLONED_VOICE_REQUEST_TIMEOUT_MS = 120_000L
+/** Transcription + matching takes a few seconds; past this the child just taps. */
+private const val VOICE_ANSWER_TIMEOUT_MS = 25_000L
 
 /** Max pages when aggregating GET /stories/library (50 × LIBRARY_PAGE_SIZE stories cap). */
 private const val MAX_LIBRARY_LIST_PAGES = 50
@@ -397,6 +399,48 @@ class StoryApi(private val client: HttpClient) {
         } catch (e: Exception) {
             TamixaLog.w("StoryApi", "isFavorite(storyId=$storyId) failed", e)
             false
+        }
+
+    @kotlinx.serialization.Serializable
+    data class VoiceAnswerResult(val choiceId: String? = null, val heardText: String = "", val method: String = "none")
+
+    /**
+     * Sends a child's spoken answer (AAC .m4a) to the question at the end of [segmentId]. The server transcribes it in
+     * memory and returns the matched answer (or none); the recording is not stored. Null on network/server failure.
+     */
+    suspend fun sendInteractiveVoiceAnswer(
+        storyId: Long,
+        language: String,
+        segmentId: String,
+        audioBytes: ByteArray,
+    ): VoiceAnswerResult? =
+        try {
+            val resp = client.post(
+                "${ApiConfig.API_VERSION}/stories/library/$storyId/interactive-segments/${segmentId.encodeURLPathPart()}/voice-answer"
+            ) {
+                parameter("language", language)
+                setBody(MultiPartFormDataContent(formData {
+                    append("audio", audioBytes, Headers.build {
+                        append(HttpHeaders.ContentType, "audio/mp4")
+                        append(HttpHeaders.ContentDisposition, "filename=\"answer.m4a\"")
+                    })
+                }))
+                timeout {
+                    requestTimeoutMillis = VOICE_ANSWER_TIMEOUT_MS
+                    socketTimeoutMillis = VOICE_ANSWER_TIMEOUT_MS
+                }
+            }
+            if (resp.status.value in 200..299) {
+                resp.body<VoiceAnswerResult>()
+            } else {
+                TamixaLog.w("StoryApi", "Voice answer failed (storyId=$storyId, segment=$segmentId, HTTP ${resp.status.value})")
+                null
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            TamixaLog.w("StoryApi", "Voice answer request failed (storyId=$storyId, segment=$segmentId)", e)
+            null
         }
 
     /**

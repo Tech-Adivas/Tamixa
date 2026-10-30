@@ -30,6 +30,7 @@ import com.tamixa.api.admin.dto.DoraMetricsDto
 import com.tamixa.api.admin.dto.LifeSkillChoiceAnalyticsResponse
 import com.tamixa.api.admin.dto.FlagStoryRequest
 import com.tamixa.api.admin.dto.InteractiveGraphFromStoryRequest
+import com.tamixa.api.admin.dto.InteractiveQuestionImagesRequest
 import com.tamixa.api.admin.dto.InteractiveSegmentAudioGenerateRequest
 import com.tamixa.api.admin.dto.InteractiveSegmentScriptsFillRequest
 import com.tamixa.api.admin.dto.StoryDetailDto
@@ -53,6 +54,7 @@ import com.tamixa.application.auth.PhoneAlreadyInUseException
 import com.tamixa.application.admin.InvoiceNotRefundableException
 import com.tamixa.application.admin.InvoiceNotFoundException
 import com.tamixa.application.admin.StoryNotFoundException
+import com.tamixa.application.library.InteractiveQuestionImageService
 import com.tamixa.application.library.LibraryStoryIllustrationService
 import com.tamixa.application.library.LibraryStoryRephraseService
 import com.tamixa.application.story.StoryPromptBuilder
@@ -129,6 +131,9 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.UUID
 
+/** Longest on-screen story text accepted for drawing a cover (only its opening is used in the prompt). */
+private const val COVER_ON_SCREEN_CONTENT_MAX_CHARS = 20_000
+
 @RestController
 @RequestMapping("${ApiVersion.V1}/admin")
 @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','REVENUE_ANALYST','CONTENT_MANAGER','SUPPORT')")
@@ -152,6 +157,7 @@ class AdminController(
     private val referralCodeService: ReferralCodeService,
     private val adminTtsPreviewService: AdminTtsPreviewService,
     private val interactiveEpisodeAdminService: InteractiveEpisodeAdminService,
+    private val interactiveQuestionImageService: InteractiveQuestionImageService,
     private val storyPromptBuilder: StoryPromptBuilder,
     @Autowired(required = false) private val ttsMetadataCache: TtsMetadataCachePort?,
     private val processingJobService: ProcessingJobService,
@@ -1368,7 +1374,14 @@ class AdminController(
             log.info("Regenerate cover requested for curated story id={} force={}", id, force)
         }
         val story = storyLibraryService.findById(id) ?: return ResponseEntity.notFound().build<Unit>()
-        val updated = libraryStoryIllustrationService.generateCoverForStory(story, force, customFromEditor)
+        // The editor's current (possibly unsaved) title/text, so the cover matches what is on screen.
+        val onScreen = body?.get("content")?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let { content ->
+            com.tamixa.application.library.CoverText(
+                title = body["title"]?.toString()?.trim()?.take(300).orEmpty(),
+                content = content.take(COVER_ON_SCREEN_CONTENT_MAX_CHARS),
+            )
+        }
+        val updated = libraryStoryIllustrationService.generateCoverForStory(story, force, customFromEditor, onScreen)
         return if (updated != null) {
             log.info("Regenerate cover success for curated story id={}", id)
             ResponseEntity.ok(
@@ -2539,6 +2552,41 @@ class AdminController(
             ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(mapOf("message" to "Could not generate segment audio. Check TTS/storage configuration and retry."))
+        }
+    }
+
+    /**
+     * Generate the picture shown with each question (segment with choices) and save it to the story's interactive
+     * graph as `imageUrl`. Only the graph changes: status, narration and translations stay as they are.
+     */
+    @PostMapping("/stories/{id}/interactive-segments/generate-images")
+    @PreAuthorize("@adminAuth.hasPermission('MANAGE_STORIES')")
+    fun generateInteractiveQuestionImages(
+        @PathVariable id: Long,
+        @Valid @RequestBody(required = false) request: InteractiveQuestionImagesRequest?,
+    ): ResponseEntity<Any> {
+        return try {
+            val result = interactiveQuestionImageService.generateQuestionImages(
+                storyId = id,
+                segmentIds = request?.segmentIds,
+                customPrompt = request?.customPrompt,
+            )
+            ResponseEntity.ok(
+                mapOf(
+                    "interactiveGraph" to result.interactiveGraph,
+                    "generated" to result.generated,
+                    "failed" to result.failed,
+                )
+            )
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.badRequest()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(mapOf("message" to (e.message ?: "Invalid request")))
+        } catch (e: Exception) {
+            log.error("Interactive question image generation failed storyId={}: {}", id, e.message, e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(mapOf("message" to "Could not generate question images. Check image provider/storage configuration and retry."))
         }
     }
 

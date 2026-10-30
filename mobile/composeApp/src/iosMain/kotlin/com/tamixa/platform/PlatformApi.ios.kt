@@ -155,6 +155,18 @@ actual suspend fun writeTempAudioFile(bytes: ByteArray, fileName: String): Strin
         }
     }
 
+@OptIn(ExperimentalForeignApi::class)
+actual suspend fun deleteTempAudioFile(fileName: String) {
+    withContext(Dispatchers.Default) {
+        val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "audio.m4a" }
+        val path = NSTemporaryDirectory().trimEnd('/') + "/" + safeName
+        val fileManager = NSFileManager.defaultManager
+        if (fileManager.fileExistsAtPath(path) && !fileManager.removeItemAtPath(path, error = null)) {
+            TamixaLog.w("PlatformIOS", "deleteTempAudioFile could not delete $safeName", null)
+        }
+    }
+}
+
 private fun languageCodeToLocaleId(code: String): String? = when (code.lowercase()) {
     "ta" -> "ta-IN"
     "hi" -> "hi-IN"

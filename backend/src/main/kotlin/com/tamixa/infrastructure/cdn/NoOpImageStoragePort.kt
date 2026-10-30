@@ -14,4 +14,6 @@ class NoOpImageStoragePort : ImageStoragePort {
     override fun deleteCuratedCoverImage(storageKey: String?) {}
 
     override fun deleteCoverImage(storageKey: String?) {}
+
+    override fun storeInteractiveSegmentImage(libraryStoryId: Long, segmentId: String, imageBytes: ByteArray): String? = null
 }

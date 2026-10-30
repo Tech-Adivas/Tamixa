@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tamixa.domain.AgeBand
 import com.tamixa.domain.Story
 import com.tamixa.ui.components.TamixaBottomBar
 import com.tamixa.ui.components.TamixaTab
@@ -172,9 +173,43 @@ private fun LibraryHubPicker(
     }
 }
 
+/** Child's age filter: All ages | 5–6 | 7–8 | 9–10. Shared by Library and Home. */
+@Composable
+internal fun AgeBandPicker(
+    selected: AgeBand?,
+    onSelect: (AgeBand?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = Strings.childAgeFilterLabel(),
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.White.copy(alpha = 0.75f),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            (listOf<AgeBand?>(null) + AgeBand.entries).forEach { band ->
+                LibraryHubSegment(
+                    // Header already says "Child's age", so short labels keep every chip on one line.
+                    label = if (band == null) Strings.libraryBrowseTab() else "${band.minAge}–${band.maxAge}",
+                    selected = selected == band,
+                    onClick = { onSelect(band) },
+                    modifier = Modifier.weight(1f),
+                    compact = true,
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LibraryHubSegment(
+internal fun LibraryHubSegment(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -261,6 +296,9 @@ fun LibraryScreen(
     devDigitalSurvivalPrepareBusy: Boolean = false,
     onPrepareDevDigitalSurvivalSeed: (() -> Unit)? = null,
     onNavigateToCrisisHelp: (() -> Unit)? = null,
+    /** Child's age filter; the caller passes stories already narrowed to it. */
+    ageBand: AgeBand? = null,
+    onAgeBandChange: (AgeBand?) -> Unit = {},
 ) {
     var hubTab by rememberSaveable(initialHubTab) { mutableStateOf(initialHubTab) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -319,6 +357,10 @@ fun LibraryScreen(
                     onSearchQueryChange = { searchQuery = it },
                     onSearch = { /* Search is reactive, no action needed */ },
                 )
+                AgeBandPicker(
+                    selected = ageBand,
+                    onSelect = onAgeBandChange,
+                )
                 LibraryHubPicker(
                     selected = hubTab,
                     onSelect = { hubTab = it },
@@ -332,31 +374,35 @@ fun LibraryScreen(
                             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Row(
+                            // Stacked so long Tamil titles and the button never squeeze each other on narrow phones.
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
                             ) {
-                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                    Text(
-                                        text = Strings.crisisHelpLibraryBannerTitle(),
-                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = Color.White,
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        text = Strings.crisisHelpLibraryBannerSubtitle(),
-                                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
-                                        color = Color.White.copy(alpha = 0.88f),
-                                    )
-                                }
-                                TextButton(onClick = go) {
+                                Text(
+                                    text = Strings.crisisHelpLibraryBannerTitle(),
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = Strings.crisisHelpLibraryBannerSubtitle(),
+                                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                                    color = Color.White.copy(alpha = 0.88f),
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Surface(
+                                    onClick = go,
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color.White.copy(alpha = 0.10f),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.38f)),
+                                ) {
                                     Text(
                                         Strings.crisisHelpOpenDirectory(),
-                                        style = MaterialTheme.typography.labelLarge,
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                                         color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                                     )
                                 }
                             }

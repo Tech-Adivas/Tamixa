@@ -9,7 +9,8 @@ XTTS-style voice cloning service.
 Backend sends reference_audio_base64 (bytes as base64) and/or reference_url (presigned S3). reference_path is a
 storage key label; it is read from disk only in dev when XTTS_LOCAL_REFERENCE_DIR is set, and only for audio
 files inside that directory. Reference audio is capped at XTTS_MAX_REFERENCE_BYTES (default 20 MB).
-reference_url is fetched only from XTTS_REFERENCE_URL_ALLOWED_HOSTS, without following redirects.
+reference_url is fetched only over https from XTTS_REFERENCE_URL_ALLOWED_HOSTS, never from a host that resolves to a
+private, loopback or link-local address, without following redirects, and only when the response is audio.
 
 /synthesize and /preload require header X-XTTS-Api-Key matching XTTS_API_KEY (or XTTS_ALLOW_UNAUTHENTICATED=true
 for local dev). /health stays open for container health checks.
@@ -22,8 +23,11 @@ import contextlib
 import hmac
 import html
 import io
+import ipaddress
+import logging
 import os
 import re
+import socket
 import sys
 import tempfile
 import urllib.error
@@ -36,6 +40,13 @@ from pydantic import BaseModel
 from starlette.responses import Response
 
 app = FastAPI(title="XTTS Voice Cloning")
+
+# Structured, single-line logs. Never log reference URLs (presigned URLs carry signatures) or reference audio.
+logging.basicConfig(
+    level=os.environ.get("XTTS_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+log = logging.getLogger("xtts")
 
 # Lazy-loaded Coqui TTS model (set on first successful use)
 _tts_model = None
@@ -65,6 +76,13 @@ _REFERENCE_URL_ALLOWED_HOSTS = {
     for h in (os.environ.get("XTTS_REFERENCE_URL_ALLOWED_HOSTS") or "").split(",")
     if h.strip()
 }
+# Local dev only (e.g. the http://localhost:9090 S3 mock): allow http and private/loopback addresses for reference_url.
+_REFERENCE_URL_ALLOW_INSECURE = (
+    (os.environ.get("XTTS_REFERENCE_URL_ALLOW_INSECURE") or "").strip().lower() == "true"
+)
+_REFERENCE_FETCH_TIMEOUT_SEC = 30
+# S3 serves uploads as audio/* or, when no type was set, as a generic binary type.
+_ALLOWED_REFERENCE_CONTENT_TYPES = ("audio/", "video/mp4", "video/webm", "application/octet-stream", "binary/octet-stream")
 
 TTS_REQUIRED_MSG = (
     "Real story-in-cloned-voice requires Coqui TTS (Python 3.9–3.11). "
@@ -125,18 +143,18 @@ def _get_tts():
             _tts_model = TTS(model_name).to(device)
         except Exception as e:
             if device == "mps":
-                print("[XTTS] MPS load/move failed, falling back to CPU: %s" % e)
+                log.warning("event=model_mps_fallback error=%s", type(e).__name__)
                 device = "cpu"
                 _tts_model = TTS(model_name).to("cpu")
             else:
                 raise
         _tts_load_error = None
-        print("[XTTS] Model loaded successfully (device=%s)" % device)
+        log.info("event=model_loaded device=%s", device)
         return _tts_model
     except Exception as e:
         err_msg = "%s: %s" % (type(e).__name__, e)
         _tts_load_error = err_msg
-        print("[XTTS] Coqui TTS not available, using stub: %s" % err_msg)
+        log.warning("event=model_unavailable error=%s", err_msg)
         _tts_model = False
         return None
 
@@ -153,7 +171,7 @@ def _ensure_wav(path: str) -> str:
         seg.export(wav_path, format="wav")
         return wav_path
     except Exception as e:
-        print("[XTTS] Reference audio conversion failed: %s" % e)
+        log.warning("event=reference_conversion_failed error=%s", type(e).__name__)
         raise HTTPException(
             status_code=400,
             detail="Reference audio is not WAV and could not be converted (needs pydub + ffmpeg for MP3).",
@@ -178,18 +196,47 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _url_opener = urllib.request.build_opener(_NoRedirect)
 
 
+def _is_public_address(addr: str) -> bool:
+    ip = ipaddress.ip_address(addr.split("%", 1)[0])
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return ip.is_global and not ip.is_multicast
+
+
 def _check_reference_url(reference_url: str) -> None:
-    """Allow only http(s) URLs to an allow-listed host, with no embedded credentials."""
+    """
+    Allow only https URLs (http too when XTTS_REFERENCE_URL_ALLOW_INSECURE) to an allow-listed host, with no embedded
+    credentials, whose every resolved address is public (blocks loopback, private, link-local / cloud metadata).
+    """
     parsed = urllib.parse.urlsplit(reference_url)
     host = (parsed.hostname or "").lower()
+    allowed_schemes = ("http", "https") if _REFERENCE_URL_ALLOW_INSECURE else ("https",)
     if (
-        parsed.scheme not in ("http", "https")
+        parsed.scheme not in allowed_schemes
         or parsed.username
         or parsed.password
         or not host
         or host not in _REFERENCE_URL_ALLOWED_HOSTS
     ):
+        log.warning("event=reference_url_rejected reason=scheme_or_host host=%s", host or "-")
         raise HTTPException(status_code=400, detail="reference_url host is not allowed.")
+    if _REFERENCE_URL_ALLOW_INSECURE:
+        return
+    try:
+        infos = socket.getaddrinfo(host, parsed.port or 443, proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, UnicodeError):
+        log.warning("event=reference_url_rejected reason=dns host=%s", host)
+        raise HTTPException(status_code=400, detail="reference_url host could not be resolved.")
+    if not infos or not all(_is_public_address(info[4][0]) for info in infos):
+        log.warning("event=reference_url_rejected reason=non_public_address host=%s", host)
+        raise HTTPException(status_code=400, detail="reference_url host is not allowed.")
+
+
+def _check_reference_content_type(content_type: str | None) -> None:
+    ctype = (content_type or "").split(";", 1)[0].strip().lower()
+    if not ctype.startswith(_ALLOWED_REFERENCE_CONTENT_TYPES):
+        log.warning("event=reference_url_rejected reason=content_type content_type=%s", ctype or "-")
+        raise HTTPException(status_code=415, detail="reference_url did not return audio.")
 
 
 def _check_reference_size(size: int) -> None:
@@ -237,12 +284,21 @@ def _load_reference_bytes(
             raise HTTPException(status_code=400, detail="Invalid reference_audio_base64.")
     if reference_url:
         _check_reference_url(reference_url)
+        host = urllib.parse.urlsplit(reference_url).hostname
         try:
             req = urllib.request.Request(reference_url, headers={"User-Agent": "TamixaXTTS/1.0"})
-            with _url_opener.open(req, timeout=30) as resp:
+            with _url_opener.open(req, timeout=_REFERENCE_FETCH_TIMEOUT_SEC) as resp:
+                _check_reference_content_type(resp.headers.get("Content-Type"))
+                declared = resp.headers.get("Content-Length")
+                if declared and declared.isdigit():
+                    _check_reference_size(int(declared))
                 data = resp.read(_MAX_REFERENCE_BYTES + 1)
+        except HTTPException:
+            raise
         except Exception as e:
-            print("[XTTS] Failed to fetch reference_url: %s" % e)
+            # Log only the host and error type/status: the URL and its message may carry a presigned signature.
+            status = getattr(e, "code", None)
+            log.warning("event=reference_fetch_failed host=%s error=%s status=%s", host, type(e).__name__, status)
             raise HTTPException(status_code=400, detail="Failed to fetch reference_url.")
         _check_reference_size(len(data))
         return data
@@ -401,13 +457,10 @@ def _synthesize_with_xtts(
     buf.seek(0)
     out = buf.read()
     n = len(chunks)
-    if requested_language and requested_language != language:
-        print(
-            "[XTTS] SYNTHESIS_COMPLETED chunks=%d wav_bytes=%d requested=%s → language=%s (XTTS)"
-            % (n, len(out), requested_language, language)
-        )
-    else:
-        print("[XTTS] SYNTHESIS_COMPLETED chunks=%d wav_bytes=%d language=%s" % (n, len(out), language))
+    log.info(
+        "event=synthesis_completed chunks=%d wav_bytes=%d language=%s requested_language=%s",
+        n, len(out), language, requested_language or language,
+    )
     return out, n
 
 
@@ -457,10 +510,7 @@ async def synthesize(req: SynthesizeRequest):
         )
 
     if not has_ref:
-        print(
-            "[STUB] No reference (base64/url/local path); text length=%s -> returning tamixa.mp3"
-            % len(req.text)
-        )
+        log.info("event=stub_response reason=no_reference text_chars=%d", len(req.text))
         return _stub_response()
 
     try:
@@ -481,10 +531,10 @@ async def synthesize(req: SynthesizeRequest):
             },
         )
     except HTTPException as he:
-        print("[XTTS] SYNTHESIS_NOT_COMPLETED status=%s detail=%s" % (he.status_code, he.detail))
+        log.warning("event=synthesis_not_completed status=%s detail=%s", he.status_code, he.detail)
         raise
     except Exception as e:
-        print("[XTTS] SYNTHESIS_NOT_COMPLETED error=%s" % e)
+        log.error("event=synthesis_not_completed status=500 error=%s", type(e).__name__)
         raise HTTPException(status_code=500, detail="Synthesis failed.")
 
 

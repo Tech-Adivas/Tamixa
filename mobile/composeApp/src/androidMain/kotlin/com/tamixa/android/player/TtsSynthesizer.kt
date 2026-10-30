@@ -9,13 +9,49 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 import kotlin.coroutines.resume
 
 /** Android TTS has ~4000 character limit per synthesizeToFile call. Chunk at sentence boundaries. */
 private const val MAX_CHARS_PER_CHUNK = 3500
+
+/** Every synthesized WAV (final and chunk files) starts with this prefix in cacheDir. */
+private const val TTS_FILE_PREFIX = "tamixa_tts_"
+
+/**
+ * Synthesized story WAVs are up to ~20 MB each and nothing else deletes them, so they used to pile up in cacheDir
+ * (500 MB seen on a dev device). Older than this, a file is assumed no longer playing; the story screen
+ * synthesizes two files per story and plays them, so "keep only the newest" would cut off the other one.
+ */
+private const val STALE_TTS_FILE_AGE_MILLIS = 2 * 60 * 60 * 1000L
+
+/**
+ * Deletes synthesized TTS files last modified more than [olderThanMillis] ago; 0 deletes them all
+ * (safe at app start, when nothing is playing). Returns the number of files deleted.
+ */
+fun clearTtsCacheFiles(context: Context, olderThanMillis: Long = 0L): Int {
+    val cutoff = System.currentTimeMillis() - olderThanMillis
+    val stale = context.cacheDir.listFiles { file ->
+        file.isFile && file.name.startsWith(TTS_FILE_PREFIX) && file.lastModified() <= cutoff
+    } ?: return 0
+    var deleted = 0
+    var freedBytes = 0L
+    for (file in stale) {
+        val size = file.length()
+        if (file.delete()) {
+            deleted++
+            freedBytes += size
+        } else {
+            TamixaLog.w("TtsSynthesizer", "Could not delete stale TTS file ${file.name}")
+        }
+    }
+    if (deleted > 0) TamixaLog.i("TtsSynthesizer", "Deleted $deleted stale TTS files (${freedBytes / 1024} KB)")
+    return deleted
+}
 
 /**
  * Synthesizes story text to an audio file using TTS.
@@ -28,6 +64,7 @@ suspend fun synthesizeStoryToFile(
     languageCode: String
 ): String? {
     if (text.isBlank()) return null
+    withContext(Dispatchers.IO) { clearTtsCacheFiles(context, STALE_TTS_FILE_AGE_MILLIS) }
     val locale = languageCodeToLocale(languageCode)
     val chunks = chunkTextForTts(text.trim(), MAX_CHARS_PER_CHUNK)
     if (chunks.isEmpty()) return null

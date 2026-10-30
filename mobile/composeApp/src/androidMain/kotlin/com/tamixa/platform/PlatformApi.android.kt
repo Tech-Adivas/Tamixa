@@ -84,6 +84,20 @@ actual suspend fun writeTempAudioFile(bytes: ByteArray, fileName: String): Strin
         }
     }
 
+actual suspend fun deleteTempAudioFile(fileName: String) {
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "audio.m4a" }
+        try {
+            val file = java.io.File(getApplicationContext().cacheDir, safeName)
+            if (file.exists() && !file.delete()) {
+                TamixaLog.w("PlatformAndroid", "deleteTempAudioFile could not delete $safeName")
+            }
+        } catch (e: Exception) {
+            TamixaLog.w("PlatformAndroid", "deleteTempAudioFile failed for $safeName: ${e.message}", e)
+        }
+    }
+}
+
 @Composable
 actual fun PlatformBackHandler(onBack: () -> Unit) {
     BackHandler(onBack = onBack)

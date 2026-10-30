@@ -1,6 +1,17 @@
 package com.tamixa.ui.screen
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -11,6 +22,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -67,6 +79,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -343,10 +357,11 @@ fun AudioPlayerScreen(
                         currentStory == null -> {
                             Box(modifier = Modifier.fillMaxSize()) {
                                 Text(
-                                    "No story",
+                                    Strings.storyNotAvailable(),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = PlayerScreenMuted,
-                                    modifier = Modifier.align(Alignment.Center)
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 24.dp)
                                 )
                                 AudioPlayerOverlayBack(
                                     onBack = onBack,
@@ -692,36 +707,35 @@ private fun AudioPlayerVoiceMenuSheet(
     }
 }
 
+/** Small story action (add to list, download, like) shown in the player panel under the play controls. */
 @Composable
-private fun PlayerQuickAction(
-    icon: @Composable () -> Unit,
+private fun PlayerCompactAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
+    tint: Color,
     enabled: Boolean,
     onClick: () -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(92.dp)) {
-        Surface(
-            onClick = onClick,
-            enabled = enabled,
-            shape = CircleShape,
-            color = TamixaColors.nightSkySurfaceVariant,
-            border = androidx.compose.foundation.BorderStroke(1.dp, PlayerCardStroke),
-            modifier = Modifier.size(52.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                icon()
-            }
-        }
-        Spacer(Modifier.height(6.dp))
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = if (enabled) tint else tint.copy(alpha = 0.4f), modifier = Modifier.size(20.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium,
             color = if (enabled) PlayerScreenMuted else PlayerScreenMuted.copy(alpha = 0.45f),
-            textAlign = TextAlign.Center,
-            maxLines = 2
+            maxLines = 1
         )
     }
 }
+
+/** Without a touch for this long while playing, the player panel fades away (any touch brings it back). */
+private const val PLAYER_AUTO_HIDE_MS = 4_000L
 
 @Composable
 private fun PlayerContent(
@@ -811,6 +825,16 @@ private fun PlayerContent(
     var remixInstruction by remember(story.id) { mutableStateOf("") }
     val remixHandler = onRemix?.takeIf { story.parentId != 0L }
     var playerOverflowOpen by remember(story.id) { mutableStateOf(false) }
+    // Parent notes live behind the ⋮ menu (bottom sheet) so the page shows only the story picture and player.
+    var parentNotesOpen by remember(story.id) { mutableStateOf(false) }
+    val hasParentExtras = story.parentId == 0L && (
+        !story.parentContentNote.isNullOrBlank() ||
+            !story.speakAlongPrompt.isNullOrBlank() ||
+            story.parentDiscussionPrompts?.any { it.isNotBlank() } == true
+        )
+    if (parentNotesOpen) {
+        ParentNotesSheet(story = story, onDismiss = { parentNotesOpen = false })
+    }
     LaunchedEffect(story.id) {
         analytics?.onStoryStarted?.invoke(story, 0)
     }
@@ -851,32 +875,174 @@ private fun PlayerContent(
         prevSceneIndexForCue = cur
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Column(
+    // Immersive playback: while the story plays, tapping the picture hides/shows the player, and a shown player fades
+    // away by itself after a few seconds without a touch; the picture grows into the freed space. Paused = player
+    // always shown.
+    var playerControlsVisible by remember(story.id) { mutableStateOf(true) }
+    var screenTouches by remember(story.id) { mutableStateOf(0) }
+    LaunchedEffect(isPlaying, playerControlsVisible, screenTouches) {
+        if (!isPlaying) {
+            playerControlsVisible = true
+        } else if (playerControlsVisible) {
+            delay(PLAYER_AUTO_HIDE_MS)
+            playerControlsVisible = false
+        }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                // Observe every touch (without consuming it) so buttons and scrolling keep working.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    screenTouches++
+                }
+            }
+    ) {
+        // Top bar: back, story title (and genre), actions.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PlayerHeroCircleButton(
+                onClick = onBack,
+                modifier = Modifier.padding(start = 4.dp)
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = Strings.back(),
+                    tint = heroControlTint,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = story.title?.takeIf { it.isNotBlank() } ?: story.theme,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = PlayerScreenInk,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                playbackSubtitle?.takeIf { it.isNotBlank() }?.let { sub ->
+                    Text(
+                        text = sub,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PlayerScreenMuted,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            val showOverflowMenu = onOpenVoiceMenu != null || onOpenQuiz != null || hasParentExtras
+            // Extra action and ⋮ menu share one row so they sit side by side instead of overlapping.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+            topBarAction?.invoke()
+            if (showOverflowMenu) {
+                Box(modifier = Modifier.wrapContentSize(Alignment.TopEnd)) {
+                    PlayerHeroCircleButton(
+                        onClick = { playerOverflowOpen = true },
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = Strings.playerMoreActions(),
+                            tint = heroControlTint,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = playerOverflowOpen,
+                        onDismissRequest = { playerOverflowOpen = false },
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ) {
+                        onOpenQuiz?.let { openQuiz ->
+                            DropdownMenuItem(
+                                text = { Text(Strings.storyQuiz()) },
+                                onClick = {
+                                    playerOverflowOpen = false
+                                    openQuiz()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.AutoMirrored.Outlined.MenuBook, contentDescription = null)
+                                }
+                            )
+                        }
+                        if (hasParentExtras) {
+                            DropdownMenuItem(
+                                text = { Text(Strings.forParentsSectionTitle()) },
+                                onClick = {
+                                    playerOverflowOpen = false
+                                    parentNotesOpen = true
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Person, contentDescription = null)
+                                }
+                            )
+                        }
+                        onOpenVoiceMenu?.let { openVoice ->
+                            DropdownMenuItem(
+                                text = { Text(Strings.playerVoiceAndPlayMode()) },
+                                onClick = {
+                                    playerOverflowOpen = false
+                                    openVoice()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Mic, contentDescription = null)
+                                }
+                            )
+                        }
+                    }
+                }
+            } else if (topBarAction == null) {
+                Spacer(Modifier.size(48.dp))
+            }
+            }
+        }
+        BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+        ) {
+        val pictureHeight = (maxHeight - 16.dp).coerceAtLeast(240.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
                 .verticalScroll(scrollState)
         ) {
         val heroHasAvatarMedia =
             storytellingAvatarVideoContent != null || storytellingAvatarUrl != null
-        val heroShape = RoundedCornerShape(
-            topStart = 0.dp,
-            topEnd = 0.dp,
-            bottomStart = TamixaDesignTokens.storyIllustrationFrameRadius,
-            bottomEnd = TamixaDesignTokens.storyIllustrationFrameRadius
-        )
+        // Story picture in the centre (scene slideshow, avatar or cover), with the spoken line as a movie subtitle.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 4.dp)
-                .height(300.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(0f)
-                    .clip(heroShape)
+                    .fillMaxWidth()
+                    .height(pictureHeight)
+                    .clip(RoundedCornerShape(TamixaDesignTokens.storyIllustrationFrameRadius))
+                    // Tap the picture to hide or bring back the player (no ripple over the story art).
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        if (isPlaying) playerControlsVisible = !playerControlsVisible
+                    }
             ) {
                 StoryCoverImage(
                     story = story,
@@ -884,140 +1050,50 @@ private fun PlayerContent(
                     contentScale = ContentScale.Crop,
                     apiBaseUrl = apiBaseUrl
                 )
-                if (!heroHasAvatarMedia) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Black.copy(alpha = 0.42f),
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.28f)
-                                    )
-                                )
-                            )
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Black.copy(alpha = 0.55f),
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.35f)
-                                    )
-                                )
-                            )
-                    )
-                }
                 if (narrativeLayerWorthShowing(narrativeVisuals)) {
                     NarrativeSceneOverlay(
                         progress = progress,
                         scenes = narrativeVisuals,
                         apiBaseUrl = apiBaseUrl,
                         reduceMotion = platformIsReduceMotionEnabled(),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(0.5f)
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
                 if (storytellingAvatarVideoContent != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(0.65f)
-                    ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
                         storytellingAvatarVideoContent()
                     }
                 } else if (storytellingAvatarUrl != null) {
                     coil3.compose.AsyncImage(
                         model = storytellingAvatarUrl,
                         contentDescription = Strings.yourAvatar(),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(0.65f),
+                        modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
                 }
-            }
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
-                    .zIndex(100f),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                PlayerHeroCircleButton(
-                    onClick = onBack,
-                    modifier = Modifier.padding(start = 4.dp)
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = Strings.back(),
-                        tint = heroControlTint,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                val showOverflowMenu = onOpenVoiceMenu != null || onOpenQuiz != null
-                // Extra action and ⋮ menu share one row so they sit side by side instead of overlapping.
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                topBarAction?.invoke()
-                if (showOverflowMenu) {
-                    Box(modifier = Modifier.wrapContentSize(Alignment.TopEnd)) {
-                        PlayerHeroCircleButton(
-                            onClick = { playerOverflowOpen = true },
-                            modifier = Modifier.padding(end = 4.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.MoreVert,
-                                contentDescription = Strings.playerMoreActions(),
-                                tint = heroControlTint,
-                                modifier = Modifier.size(24.dp)
+                if (showSyncedReadAlong) {
+                    // Dark fade at the bottom keeps the subtitle readable on any picture.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    0f to Color.Transparent,
+                                    0.55f to Color.Transparent,
+                                    1f to Color.Black.copy(alpha = if (heroHasAvatarMedia) 0.8f else 0.72f)
+                                )
                             )
-                        }
-                        DropdownMenu(
-                            expanded = playerOverflowOpen,
-                            onDismissRequest = { playerOverflowOpen = false },
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ) {
-                            onOpenQuiz?.let { openQuiz ->
-                                DropdownMenuItem(
-                                    text = { Text(Strings.storyQuiz()) },
-                                    onClick = {
-                                        playerOverflowOpen = false
-                                        openQuiz()
-                                    },
-                                    leadingIcon = {
-                                        Icon(Icons.AutoMirrored.Outlined.MenuBook, contentDescription = null)
-                                    }
-                                )
-                            }
-                            onOpenVoiceMenu?.let { openVoice ->
-                                DropdownMenuItem(
-                                    text = { Text(Strings.playerVoiceAndPlayMode()) },
-                                    onClick = {
-                                        playerOverflowOpen = false
-                                        openVoice()
-                                    },
-                                    leadingIcon = {
-                                        Icon(Icons.Default.Mic, contentDescription = null)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                } else if (topBarAction == null) {
-                    Spacer(Modifier.size(48.dp))
-                }
+                    )
+                    StorySubtitleLine(
+                        content = storyTextForDisplay,
+                        progress = progress,
+                        wordTimings = wordTimings,
+                        durationSeconds = totalSec,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 18.dp)
+                    )
                 }
             }
         }
@@ -1057,28 +1133,6 @@ private fun PlayerContent(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = story.title?.takeIf { it.isNotBlank() } ?: story.theme,
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                color = PlayerScreenInk,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            playbackSubtitle?.takeIf { it.isNotBlank() }?.let { sub ->
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = sub,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = PlayerScreenMuted,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
             if (showInteractivePracticeChip) {
                 Spacer(Modifier.height(10.dp))
                 Row(
@@ -1110,23 +1164,7 @@ private fun PlayerContent(
                     )
                 }
             }
-            if (showSyncedReadAlong) {
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = Strings.playerListenAlongTitle(),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = PlayerScreenInk,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(10.dp))
-                StoryTranscriptSection(
-                    content = storyTextForDisplay,
-                    progress = progress,
-                    wordTimings = wordTimings,
-                    durationSeconds = totalSec,
-                )
-            } else if (showInteractivePracticeChip && transcriptForDisplay.isNotBlank()) {
+            if (showInteractivePracticeChip && transcriptForDisplay.isNotBlank()) {
                 Spacer(Modifier.height(18.dp))
                 Text(
                     text = if (sceneTranscriptStripped.isNotBlank()) {
@@ -1173,75 +1211,6 @@ private fun PlayerContent(
                     )
                 }
             }
-            val hasParentExtras = story.parentId == 0L && (
-                !story.parentContentNote.isNullOrBlank() ||
-                    !story.speakAlongPrompt.isNullOrBlank() ||
-                    story.parentDiscussionPrompts?.any { it.isNotBlank() } == true
-                )
-            if (hasParentExtras) {
-                Spacer(Modifier.height(18.dp))
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = snippetSurface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, PlayerCardStroke),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            Strings.forParentsSectionTitle(),
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = PlayerScreenInk,
-                        )
-                        story.parentContentNote?.takeIf { it.isNotBlank() }?.let { note ->
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                Strings.parentContentNoteLabel(),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = PlayerScreenMuted,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                note,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = PlayerScreenInk.copy(alpha = 0.92f),
-                            )
-                        }
-                        story.speakAlongPrompt?.takeIf { it.isNotBlank() }?.let { prompt ->
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                Strings.speakAlongLabel(),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = PlayerScreenMuted,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                prompt,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = PlayerScreenInk.copy(alpha = 0.92f),
-                            )
-                        }
-                        val prompts = story.parentDiscussionPrompts?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
-                        if (prompts.isNotEmpty()) {
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                Strings.discussionPromptsLabel(),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = PlayerScreenMuted,
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            prompts.forEach { p ->
-                                Text(
-                                    "• $p",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = PlayerScreenInk.copy(alpha = 0.92f),
-                                    modifier = Modifier.padding(vertical = 2.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            
             // Related Stories Section
             if (relatedStories.isNotEmpty() && onRelatedStoryClick != null) {
                 Spacer(Modifier.height(24.dp))
@@ -1335,51 +1304,16 @@ private fun PlayerContent(
                 }
             }
             
-            Spacer(Modifier.height(20.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.Top
-            ) {
-                PlayerQuickAction(
-                    icon = {
-                        Icon(
-                            if (isFavorite) Icons.Default.Check else Icons.AutoMirrored.Outlined.PlaylistAdd,
-                            contentDescription = null,
-                            tint = if (isFavorite) accent else PlayerScreenInk,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    },
-                    label = if (isFavorite) Strings.playerInList() else Strings.playerAddToList(),
-                    enabled = onAddToList != null,
-                    onClick = { onAddToList?.invoke() }
-                )
-                PlayerQuickAction(
-                    icon = {
-                        Icon(Icons.Default.Download, null, tint = PlayerScreenInk, modifier = Modifier.size(22.dp))
-                    },
-                    label = Strings.download(),
-                    enabled = onDownload != null,
-                    onClick = { onDownload?.invoke() }
-                )
-                PlayerQuickAction(
-                    icon = {
-                        Icon(
-                            if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            null,
-                            tint = if (isFavorite) accent else PlayerScreenInk,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    },
-                    label = Strings.playerLike(),
-                    enabled = onFavoriteToggle != null,
-                    onClick = { onFavoriteToggle?.invoke() }
-                )
-            }
             Spacer(Modifier.height(16.dp))
         }
         }
+        }
 
+        AnimatedVisibility(
+            visible = playerControlsVisible,
+            enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+        ) {
         Surface(
             color = TamixaColors.nightSkyBg,
             modifier = Modifier.fillMaxWidth()
@@ -1562,7 +1496,36 @@ private fun PlayerContent(
                         }
                     }
                 }
-                
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PlayerCompactAction(
+                        icon = if (isFavorite) Icons.Default.Check else Icons.AutoMirrored.Outlined.PlaylistAdd,
+                        label = if (isFavorite) Strings.playerInList() else Strings.playerAddToList(),
+                        tint = if (isFavorite) accent else PlayerScreenInk,
+                        enabled = onAddToList != null,
+                        onClick = { onAddToList?.invoke() }
+                    )
+                    PlayerCompactAction(
+                        icon = Icons.Default.Download,
+                        label = Strings.download(),
+                        tint = PlayerScreenInk,
+                        enabled = onDownload != null,
+                        onClick = { onDownload?.invoke() }
+                    )
+                    PlayerCompactAction(
+                        icon = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        label = Strings.playerLike(),
+                        tint = if (isFavorite) accent else PlayerScreenInk,
+                        enabled = onFavoriteToggle != null,
+                        onClick = { onFavoriteToggle?.invoke() }
+                    )
+                }
+
                 // Speed control
                 if (onSpeedChange != null) {
                     Spacer(Modifier.height(12.dp))
@@ -1682,6 +1645,7 @@ private fun PlayerContent(
                     )
                 }
             }
+        }
         }
     }
 }
@@ -1837,25 +1801,76 @@ private fun progressToSentenceFractionByWordWeight(
     return sentences.lastIndex.coerceAtLeast(0) to 1f
 }
 
+/** "For parents" notes (content note, speak-along prompt, discussion questions) in a bottom sheet. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ParentNotesSheet(story: Story, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val bodyColor = MaterialTheme.colorScheme.onSurface
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                Strings.forParentsSectionTitle(),
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = bodyColor,
+            )
+            story.parentContentNote?.takeIf { it.isNotBlank() }?.let { note ->
+                Spacer(Modifier.height(16.dp))
+                Text(Strings.parentContentNoteLabel(), style = MaterialTheme.typography.labelLarge, color = labelColor)
+                Spacer(Modifier.height(4.dp))
+                Text(note, style = MaterialTheme.typography.bodyMedium, color = bodyColor)
+            }
+            story.speakAlongPrompt?.takeIf { it.isNotBlank() }?.let { prompt ->
+                Spacer(Modifier.height(16.dp))
+                Text(Strings.speakAlongLabel(), style = MaterialTheme.typography.labelLarge, color = labelColor)
+                Spacer(Modifier.height(4.dp))
+                Text(prompt, style = MaterialTheme.typography.bodyMedium, color = bodyColor)
+            }
+            val prompts = story.parentDiscussionPrompts?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+            if (prompts.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text(Strings.discussionPromptsLabel(), style = MaterialTheme.typography.labelLarge, color = labelColor)
+                Spacer(Modifier.height(6.dp))
+                prompts.forEach { prompt ->
+                    Text(
+                        "• $prompt",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = bodyColor,
+                        modifier = Modifier.padding(vertical = 3.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The sentence being spoken and the word within it. */
+private data class ReadAlongPosition(val sentences: List<String>, val sentenceIndex: Int, val wordIndex: Int)
+
 /**
- * Karaoke-style transcript: one sentence at a time, word-by-word highlight synced to playback.
- * When [wordTimings] and [durationSeconds] are provided (from backend/voice transcription),
- * highlight is driven by current time for exact sync. Otherwise uses sentence-based heuristic.
- * When [wordWeightedHeuristic] is true (interactive segment, no timings), progress is mapped by word count per sentence.
+ * Where the narration is in [content]: exact from [wordTimings] (server forced alignment) when present, otherwise
+ * estimated from [progress] — by word count per sentence when [wordWeightedHeuristic], else equal time per sentence.
  */
 @Composable
-private fun StoryTranscriptSection(
+private fun rememberReadAlongPosition(
     content: String?,
     progress: Float,
-    wordTimings: List<WordTiming>? = null,
-    durationSeconds: Int = 0,
-    wordWeightedHeuristic: Boolean = false,
-    modifier: Modifier = Modifier
-) {
-    val surfaceColor = com.tamixa.ui.theme.TamixaColors.nightSkySurfaceVariant.copy(alpha = 0.6f)
-    val textColor = com.tamixa.ui.theme.TamixaColors.cream
-    val highlightColor = com.tamixa.ui.theme.TamixaColors.goldAccent
-
+    wordTimings: List<WordTiming>?,
+    durationSeconds: Int,
+    wordWeightedHeuristic: Boolean,
+): ReadAlongPosition {
     val sentences = remember(content) { content?.let { splitIntoSentences(it) } ?: emptyList() }
     val startIndices = remember(sentences) { sentenceStartWordIndices(sentences) }
     val sentenceCount = sentences.size
@@ -1914,6 +1929,115 @@ private fun StoryTranscriptSection(
         sentIdx to hi
     }
 
+    return ReadAlongPosition(sentences, currentSentenceIndex, highlightWordIndex)
+}
+
+/**
+ * Movie-style subtitle over the story picture: only the line being spoken, fading into the next one. Long sentences
+ * are cut into short lines (preferably after a comma) so about two lines show at most; the spoken word is softly
+ * highlighted so a child can follow along.
+ */
+@Composable
+private fun StorySubtitleLine(
+    content: String?,
+    progress: Float,
+    wordTimings: List<WordTiming>?,
+    durationSeconds: Int,
+    modifier: Modifier = Modifier,
+) {
+    val readAlong = rememberReadAlongPosition(content, progress, wordTimings, durationSeconds, wordWeightedHeuristic = true)
+    val sentence = readAlong.sentences.getOrNull(readAlong.sentenceIndex).orEmpty()
+    val words = remember(sentence) { splitIntoWords(sentence) }
+    if (words.isEmpty()) return
+    val chunks = remember(words) { subtitleChunks(words) }
+    val wordIndex = readAlong.wordIndex.coerceIn(0, words.lastIndex)
+    val chunk = chunks.firstOrNull { wordIndex in it } ?: chunks.last()
+    val line = SubtitleLineState(
+        key = readAlong.sentenceIndex * 1000 + chunk.first,
+        words = words.subList(chunk.first, chunk.last + 1),
+        highlight = wordIndex - chunk.first,
+    )
+    AnimatedContent(
+        targetState = line,
+        contentKey = { it.key },
+        transitionSpec = { fadeIn(tween(350)) togetherWith fadeOut(tween(250)) },
+        label = "storySubtitle",
+        modifier = modifier,
+    ) { shown ->
+        Text(
+            text = buildAnnotatedString {
+                shown.words.forEachIndexed { i, word ->
+                    if (i > 0) append(" ")
+                    if (i == shown.highlight) {
+                        pushStyle(SpanStyle(color = TamixaColors.goldAccent))
+                        append(word)
+                        pop()
+                    } else {
+                        append(word)
+                    }
+                }
+            },
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 28.sp,
+                shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.7f), blurRadius = 8f),
+            ),
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+private data class SubtitleLineState(val key: Int, val words: List<String>, val highlight: Int)
+
+/**
+ * Splits a sentence's word indices into subtitle lines of at most [SUBTITLE_MAX_WORDS] words, breaking after a
+ * comma (or similar pause) once a line has a few words, so lines end where the narrator naturally pauses.
+ */
+private fun subtitleChunks(words: List<String>): List<IntRange> {
+    if (words.size <= SUBTITLE_MAX_WORDS) return listOf(words.indices)
+    val chunks = mutableListOf<IntRange>()
+    var start = 0
+    for (i in words.indices) {
+        val length = i - start + 1
+        val pause = words[i].trimEnd('"', '\'', '”', '’').lastOrNull() in SUBTITLE_PAUSE_CHARS
+        if (i == words.lastIndex || length >= SUBTITLE_MAX_WORDS || (pause && length >= SUBTITLE_MIN_WORDS)) {
+            chunks += start..i
+            start = i + 1
+        }
+    }
+    return chunks
+}
+
+private const val SUBTITLE_MAX_WORDS = 8
+private const val SUBTITLE_MIN_WORDS = 3
+private val SUBTITLE_PAUSE_CHARS = setOf(',', ';', ':', '—', '–', '…')
+
+/**
+ * Karaoke-style transcript: one sentence at a time, word-by-word highlight synced to playback.
+ * When [wordTimings] and [durationSeconds] are provided (from backend/voice transcription),
+ * highlight is driven by current time for exact sync. Otherwise uses sentence-based heuristic.
+ * When [wordWeightedHeuristic] is true and there are no timings, progress is mapped by word count per sentence.
+ */
+@Composable
+private fun StoryTranscriptSection(
+    content: String?,
+    progress: Float,
+    wordTimings: List<WordTiming>? = null,
+    durationSeconds: Int = 0,
+    wordWeightedHeuristic: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val surfaceColor = com.tamixa.ui.theme.TamixaColors.nightSkySurfaceVariant.copy(alpha = 0.6f)
+    val textColor = com.tamixa.ui.theme.TamixaColors.cream
+    val highlightColor = com.tamixa.ui.theme.TamixaColors.goldAccent
+
+    val readAlong = rememberReadAlongPosition(content, progress, wordTimings, durationSeconds, wordWeightedHeuristic)
+    val sentences = readAlong.sentences
+    val currentSentenceIndex = readAlong.sentenceIndex
+    val highlightWordIndex = readAlong.wordIndex
+
     val currentSentence = sentences.getOrNull(currentSentenceIndex) ?: ""
     val sentenceWords = remember(currentSentence) { splitIntoWords(currentSentence) }
     val safeHighlightIndex = highlightWordIndex.coerceIn(0, (sentenceWords.size - 1).coerceAtLeast(0))
@@ -1935,6 +2059,8 @@ private fun StoryTranscriptSection(
                 )
             } else {
                 val nextSentence = sentences.getOrNull(currentSentenceIndex + 1)
+                // Character offset of the highlighted word, so the box can keep it in view.
+                var highlightCharOffset = 0
                 val annotated = buildAnnotatedString {
                     var searchStart = 0
                     sentenceWords.forEachIndexed { wi, word ->
@@ -1948,6 +2074,7 @@ private fun StoryTranscriptSection(
                                 pop()
                             }
                             wi == safeHighlightIndex -> {
+                                highlightCharOffset = length
                                 pushStyle(SpanStyle(color = highlightColor, fontWeight = FontWeight.Bold))
                                 append(currentSentence.substring(wordStart, wordEnd))
                                 pop()
@@ -1972,11 +2099,25 @@ private fun StoryTranscriptSection(
                         pop()
                     }
                 }
+                // The box follows the highlighted word by itself; finger scrolling is off so a swipe always
+                // scrolls the player page instead of fighting a second scroll area inside it.
+                val transcriptScroll = rememberScrollState()
+                var transcriptLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+                val highlightLineTopPx = transcriptLayout?.let { layout ->
+                    val offset = highlightCharOffset.coerceIn(0, (layout.layoutInput.text.length - 1).coerceAtLeast(0))
+                    layout.getLineTop(layout.getLineForOffset(offset))
+                }
+                val keepAboveHighlightPx = with(LocalDensity.current) { 28.dp.toPx() }
+                LaunchedEffect(highlightLineTopPx, currentSentenceIndex) {
+                    val lineTop = highlightLineTopPx ?: return@LaunchedEffect
+                    val target = (lineTop - keepAboveHighlightPx).toInt().coerceIn(0, transcriptScroll.maxValue)
+                    if (target != transcriptScroll.value) transcriptScroll.animateScrollTo(target)
+                }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 240.dp)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(transcriptScroll, enabled = false)
                 ) {
                     Text(
                         text = annotated,
@@ -1984,7 +2125,8 @@ private fun StoryTranscriptSection(
                             color = textColor,
                             lineHeight = 28.sp
                         ),
-                        textAlign = TextAlign.Center,
+                        textAlign = TextAlign.Start,
+                        onTextLayout = { transcriptLayout = it },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp, vertical = 18.dp)

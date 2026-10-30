@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
@@ -62,15 +63,19 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.time.TimeSource
 
 private const val TAG = "FamilyVoiceRecord"
 
 /**
  * Shortest recording that can be saved. The recording becomes the parent's cloned voice, and instant voice
- * cloning sounds more like the speaker the more speech it gets (about a minute is best); much shorter samples
- * come out generic. 30 s is the product's balance between likeness and effort for parents.
+ * cloning sounds more like the speaker the more speech it gets: 30 s samples came out generic, 1–2 minutes of
+ * clear read-aloud speech is what ElevenLabs recommends. The reading script takes about 60–75 s at a bedtime pace.
  */
-private const val MIN_RECORDING_SECONDS = 30
+private const val MIN_RECORDING_SECONDS = 60
+
+/** Recording stops by itself here: past 2–3 minutes an instant clone barely improves and the upload only grows. */
+private const val MAX_RECORDING_SECONDS = 180
 
 private fun hasRecordAudioPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -82,8 +87,8 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 /**
- * Record → stop → preview (play/pause) → Save / Record again / Cancel.
- * Only a recording of at least [MIN_RECORDING_SECONDS] can be saved.
+ * Tips and a story to read aloud → tap to record → stop (or auto-stop at [MAX_RECORDING_SECONDS]) → preview
+ * (play/pause) → Save / Record again / Cancel. Only a recording of at least [MIN_RECORDING_SECONDS] can be saved.
  * The recording stays in the cache dir until Save (bytes handed to [onRecordingComplete]) or discard.
  */
 @Composable
@@ -138,6 +143,7 @@ fun FamilyVoiceRecordDialog(
     var isPreviewing by remember { mutableStateOf(false) }
     var previewProgress by remember { mutableFloatStateOf(0f) }
     var isSaving by remember { mutableStateOf(false) }
+    var stoppedAtLimit by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
@@ -147,9 +153,12 @@ fun FamilyVoiceRecordDialog(
     LaunchedEffect(isRecording) {
         if (isRecording) {
             elapsedSeconds = 0
+            // Read a monotonic clock rather than counting delay(1000) ticks: each tick runs late under load, so a
+            // counted timer fell behind the real recording (a "180 s" capture was 209 s) and the limit fired late.
+            val startMark = TimeSource.Monotonic.markNow()
             while (true) {
-                delay(1000)
-                elapsedSeconds += 1
+                delay(250)
+                elapsedSeconds = startMark.elapsedNow().inWholeSeconds.toInt()
             }
         }
     }
@@ -231,6 +240,7 @@ fun FamilyVoiceRecordDialog(
                 start()
             }
             mediaRecorder = recorder
+            stoppedAtLimit = false
             isRecording = true
         } catch (e: Exception) {
             Log.e(TAG, "Start recording failed", e)
@@ -240,11 +250,6 @@ fun FamilyVoiceRecordDialog(
             // Stay open so the user sees the error and can retry from the mic button.
             startFailed = true
         }
-    }
-
-    // One tap on the record card starts recording as soon as mic permission is granted.
-    LaunchedEffect(micPermissionGranted) {
-        if (micPermissionGranted && !isRecording && recordFile == null) startRecording()
     }
 
     fun stopRecording() {
@@ -269,6 +274,14 @@ fun FamilyVoiceRecordDialog(
             mediaRecorder = null
             isRecording = false
             discardRecording()
+        }
+    }
+
+    LaunchedEffect(elapsedSeconds) {
+        if (isRecording && elapsedSeconds >= MAX_RECORDING_SECONDS) {
+            Log.i(TAG, "Recording reached the ${MAX_RECORDING_SECONDS}s limit; stopping")
+            stopRecording()
+            stoppedAtLimit = true
         }
     }
 
@@ -379,6 +392,14 @@ fun FamilyVoiceRecordDialog(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                if (hasRecording && stoppedAtLimit) {
+                    Text(
+                        Strings.recordingStoppedAtLimit(MAX_RECORDING_SECONDS),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
                 if (recordingTooShort) {
                     Text(
                         Strings.recordingTooShort(MIN_RECORDING_SECONDS),
@@ -457,6 +478,28 @@ fun FamilyVoiceRecordDialog(
                                 .size(48.dp),
                             tint = if (isRecording) MaterialTheme.colorScheme.onErrorContainer
                             else MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    if (!isRecording) {
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            Strings.voiceCloneTips(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    // Read aloud: a story in the app language gives the clone the voice it will narrate in.
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            Strings.voiceCloneReadingScript(),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp)
                         )
                     }
                 }

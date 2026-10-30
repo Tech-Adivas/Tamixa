@@ -3,6 +3,7 @@ package com.tamixa.ui.viewmodel
 import com.tamixa.domain.VoiceDeleteResult
 import com.tamixa.domain.VoiceLimitReachedException
 import com.tamixa.domain.VoiceProfile
+import com.tamixa.platform.deleteTempAudioFile
 import com.tamixa.platform.writeTempAudioFile
 import com.tamixa.repository.VoiceRepository
 import com.tamixa.ui.AppMessageNotifier
@@ -61,6 +62,15 @@ class VoiceViewModel(
     companion object {
         /** Sentinel so we don't show upload progress or success on first open */
         val IDLE_PROFILE = VoiceProfile(id = -1L, parentId = -1L, createdAt = "")
+
+        /**
+         * Prefix of the temp copies made to play a saved voice. They are only playback copies (every play
+         * downloads again), so they are deleted when playback stops and when the voice is deleted; the Android
+         * app also clears leftovers at start, so a parent's voice recording doesn't stay on the device.
+         */
+        const val SAVED_VOICE_FILE_PREFIX = "saved_voice_"
+
+        private fun savedVoiceFileName(profileId: Long) = "$SAVED_VOICE_FILE_PREFIX$profileId.m4a"
     }
 
     private val _profiles = MutableStateFlow<UiState<List<VoiceProfile>>>(UiState.Success(emptyList()))
@@ -141,7 +151,10 @@ class VoiceViewModel(
                         onSuccess = { result ->
                             TamixaLog.i("VoiceViewModel", "Voice delete profileId=$profileId: $result")
                             when (result) {
-                                VoiceDeleteResult.DELETED, VoiceDeleteResult.NOT_FOUND -> appMessageNotifier.show(Strings.voiceDeleted())
+                                VoiceDeleteResult.DELETED, VoiceDeleteResult.NOT_FOUND -> {
+                                    deleteTempAudioFile(savedVoiceFileName(profileId))
+                                    appMessageNotifier.show(Strings.voiceDeleted())
+                                }
                                 VoiceDeleteResult.IN_USE -> appMessageNotifier.show(Strings.voiceInUseCannotDelete())
                             }
                         },
@@ -165,12 +178,16 @@ class VoiceViewModel(
     /** Downloads the saved reference recording for [profileId] and exposes it as a local file for playback. */
     fun playSavedProfile(profileId: Long) {
         savedPlaybackJob?.cancel()
+        val previousProfileId = _savedPlayback.value?.profileId
         _savedPlayback.value = SavedVoicePlayback(profileId = profileId, isLoading = true)
         savedPlaybackJob = scope.launch {
+            if (previousProfileId != null && previousProfileId != profileId) {
+                deleteTempAudioFile(savedVoiceFileName(previousProfileId))
+            }
             voiceRepository.getReferenceAudio(profileId)
                 .fold(
                     onSuccess = { bytes ->
-                        val uri = writeTempAudioFile(bytes, "saved_voice_$profileId.m4a")
+                        val uri = writeTempAudioFile(bytes, savedVoiceFileName(profileId))
                         _savedPlayback.value = if (uri != null) {
                             SavedVoicePlayback(profileId = profileId, fileUri = uri)
                         } else {
@@ -190,7 +207,9 @@ class VoiceViewModel(
     fun stopSavedPlayback() {
         savedPlaybackJob?.cancel()
         savedPlaybackJob = null
+        val stoppedProfileId = _savedPlayback.value?.profileId
         _savedPlayback.value = null
+        if (stoppedProfileId != null) scope.launch { deleteTempAudioFile(savedVoiceFileName(stoppedProfileId)) }
     }
 
     fun loadProfiles() {

@@ -125,6 +125,25 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
         }
     }
 
+    override suspend fun getVoiceAnswersEnabled(): Boolean =
+        context.dataStore.data.first()[VOICE_ANSWERS_ENABLED_KEY] ?: false
+
+    override suspend fun setVoiceAnswersEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[VOICE_ANSWERS_ENABLED_KEY] = enabled
+        }
+    }
+
+    override suspend fun getStoryAgeBand(): String =
+        context.dataStore.data.first()[STORY_AGE_BAND_KEY]?.trim().orEmpty()
+
+    override suspend fun setStoryAgeBand(key: String) {
+        context.dataStore.edit { prefs ->
+            val t = key.trim()
+            if (t.isEmpty()) prefs.remove(STORY_AGE_BAND_KEY) else prefs[STORY_AGE_BAND_KEY] = t
+        }
+    }
+
     override suspend fun getApiBaseUrlOverride(): String =
         context.dataStore.data.first()[API_BASE_URL_OVERRIDE_KEY]?.trim().orEmpty()
 
@@ -192,6 +211,8 @@ class DataStorePreferences(private val context: Context) : PreferencesPort {
     companion object {
         private val USE_SYSTEM_THEME_KEY = booleanPreferencesKey("use_system_theme")
         private val DARK_MODE_KEY = booleanPreferencesKey("dark_mode")
+        private val VOICE_ANSWERS_ENABLED_KEY = booleanPreferencesKey("voice_answers_enabled")
+        private val STORY_AGE_BAND_KEY = stringPreferencesKey("story_age_band")
         private val LANGUAGE_CODE_KEY = stringPreferencesKey("language_code")
         private val HAS_COMPLETED_LANGUAGE_SELECTION_KEY = booleanPreferencesKey("has_completed_language_selection")
         private val PREFERRED_VOICE_PROFILE_KEY = stringPreferencesKey("preferred_voice_profile")

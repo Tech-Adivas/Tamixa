@@ -1,5 +1,6 @@
 package com.tamixa.application.library
 
+import com.tamixa.application.narration.NarrationTextUtils
 import com.tamixa.application.port.CoverVideoGenerationPort
 import com.tamixa.application.port.CoverVideoStoragePort
 import com.tamixa.application.port.StoryLibraryRepositoryPort
@@ -15,7 +16,8 @@ import org.springframework.stereotype.Service
 
 /**
  * Generates AI cover for library stories: still image (DALL·E or Gemini per config), then optional animated GIF when a
- * [CoverVideoGenerationPort] exists (FFmpeg MP4→GIF). Uses English content when available.
+ * [CoverVideoGenerationPort] exists (FFmpeg MP4→GIF). Drawn from the text the editor has on screen when sent, else the
+ * saved story (its English translation only when that is not older than the story's last save; see [resolveCoverText]).
  * Static image is always stored when generation succeeds; serves as fallback when GIF is absent.
  */
 @Service
@@ -60,8 +62,14 @@ class LibraryStoryIllustrationService(
      * When force=true, clears existing cover and video then regenerates.
      * Otherwise idempotent: skips if already has cover.
      * Optional [customPrompt] is trimmed and capped; appended after the standard cover template (image + fallback + motion hints).
+     * Optional [onScreen] is the title/text in the editor (possibly unsaved); the cover is drawn from it instead of the saved story.
      */
-    fun generateCoverForStory(story: LibraryStory, force: Boolean = false, customPrompt: String? = null): LibraryStory? {
+    fun generateCoverForStory(
+        story: LibraryStory,
+        force: Boolean = false,
+        customPrompt: String? = null,
+        onScreen: CoverText? = null,
+    ): LibraryStory? {
         val editorCustom = normalizeCoverCustomPrompt(story.id, customPrompt)
         log.info(
             "Generating cover for library story id={} theme={} force={} customPromptChars={}",
@@ -87,13 +95,14 @@ class LibraryStoryIllustrationService(
             log.debug("Library story {} already has cover, skipping (use force=true for alternate)", story.id)
             return repository.findById(story.id)
         }
-        val prompt = appendCoverEditorInstructions(buildAnimatedHdPrompt(current), editorCustom)
+        val coverText = resolveCoverText(current, onScreen)
+        val prompt = appendCoverEditorInstructions(buildAnimatedHdPrompt(coverText), editorCustom)
         log.debug("Cover image primary prompt length={} excerpt={}", prompt.length, prompt.take(80))
         val primaryImageBytes = imageGeneration.generateImage(prompt)
         val imageBytes = if (primaryImageBytes != null) {
             primaryImageBytes
         } else {
-            val fallbackPrompt = buildPolicySafeFallbackPrompt(current, editorCustom)
+            val fallbackPrompt = buildPolicySafeFallbackPrompt(current, coverText, editorCustom)
             log.warn(
                 "Primary cover image prompt failed for story {}. Retrying with policy-safe fallback prompt length={}",
                 current.id,
@@ -111,7 +120,7 @@ class LibraryStoryIllustrationService(
         log.info("Cover image provider returned {} bytes for story {}", imageBytes.size, current.id)
         var coverAnimationPath: String? = null
         if (coverVideoGeneration != null && coverVideoStorage != null) {
-            val motionPrompt = buildCoverVideoMotionPrompt(current, editorCustom)
+            val motionPrompt = buildCoverVideoMotionPrompt(coverText, editorCustom)
             log.info("Cover animation: generating GIF for library story {} before static upload", current.id)
             log.debug("Cover motion prompt length={} excerpt={}", motionPrompt.length, motionPrompt.take(80))
             val videoBytes = coverVideoGeneration.generateVideoFromImage(imageBytes, motionPrompt)
@@ -147,12 +156,9 @@ class LibraryStoryIllustrationService(
         return repository.findById(current.id)
     }
 
-    private fun buildAnimatedHdPrompt(story: LibraryStory): String {
-        val (title, contentForPrompt) = resolveEnglishContent(story)
-        val contentExcerpt = contentForPrompt
-            .take(500)
-            .replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
-            .trim()
+    private fun buildAnimatedHdPrompt(text: CoverText): String {
+        val title = text.title
+        val contentExcerpt = promptSafe(text.content.take(500))
         val description = if (contentExcerpt.length > 250) {
             contentExcerpt.take(250) + "..."
         } else contentExcerpt
@@ -196,13 +202,9 @@ class LibraryStoryIllustrationService(
         }
     }
 
-    private fun buildCoverVideoMotionPrompt(story: LibraryStory, editorCustom: String? = null): String {
-        val (title, contentForPrompt) = resolveEnglishContent(story)
-        val sceneHint = contentForPrompt
-            .take(200)
-            .replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
-            .trim()
-            .take(100)
+    private fun buildCoverVideoMotionPrompt(text: CoverText, editorCustom: String? = null): String {
+        val title = text.title
+        val sceneHint = promptSafe(text.content.take(200)).take(100)
         val motionCustom = editorCustom
             ?.replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
             ?.trim()
@@ -219,11 +221,8 @@ class LibraryStoryIllustrationService(
         return base.take(800)
     }
 
-    private fun buildPolicySafeFallbackPrompt(story: LibraryStory, editorCustom: String? = null): String {
-        val safeTitle = (story.title?.takeIf { it.isNotBlank() } ?: story.theme)
-            .take(100)
-            .replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
-            .trim()
+    private fun buildPolicySafeFallbackPrompt(story: LibraryStory, text: CoverText, editorCustom: String? = null): String {
+        val safeTitle = promptSafe(text.title.take(100))
         val safeTheme = story.theme
             .take(80)
             .replace(Regex("[^\\p{L}\\p{N}\\s.,'-]"), " ")
@@ -241,14 +240,36 @@ class LibraryStoryIllustrationService(
         return merged.take(maxLen)
     }
 
-    private fun resolveEnglishContent(story: LibraryStory): Pair<String, String> {
-        val enTranslation = translationRepository.findByMasterStoryIdAndLanguage(story.id, "en")
-        return if (enTranslation != null && enTranslation.content.isNotBlank()) {
-            val title = enTranslation.title?.takeIf { it.isNotBlank() } ?: story.theme
-            title to enTranslation.content
+    /**
+     * What the cover is drawn from. The editor's on-screen text wins (they may not have saved yet). Otherwise the saved
+     * story — its English translation only when that translation is not older than the story's last save: a translation
+     * made before the story was edited (or never refreshed, e.g. when only Tamil is generated) would draw the old story.
+     */
+    internal fun resolveCoverText(story: LibraryStory, onScreen: CoverText?): CoverText {
+        val fallbackTitle = story.title?.takeIf { it.isNotBlank() } ?: story.theme
+        onScreen?.takeIf { it.content.isNotBlank() }?.let { screen ->
+            log.info("Cover for library story {} drawn from the editor's on-screen text ({} chars)", story.id, screen.content.length)
+            return CoverText(screen.title.ifBlank { fallbackTitle }, screen.content)
+        }
+        val en = translationRepository.findByMasterStoryIdAndLanguage(story.id, "en")
+        val enIsCurrent = en != null && en.content.isNotBlank() && !en.createdAt.isBefore(story.updatedAt)
+        return if (en != null && enIsCurrent && story.language.lowercase() != "en") {
+            CoverText(en.title?.takeIf { it.isNotBlank() } ?: fallbackTitle, en.content)
         } else {
-            val title = story.title?.takeIf { it.isNotBlank() } ?: story.theme
-            title to story.content
+            if (en != null && !enIsCurrent) {
+                log.info("Cover for library story {}: English translation is older than the story, using the story itself", story.id)
+            }
+            CoverText(fallbackTitle, story.content)
         }
     }
+
+    /** Prompt-safe text: narration markers removed; letters (with Indic vowel signs), digits and basic punctuation kept. */
+    private fun promptSafe(text: String): String =
+        NarrationTextUtils.stripRemainingMarkers(text)
+            .replace(Regex("[^\\p{L}\\p{M}\\p{N}\\s.,'-]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
 }
+
+/** Title and story text a cover is drawn from. */
+data class CoverText(val title: String, val content: String)

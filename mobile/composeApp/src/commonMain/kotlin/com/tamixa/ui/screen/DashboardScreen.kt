@@ -601,6 +601,9 @@ fun DashboardScreen(
     /** True while library list is loading and spotlight is still empty. */
     spotlightSectionLoading: Boolean = false,
     onSpotlightStoryClick: (Story) -> Unit = {},
+    /** Child's age filter; library rows and recommendations arrive already narrowed to it. */
+    ageBand: com.tamixa.domain.AgeBand? = null,
+    onAgeBandChange: (com.tamixa.domain.AgeBand?) -> Unit = {},
 ) {
     val baseStories = if (stories.isEmpty()) com.tamixa.ui.data.SampleData.sampleStories() else stories
     val displayStories = baseStories
@@ -802,6 +805,15 @@ fun DashboardScreen(
                                         }
                                     }
                                 }
+                            }
+                            item(key = "age_filter") {
+                                AgeBandPicker(
+                                    selected = ageBand,
+                                    onSelect = onAgeBandChange,
+                                    modifier = Modifier
+                                        .padding(horizontal = TamixaDesignTokens.contentPaddingHorizontal)
+                                        .padding(top = 20.dp),
+                                )
                             }
                             item(key = "spotlight_block") {
                                 Column(

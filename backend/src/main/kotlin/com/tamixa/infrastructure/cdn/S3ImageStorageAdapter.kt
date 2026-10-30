@@ -88,4 +88,44 @@ class S3ImageStorageAdapter(
             log.warn("Failed to delete generated cover image {}: {}", key, e.message)
         }
     }
+
+    override fun storeInteractiveSegmentImage(libraryStoryId: Long, segmentId: String, imageBytes: ByteArray): String? {
+        val safeSegment = segmentId.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(80).ifBlank { "segment" }
+        val key = "interactive_images/$libraryStoryId/$safeSegment.png"
+        return try {
+            s3Client.putObject(
+                PutObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .contentType("image/png")
+                    .build(),
+                RequestBody.fromBytes(imageBytes)
+            )
+            log.info("Stored interactive question image for story {} segment {} at {}", libraryStoryId, segmentId, key)
+            key
+        } catch (e: Exception) {
+            log.warn("Failed to store interactive question image for story {} segment {}: {}", libraryStoryId, segmentId, e.message)
+            null
+        }
+    }
+
+    override fun storeStoryVisualImage(libraryStoryId: Long, name: String, jpegBytes: ByteArray): String? {
+        val safeName = name.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(80).ifBlank { "image" }
+        val key = "curated_covers/visuals/$libraryStoryId/$safeName.jpg"
+        return try {
+            s3Client.putObject(
+                PutObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .contentType("image/jpeg")
+                    .build(),
+                RequestBody.fromBytes(jpegBytes)
+            )
+            log.info("Stored story visual image for story {} at {} bytes={}", libraryStoryId, key, jpegBytes.size)
+            key
+        } catch (e: Exception) {
+            log.warn("Failed to store story visual image for story {} name {}: {}", libraryStoryId, name, e.message)
+            null
+        }
+    }
 }

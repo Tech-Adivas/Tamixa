@@ -1762,9 +1762,19 @@ object Strings {
     }
 
     fun ageForStory(): String = when (languageCode) {
-        "ta" -> "வயது (1–99)"
-        "hi" -> "उम्र (1–99)"
-        else -> "Age (1–99)"
+        "ta" -> "வயது (5–10)"
+        "hi" -> "उम्र (5–10)"
+        else -> "Age (5–10)"
+    }
+
+    /** Label above the library / home age filter. */
+    fun childAgeFilterLabel(): String = when (languageCode) {
+        "ta" -> "குழந்தையின் வயது"
+        "ka" -> "ಮಗುವಿನ ವಯಸ್ಸು"
+        "ml" -> "കുട്ടിയുടെ പ്രായം"
+        "te" -> "పిల్లల వయసు"
+        "hi" -> "बच्चे की उम्र"
+        else -> "Child's age"
     }
 
     fun bedtimeStory(): String = when (languageCode) {
@@ -2573,6 +2583,85 @@ object Strings {
         "ta" -> "பயிற்சி (மெய்நிகர் உலகம்)"
         "hi" -> "अभ्यास (सिम्युलेटर)"
         else -> "Practice (simulator)"
+    }
+
+    /** Player: the story could not be loaded (removed, or not published right now, e.g. new audio awaiting review). */
+    fun storyNotAvailable(): String = when (languageCode) {
+        "ta" -> "இந்தக் கதை இப்போது கிடைக்கவில்லை. சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்."
+        "hi" -> "यह कहानी अभी उपलब्ध नहीं है। थोड़ी देर बाद फिर कोशिश करें।"
+        else -> "This story isn't available right now. Please try again later."
+    }
+
+    fun voiceAnswersSettingTitle(): String = when (languageCode) {
+        "ta" -> "குரலில் பதில் சொல்லுதல்"
+        "hi" -> "आवाज़ से जवाब"
+        else -> "Answer questions by voice"
+    }
+
+    fun voiceAnswersSettingSummary(): String = when (languageCode) {
+        "ta" -> "கதையின் கேள்விகளுக்கு குழந்தைகள் 🎤 அழுத்தி பதில் சொல்லலாம். பதிவு உரையாக மாற்றப்பட்டு உடனே நீக்கப்படும்; சேமிக்கப்படாது."
+        "hi" -> "बच्चे कहानी के सवालों का जवाब 🎤 दबाकर बोल सकते हैं। रिकॉर्डिंग टेक्स्ट में बदलकर तुरंत हटा दी जाती है; सहेजी नहीं जाती।"
+        else -> "Children can tap 🎤 and say their answer to story questions. The recording is turned into text and deleted right away — never saved."
+    }
+
+    fun voiceAnswersConsentTitle(): String = when (languageCode) {
+        "ta" -> "குரல் பதில்களை இயக்கவா?"
+        "hi" -> "आवाज़ से जवाब चालू करें?"
+        else -> "Turn on voice answers?"
+    }
+
+    fun voiceAnswersConsentMessage(): String = when (languageCode) {
+        "ta" -> "உங்கள் குழந்தை 🎤 அழுத்தும்போது, அவர்களின் குரல் பதிவு எங்கள் பேச்சு-உரை சேவைக்கு (OpenAI) அனுப்பப்பட்டு உரையாக மாற்றப்படும். பதிவும் உரையும் சேமிக்கப்படாது. இதை எப்போது வேண்டுமானாலும் அமைப்புகளில் நிறுத்தலாம்."
+        "hi" -> "जब आपका बच्चा 🎤 दबाएगा, उसकी आवाज़ की रिकॉर्डिंग टेक्स्ट में बदलने के लिए हमारी स्पीच सेवा (OpenAI) को भेजी जाएगी। रिकॉर्डिंग और टेक्स्ट सहेजे नहीं जाते। आप इसे कभी भी सेटिंग्स में बंद कर सकते हैं।"
+        else -> "When your child taps 🎤, their recording is sent to our speech-to-text service (OpenAI) to turn it into text. Neither the recording nor the text is saved. You can turn this off in Settings at any time."
+    }
+
+    fun voiceAnswersConsentAgree(): String = when (languageCode) {
+        "ta" -> "ஒப்புக்கொள்கிறேன்"
+        "hi" -> "मैं सहमत हूँ"
+        else -> "I agree"
+    }
+
+    fun voiceAnswerTapToSpeak(): String = when (languageCode) {
+        "ta" -> "சொல்லுங்கள்"
+        "hi" -> "बोलकर बताओ"
+        else -> "Say your answer"
+    }
+
+    fun voiceAnswerListening(): String = when (languageCode) {
+        "ta" -> "கேட்கிறேன்…"
+        "hi" -> "सुन रहा हूँ…"
+        else -> "Listening…"
+    }
+
+    fun voiceAnswerThinking(): String = when (languageCode) {
+        "ta" -> "புரிந்துகொள்கிறேன்…"
+        "hi" -> "समझ रहा हूँ…"
+        else -> "Understanding…"
+    }
+
+    fun voiceAnswerHeard(text: String): String = when (languageCode) {
+        "ta" -> "நீங்கள் சொன்னது: “$text”"
+        "hi" -> "तुमने कहा: “$text”"
+        else -> "You said: “$text”"
+    }
+
+    fun voiceAnswerTryAgain(): String = when (languageCode) {
+        "ta" -> "புரியவில்லை — மீண்டும் சொல்லுங்கள் அல்லது தொடுங்கள்"
+        "hi" -> "समझ नहीं आया — फिर से बोलो या छूकर चुनो"
+        else -> "Didn't catch that — say it again or tap an answer"
+    }
+
+    fun voiceAnswerPleaseTap(): String = when (languageCode) {
+        "ta" -> "பதிலைத் தொட்டுத் தேர்ந்தெடுங்கள்"
+        "hi" -> "जवाब को छूकर चुनो"
+        else -> "Tap an answer to choose"
+    }
+
+    fun voiceAnswerMicDenied(): String = when (languageCode) {
+        "ta" -> "மைக் அனுமதி இல்லை — பதிலைத் தொடுங்கள்"
+        "hi" -> "माइक की अनुमति नहीं — जवाब छूकर चुनो"
+        else -> "Microphone not allowed — tap an answer"
     }
 
     fun interactiveStoryChoose(): String = when (languageCode) {
@@ -3839,6 +3928,35 @@ object Strings {
     }
 
     /** Voice-clone recording stopped before the minimum length; it can't be saved. */
+    fun voiceCloneTips(): String = when (languageCode) {
+        "ta" -> "சிறந்த குரலுக்கு: அமைதியான அறையில், போனை வாயிலிருந்து சுமார் 20 செ.மீ. தூரத்தில் வைத்து, கீழே உள்ள கதையை குழந்தைக்குப் படிப்பது போல மெதுவாகப் படியுங்கள்."
+        "hi" -> "सबसे अच्छी आवाज़ के लिए: शांत कमरे में, फ़ोन को मुँह से लगभग 20 सेमी दूर रखकर, नीचे दी गई कहानी ऐसे धीरे-धीरे पढ़ें जैसे बच्चे को सुना रहे हों।"
+        "ml" -> "മികച്ച ശബ്ദത്തിന്: ശാന്തമായ മുറിയിൽ, ഫോൺ വായിൽ നിന്ന് ഏകദേശം 20 സെ.മീ. അകലെ പിടിച്ച്, താഴെയുള്ള കഥ കുട്ടിക്ക് വായിച്ചുകൊടുക്കുന്നതുപോലെ പതുക്കെ വായിക്കുക."
+        "te" -> "మంచి వాయిస్ కోసం: నిశ్శబ్దమైన గదిలో, ఫోన్‌ను నోటి నుండి సుమారు 20 సెం.మీ. దూరంలో ఉంచి, కింద ఉన్న కథను పిల్లలకు చదివి వినిపిస్తున్నట్లుగా నెమ్మదిగా చదవండి."
+        "kn", "ka" -> "ಉತ್ತಮ ಧ್ವನಿಗಾಗಿ: ಶಾಂತ ಕೋಣೆಯಲ್ಲಿ, ಫೋನನ್ನು ಬಾಯಿಂದ ಸುಮಾರು 20 ಸೆಂ.ಮೀ. ದೂರದಲ್ಲಿ ಹಿಡಿದು, ಕೆಳಗಿನ ಕಥೆಯನ್ನು ಮಗುವಿಗೆ ಓದಿ ಹೇಳುವಂತೆ ನಿಧಾನವಾಗಿ ಓದಿ."
+        else -> "For the best voice: find a quiet room, hold the phone about 20 cm from your mouth, and read the story below slowly, as if to your child."
+    }
+
+    /**
+     * Passage read aloud when recording the voice for cloning (~60–75 s at a bedtime pace). A story read in the app
+     * language gives the clone the voice and style it will narrate in; varied sentences, questions and dialogue
+     * give it more of the parent's expression than casual talk.
+     */
+    fun voiceCloneReadingScript(): String = when (languageCode) {
+        "ta" -> "ஒரு காலத்தில், மலைகளுக்கு அருகில் இருந்த ஒரு சின்ன கிராமத்தில், மீரா என்ற ஆர்வமுள்ள சிறுமி வாழ்ந்து வந்தாள். ஒவ்வொரு மாலையும், அவள் ஜன்னல் அருகே அமர்ந்து, வானம் ஆரஞ்சு, இளஞ்சிவப்பு, பிறகு அடர் நீலமாக மாறுவதைப் பார்ப்பாள். “பாட்டி, காலையில் நட்சத்திரங்கள் எங்கே போகின்றன?” என்று கேட்டாள். பாட்டி புன்னகையுடன், “அவை எங்கும் போவதில்லை, கண்ணே. பிரகாசமான சூரிய ஒளிக்குப் பின்னால் ஓய்வெடுக்கின்றன” என்றார். அன்று இரவு, மீரா ஒரு ஆசை வைத்தாள் — ஒரே ஒரு முறையாவது நட்சத்திரங்களைப் பார்க்கப் போக வேண்டும் என்று. திடீரென்று, மெல்லிய காற்று திரைச்சீலையை அசைத்தது. ஒளிரும் ஒரு சின்னப் பறவை ஜன்னலில் வந்து அமர்ந்தது. “என்னுடன் வா,” என்று அது மெதுவாகச் சொன்னது. இருவரும் தூங்கும் வீடுகள், அமைதியான ஆறுகள், உயரமான தென்னை மரங்கள் மீது பறந்தனர். நட்சத்திரங்கள் மின்னிச் சிரித்தன, நிலா கை அசைத்து வணக்கம் சொன்னது. மீரா கண் விழித்தபோது, தன் கதகதப்பான படுக்கையில் இருந்தாள். அது கனவா? இருக்கலாம். ஆனால் அவள் கையில், ஒரு சின்ன, மின்னும் இறகு இருந்தது. இனிய இரவு, நன்றாகத் தூங்கு, நட்சத்திரங்களைக் கனவு காண்."
+        "hi" -> "एक समय की बात है, पहाड़ों के पास एक छोटे से गाँव में मीरा नाम की एक जिज्ञासु लड़की रहती थी। हर शाम वह खिड़की के पास बैठकर आसमान को नारंगी, गुलाबी और फिर गहरा नीला होते देखती थी। “दादी, सुबह तारे कहाँ चले जाते हैं?” उसने पूछा। दादी मुस्कुराईं और बोलीं, “वे कहीं नहीं जाते, बेटा। वे बस सूरज की तेज़ रोशनी के पीछे आराम करते हैं।” उस रात मीरा ने एक इच्छा माँगी — बस एक बार तारों से मिलने की। अचानक, हल्की हवा ने पर्दे हिलाए, और एक छोटी-सी चमकती चिड़िया खिड़की पर आ बैठी। “मेरे साथ चलो,” उसने धीरे से कहा। दोनों सोते हुए घरों, शांत नदियों और ऊँचे नारियल के पेड़ों के ऊपर उड़ चले। तारे चमके और हँसे, और चाँद ने हाथ हिलाकर नमस्ते कहा। जब मीरा की आँख खुली, वह अपने गरम बिस्तर में थी। क्या वह सपना था? शायद। लेकिन उसकी हथेली में एक छोटा-सा, चमकता हुआ पंख था। शुभ रात्रि, आराम से सो जाओ, और तारों के सपने देखो।"
+        "ml" -> "പണ്ട് പണ്ട്, മലകൾക്കരികിലെ ഒരു ചെറിയ ഗ്രാമത്തിൽ മീര എന്ന് പേരുള്ള ഒരു കൗതുകക്കാരിയായ പെൺകുട്ടി താമസിച്ചിരുന്നു. എല്ലാ വൈകുന്നേരവും അവൾ ജനലരികിലിരുന്ന് ആകാശം ഓറഞ്ചും പിങ്കും പിന്നെ കടും നീലയും ആകുന്നത് നോക്കിയിരിക്കും. “മുത്തശ്ശീ, രാവിലെ നക്ഷത്രങ്ങൾ എവിടെ പോകുന്നു?” അവൾ ചോദിച്ചു. മുത്തശ്ശി ചിരിച്ചുകൊണ്ട് പറഞ്ഞു, “അവ എങ്ങും പോകുന്നില്ല മോളേ. തിളക്കമുള്ള സൂര്യപ്രകാശത്തിന് പിന്നിൽ വിശ്രമിക്കുകയാണ്.” അന്ന് രാത്രി മീര ഒരു ആഗ്രഹം പറഞ്ഞു — ഒരിക്കലെങ്കിലും നക്ഷത്രങ്ങളെ കാണാൻ പോകണം. പെട്ടെന്ന്, ഒരു ഇളംകാറ്റ് കർട്ടനുകൾ ഇളക്കി, തിളങ്ങുന്ന ഒരു കുഞ്ഞുപക്ഷി ജനലിൽ വന്നിരുന്നു. “എന്റെ കൂടെ വരൂ,” അത് പതിയെ പറഞ്ഞു. ഉറങ്ങുന്ന വീടുകൾക്കും ശാന്തമായ പുഴകൾക്കും ഉയരമുള്ള തെങ്ങുകൾക്കും മുകളിലൂടെ അവർ പറന്നു. നക്ഷത്രങ്ങൾ മിന്നി ചിരിച്ചു, ചന്ദ്രൻ കൈവീശി ഹലോ പറഞ്ഞു. മീര ഉണർന്നപ്പോൾ, അവൾ തന്റെ ചൂടുള്ള കിടക്കയിലായിരുന്നു. അതൊരു സ്വപ്നമായിരുന്നോ? ആയിരിക്കാം. പക്ഷേ അവളുടെ കയ്യിൽ ഒരു ചെറിയ, തിളങ്ങുന്ന തൂവൽ ഉണ്ടായിരുന്നു. ശുഭരാത്രി, സുഖമായി ഉറങ്ങൂ, നക്ഷത്രങ്ങളെ സ്വപ്നം കാണൂ."
+        "te" -> "అనగనగా, కొండల దగ్గర ఒక చిన్న గ్రామంలో మీరా అనే ఆసక్తిగల అమ్మాయి ఉండేది. ప్రతి సాయంత్రం ఆమె కిటికీ దగ్గర కూర్చుని, ఆకాశం నారింజ, గులాబీ, తర్వాత ముదురు నీలంగా మారడం చూసేది. “అమ్మమ్మా, ఉదయం నక్షత్రాలు ఎక్కడికి వెళ్తాయి?” అని అడిగింది. అమ్మమ్మ నవ్వుతూ, “అవి ఎక్కడికీ వెళ్ళవు తల్లీ. ప్రకాశవంతమైన సూర్యకాంతి వెనుక విశ్రాంతి తీసుకుంటాయి” అంది. ఆ రాత్రి మీరా ఒక కోరిక కోరుకుంది — ఒక్కసారైనా నక్షత్రాలను చూడటానికి వెళ్ళాలని. అకస్మాత్తుగా, చల్లని గాలి తెరలను కదిలించింది, మెరిసే ఒక చిన్న పక్షి కిటికీ మీద వచ్చి వాలింది. “నాతో రా,” అని అది మెల్లగా చెప్పింది. ఇద్దరూ నిద్రపోతున్న ఇళ్ళు, ప్రశాంతమైన నదులు, ఎత్తైన కొబ్బరి చెట్ల మీదుగా ఎగిరారు. నక్షత్రాలు మెరిసి నవ్వాయి, చందమామ చేయి ఊపి హలో చెప్పాడు. మీరా మేల్కొన్నప్పుడు, తన వెచ్చని పడకలో ఉంది. అది కలా? కావచ్చు. కానీ ఆమె చేతిలో ఒక చిన్న, మెరిసే ఈక ఉంది. శుభరాత్రి, హాయిగా నిద్రపో, నక్షత్రాల కలలు కను."
+        "kn", "ka" -> "ಒಂದಾನೊಂದು ಕಾಲದಲ್ಲಿ, ಬೆಟ್ಟಗಳ ಬಳಿಯ ಒಂದು ಪುಟ್ಟ ಹಳ್ಳಿಯಲ್ಲಿ ಮೀರಾ ಎಂಬ ಕುತೂಹಲದ ಹುಡುಗಿ ವಾಸಿಸುತ್ತಿದ್ದಳು. ಪ್ರತಿ ಸಂಜೆ ಅವಳು ಕಿಟಕಿಯ ಬಳಿ ಕುಳಿತು, ಆಕಾಶ ಕಿತ್ತಳೆ, ಗುಲಾಬಿ, ನಂತರ ಗಾಢ ನೀಲಿಯಾಗುವುದನ್ನು ನೋಡುತ್ತಿದ್ದಳು. “ಅಜ್ಜಿ, ಬೆಳಿಗ್ಗೆ ನಕ್ಷತ್ರಗಳು ಎಲ್ಲಿಗೆ ಹೋಗುತ್ತವೆ?” ಎಂದು ಕೇಳಿದಳು. ಅಜ್ಜಿ ನಗುತ್ತಾ, “ಅವು ಎಲ್ಲಿಗೂ ಹೋಗುವುದಿಲ್ಲ ಮಗು. ಪ್ರಕಾಶಮಾನವಾದ ಸೂರ್ಯನ ಬೆಳಕಿನ ಹಿಂದೆ ವಿಶ್ರಾಂತಿ ಪಡೆಯುತ್ತವೆ” ಎಂದರು. ಆ ರಾತ್ರಿ ಮೀರಾ ಒಂದು ಆಸೆ ಪಟ್ಟಳು — ಒಮ್ಮೆಯಾದರೂ ನಕ್ಷತ್ರಗಳನ್ನು ನೋಡಲು ಹೋಗಬೇಕು ಎಂದು. ಇದ್ದಕ್ಕಿದ್ದಂತೆ, ಮೆಲುಗಾಳಿ ಪರದೆಗಳನ್ನು ಅಲುಗಾಡಿಸಿತು, ಹೊಳೆಯುವ ಒಂದು ಪುಟ್ಟ ಹಕ್ಕಿ ಕಿಟಕಿಯ ಮೇಲೆ ಬಂದು ಕುಳಿತಿತು. “ನನ್ನ ಜೊತೆ ಬಾ,” ಎಂದು ಅದು ಮೆಲ್ಲಗೆ ಹೇಳಿತು. ಇಬ್ಬರೂ ಮಲಗಿರುವ ಮನೆಗಳು, ಶಾಂತವಾದ ನದಿಗಳು, ಎತ್ತರದ ತೆಂಗಿನ ಮರಗಳ ಮೇಲೆ ಹಾರಿದರು. ನಕ್ಷತ್ರಗಳು ಮಿನುಗಿ ನಕ್ಕವು, ಚಂದ್ರ ಕೈ ಬೀಸಿ ನಮಸ್ಕಾರ ಹೇಳಿದ. ಮೀರಾ ಎಚ್ಚರವಾದಾಗ, ತನ್ನ ಬೆಚ್ಚಗಿನ ಹಾಸಿಗೆಯಲ್ಲಿದ್ದಳು. ಅದು ಕನಸೇ? ಇರಬಹುದು. ಆದರೆ ಅವಳ ಕೈಯಲ್ಲಿ ಒಂದು ಪುಟ್ಟ, ಹೊಳೆಯುವ ಗರಿ ಇತ್ತು. ಶುಭ ರಾತ್ರಿ, ಚೆನ್ನಾಗಿ ನಿದ್ದೆ ಮಾಡು, ನಕ್ಷತ್ರಗಳ ಕನಸು ಕಾಣು."
+        else -> "Once upon a time, in a little village by the hills, there lived a curious girl named Meera. Every evening, she sat by the window and watched the sky turn orange, pink, and finally deep blue. “Grandma, where do the stars go in the morning?” she asked. Grandma smiled and said, “They never leave, my dear. They are simply resting behind the bright sunlight.” That night, Meera made a wish — to visit the stars, just once. Suddenly, a soft wind lifted the curtains, and a tiny glowing bird landed on the windowsill. “Come with me,” it whispered. Together they flew over sleeping houses, quiet rivers, and tall coconut trees. The stars sparkled and laughed, and the moon waved hello. When Meera woke up, she was back in her warm bed. Was it a dream? Maybe. But in her hand, she found a small, shining feather. Good night, sleep tight, and dream of the stars."
+    }
+
+    fun recordingStoppedAtLimit(maximumSeconds: Int): String = when (languageCode) {
+        "ta" -> "அதிகபட்ச நேரம் (${maximumSeconds / 60} நிமிடங்கள்) முடிந்ததால் பதிவு நிறுத்தப்பட்டது."
+        "hi" -> "अधिकतम समय (${maximumSeconds / 60} मिनट) पूरा होने पर रिकॉर्डिंग रोक दी गई।"
+        else -> "Recording stopped at the ${maximumSeconds / 60}-minute limit."
+    }
+
     fun recordingTooShort(minimumSeconds: Int): String = when (languageCode) {
         "ta" -> "பதிவு மிகவும் குறுகியது. உங்கள் குரல் உங்களைப் போலவே ஒலிக்க குறைந்தது $minimumSeconds வினாடிகள் பதிவு செய்யுங்கள்."
         "hi" -> "रिकॉर्डिंग बहुत छोटी है। आवाज़ आप जैसी सुनाई दे, इसके लिए कम से कम $minimumSeconds सेकंड रिकॉर्ड करें।"

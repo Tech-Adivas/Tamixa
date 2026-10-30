@@ -1,5 +1,6 @@
 import type {
   AdminInvoice,
+  StoryVisuals,
   AdminUser,
   AuditEntry,
   AuthResponse,
@@ -497,6 +498,15 @@ function bulkLibraryStoriesSubmitForReview(ids: number[]) {
 }
 
 // Admin API (uses fetchJson to throw on non-OK responses)
+async function storyVisualsAction(url: string, failure: string, body?: object): Promise<StoryVisuals> {
+  const r = await fetchWithAuth(url, { method: "POST", ...(body ? { body: JSON.stringify(body) } : {}) });
+  if (!r.ok) {
+    const err = (await r.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err?.message ?? failure);
+  }
+  return r.json() as Promise<StoryVisuals>;
+}
+
 const admin = {
   getAdminUsers: (page = 0, size = 20) =>
     fetchJson<PagedResponse<AdminUser>>(
@@ -1104,6 +1114,29 @@ const admin = {
     return body;
   },
 
+  /** Pictures shown with each question; saved to the story right away (no Save / review needed). */
+  generateInteractiveQuestionImages: async (
+    id: number,
+    data: { segmentIds?: string[]; customPrompt?: string | null }
+  ): Promise<{
+    interactiveGraph: string;
+    generated: { segmentId: string; imageUrl?: string | null; status: string; message?: string | null }[];
+    failed: { segmentId: string; imageUrl?: string | null; status: string; message?: string | null }[];
+  }> => {
+    const res = await fetchWithAuth(`/api/v1/admin/stories/${id}/interactive-segments/generate-images`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      interactiveGraph: string;
+      generated: { segmentId: string; imageUrl?: string | null; status: string; message?: string | null }[];
+      failed: { segmentId: string; imageUrl?: string | null; status: string; message?: string | null }[];
+      message?: string;
+    };
+    if (!res.ok) throw new Error(body?.message ?? "Question image generation failed");
+    return body;
+  },
+
   updateLibraryStoryTranslation: async (
     id: number,
     language: string,
@@ -1119,13 +1152,59 @@ const admin = {
     }
   },
 
-  regenerateLibraryStoryCover: async (id: number, force = false, customPrompt?: string | null) => {
+  /** Story slideshow for a library story; null when it has none yet. */
+  getStoryVisuals: async (id: number): Promise<StoryVisuals | null> => {
+    const r = await fetchWithAuth(`/api/v1/admin/stories/${id}/visuals`);
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error("Failed to load slideshow");
+    return r.json() as Promise<StoryVisuals>;
+  },
+
+  /** Plans and generates the whole slideshow in the background (replaces any earlier one). */
+  generateStoryVisuals: async (id: number): Promise<StoryVisuals> =>
+    storyVisualsAction(`/api/v1/admin/stories/${id}/visuals/generate`, "Generate slideshow failed"),
+
+  regenerateStoryVisualImage: async (id: number, imageKey: string, prompt?: string | null): Promise<StoryVisuals> =>
+    storyVisualsAction(
+      `/api/v1/admin/stories/${id}/visuals/images/${encodeURIComponent(imageKey)}/regenerate`,
+      "Regenerate picture failed",
+      prompt?.trim() ? { prompt: prompt.trim().slice(0, 4000) } : undefined
+    ),
+
+  approveStoryVisuals: async (id: number): Promise<StoryVisuals> =>
+    storyVisualsAction(`/api/v1/admin/stories/${id}/visuals/approve`, "Approve failed"),
+
+  unapproveStoryVisuals: async (id: number): Promise<StoryVisuals> =>
+    storyVisualsAction(`/api/v1/admin/stories/${id}/visuals/unapprove`, "Unapprove failed"),
+
+  deleteStoryVisuals: async (id: number): Promise<void> => {
+    const r = await fetchWithAuth(`/api/v1/admin/stories/${id}/visuals`, { method: "DELETE" });
+    if (!r.ok && r.status !== 404) {
+      const err = (await r.json().catch(() => ({}))) as { message?: string };
+      throw new Error(err?.message ?? "Delete slideshow failed");
+    }
+  },
+
+  /**
+   * Generate the cover. Pass `onScreen` (the editor's current title/text, saved or not) so the cover is drawn from
+   * what the editor sees rather than the last saved version.
+   */
+  regenerateLibraryStoryCover: async (
+    id: number,
+    force = false,
+    customPrompt?: string | null,
+    onScreen?: { title?: string | null; content?: string | null }
+  ) => {
     const url = `/api/v1/admin/stories/${id}/regenerate-cover${force ? "?force=true" : ""}`;
     const trimmed = customPrompt?.trim();
-    const body =
-      trimmed && trimmed.length > 0
-        ? JSON.stringify({ customPrompt: trimmed.slice(0, 8000) })
-        : undefined;
+    const screenContent = onScreen?.content?.trim();
+    const payload: Record<string, string> = {};
+    if (trimmed) payload.customPrompt = trimmed.slice(0, 8000);
+    if (screenContent) {
+      payload.content = screenContent;
+      if (onScreen?.title?.trim()) payload.title = onScreen.title.trim();
+    }
+    const body = Object.keys(payload).length > 0 ? JSON.stringify(payload) : undefined;
     const r = await fetchWithAuth(url, {
       method: "POST",
       ...(body != null ? { body } : {}),

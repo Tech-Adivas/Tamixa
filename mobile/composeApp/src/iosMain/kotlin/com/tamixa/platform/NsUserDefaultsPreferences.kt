@@ -102,6 +102,30 @@ class NsUserDefaultsPreferences : PreferencesPort {
         defaults.synchronize()
     }
 
+    override suspend fun getVoiceAnswersEnabled(): Boolean {
+        val key = "${prefix}voice_answers_enabled"
+        return if (defaults.objectForKey(key) == null) false else defaults.boolForKey(key)
+    }
+
+    override suspend fun setVoiceAnswersEnabled(enabled: Boolean) {
+        defaults.setBool(enabled, forKey = "${prefix}voice_answers_enabled")
+        defaults.synchronize()
+    }
+
+    override suspend fun getStoryAgeBand(): String =
+        defaults.stringForKey("${prefix}story_age_band")?.trim().orEmpty()
+
+    override suspend fun setStoryAgeBand(key: String) {
+        val k = "${prefix}story_age_band"
+        val t = key.trim()
+        if (t.isEmpty()) {
+            defaults.removeObjectForKey(k)
+        } else {
+            defaults.setObject(t, forKey = k)
+        }
+        defaults.synchronize()
+    }
+
     override suspend fun getApiBaseUrlOverride(): String =
         defaults.stringForKey("${prefix}api_base_url_override")?.trim().orEmpty()
 

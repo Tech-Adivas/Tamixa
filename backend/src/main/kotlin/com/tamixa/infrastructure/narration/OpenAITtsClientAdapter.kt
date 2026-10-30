@@ -16,10 +16,14 @@ import org.springframework.stereotype.Component
 import org.springframework.web.client.RestTemplate
 
 /**
- * OpenAI Text-to-Speech API adapter.
- * Uses POST /v1/audio/speech with model tts-1-hd for high-quality narration.
- * Strips SSML to plain text (OpenAI TTS does not support SSML).
- * For input longer than MAX_INPUT_CHARS, chunks at sentence/word boundaries and concatenates MP3 output.
+ * OpenAI Text-to-Speech API adapter: POST /v1/audio/speech with the configured model (tts-1-hd by default).
+ * OpenAI TTS does not read SSML, so the SSML is turned into plain text that keeps one paragraph per narration
+ * segment (blank line between), where the voice pauses; the SSML's own breaks would otherwise be lost and the story
+ * read in one breath. Long text is sent in parts (paragraph / sentence boundaries) and the MP3s are joined; if any
+ * part fails the whole narration fails rather than silently skipping a piece of the story.
+ *
+ * gpt-4o-mini-tts style models also get [instructions] (e.g. a calm, steady storyteller pace); tts-1 / tts-1-hd don't
+ * accept them. Their input limit is in tokens (~2000), so they get smaller parts.
  */
 @Component
 @Primary
@@ -31,13 +35,16 @@ class OpenAITtsClientAdapter(
     @org.springframework.beans.factory.annotation.Value("\${app.openai.api-key:}") private val apiKey: String,
     @org.springframework.beans.factory.annotation.Value("\${app.openai.base-url:https://api.openai.com}") private val baseUrl: String,
     @org.springframework.beans.factory.annotation.Value("\${app.narration.openai-tts-model:tts-1-hd}") private val ttsModel: String,
-    @org.springframework.beans.factory.annotation.Value("\${app.narration.openai-tts-speed:1.0}") private val speed: Double
+    @org.springframework.beans.factory.annotation.Value("\${app.narration.openai-tts-speed:1.0}") private val speed: Double,
+    @org.springframework.beans.factory.annotation.Value("\${app.narration.openai-tts-instructions:}") private val instructions: String = ""
 ) : TtsClientPort {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
     companion object {
         private const val MAX_INPUT_CHARS = 4096
+        /** gpt-4o TTS models take ~2000 tokens; Indic scripts use several tokens per word, so parts stay small. */
+        private const val MAX_INPUT_CHARS_GPT4O = 1000
         private val OPENAI_VOICES = setOf("alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar")
         private val VOICE_MAP = mapOf(
             "default" to "alloy",
@@ -51,7 +58,7 @@ class OpenAITtsClientAdapter(
             log.warn("OpenAI TTS skipped: OPENAI_API_KEY is blank")
             return null
         }
-        val plainText = ssmlToPlainText(ssml)
+        val plainText = NarrationTextUtils.ssmlToSpeechText(ssml)
         if (plainText.isBlank()) {
             log.warn("OpenAI TTS: SSML yielded empty text after stripping")
             return null
@@ -59,24 +66,22 @@ class OpenAITtsClientAdapter(
         val voice = resolveVoice(voiceProfile)
         aiApiMetrics?.recordOpenaiTts(1, plainText.length)
         val effectiveSpeed = speed.coerceIn(0.25, 4.0)
-        val chunks = chunkTextForTts(plainText, MAX_INPUT_CHARS)
+        val maxChars = if (isGpt4oModel()) MAX_INPUT_CHARS_GPT4O else MAX_INPUT_CHARS
+        val chunks = NarrationTextUtils.splitForSpeech(plainText, maxChars)
         if (chunks.size > 1) {
-            log.info("OpenAI TTS: synthesizing {} chunks ({} chars total) for full content", chunks.size, plainText.length)
+            log.info("OpenAI TTS: synthesizing {} chunks ({} chars total) model={} for full content", chunks.size, plainText.length, ttsModel)
         }
         val allBytes = mutableListOf<ByteArray>()
         for ((i, chunk) in chunks.withIndex()) {
             val bytes = synthesizeOneChunk(chunk, voice, effectiveSpeed)
-            if (bytes != null && bytes.isNotEmpty()) {
-                allBytes.add(bytes)
-            } else {
-                log.warn("OpenAI TTS returned empty audio for chunk {}/{}", i + 1, chunks.size)
+            if (bytes == null || bytes.isEmpty()) {
+                // A missing part would make the story jump ahead; fail so the narration is marked failed and retried.
+                log.warn("OpenAI TTS returned empty audio for chunk {}/{}; narration not saved", i + 1, chunks.size)
+                return null
             }
+            allBytes.add(bytes)
         }
-        if (allBytes.isEmpty()) {
-            log.warn("OpenAI TTS produced no audio")
-            return null
-        }
-        val combined = allBytes.reduce { a, b -> a + b }
+        val combined = Mp3Joiner.join(allBytes)
         log.debug("OpenAI TTS success: {} chunks, {} bytes total for lang={} voice={}", allBytes.size, combined.size, language, voice)
         return combined
     }
@@ -85,13 +90,15 @@ class OpenAITtsClientAdapter(
     private fun synthesizeOneChunk(text: String, voice: String, effectiveSpeed: Double): ByteArray? {
         if (text.isBlank()) return null
         return try {
-            val request = mapOf(
-                "model" to ttsModel,
-                "input" to text,
-                "voice" to voice,
-                "response_format" to "mp3",
-                "speed" to effectiveSpeed
-            )
+            val request = buildMap<String, Any> {
+                put("model", ttsModel)
+                put("input", text)
+                put("voice", voice)
+                put("response_format", "mp3")
+                // 1.0 is the API default; only sent when changed.
+                if (effectiveSpeed != 1.0) put("speed", effectiveSpeed)
+                if (isGpt4oModel() && instructions.isNotBlank()) put("instructions", instructions.trim())
+            }
             val headers = HttpHeaders().apply {
                 setBearerAuth(apiKey)
                 contentType = MediaType.APPLICATION_JSON
@@ -107,49 +114,8 @@ class OpenAITtsClientAdapter(
         }
     }
 
-    /** Split text into chunks under maxChars, preferring sentence then word boundaries. */
-    private fun chunkTextForTts(text: String, maxChars: Int): List<String> {
-        val trimmed = text.trim()
-        if (trimmed.length <= maxChars) return listOf(trimmed)
-        val result = mutableListOf<String>()
-        var start = 0
-        while (start < trimmed.length) {
-            var end = (start + maxChars).coerceAtMost(trimmed.length)
-            if (end < trimmed.length) {
-                val segment = trimmed.substring(start, end)
-                val lastSentence = segment.lastIndexOf('.')
-                val lastNewline = segment.lastIndexOf('\n')
-                val lastSpace = segment.lastIndexOf(' ')
-                val segmentLen = segment.length
-                val breakAt = when {
-                    lastSentence > segmentLen / 2 -> lastSentence + 1
-                    lastNewline > segmentLen / 2 -> lastNewline + 1
-                    lastSpace > 0 -> lastSpace + 1
-                    else -> segmentLen
-                }.coerceAtLeast(1)
-                end = start + breakAt
-            }
-            val chunk = trimmed.substring(start, end).trim()
-            if (chunk.isNotBlank()) result.add(chunk)
-            start = end
-        }
-        return result
-    }
-
-    private fun ssmlToPlainText(ssml: String): String {
-        val plain = ssml
-            .replace(Regex("<break[^>]*/>"), " ")
-            .replace(Regex("<[^>]+>"), " ")
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&quot;", "\"")
-            .replace("&apos;", "'")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-        val cleaned = NarrationTextUtils.stripRemainingMarkers(plain)
-        return cleaned.ifBlank { plain }.ifBlank { ssml }
-    }
+    /** gpt-4o-mini-tts and later: take [instructions], limit input in tokens. */
+    private fun isGpt4oModel(): Boolean = ttsModel.trim().lowercase().startsWith("gpt-4o")
 
     private fun resolveVoice(voiceProfile: String): String {
         val normalized = voiceProfile.trim().lowercase()

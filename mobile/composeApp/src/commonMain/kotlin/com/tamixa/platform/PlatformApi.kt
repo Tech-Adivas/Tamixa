@@ -21,6 +21,9 @@ expect suspend fun synthesizeStoryToFile(text: String, languageCode: String): St
 /** Writes audio bytes to a temp/cache file for local playback. Returns a file:// URI or null on failure. */
 expect suspend fun writeTempAudioFile(bytes: ByteArray, fileName: String): String?
 
+/** Deletes a file written by [writeTempAudioFile] (same [fileName]); a missing file is not an error. */
+expect suspend fun deleteTempAudioFile(fileName: String)
+
 /** Registers back handler. Returns unregister function. */
 @Composable
 expect fun PlatformBackHandler(onBack: () -> Unit)

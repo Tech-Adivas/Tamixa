@@ -64,12 +64,21 @@ fun rememberBackgroundStreamingController(
     LaunchedEffect(streamUrl) {
         if (streamUrl.isNullOrBlank()) return@LaunchedEffect
         durationMillisState = 0L
-        context.startForegroundService(Intent(context, AudioPlaybackService::class.java))
+        // Plain start: Media3 promotes the service to foreground itself once audio plays. startForegroundService
+        // crashed the app (ForegroundServiceDidNotStartInTimeException) whenever playback didn't begin within ~10s.
+        context.startService(Intent(context, AudioPlaybackService::class.java))
         val token = SessionToken(context, ComponentName(context, AudioPlaybackService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
+        val effectJob = coroutineContext[Job]
         future.addListener({
             try {
                 val controller = future.get()
+                // The URL changed (or the screen closed) while connecting: don't start the outdated audio.
+                // (isCancelled, not !isActive: this effect's job completes normally right after it starts connecting.)
+                if (effectJob?.isCancelled == true) {
+                    controller.release()
+                    return@addListener
+                }
                 val item = MediaItem.Builder()
                     .setUri(streamUrl)
                     .setMediaMetadata(

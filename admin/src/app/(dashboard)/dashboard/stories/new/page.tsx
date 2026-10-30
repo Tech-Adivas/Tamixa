@@ -13,7 +13,7 @@ import {
 import type { CreateLibraryStoryRequest } from "@/types/api";
 import {
   STORY_CATEGORIES,
-  AGE_GROUPS,
+  ageGroupOptions,
   MIN_WORD_COUNT,
   EMOTION_MODES,
 } from "@/types/api";
@@ -1981,7 +1981,7 @@ export default function NewLibraryStoryPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {AGE_GROUPS.map((a) => (
+                      {ageGroupOptions(form.age).map((a) => (
                         <SelectItem key={a.value} value={String(a.value)}>
                           {a.label}
                         </SelectItem>
@@ -2300,7 +2300,8 @@ export default function NewLibraryStoryPage() {
                     const updated = await api.admin.regenerateLibraryStoryCover(
                       id,
                       hasCover,
-                      coverCustomPrompt.trim() || null
+                      coverCustomPrompt.trim() || null,
+                      { title: form.title, content: form.content }
                     );
                     setForm((f) =>
                       f ? { ...f, coverImageUrl: updated?.coverImageUrl?.trim() ?? f.coverImageUrl ?? "" } : f

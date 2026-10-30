@@ -78,7 +78,7 @@ First request after startup may be slow while the model loads. `GET /health` rep
 
 3. **Start the service:**
    ```bash
-   uvicorn main:app --host 0.0.0.0 --port 9000
+   uvicorn main:app --host 127.0.0.1 --port 9000
    ```
 
 4. **Trigger model load** (optional; otherwise the first `/synthesize` with reference does it):
@@ -106,14 +106,14 @@ First request after startup may be slow while the model loads. `GET /health` rep
 pip install -r requirements.txt
 # Optional: pip install -r requirements-xtts.txt
 export XTTS_API_KEY=<long-random-secret>   # same value as backend XTTS_API_KEY
-uvicorn main:app --host 0.0.0.0 --port 9000
+uvicorn main:app --host 127.0.0.1 --port 9000
 ```
 
 **Or run with Docker (Python 3.11 + Coqui pre-installed):**
 
 ```bash
 docker build -t xtts-service .
-docker run -p 9000:9000 -e XTTS_API_KEY=<long-random-secret> xtts-service
+docker run -p 127.0.0.1:9000:9000 -e XTTS_API_KEY=<long-random-secret> xtts-service
 ```
 
 ### Security settings
@@ -122,11 +122,15 @@ docker run -p 9000:9000 -e XTTS_API_KEY=<long-random-secret> xtts-service
 |---------|---------|---------|
 | `XTTS_API_KEY` | *(empty)* | **Required.** `/synthesize` and `/preload` need header `X-XTTS-Api-Key` with this value; the backend sends it from its own `XTTS_API_KEY`. If unset, those endpoints return 503. |
 | `XTTS_ALLOW_UNAUTHENTICATED` | `false` | Local dev only: `true` skips the key check when `XTTS_API_KEY` is unset. |
-| `XTTS_REFERENCE_URL_ALLOWED_HOSTS` | *(empty)* | Comma-separated hosts `reference_url` may be fetched from (e.g. `my-bucket.s3.us-east-1.amazonaws.com`). Empty = `reference_url` is rejected; the backend's `reference_audio_base64` is used instead. Redirects are never followed. |
+| `XTTS_REFERENCE_URL_ALLOWED_HOSTS` | *(empty)* | Comma-separated hosts `reference_url` may be fetched from (e.g. `my-bucket.s3.us-east-1.amazonaws.com`). Empty = `reference_url` is rejected; the backend's `reference_audio_base64` is used instead. Only `https`; the host must resolve to public addresses only (no loopback, private, link-local or metadata IPs); redirects are never followed; the response must be audio (`audio/*` or `application/octet-stream`) and within `XTTS_MAX_REFERENCE_BYTES`. |
+| `XTTS_REFERENCE_URL_ALLOW_INSECURE` | `false` | Local dev only: `true` also allows `http` and private/loopback addresses for allow-listed hosts (e.g. the `localhost:9090` S3 mock). Never set in shared or production environments. |
+| `XTTS_LOG_LEVEL` | `INFO` | Log level. Logs never include reference URLs (presigned signatures) or audio. |
 | `XTTS_MAX_REFERENCE_BYTES` | `20971520` | Max reference audio size (20 MB). |
 | `XTTS_LOCAL_REFERENCE_DIR` | *(empty)* | Dev only; see below. |
 
 `/health` stays unauthenticated for container health checks.
+
+**Network exposure:** listen on `127.0.0.1` (or a private network) and publish the Docker port as `127.0.0.1:9000:9000`; only the backend should reach this service. The service handles parents' voice samples (biometric data).
 
 Ensure `tamixa.mp3` exists for stub mode. The backend uses `XTTS_BASE_URL` (default `http://localhost:9000`) to reach this service.
 

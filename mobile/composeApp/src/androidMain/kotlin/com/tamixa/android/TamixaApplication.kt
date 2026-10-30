@@ -8,12 +8,14 @@ import coil3.gif.AnimatedImageDecoder
 import coil3.gif.GifDecoder
 import coil3.network.ktor2.KtorNetworkFetcherFactory
 import coil3.request.crossfade
+import com.tamixa.android.player.clearTtsCacheFiles
 import com.tamixa.di.androidPlatformModule
 import com.tamixa.di.sharedModule
 import com.tamixa.di.viewModelModule
 import com.tamixa.platform.DataStorePreferences
 import com.tamixa.platform.setPlatformAppContext
 import com.tamixa.runtime.ServerEnvironmentCache
+import com.tamixa.ui.viewmodel.VoiceViewModel
 import com.tamixa.util.TamixaLog
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import io.ktor.client.HttpClient
@@ -26,6 +28,12 @@ class TamixaApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         setPlatformAppContext(this)
+        // Nothing is playing yet, so leftover synthesized story WAVs and saved-voice playback copies can all go.
+        Thread({
+            clearTtsCacheFiles(this)
+            cacheDir.listFiles { f -> f.isFile && f.name.startsWith(VoiceViewModel.SAVED_VOICE_FILE_PREFIX) }
+                ?.forEach { f -> if (!f.delete()) TamixaLog.w("TamixaApp", "Could not delete ${f.name}") }
+        }, "cache-cleanup").start()
         // Only enable Crashlytics in release; debug uses placeholder google-services.json (see FIREBASE_SETUP.md)
         FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)
         val prefsBootstrap = DataStorePreferences(this)

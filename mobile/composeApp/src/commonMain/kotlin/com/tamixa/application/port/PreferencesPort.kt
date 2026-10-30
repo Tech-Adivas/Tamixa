@@ -58,6 +58,16 @@ interface PreferencesPort {
 
     suspend fun setStoryArtPersonalizationOptIn(optIn: Boolean)
 
+    /** Parent setting: children may answer interactive story questions by voice. Default true. */
+    suspend fun getVoiceAnswersEnabled(): Boolean
+
+    suspend fun setVoiceAnswersEnabled(enabled: Boolean)
+
+    /** Library age filter: [com.tamixa.domain.AgeBand.key] (e.g. "7-8"), or empty for all ages. */
+    suspend fun getStoryAgeBand(): String
+
+    suspend fun setStoryAgeBand(key: String)
+
     // --- Runtime API / subscription URLs (staging, Railway, QA). Empty = build-time default. ---
 
     /** Overrides API base at next cold start. No trailing slash. */

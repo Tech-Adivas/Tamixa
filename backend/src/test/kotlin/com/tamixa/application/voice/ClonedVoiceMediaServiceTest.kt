@@ -63,6 +63,29 @@ class ClonedVoiceMediaServiceTest {
     }
 
     @Test
+    fun `sweep also removes read-along timings of a deleted voice`() {
+        whenever(voices.findById(12L)).thenReturn(null)
+        whenever(voices.findById(20L)).thenReturn(mock<VoiceProfile>())
+        whenever(narrations.findAllByVoiceProfileStartingWith("cloned:")).thenReturn(emptyList())
+        whenever(preferences.findDistinctVoiceProfilesStartingWith("cloned:")).thenReturn(emptyList())
+        whenever(narrations.findAllByVoiceProfileIn(any())).thenReturn(emptyList())
+        whenever(storage.listNarrationKeys(any())).thenReturn(
+            sequenceOf(
+                "stories/71/ta/cloned_12.timings.json",
+                "stories/71/ta/cloned_20.timings.json",
+                "stories/71/ta/v1.timings.json",
+            )
+        )
+        whenever(storage.deleteNarrationAudio(any())).thenReturn(true)
+
+        service.reconcileOrphans()
+
+        verify(storage).deleteNarrationAudio("stories/71/ta/cloned_12.timings.json")
+        verify(storage, never()).deleteNarrationAudio("stories/71/ta/cloned_20.timings.json")
+        verify(storage, never()).deleteNarrationAudio("stories/71/ta/v1.timings.json")
+    }
+
+    @Test
     fun `failed file delete is retried`() {
         whenever(storage.deleteNarrationAudio("stories/71/ta/cloned_12.mp3")).thenReturn(false, true)
 

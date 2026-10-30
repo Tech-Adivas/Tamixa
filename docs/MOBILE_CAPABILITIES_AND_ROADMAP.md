@@ -19,7 +19,7 @@
 | **Story generation** | AI theme + listener name + age; usage/limit; success flow | ✅ | ✅ |
 | **Playback** | Stream URL, play/pause, progress, rewind/forward, sleep timer, resume | ✅ | ✅ (ExoPlayer Android) |
 | **Voice** | Default + calm + cloned (ElevenLabs); voice selector in player | ✅ | ✅ |
-| **Avatar** | Family avatar upload; avatar video URL in stream response | ✅ | ✅ (premium gated) |
+| **Avatar** | Family avatar upload; avatar video URL in stream response — *parked: later premium option, off by default (ADR-0001)* | ✅ | ✅ (premium gated) |
 | **Narration** | Neural TTS, emotion tagging, conversational rewrite; word timings in API | ✅ | ⚠️ Word timings not used in UI |
 | **Remix** | Remix story with instruction | ✅ | ✅ (from player) |
 | **Share** | Share action from player | — | ✅ (intent) |
@@ -81,7 +81,7 @@
 
 | Feature | Idea | Why it’s unique |
 |---------|------|------------------|
-| **“Story in my voice”** | Promote family voice clone as the hero: “Stories narrated in your voice.” | Most kids apps use fixed narrators; Tamixa already has clone + avatar; make it the lead message. |
+| **“Story in my voice”** | Promote family voice clone as the hero: “Stories narrated in your voice.” | Most kids apps use fixed narrators; Tamixa already has a voice clone; make it the lead message. (Avatar video is parked — ADR-0001.) |
 | **Bedtime mode** | One-tap “Bedtime”: dim UI, calm voice only, sleep timer 15 min, no notifications. | Doubles down on bedtime positioning; differentiates from general “story apps”. |
 | **Moral + discussion** | After story, show moral and 1–2 parent prompts: “Ask your child: What would the rabbit do next?” | Turns listening into a short conversation; builds on existing `moral` and age. |
 | **Tamil-first discovery** | “Stories in Tamil” as a first-class tab or filter; “Learn a word” (one Tamil word from the story). | Reinforces Indian-language identity and learning angle. |
@@ -175,7 +175,7 @@
 | Lever | Recommendation |
 |-------|----------------|
 | **Free tier clarity** | Show “X / Y stories” and “Upgrade for unlimited + your voice” on Dashboard and before limit. |
-| **Premium value** | In-app copy: “Unlimited stories + narrate in your voice + family avatar.” |
+| **Premium value** | In-app copy: “Unlimited stories + narrate in your voice.” (Family avatar video is parked as a later premium option — ADR-0001.) |
 | **Trial** | Time-bound or story-count trial (e.g. 7 days or 10 stories) before hard paywall. |
 | **Restore & billing** | Restore purchases; clear billing/management link (Stripe customer portal or store). |
 | **Referral** | Prominent “Give 1 month, get 1 month” (or similar); track via existing referral API. |

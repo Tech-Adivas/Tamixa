@@ -75,7 +75,8 @@ function proxyTimeoutMs(pathStr: string, method: string): number {
     pathStr.includes("regenerate-with-prompt") ||
     pathStr.includes("rebuild-narration-pipeline") ||
     pathStr.includes("bulk-generate") ||
-    pathStr.includes("regenerate-cover")
+    pathStr.includes("regenerate-cover") ||
+    pathStr.includes("interactive-segments/generate-images")
   ) {
     return LONG_RUNNING_ADMIN_OP_TIMEOUT_MS;
   }

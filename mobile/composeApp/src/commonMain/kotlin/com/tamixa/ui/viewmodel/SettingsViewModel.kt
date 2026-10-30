@@ -34,6 +34,9 @@ data class SettingsState(
     val settingsLoadError: String? = null,
     val exporting: Boolean = false,
     val storyArtPersonalizationOptIn: Boolean = false,
+    /** Children may answer interactive story questions by voice (parent setting, on by default). */
+    /** Off until a parent agrees: the child's recording is sent to the speech service. */
+    val voiceAnswersEnabled: Boolean = false,
     /** Runtime API base override (staging / Railway). Empty = build default at next launch. */
     val apiBaseUrlOverride: String = "",
     val subscriptionWebUrlOverride: String = "",
@@ -61,6 +64,7 @@ class SettingsViewModel(
                 val preferredVoiceProfile = preferencesPort.getPreferredVoiceProfile()
                 val preferredThemes = preferencesPort.getPreferredThemes()
                 val storyArtOptIn = preferencesPort.getStoryArtPersonalizationOptIn()
+                val voiceAnswersEnabled = preferencesPort.getVoiceAnswersEnabled()
                 val apiOverride = preferencesPort.getApiBaseUrlOverride()
                 val subOverride = preferencesPort.getSubscriptionWebUrlOverride()
                 _state.value = _state.value.copy(
@@ -72,6 +76,7 @@ class SettingsViewModel(
                     preferredVoiceProfile = preferredVoiceProfile.ifEmpty { com.tamixa.util.TamixaConstants.VOICE_PROFILE_DEFAULT },
                     preferredThemes = preferredThemes,
                     storyArtPersonalizationOptIn = storyArtOptIn,
+                    voiceAnswersEnabled = voiceAnswersEnabled,
                     apiBaseUrlOverride = apiOverride,
                     subscriptionWebUrlOverride = subOverride,
                     settingsLoaded = true
@@ -91,6 +96,11 @@ class SettingsViewModel(
     fun setLanguage(code: String) {
         _state.value = _state.value.copy(languageCode = code)
         scope.launch { preferencesPort.setLanguageCode(code) }
+    }
+
+    fun setVoiceAnswersEnabled(enabled: Boolean) {
+        _state.value = _state.value.copy(voiceAnswersEnabled = enabled)
+        scope.launch { preferencesPort.setVoiceAnswersEnabled(enabled) }
     }
 
     fun setDarkMode(enabled: Boolean) {

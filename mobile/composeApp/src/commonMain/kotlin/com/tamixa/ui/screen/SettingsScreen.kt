@@ -90,6 +90,8 @@ fun SettingsScreen(
     onNavigateToCrisisHelp: (() -> Unit)? = null,
     storyArtPersonalizationOptIn: Boolean = false,
     onStoryArtPersonalizationOptInChange: (Boolean) -> Unit = {},
+    voiceAnswersEnabled: Boolean = false,
+    onVoiceAnswersEnabledChange: (Boolean) -> Unit = {},
     apiBaseUrlOverride: String = "",
     subscriptionWebUrlOverride: String = "",
     serverEnvironmentMessage: String? = null,
@@ -103,6 +105,7 @@ fun SettingsScreen(
     val scrollState = rememberScrollState()
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    var showVoiceAnswersConsent by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -329,6 +332,66 @@ fun SettingsScreen(
                         onCheckedChange = onStoryArtPersonalizationOptInChange
                     )
                 }
+            }
+            Spacer(Modifier.height(TamixaDesignTokens.cardSpacing))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(TamixaDesignTokens.cardRadiusLarge),
+                colors = TamixaCardColors.surface(),
+                elevation = CardDefaults.cardElevation(defaultElevation = TamixaDesignTokens.cardElevation + 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(TamixaDesignTokens.cardContentPadding),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text(
+                            Strings.voiceAnswersSettingTitle(),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            Strings.voiceAnswersSettingSummary(),
+                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 20.sp),
+                            color = TamixaContentColors.cardSecondary()
+                        )
+                    }
+                    Switch(
+                        checked = voiceAnswersEnabled,
+                        onCheckedChange = { on ->
+                            // Turning on sends the child's voice to the speech service, so a parent agrees first.
+                            if (on) showVoiceAnswersConsent = true else onVoiceAnswersEnabledChange(false)
+                        }
+                    )
+                }
+            }
+            if (showVoiceAnswersConsent) {
+                AlertDialog(
+                    onDismissRequest = { showVoiceAnswersConsent = false },
+                    shape = TamixaDialogDefaults.shape,
+                    title = { Text(Strings.voiceAnswersConsentTitle()) },
+                    text = { Text(Strings.voiceAnswersConsentMessage()) },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showVoiceAnswersConsent = false
+                                onVoiceAnswersEnabledChange(true)
+                            },
+                            shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius)
+                        ) {
+                            Text(Strings.voiceAnswersConsentAgree())
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showVoiceAnswersConsent = false }) {
+                            Text(Strings.cancel())
+                        }
+                    }
+                )
             }
             Spacer(Modifier.height(TamixaDesignTokens.cardSpacing))
             onNavigateToVoiceUpload?.let { onVoice ->

@@ -35,6 +35,12 @@ interface AudioStorageService {
         mp3Bytes: ByteArray
     ): String = uploadNarrationAudio(storyId, language, "seg_$segmentIndex", mp3Bytes)
 
+    /**
+     * Store a small companion file next to narration audio (e.g. "stories/75/ta/v1.timings.json" word timings).
+     * False when storage is unavailable or [key] is outside stories/.
+     */
+    fun putNarrationObject(key: String, bytes: ByteArray, contentType: String): Boolean = false
+
     /** Delete one stored narration file by its key (e.g. "stories/71/ta/cloned_12.mp3"). True when gone. */
     fun deleteNarrationAudio(key: String): Boolean
 

@@ -9,6 +9,7 @@ import com.tamixa.api.stream.dto.VoiceDto
 import com.tamixa.api.stream.dto.VoicePreferenceRequest
 import com.tamixa.api.stream.dto.VoicePreferenceResponse
 import com.tamixa.api.stream.dto.VoicesResponse
+import com.tamixa.api.stream.dto.WordTimingDto
 import com.tamixa.application.avatar.AvatarVideoService
 import com.tamixa.domain.AvatarVideoStatus
 import com.tamixa.application.avatar.FamilyAvatarService
@@ -19,6 +20,8 @@ import com.tamixa.application.playback.toNarrativeSceneVisualDtos
 import com.tamixa.api.stream.dto.NarrativeSceneVisualDto
 import com.tamixa.application.port.ParentRepositoryPort
 import com.tamixa.application.subscription.SubscriptionService
+import com.tamixa.application.narration.NarrationWordTimingService
+import com.tamixa.application.visuals.StoryVisualsService
 import com.tamixa.application.stream.AudioStreamService
 import com.tamixa.infrastructure.config.AppProperties
 import com.tamixa.infrastructure.config.resolvedHostStoryClipUrl
@@ -67,9 +70,29 @@ class StreamUrlController(
     private val parentRepository: ParentRepositoryPort,
     private val subscriptionService: SubscriptionService,
     private val appProperties: AppProperties,
-    private val interactiveSegmentVoiceService: com.tamixa.application.stream.InteractiveSegmentVoiceService
+    private val interactiveSegmentVoiceService: com.tamixa.application.stream.InteractiveSegmentVoiceService,
+    private val narrationWordTimingService: NarrationWordTimingService,
+    private val storyVisualsService: StoryVisualsService
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+
+    /** Approved story slideshow as timed camera shots for the served narration; null when the story has none. */
+    private fun slideshowScenes(storyId: Long, language: String, voiceProfile: String, servedUrl: String, durationSeconds: Int?) =
+        storyVisualsService.timedShots(storyId, language, voiceProfile, servedUrl, durationSeconds)?.map {
+            NarrativeSceneVisualDto(
+                sceneIndex = it.index,
+                startProgress = it.startProgress,
+                illustrationUrl = it.imageUrl,
+                camera = it.camera,
+                focus = it.focus,
+                movement = it.movement,
+            )
+        }
+
+    /** Exact per-word timings of the served library narration, for read-along sync; null until aligned. */
+    private fun wordTimingsFor(storyId: Long, language: String, voiceProfile: String, servedUrl: String): List<WordTimingDto>? =
+        narrationWordTimingService.getLibraryWordTimings(storyId, language, voiceProfile, servedUrl)
+            ?.map { WordTimingDto(it.text, it.startSec, it.endSec) }
 
     private fun narrativeScenesFor(
         storyId: Long,
@@ -131,8 +154,10 @@ class StreamUrlController(
                 avatarVideoUrl,
                 avatarStatus,
                 voiceFallback,
+                wordTimings = wordTimingsFor(id, language, voiceForManifest, url),
                 durationSeconds = durationSeconds,
-                narrativeScenes = narrativeScenesFor(id, language, "library", voiceForManifest, parentId),
+                narrativeScenes = slideshowScenes(id, language, voiceForManifest, url, durationSeconds)
+                    ?: narrativeScenesFor(id, language, "library", voiceForManifest, parentId),
                 hostStoryClipUrl = appProperties.resolvedHostStoryClipUrl()
             )
         ) else ResponseEntity.notFound().build()
@@ -272,8 +297,10 @@ class StreamUrlController(
                 avatarVideoUrl,
                 avatarStatus,
                 voiceFallback,
+                wordTimings = if (effectiveSource != "generated") wordTimingsFor(id, language, voice, url) else null,
                 durationSeconds = durationSeconds,
-                narrativeScenes = narrativeScenesFor(id, language, effectiveSource, voice, parentId),
+                narrativeScenes = (if (effectiveSource != "generated") slideshowScenes(id, language, voice, url, durationSeconds) else null)
+                    ?: narrativeScenesFor(id, language, effectiveSource, voice, parentId),
                 hostStoryClipUrl = appProperties.resolvedHostStoryClipUrl()
             )
         ) else ResponseEntity.notFound().build()

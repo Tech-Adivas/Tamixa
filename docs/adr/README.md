@@ -31,5 +31,6 @@ Trivial or easily revertible changes do not need an ADR.
 | ADR | Title | Status |
 |-----|--------|--------|
 | [0000-template.md](0000-template.md) | Template | N/A |
+| [0001-product-focus-ages-5-10-life-skills.md](0001-product-focus-ages-5-10-life-skills.md) | Product focus: ages 5–10 and life-skills; avatar video parked | Proposed |
 
 _Add rows as ADRs are added._

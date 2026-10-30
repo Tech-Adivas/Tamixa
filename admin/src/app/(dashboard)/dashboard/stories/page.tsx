@@ -38,6 +38,7 @@ import {
   adminStoryEmotionModeLabel,
   ADMIN_STORY_LANGUAGE_SHORT,
 } from "@/lib/library-story-workflow";
+import { LIBRARY_TAB_LANGUAGES } from "@/lib/library-story-admin-constants";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -55,14 +56,7 @@ import { PageHeader } from "@/components/layout/page-header";
 
 const PAGE_SIZE = 20;
 /** Languages for View story tabs. Translated content is stored in backend (story_translations) and returned by GET /stories/:id?language=... */
-const VIEW_LANGUAGES: Array<{ code: string; label: string }> = [
-  { code: "ta", label: "Tamil" },
-  { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
-  { code: "te", label: "Telugu" },
-  { code: "kn", label: "Kannada" },
-  { code: "ml", label: "Malayalam" },
-];
+const VIEW_LANGUAGES: ReadonlyArray<{ code: string; label: string }> = LIBRARY_TAB_LANGUAGES;
 /** Resolve cover URL for img src (relative path → full API URL). */
 function resolveCoverSrc(coverImageUrl: string | null | undefined): string | null {
   if (!coverImageUrl?.trim()) return null;

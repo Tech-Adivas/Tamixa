@@ -34,7 +34,7 @@ class CoverImageProxyController(
             .takeIf { it.isNotBlank() }
             ?: return jsonError(HttpStatus.BAD_REQUEST, "Missing path")
         val key = path
-        if (!key.startsWith("covers/") && !key.startsWith("curated_covers/") && !key.startsWith("curated_cover_videos/") && !key.startsWith("generated_cover_videos/")) {
+        if (!key.startsWith("covers/") && !key.startsWith("curated_covers/") && !key.startsWith("curated_cover_videos/") && !key.startsWith("generated_cover_videos/") && !key.startsWith("interactive_images/")) {
             log.warn("Rejected invalid cover path: {}", key)
             return jsonError(HttpStatus.BAD_REQUEST, "Invalid path")
         }

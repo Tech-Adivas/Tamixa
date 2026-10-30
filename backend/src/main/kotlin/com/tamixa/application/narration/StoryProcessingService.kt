@@ -73,7 +73,8 @@ class StoryProcessingService(
     @Qualifier("pipelineTtsExecutor") private val pipelineTtsExecutor: ExecutorService,
     @Qualifier("triggerPipelineExecutor") private val triggerPipelineExecutor: TaskExecutor,
     @Lazy private val self: StoryProcessingService,
-    @org.springframework.beans.factory.annotation.Autowired(required = false) private val processingJobRepository: ProcessingJobRepositoryPort? = null
+    @org.springframework.beans.factory.annotation.Autowired(required = false) private val processingJobRepository: ProcessingJobRepositoryPort? = null,
+    @org.springframework.beans.factory.annotation.Autowired(required = false) @Lazy private val wordTimingService: NarrationWordTimingService? = null
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val maxRetries = 3
@@ -848,6 +849,8 @@ class StoryProcessingService(
                 if (language == sourceLanguage) {
                     storyLibraryRepository.updateContent(masterStoryId, scriptText, scriptWordCount, scriptReadingTime)
                 }
+                // Read-along: align the new audio now so the first play already has exact word timings.
+                if (segmentAudioUrls == null) wordTimingService?.scheduleAlignment(currentTranslation.id, audioUrl)
                 translationRepository.save(
                     currentTranslation.copy(
                         status = TranslationPipelineStatus.COMPLETED,

@@ -16,7 +16,7 @@ fun viewModelModule() = module {
     factory { AuthViewModel(get(), get(), get(), get(), get(named("appScope"))) }
     factory { StoryPlaybackTracker(get(), get(), get(named("appScope"))) }
     factory {
-        StoryViewModel(get(), get(), get(named("appScope")), get())
+        StoryViewModel(get(), get(), get(named("appScope")), get(), get())
     }
     factory { VoiceViewModel(get(), get(), get(named("appScope"))) }
     factory { AvatarViewModel(get(), get(), get(named("appScope"))) }

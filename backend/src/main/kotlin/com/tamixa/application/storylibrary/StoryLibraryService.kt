@@ -1169,7 +1169,10 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
         }
         val target = effectiveLanguage(localeLang).trim().lowercase().take(10)
         val hasTranslationOverlay = translation?.interactiveGraphJson?.trim()?.isNotBlank() == true
-        if (hasTranslationOverlay || target == masterLang) {
+        if (hasTranslationOverlay) {
+            return InteractiveGraphImages.withMasterImageUrls(parsed, master.interactiveGraphJson)
+        }
+        if (target == masterLang) {
             return parsed
         }
         val exists: (String) -> Boolean =
@@ -2960,7 +2963,10 @@ Before responding: confirm no prohibited content; confirm language and grammar; 
             if (interactiveGraphJson == null) {
                 existing.interactiveGraphJson
             } else {
-                StoryLibraryValidation.normalizeInteractiveGraphJson(interactiveGraphJson)
+                InteractiveGraphImages.preserveImageUrls(
+                    StoryLibraryValidation.normalizeInteractiveGraphJson(interactiveGraphJson),
+                    existing.interactiveGraphJson,
+                )
             }
         val categoryForValidation = category?.trim()?.take(100) ?: existing.category ?: theme.trim().take(100)
         StoryLibraryValidation.validateInteractiveGraphThemeAlignment(theme.trim().take(100), categoryForValidation, resolvedGraph)

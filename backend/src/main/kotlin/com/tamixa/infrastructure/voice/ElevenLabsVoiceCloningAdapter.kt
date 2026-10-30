@@ -1,6 +1,9 @@
 package com.tamixa.infrastructure.voice
 
+import com.tamixa.application.narration.NarrationTextUtils
 import com.tamixa.application.port.voice.ElevenLabsVoiceCloningPort
+import com.tamixa.application.port.voice.ElevenLabsVoiceSettings
+import com.tamixa.infrastructure.narration.Mp3Joiner
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
@@ -23,7 +26,9 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Implements the [Instant Voice Cloning API](https://elevenlabs.io/docs/eleven-api/guides/cookbooks/voices/instant-voice-cloning):
  * - Create clone: POST /v1/voices/add (multipart: name, files; optional: remove_background_noise, description, labels)
- * - TTS: POST /v1/text-to-speech/{voice_id}
+ * - TTS: POST /v1/text-to-speech/{voice_id}. A story is sent in sentence groups of up to [MAX_CHUNK_CHARS], each with
+ *   the text around it (previous_text / next_text) so the voice stays the same across the joins, and the MP3 parts are
+ *   joined. One long request lets the voice drift over a multi-minute story and the API takes at most 10,000 characters.
  *
  * API key: create at [elevenlabs.io → Settings → API Keys](https://elevenlabs.io/app/settings/api-keys),
  * set ELEVENLABS_API_KEY in backend .env. Plan must include Instant Voice Cloning.
@@ -41,33 +46,40 @@ class ElevenLabsVoiceCloningAdapter(
     @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-stability:0.5}") private val stability: Double = 0.5,
     @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-similarity-boost:0.9}") private val similarityBoost: Double = 0.9,
     @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-style:0.0}") private val style: Double = 0.0,
-    @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-speaker-boost:true}") private val speakerBoost: Boolean = true
+    @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-speaker-boost:true}") private val speakerBoost: Boolean = true,
+    // Speaking pace of cloned narration, 0.7..1.2 (1.0 = the pace of the parent's recording).
+    @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-speed:1.0}") private val speed: Double = 1.0,
+    @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-model:eleven_multilingual_v2}") modelRaw: String = DEFAULT_MODEL,
+    // Clean the parent's recording when the clone is made, so room noise and echo don't become part of the voice.
+    @org.springframework.beans.factory.annotation.Value("\${app.voice-cloning.eleven-labs-remove-background-noise:true}") private val removeBackgroundNoise: Boolean = true
 ) : ElevenLabsVoiceCloningPort {
 
     private val log = LoggerFactory.getLogger(javaClass)
     /** Trimmed so .env whitespace or newline doesn't cause 401. */
     private val apiKey: String = apiKeyRaw.trim()
+    private val model: String = modelRaw.trim().ifBlank { DEFAULT_MODEL }
     private data class ProviderFailure(val at: Instant, val kind: String, val message: String)
     private val failuresByVoiceId: ConcurrentHashMap<String, ProviderFailure> = ConcurrentHashMap()
     private val authFailureWindow: Duration = Duration.ofHours(6)
 
     /**
-     * TTS voice_settings for cloned voices. Without them ElevenLabs uses its defaults, which follow the recording
-     * less closely; a high similarity boost plus speaker boost keeps narration closer to the parent's own voice.
+     * voice_settings for cloned (parent) voices: app.voice-cloning.eleven-labs-*. Instant clones sound most natural
+     * around stability 0.5 / similarity 0.75–0.8 / speed 1.0; the story narrator passes its own settings.
      */
-    private val voiceSettings: Map<String, Any> = mapOf(
-        "stability" to stability.coerceIn(0.0, 1.0),
-        "similarity_boost" to similarityBoost.coerceIn(0.0, 1.0),
-        "style" to style.coerceIn(0.0, 1.0),
-        "use_speaker_boost" to speakerBoost
+    private val cloneSettings = ElevenLabsVoiceSettings(
+        stability = stability,
+        similarityBoost = similarityBoost,
+        style = style,
+        speakerBoost = speakerBoost,
+        speed = speed,
     )
 
     @PostConstruct
     fun logStartup() {
         val keyStatus = if (apiKey.isNotBlank()) "set (***${apiKey.takeLast(4.coerceAtMost(apiKey.length))})" else "missing"
         log.info(
-            "ElevenLabs integration enabled: baseUrl={}, apiKey={}. Cloned narration will use ElevenLabs when profile has reference_audio_path and S3 reference storage is configured.",
-            baseUrl, keyStatus
+            "ElevenLabs integration enabled: baseUrl={}, apiKey={}, model={}, removeBackgroundNoise={}. Cloned narration will use ElevenLabs when profile has reference_audio_path and S3 reference storage is configured.",
+            baseUrl, keyStatus, model, removeBackgroundNoise
         )
     }
 
@@ -95,7 +107,7 @@ class ElevenLabsVoiceCloningAdapter(
             val body = LinkedMultiValueMap<String, Any>().apply {
                 add("name", name)
                 add("files", HttpEntity(fileResource, filePartHeaders))
-                add("remove_background_noise", false)
+                add("remove_background_noise", removeBackgroundNoise)
             }
             val entity = HttpEntity(body, headers)
             val url = "$baseUrl/v1/voices/add"
@@ -138,43 +150,55 @@ class ElevenLabsVoiceCloningAdapter(
         }
     }
 
-    override fun synthesize(text: String, voiceId: String, language: String): ByteArray? {
+    override fun synthesize(text: String, voiceId: String, language: String): ByteArray? =
+        synthesize(text, voiceId, language, cloneSettings)
+
+    override fun synthesize(text: String, voiceId: String, language: String, settings: ElevenLabsVoiceSettings): ByteArray? {
+        val voiceSettings = settings.toRequest()
         if (apiKey.isBlank()) {
             log.warn("ElevenLabs synthesize skipped: API key is blank")
             return null
         }
         if (text.isBlank()) return null
-        val plainText = text.take(10_000)
+        val chunks = NarrationTextUtils.splitForSpeech(text, MAX_CHUNK_CHARS)
         val langCode = mapLanguageToElevenLabs(language)
-        val firstAttempt = synthesizeInternal(
-            voiceId = voiceId,
-            request = mapOf(
-                "text" to plainText,
-                "model_id" to "eleven_multilingual_v2",
-                "language_code" to langCode,
-                "voice_settings" to voiceSettings
-            )
-        )
-        if (firstAttempt != null && firstAttempt.isNotEmpty()) {
-            return firstAttempt
+        // Some ElevenLabs voices reject language_code for certain locales/voice states; once a part needs the retry
+        // without it, the rest of the story is sent without it too.
+        var sendLanguageCode = true
+        val parts = ArrayList<ByteArray>(chunks.size)
+        for ((i, chunk) in chunks.withIndex()) {
+            val request = buildMap<String, Any> {
+                put("text", chunk)
+                put("model_id", model)
+                put("voice_settings", voiceSettings)
+                chunks.getOrNull(i - 1)?.let { put("previous_text", it.takeLast(CONTEXT_CHARS)) }
+                chunks.getOrNull(i + 1)?.let { put("next_text", it.take(CONTEXT_CHARS)) }
+            }
+            var audio = if (sendLanguageCode) synthesizeInternal(voiceId, request + ("language_code" to langCode)) else null
+            if (audio == null || audio.isEmpty()) {
+                if (sendLanguageCode) {
+                    log.warn(
+                        "ElevenLabs synthesize returned empty for voiceId={} lang={}; retrying without language_code",
+                        voiceId.take(8),
+                        langCode
+                    )
+                    sendLanguageCode = false
+                }
+                audio = synthesizeInternal(voiceId, request)
+            }
+            if (audio == null || audio.isEmpty()) {
+                // A story with a missing part must not be saved: the caller marks it failed and it is retried later.
+                log.warn("ElevenLabs synthesize failed for part {}/{} voiceId={} lang={}", i + 1, chunks.size, voiceId.take(8), langCode)
+                return null
+            }
+            parts += audio
         }
-
-        // Some ElevenLabs voices reject language_code for certain locales/voice states.
-        // Retry with model-only payload so provider can auto-detect language from text.
-        log.warn(
-            "ElevenLabs synthesize returned empty for voiceId={} lang={}; retrying without language_code",
-            voiceId.take(8),
-            langCode
-        )
-        val fallbackAttempt = synthesizeInternal(
-            voiceId = voiceId,
-            request = mapOf(
-                "text" to plainText,
-                "model_id" to "eleven_multilingual_v2",
-                "voice_settings" to voiceSettings
-            )
-        )
-        return if (fallbackAttempt != null && fallbackAttempt.isNotEmpty()) fallbackAttempt else null
+        if (parts.size > 1) {
+            log.info("ElevenLabs synthesize joined {} parts voiceId={} lang={} chars={}", parts.size, voiceId.take(8), langCode, text.length)
+        }
+        // Every part is MP3 at the same rate and bitrate (output_format); the joiner keeps only their audio frames so
+        // part headers don't end up mid-story (they made readers and players see only part 1's length).
+        return Mp3Joiner.join(parts)
     }
 
     /** DELETE /v1/voices/{voice_id}. A 404 means the voice is already gone, which counts as deleted. */
@@ -285,5 +309,23 @@ class ElevenLabsVoiceCloningAdapter(
             lower.endsWith(".ogg") -> MediaType.parseMediaType("audio/ogg")
             else -> MediaType.parseMediaType("audio/mpeg")
         }
+    }
+
+    private fun ElevenLabsVoiceSettings.toRequest(): Map<String, Any> = mapOf(
+        "stability" to stability.coerceIn(0.0, 1.0),
+        "similarity_boost" to similarityBoost.coerceIn(0.0, 1.0),
+        "style" to style.coerceIn(0.0, 1.0),
+        "use_speaker_boost" to speakerBoost,
+        "speed" to speed.coerceIn(0.7, 1.2),
+    )
+
+    companion object {
+        const val DEFAULT_MODEL = "eleven_multilingual_v2"
+
+        /** Longest text sent in one request; short enough that the voice can't drift within a part. */
+        const val MAX_CHUNK_CHARS = 1_000
+
+        /** Text from the neighbouring part sent as previous_text / next_text (context only, not spoken). */
+        private const val CONTEXT_CHARS = 300
     }
 }

@@ -262,6 +262,16 @@ app:
     max-story-chars-for-interactive-llm: ${INTERACTIVE_EPISODE_MAX_STORY_CHARS:100000}
     max-segment-batch-size: ${INTERACTIVE_EPISODE_MAX_SEGMENT_BATCH:50}
     default-language-fallback: ${INTERACTIVE_EPISODE_DEFAULT_LANG:ta}
+  # Voice answers to interactive story questions: OpenAI transcription (OPENAI_API_KEY) + word/LLM match.
+  # Recordings are processed in memory and never stored; transcripts are not logged.
+  voice-answer:
+    enabled: ${VOICE_ANSWER_ENABLED:true}
+    # whisper-1 | gpt-4o-transcribe | gpt-4o-mini-transcribe. whisper-1 is the default: in a 2026-10-16 test it was
+    # the only one that kept Tamil in Tamil script (the gpt-4o ones often answered in Latin letters).
+    transcription-model: ${VOICE_ANSWER_TRANSCRIPTION_MODEL:whisper-1}
+    # ~10 s of AAC from the app is ~100-200 KB
+    max-audio-bytes: ${VOICE_ANSWER_MAX_AUDIO_BYTES:1048576}
+    per-parent-per-hour: ${VOICE_ANSWER_PER_PARENT_PER_HOUR:60}
   # Library soft-delete: Super Admin delete hides rows for retention-days, then scheduled purge removes them permanently.
   library-story-soft-delete:
     retention-days: ${LIBRARY_STORY_SOFT_DELETE_RETENTION_DAYS:30}
@@ -380,7 +390,15 @@ app:
     # Regenerate-with-prompt quality floor: if rewritten content is shorter than this,
     # admin regenerate flow runs expansion passes to restore medium-form narration.
     regenerate-min-words: ${NARRATION_REGENERATE_MIN_WORDS:900}
-    # TTS provider: tamixa | google | openai | sample | simulated. tamixa/sample = SAME pre-recorded audio for ALL stories (no story narration). For story-specific narration use google (or openai). Set NARRATION_TTS_PROVIDER=google and GOOGLE_CLOUD_TTS_API_KEY.
+    # ElevenLabs narrator voices (NARRATION_TTS_PROVIDER=elevenlabs; uses ELEVENLABS_API_KEY and the eleven-labs-* settings
+    # below). Voice ids from the ElevenLabs voice library work without adding them to the account. Calm falls back to default.
+    elevenlabs-voice-id: ${NARRATION_ELEVENLABS_VOICE_ID:}
+    elevenlabs-calm-voice-id: ${NARRATION_ELEVENLABS_CALM_VOICE_ID:}
+    # Narrator voice settings (separate from cloned voices below): steady, calm storyteller.
+    elevenlabs-stability: ${NARRATION_ELEVENLABS_STABILITY:0.7}
+    elevenlabs-similarity-boost: ${NARRATION_ELEVENLABS_SIMILARITY_BOOST:0.9}
+    elevenlabs-speed: ${NARRATION_ELEVENLABS_SPEED:0.9}
+    # TTS provider: tamixa | google | openai | elevenlabs | sample | simulated. tamixa/sample = SAME pre-recorded audio for ALL stories (no story narration). For story-specific narration use google (or openai). Set NARRATION_TTS_PROVIDER=google and GOOGLE_CLOUD_TTS_API_KEY.
     tts-provider: ${NARRATION_TTS_PROVIDER:tamixa}
     # Backup TTS when tts-provider=google fails (billing, key, quota, outage): openai | none. Requires OPENAI_API_KEY.
     tts-fallback: ${NARRATION_TTS_FALLBACK:none}
@@ -392,6 +410,8 @@ app:
     openai-tts-model: ${NARRATION_OPENAI_TTS_MODEL:tts-1-hd}
     # Speed 1.0 = normal pace (range 0.25-4.0). Use 0.95 for slower bedtime feel.
     openai-tts-speed: ${NARRATION_OPENAI_TTS_SPEED:1.0}
+    # Style direction for gpt-4o-mini-tts style models (ignored for tts-1 / tts-1-hd), e.g. NARRATION_OPENAI_TTS_MODEL=gpt-4o-mini-tts.
+    openai-tts-instructions: "${NARRATION_OPENAI_TTS_INSTRUCTIONS:You are a warm, gentle storyteller reading a story aloud to young children. Speak at a slow, steady, even pace and keep the same pace from the beginning to the end. Pronounce every word clearly. Pause briefly after each sentence and a little longer between paragraphs. Keep the tone calm and soothing; do not rush, and do not speed up or get louder in exciting parts. Read the text exactly as written, in its own language.}"
     # Google Cloud TTS: Chirp 3 HD model for high-quality, natural narration. Requires Text-to-Speech API enabled.
     google-tts-api-key: ${GOOGLE_CLOUD_TTS_API_KEY:}
     # Per-chunk HTTP read timeout for Google TTS (full story = multiple chunks; Chirp3/WaveNet can be slow)
@@ -424,6 +444,9 @@ app:
     voice-profile: ${NARRATION_VOICE_PROFILE:default}
     blocklist-keywords: ${NARRATION_BLOCKLIST:}
     per-segment-tts: ${NARRATION_PER_SEGMENT_TTS:false}
+    # Read-along sync: forced-align each narration MP3 (ElevenLabs, needs ELEVENLABS_API_KEY) and serve exact word
+    # timings in stream-url; stored as stories/{id}/{lang}/{voice}.timings.json next to the audio.
+    word-timings-enabled: ${NARRATION_WORD_TIMINGS_ENABLED:true}
     # Word count tolerance: narration may be shorter/longer by this % vs original (e.g. 35 = 65%-135%). Conversational/Tamil rewrites often shorten.
     word-count-tolerance-percent: ${NARRATION_WORD_COUNT_TOLERANCE_PERCENT:35}
     simulated-tts-delay-ms: ${NARRATION_SIMULATED_TTS_DELAY_MS:0}
@@ -448,6 +471,16 @@ app:
   # ElevenLabs: ELEVENLABS_API_KEY — https://elevenlabs.io/app/settings/api-keys
   # Fish Audio (ElevenLabs alternative): FISH_AUDIO_API_KEY — https://fish.audio/app/api-keys/
   # Tamil (ta) requires a managed cloned-voice provider (Google, ElevenLabs, or Fish Audio); XTTS does not support Tamil.
+  # Story slideshow: a few AI pictures per library story shown as timed camera shots during narration.
+  # Admin starts generation per story and approves it before children see it. Pictures use the image provider
+  # (app.image-generation.provider; OpenAI GPT Image supports the reference images that keep characters consistent).
+  story-visuals:
+    enabled: ${STORY_VISUALS_ENABLED:true}
+    planner-model: ${STORY_VISUALS_PLANNER_MODEL:gpt-4o}
+    # Upper limit of generated pictures per story (cost guard); the planner targets about one per narration minute.
+    max-images: ${STORY_VISUALS_MAX_IMAGES:12}
+    image-quality: ${STORY_VISUALS_IMAGE_QUALITY:medium}
+
   voice-cloning:
     enabled: ${VOICE_CLONING_ENABLED:false}
     provider: ${VOICE_CLONING_PROVIDER:google}
@@ -461,9 +494,16 @@ app:
     # Cloned-voice likeness (ElevenLabs TTS voice_settings, 0..1). Higher similarity follows the parent's recording
     # more closely; too high can copy its background noise. Stability: lower = more expressive, higher = steadier.
     eleven-labs-stability: ${ELEVENLABS_STABILITY:0.5}
-    eleven-labs-similarity-boost: ${ELEVENLABS_SIMILARITY_BOOST:0.9}
+    eleven-labs-similarity-boost: ${ELEVENLABS_SIMILARITY_BOOST:0.8}
     eleven-labs-style: ${ELEVENLABS_STYLE:0.0}
     eleven-labs-speaker-boost: ${ELEVENLABS_SPEAKER_BOOST:true}
+    # Pace of cloned narration, 0.7..1.2; 1.0 follows the pace of the parent's recording, ~0.9 is calmer.
+    eleven-labs-speed: ${ELEVENLABS_SPEED:1.0}
+    # Model for cloned narration; change to compare quality (e.g. a newer multilingual model) without a code change.
+    eleven-labs-model: ${ELEVENLABS_MODEL:eleven_multilingual_v2}
+    # Clean noise/echo from the parent's recording when the clone is made. ElevenLabs notes it can slightly lower
+    # quality on an already-clean studio recording; phone recordings at home usually gain from it.
+    eleven-labs-remove-background-noise: ${ELEVENLABS_REMOVE_BACKGROUND_NOISE:true}
     fish-audio-api-key: ${FISH_AUDIO_API_KEY:}
     fish-audio-base-url: ${FISH_AUDIO_BASE_URL:https://api.fish.audio}
     fish-audio-tts-model: ${FISH_AUDIO_TTS_MODEL:s2-pro}

@@ -485,20 +485,23 @@ export const STORY_CATEGORIES = [
   "Learn · Simulator · Civic Survival",
 ] as const;
 
+/**
+ * Listener age groups for library stories (product focus: ages 5–10). `value` is the group's first year and is
+ * stored as the story's `age`; the app's age filter puts a story in the group whose range contains it.
+ */
 export const AGE_GROUPS = [
-  { value: 1, label: "1-2 years" },
-  { value: 3, label: "3-4 years" },
   { value: 5, label: "5-6 years" },
   { value: 7, label: "7-8 years" },
   { value: 9, label: "9-10 years" },
-  { value: 11, label: "11-12 years" },
-  { value: 13, label: "13-15 years" },
-  { value: 16, label: "16-17 years" },
-  { value: 18, label: "18-24 years" },
-  { value: 30, label: "25-40 years" },
-  { value: 50, label: "41-60 years" },
-  { value: 70, label: "61-99 years" },
 ] as const;
+
+/** Age group options for a story form; keeps an older out-of-focus age selectable so editing never drops it. */
+export function ageGroupOptions(currentAge: number | null | undefined): ReadonlyArray<{ value: number; label: string }> {
+  if (currentAge == null || !Number.isFinite(currentAge)) return AGE_GROUPS;
+  const inGroup = AGE_GROUPS.some((g) => currentAge >= g.value && currentAge <= g.value + 1);
+  if (inGroup && AGE_GROUPS.some((g) => g.value === currentAge)) return AGE_GROUPS;
+  return [...AGE_GROUPS, { value: currentAge, label: `Age ${currentAge} (${inGroup ? "set before age groups" : "outside 5-10, hidden by app age filter"})` }];
+}
 
 export const MIN_WORD_COUNT = 50;
 
@@ -864,4 +867,42 @@ export interface SoundscapeUsage {
   soundscapeId?: number;
   storyId?: number;
   [key: string]: unknown;
+}
+
+/** Story slideshow (AI pictures shown as timed camera shots during narration). */
+export type StoryVisualsStatus = "PLANNING" | "GENERATING" | "READY" | "FAILED";
+
+export interface StoryVisualImage {
+  imageKey: string;
+  storyMoment: string | null;
+  prompt: string;
+  subjects: { name: string; region: string }[] | null;
+  imageUrl: string | null;
+  status: "PENDING" | "READY" | "FAILED";
+  lastError: string | null;
+  shotCount: number;
+}
+
+export interface StoryVisualShot {
+  shotIndex: number;
+  imageKey: string;
+  narrationStart: string;
+  startWord: number;
+  camera: string;
+  focus: string | null;
+  movement: string;
+}
+
+export interface StoryVisuals {
+  storyId: number;
+  status: StoryVisualsStatus;
+  running: boolean;
+  approved: boolean;
+  approvedAt: string | null;
+  lastError: string | null;
+  sourceLanguage: string;
+  characters: { name: string; appearance?: string; outfits?: Record<string, string> }[] | null;
+  characterSheetUrl: string | null;
+  images: StoryVisualImage[];
+  shots: StoryVisualShot[];
 }

@@ -57,6 +57,23 @@ class S3NarrationAudioStorageAdapter(
         }
     }
 
+    override fun putNarrationObject(key: String, bytes: ByteArray, contentType: String): Boolean {
+        if (!key.startsWith("stories/")) return false
+        return try {
+            val request = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .contentType(contentType)
+                .build()
+            s3Client.putObject(request, RequestBody.fromBytes(bytes))
+            log.info("S3 narration object stored key={} bytes={}", key, bytes.size)
+            true
+        } catch (e: Exception) {
+            log.warn("S3 narration object store failed key={}: {}", key, e.message)
+            false
+        }
+    }
+
     override fun deleteNarrationAudio(key: String): Boolean {
         if (!key.startsWith("stories/")) return false
         return try {

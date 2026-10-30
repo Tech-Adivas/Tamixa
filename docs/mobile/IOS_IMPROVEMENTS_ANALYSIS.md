@@ -206,3 +206,23 @@ Analysis of the Tamixa iOS codebase (KMP Compose Multiplatform) with concrete su
 - **Loading/error UI**: `IosApp.kt` – `IosAppContent` composable.
 
 This gives a clear roadmap for improving the iOS app’s UI design, functionality, and features in line with the rest of the codebase and iOS best practices.
+
+## Voice recording and voice answers on iOS (written 2026-10-17, not yet built on a Mac)
+
+Written on Windows, so **never compiled**. Before release, on a Mac:
+
+1. Build the iOS framework / app (`iosApp/Tamixa.xcodeproj`) and fix any compile errors in:
+   - `composeApp/src/iosMain/kotlin/com/tamixa/ios/audio/IosAudioRecorder.kt` — AVAudioRecorder (AAC .m4a, metering,
+     record permission, audio session PlayAndRecord ↔ Playback). Likely spots: `AVAudioRecorder(uRL=…, settings=…, error=…)`
+     constructor, `setCategory(category, options, error)` overload, `kAudioFormatMPEG4AAC` import, `recordPermission` (deprecated
+     on iOS 17 in favour of `AVAudioApplication`; still works).
+   - `composeApp/src/iosMain/kotlin/com/tamixa/ios/component/FamilyVoiceRecordDialogIos.kt` — parent voice recording, same flow as
+     Android: reading script + tips, 60 s minimum, auto-stop at 180 s, preview, save.
+   - `composeApp/src/iosMain/kotlin/com/tamixa/ui/edu/VoiceAnswerRecorder.ios.kt` — voice answers (16 kHz / 32 kbps).
+2. On an iPhone (the simulator has no real mic quality): grant the microphone, record a voice (≥ 60 s), preview, save; check the
+   voice uploads and clones. Deny the microphone once and check the Settings hint. Turn on voice answers in Settings and answer
+   an interactive-story question by voice.
+3. Check story playback still works right after recording (the recorder switches the audio session back to Playback).
+4. `Info.plist` `NSMicrophoneUsageDescription` now also mentions voice answers.
+
+Difference from Android: no on-device level normalisation before upload (the server removes background noise).

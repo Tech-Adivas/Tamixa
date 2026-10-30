@@ -390,7 +390,7 @@ fun StoryGenerationScreen(
                         }
                         TamixaPrimaryButton(
                             onClick = {
-                                val ageInt = age.toIntOrNull()?.coerceIn(1, 99)
+                                val ageInt = age.toIntOrNull()?.coerceIn(com.tamixa.domain.AgeBand.FOCUS_MIN_AGE, com.tamixa.domain.AgeBand.FOCUS_MAX_AGE)
                                     ?: com.tamixa.util.TamixaConstants.DEFAULT_CHILD_AGE
                                 val topicId = selectedTopicId?.trim()?.takeIf { it.isNotBlank() }
                                 val overrideTheme = topicThemeOverride.trim().takeIf { it.isNotBlank() }

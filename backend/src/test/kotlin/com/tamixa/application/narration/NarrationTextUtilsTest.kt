@@ -68,4 +68,26 @@ class NarrationTextUtilsTest {
         assertTrue(result.contains("She paused."), result)
         assertTrue(result.contains("smiled."), result)
     }
+
+    @Test
+    fun `split keeps sentences whole and loses no text`() {
+        val text = "First sentence. Second one!  Third?\nमैं घर गया। फिर सो गया। " + "word ".repeat(300)
+        val parts = NarrationTextUtils.splitForSpeech(text, 100)
+
+        org.assertj.core.api.Assertions.assertThat(parts).allSatisfy { org.assertj.core.api.Assertions.assertThat(it.length).isLessThanOrEqualTo(100) }
+        org.assertj.core.api.Assertions.assertThat(parts.joinToString(" ")).isEqualTo(text.replace(Regex("\\s+"), " ").trim())
+        org.assertj.core.api.Assertions.assertThat(parts[0]).startsWith("First sentence. Second one! Third? मैं घर गया। फिर सो गया।")
+        org.assertj.core.api.Assertions.assertThat(NarrationTextUtils.splitForSpeech("x".repeat(250), 100)).containsExactly("x".repeat(100), "x".repeat(100), "x".repeat(50))
+        org.assertj.core.api.Assertions.assertThat(NarrationTextUtils.splitForSpeech("  short  text ", 100)).containsExactly("short text")
+    }
+
+    @Test
+    fun `split keeps paragraphs apart for the voice to pause and ends parts at paragraph ends`() {
+        val text = "Para one first. Para one second.\n\nPara two only.\n\n\n  Para three here.  "
+        org.assertj.core.api.Assertions.assertThat(NarrationTextUtils.splitForSpeech(text, 1000))
+            .containsExactly("Para one first. Para one second.\n\nPara two only.\n\nPara three here.")
+        // 40 chars: paragraphs 1+2 don't fit together -> a new part at the paragraph end, not mid-paragraph.
+        org.assertj.core.api.Assertions.assertThat(NarrationTextUtils.splitForSpeech(text, 40))
+            .containsExactly("Para one first. Para one second.", "Para two only.\n\nPara three here.")
+    }
 }

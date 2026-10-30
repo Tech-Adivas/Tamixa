@@ -19,7 +19,20 @@ data class InteractiveSegment(
     /** Spoken narration for this node; matches segment TTS / what the player should show while audio plays. */
     val text: String = "",
     val choices: List<InteractiveChoice> = emptyList(),
+    /** Picture shown with this segment's question (a `/api/v1/covers/interactive_images/...` proxy path). */
+    val imageUrl: String? = null,
+    /** Question shown in the popup; when absent it is the narration's last question sentence. */
+    val question: String? = null,
 )
+
+private val sentenceEnd = Regex("""(?<=[.!?।])\s+""")
+
+/** Question asked at the end of this segment, or null when the narration has none. */
+fun InteractiveSegment.questionText(): String? {
+    question?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+    // Only the closing lines: an earlier rhetorical question isn't the one the child answers.
+    return text.trim().split(sentenceEnd).takeLast(2).lastOrNull { it.trim().endsWith("?") }?.trim()
+}
 
 @Serializable
 data class InteractiveChoice(

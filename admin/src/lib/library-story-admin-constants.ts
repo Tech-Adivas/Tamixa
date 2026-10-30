@@ -8,7 +8,7 @@ import { STORY_CATEGORIES } from "@/types/api";
 /** Slot key for master `library_stories.interactive_graph` vs per-translation overlays on the edit page. */
 export const INTERACTIVE_GRAPH_MASTER_LOCALE_KEY = "__master__";
 
-const PIPELINE_LANG = [
+const ALL_PIPELINE_LANG = [
   { code: "ta", tabLabel: "Tamil", sourceLabel: "Tamil (recommended)" },
   { code: "en", tabLabel: "English", sourceLabel: "English" },
   { code: "hi", tabLabel: "Hindi", sourceLabel: "Hindi" },
@@ -16,6 +16,21 @@ const PIPELINE_LANG = [
   { code: "kn", tabLabel: "Kannada", sourceLabel: "Kannada" },
   { code: "ml", tabLabel: "Malayalam", sourceLabel: "Malayalam" },
 ] as const;
+
+/**
+ * Story languages the admin works with. `NEXT_PUBLIC_ADMIN_STORY_LANGUAGES` (e.g. "ta,en") limits them, so new stories
+ * only get (and only expect) those translations and narrations — set it to the server's TRANSLATION_SOURCE_LANGUAGE +
+ * TRANSLATION_TARGET_LANGUAGES. Unset, empty or matching nothing: all languages. Restart the admin after changing it.
+ */
+const ENABLED_LANGUAGE_CODES = (process.env.NEXT_PUBLIC_ADMIN_STORY_LANGUAGES ?? "")
+  .split(",")
+  .map((code) => code.trim().toLowerCase())
+  .filter(Boolean);
+const ENABLED_PIPELINE_LANG = ALL_PIPELINE_LANG.filter((l) => ENABLED_LANGUAGE_CODES.includes(l.code));
+const PIPELINE_LANG = ENABLED_PIPELINE_LANG.length > 0 ? ENABLED_PIPELINE_LANG : ALL_PIPELINE_LANG;
+
+/** Codes of the enabled story languages (master first when Tamil is enabled). */
+export const ADMIN_STORY_LANGUAGE_CODES: ReadonlyArray<string> = PIPELINE_LANG.map((l) => l.code);
 
 export const LIBRARY_TAB_LANGUAGES: ReadonlyArray<{ readonly code: string; readonly label: string }> =
   PIPELINE_LANG.map(({ code, tabLabel }) => ({ code, label: tabLabel }));

@@ -1,5 +1,7 @@
 # Avatar Video (Talking-Head) Feature
 
+> **Parked (2026-10-23):** moved out of the current plan and kept as a possible later premium option — see [ADR-0001](adr/0001-product-focus-ages-5-10-life-skills.md). It stays off (`AVATAR_VIDEO_ENABLED=false`); no new work until the ADR is revisited.
+
 **Goal:** The avatar tells the story using the **cloned voice** (parent’s voice). Premium parents upload an avatar image; the app animates it into a talking-head video driven by the cloned-voice narration for each story.
 
 **UI flow:** For step-by-step implementation of “uploaded avatar (favorite person photo) tells stories” in Admin and Mobile UI, see [AVATAR_TELLS_STORIES_UI.md](AVATAR_TELLS_STORIES_UI.md).

@@ -4,6 +4,27 @@ Product roadmap for Tamixa (kids' stories). See [README](../README.md) for proje
 
 ---
 
+## Product focus (Stage 1) — ages 5–10 and life skills
+
+Decision: [ADR-0001](adr/0001-product-focus-ages-5-10-life-skills.md) *(proposed, awaiting leadership sign-off)*.
+
+| Area | Now | Status |
+|------|-----|--------|
+| **Audience** | Children aged **5–10**, through their parents | Decided (ADR-0001) |
+| **Content** | Life-skills stories: feelings, honesty, sharing, friendship, safety, independence — narrated and interactive | In progress |
+| **Age bands** | 5–6 / 7–8 / 9–10 picker on Home and Library; filters library rows and recommendations; remembered on device | ✅ Implemented 2026-10-23 |
+| **Story generation** | Child age limited to 5–10 | ✅ Implemented 2026-10-23 |
+| **Admin age groups** | Only 5–6 / 7–8 / 9–10 offered | ✅ Implemented 2026-10-23 |
+| **Content re-tagging** | Every published story checked and given the right age group | ⏳ Content team |
+
+### Later / premium (not in the current plan)
+
+| Feature | Note |
+|---------|------|
+| **Avatar video** (parent face tells the story) | Parked as a possible later premium option; stays off (`AVATAR_VIDEO_ENABLED=false`). Design kept in [AVATAR_VIDEO.md](AVATAR_VIDEO.md). |
+
+---
+
 ## PHASE 1 – Curated Library *(Current)*
 
 ### Architecture

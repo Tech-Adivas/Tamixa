@@ -1,6 +1,9 @@
 package com.tamixa.ui.viewmodel
 
 import com.tamixa.analytics.StoryPlaybackTracker
+import com.tamixa.application.port.PreferencesPort
+import com.tamixa.domain.AgeBand
+import com.tamixa.domain.filterByAgeBand
 import com.tamixa.util.TamixaConstants
 import com.tamixa.domain.GenerateStoryRequest
 import com.tamixa.domain.GenerationTopicResponse
@@ -23,7 +26,9 @@ class StoryViewModel(
     private val storyRepository: StoryRepository,
     private val playbackTracker: StoryPlaybackTracker,
     private val scope: CoroutineScope,
-    private val appMessageNotifier: com.tamixa.ui.AppMessageNotifier? = null
+    private val appMessageNotifier: com.tamixa.ui.AppMessageNotifier? = null,
+    /** Persists the library age filter; null in tests (filter then lives only in memory). */
+    private val preferences: PreferencesPort? = null,
 ) {
     private val _generateState = MutableStateFlow<UiState<Story>>(UiState.Idle)
     val generateState: StateFlow<UiState<Story>> = _generateState.asStateFlow()
@@ -32,8 +37,48 @@ class StoryViewModel(
         _generateState.value = UiState.Idle
     }
 
+    /** Every library story from the server; [libraryStories] is this list narrowed to [ageBand]. */
+    private var allLibraryStories: List<Story> = emptyList()
     private val _libraryStories = MutableStateFlow<List<Story>>(emptyList())
     val libraryStories: StateFlow<List<Story>> = _libraryStories.asStateFlow()
+
+    /** Listener age band chosen by the parent; null = all ages. Filters library lists and recommendations. */
+    private val _ageBand = MutableStateFlow<AgeBand?>(null)
+    val ageBand: StateFlow<AgeBand?> = _ageBand.asStateFlow()
+
+    /** Recommendations as loaded, before the age filter. */
+    private var allRecommended: List<Pair<com.tamixa.network.RecommendedStoryDto, Story?>> = emptyList()
+
+    /** Sets the age filter (null = all ages), re-filters loaded lists and remembers the choice on the device. */
+    fun setAgeBand(band: AgeBand?) {
+        if (band == _ageBand.value) return
+        applyAgeBand(band)
+        TamixaLog.i("StoryViewModel", "Library age filter set to ${band?.key ?: "all"}")
+        preferences?.let { prefs -> scope.launch { prefs.setStoryAgeBand(band?.key.orEmpty()) } }
+    }
+
+    private fun applyAgeBand(band: AgeBand?) {
+        _ageBand.value = band
+        _libraryStories.value = allLibraryStories.filterByAgeBand(band)
+        _recommendedWithStories.value = filterRecommended(allRecommended, band)
+    }
+
+    private fun setLibraryStories(stories: List<Story>) {
+        allLibraryStories = stories
+        _libraryStories.value = stories.filterByAgeBand(_ageBand.value)
+    }
+
+    private fun setRecommended(pairs: List<Pair<com.tamixa.network.RecommendedStoryDto, Story?>>) {
+        allRecommended = pairs
+        _recommendedWithStories.value = filterRecommended(pairs, _ageBand.value)
+    }
+
+    /** Keeps recommendations whose story is unknown (no age to check) or inside [band]. */
+    private fun filterRecommended(
+        pairs: List<Pair<com.tamixa.network.RecommendedStoryDto, Story?>>,
+        band: AgeBand?,
+    ): List<Pair<com.tamixa.network.RecommendedStoryDto, Story?>> =
+        if (band == null) pairs else pairs.filter { (_, story) -> story == null || band.includes(story.age) }
 
     private val _generationTopics = MutableStateFlow<List<GenerationTopicResponse>>(emptyList())
     val generationTopics: StateFlow<List<GenerationTopicResponse>> = _generationTopics.asStateFlow()
@@ -89,6 +134,16 @@ class StoryViewModel(
         _lifeSkillCountersRefreshVersion.value = _lifeSkillCountersRefreshVersion.value + 1
     }
 
+    // After every state property above is initialised: the saved age filter re-filters those lists.
+    init {
+        preferences?.let { prefs ->
+            scope.launch {
+                val saved = AgeBand.fromKey(prefs.getStoryAgeBand())
+                if (saved != null && _ageBand.value == null) applyAgeBand(saved)
+            }
+        }
+    }
+
     /** Aligns with backend pipeline languages; unknown codes fall back to [TamixaConstants.DEFAULT_LANGUAGE]. */
     private fun normalizeStoryLanguage(language: String): String = LibraryPipelineLanguages.normalizeForApi(language)
 
@@ -106,10 +161,10 @@ class StoryViewModel(
             val lang = normalizeStoryLanguage(language)
             try {
                 storyRepository.getLibraryStories(lang, theme = null, learnHub = false).fold(
-                    onSuccess = { _libraryStories.value = it },
+                    onSuccess = { setLibraryStories(it) },
                     onFailure = {
                         TamixaLog.w("StoryViewModel", "loadLibraryScreen getLibraryStories failed", it)
-                        _libraryStories.value = emptyList()
+                        setLibraryStories(emptyList())
                         _libraryError.value = errorMessageForUser(it)
                         appMessageNotifier?.showError()
                     }
@@ -137,10 +192,10 @@ class StoryViewModel(
                 coroutineScope {
                     val lib = async {
                         storyRepository.getLibraryStories(lang, theme = null, learnHub = false).fold(
-                            onSuccess = { _libraryStories.value = it },
+                            onSuccess = { setLibraryStories(it) },
                             onFailure = {
                                 TamixaLog.w("StoryViewModel", "refreshDashboard getLibraryStories failed", it)
-                                _libraryStories.value = emptyList()
+                                setLibraryStories(emptyList())
                                 appMessageNotifier?.showError()
                             }
                         )
@@ -175,7 +230,7 @@ class StoryViewModel(
                     }
                     val rec = async {
                         storyRepository.getRecommended(null, lang, TamixaConstants.RECOMMENDED_LIMIT).fold(
-                            onSuccess = { dtos -> _recommendedWithStories.value = dtos.map { dto -> Pair(dto, storyRepository.getStoryById(dto.storyId, dto.storySource, lang)) } },
+                            onSuccess = { dtos -> setRecommended(dtos.map { dto -> Pair(dto, storyRepository.getStoryById(dto.storyId, dto.storySource, lang)) }) },
                             onFailure = { _recommendedWithStories.value = emptyList(); appMessageNotifier?.showError() }
                         )
                     }
@@ -191,7 +246,7 @@ class StoryViewModel(
     fun allStories(): List<Story> {
         val serverIds = _myStories.value.map { it.id }.toSet()
         val cachedNotOnServer = cachedStories().filter { it.id !in serverIds }
-        val curatedIds = _libraryStories.value.map { it.id }.toSet()
+        val curatedIds = allLibraryStories.map { it.id }.toSet()
         return (_myStories.value + cachedNotOnServer)
             .filter { it.id !in curatedIds }
             .distinctBy { it.id } + _libraryStories.value
@@ -216,10 +271,10 @@ class StoryViewModel(
             val lang = normalizeStoryLanguage(language)
             storyRepository.getLibraryStories(lang, theme = null, learnHub = false)
                 .fold(
-                    onSuccess = { _libraryStories.value = it },
+                    onSuccess = { setLibraryStories(it) },
                     onFailure = {
                         TamixaLog.w("StoryViewModel", "loadLibraryStories failed", it)
-                        _libraryStories.value = emptyList()
+                        setLibraryStories(emptyList())
                         appMessageNotifier?.showError()
                     }
                 )
@@ -298,7 +353,7 @@ class StoryViewModel(
         if (!forceRefresh) {
             val cached = cachedStories().find { it.id == id }
             if (cached != null) return cached
-            val curated = _libraryStories.value.find { it.id == id }
+            val curated = allLibraryStories.find { it.id == id }
             if (curated != null) return curated
             val myStories = _myStories.value.find { it.id == id }
             if (myStories != null) return myStories
@@ -386,7 +441,7 @@ class StoryViewModel(
                         val story = storyRepository.getStoryById(dto.storyId, dto.storySource, lang)
                         Pair(dto, story)
                     }
-                    _recommendedWithStories.value = pairs
+                    setRecommended(pairs)
                 },
                 onFailure = {
                     _recommendedWithStories.value = emptyList()

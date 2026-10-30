@@ -47,6 +47,7 @@ import {
   isLibraryStoryPipelineMetaKey,
   adminStoryLanguageLabel,
 } from "@/lib/library-story-workflow";
+import { LIBRARY_TAB_LANGUAGES } from "@/lib/library-story-admin-constants";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
@@ -348,12 +349,9 @@ export default function ContentReviewPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All languages</SelectItem>
-                <SelectItem value="ta">Tamil</SelectItem>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="hi">Hindi</SelectItem>
-                <SelectItem value="te">Telugu</SelectItem>
-                <SelectItem value="kn">Kannada</SelectItem>
-                <SelectItem value="ml">Malayalam</SelectItem>
+                {LIBRARY_TAB_LANGUAGES.map(({ code, label }) => (
+                  <SelectItem key={code} value={code}>{label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Button

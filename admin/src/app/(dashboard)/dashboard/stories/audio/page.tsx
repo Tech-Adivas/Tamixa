@@ -27,6 +27,7 @@ import {
   ADMIN_STORY_LANGUAGE_SHORT,
   adminStoryLanguageLabel,
 } from "@/lib/library-story-workflow";
+import { ADMIN_STORY_LANGUAGE_CODES } from "@/lib/library-story-admin-constants";
 
 const PAGE_SIZE = 20;
 /** Stories that need, are getting, or just got narration audio (comma list understood by GET /admin/stories). */
@@ -35,8 +36,8 @@ const AUDIO_QUEUE_STATUSES = "APPROVED,AUDIO_GENERATING,AUDIO_FAILED,AUDIO_REVIE
 const POLL_INTERVAL_MS = 3000;
 const POLL_DURATION_MS = 6 * 60 * 1000;
 
-/** Supported languages for audio generation */
-const SUPPORTED_LANGUAGES = ["ta", "en", "hi", "te", "kn", "ml"] as const;
+/** Languages shown for audio generation (enabled story languages, see NEXT_PUBLIC_ADMIN_STORY_LANGUAGES). */
+const SUPPORTED_LANGUAGES = ADMIN_STORY_LANGUAGE_CODES;
 
 function getLanguageStatus(status: PipelineStatusResponse | null | undefined, language: string): string {
   if (!status || typeof status !== "object") return "PENDING";

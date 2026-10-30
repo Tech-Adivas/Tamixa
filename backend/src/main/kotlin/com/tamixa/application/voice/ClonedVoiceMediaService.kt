@@ -115,9 +115,10 @@ class ClonedVoiceMediaService(
         private const val CLONED_PREFIX = "cloned:"
         /**
          * File name of cloned-voice narration: cloned_{profileId}.mp3 (see S3NarrationAudioStorageAdapter's slug), or
-         * an interactive segment in that voice: cloned_{profileId}_seg_{segment}_{hash}.mp3 (InteractiveSegmentVoiceService).
+         * an interactive segment in that voice: cloned_{profileId}_seg_{segment}_{hash}.mp3 (InteractiveSegmentVoiceService),
+         * or its read-along word timings: cloned_{profileId}.timings.json (NarrationWordTimingService).
          */
-        private val CLONED_FILE = Regex("""cloned_(\d+)(?:_seg_[A-Za-z0-9_-]+)?\.[a-z0-9]+""")
+        private val CLONED_FILE = Regex("""cloned_(\d+)(?:_seg_[A-Za-z0-9_-]+)?(?:\.[a-z0-9]+)+""")
         private const val DELETE_ATTEMPTS = 3
         private const val RETRY_DELAY_MS = 500L
     }

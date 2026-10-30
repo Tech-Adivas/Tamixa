@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -326,47 +327,80 @@ fun StorySelectionScreen(
                         bottom = 0.dp,
                     ),
             ) {
-                when (listLayout) {
-                    StorySelectionListLayout.LibraryPosterGrid -> {
-                        if (filterRow != null) {
-                            TamixaStarfieldSection {
-                                filterRow()
-                            }
+                // The library poster grid is one scrolling list whose first row is the filter header, so the page
+                // scrolls as a whole; pinned above the grid the header left the stories only a strip of screen (e.g.
+                // Library → Interactive). It is the same grid while loading, empty or filled, so the search box keeps
+                // the keyboard when a search finds nothing.
+                val posterGridMode = listLayout == StorySelectionListLayout.LibraryPosterGrid && loadError == null
+                val headerScrollsWithList = filterRow != null &&
+                    (posterGridMode || (!loading && loadError == null && cachedStories.isNotEmpty()))
+                val header: @Composable () -> Unit = {
+                    if (filterRow != null) {
+                        TamixaStarfieldSection {
+                            filterRow()
                         }
                     }
-                    StorySelectionListLayout.CompactRows -> {
-                        if (filterRow != null) {
-                            TamixaStarfieldSection {
-                                filterRow()
-                            }
-                        }
+                    Spacer(Modifier.height(TamixaDesignTokens.smallSpacing))
+                }
+                val emptyState: @Composable () -> Unit = {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp),
+                    ) {
+                        TamixaChildrenListeningIllustration(size = 180.dp)
+                        Spacer(Modifier.height(20.dp))
+                        Text(
+                            Strings.noStoriesYet(),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = TamixaColors.cream,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            emptyStateSubtitle,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = TamixaColors.cream.copy(alpha = 0.88f),
+                            textAlign = TextAlign.Center,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
-                Spacer(Modifier.height(TamixaDesignTokens.smallSpacing))
-                when {
+                if (!headerScrollsWithList) header()
+                if (posterGridMode) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(bottom = TamixaDesignTokens.screenPaddingBottomWithNav),
+                    ) {
+                        if (headerScrollsWithList) {
+                            item(key = "header", span = { GridItemSpan(maxLineSpan) }) { Column { header() } }
+                        }
+                        when {
+                            loading -> items(6) { LibraryPosterSkeletonCard() }
+                            cachedStories.isEmpty() -> item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
+                                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { emptyState() }
+                            }
+                            else -> items(cachedStories, key = { it.id }) { story ->
+                                LibraryPosterCard(
+                                    story = story,
+                                    apiBaseUrl = apiBaseUrl,
+                                    onClick = { onStoryClick(story) },
+                                )
+                            }
+                        }
+                    }
+                } else when {
                     loading -> {
-                        when (listLayout) {
-                            StorySelectionListLayout.LibraryPosterGrid -> {
-                                LazyVerticalGrid(
-                                    columns = GridCells.Fixed(2),
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                                    contentPadding = PaddingValues(bottom = TamixaDesignTokens.screenPaddingBottomWithNav),
-                                ) {
-                                    items(6) {
-                                        LibraryPosterSkeletonCard()
-                                    }
-                                }
-                            }
-                            StorySelectionListLayout.CompactRows -> {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    CircularProgressIndicator(color = TamixaColors.goldAccent)
-                                }
-                            }
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(color = TamixaColors.goldAccent)
                         }
                     }
                     loadError != null -> {
@@ -406,117 +440,76 @@ fun StorySelectionScreen(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.padding(32.dp),
-                            ) {
-                                TamixaChildrenListeningIllustration(size = 180.dp)
-                                Spacer(Modifier.height(20.dp))
-                                Text(
-                                    Strings.noStoriesYet(),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = TamixaColors.cream,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Spacer(Modifier.height(6.dp))
-                                Text(
-                                    emptyStateSubtitle,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = TamixaColors.cream.copy(alpha = 0.88f),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 3,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
+                            emptyState()
                         }
                     }
                     else -> {
-                        when (listLayout) {
-                            StorySelectionListLayout.LibraryPosterGrid -> {
-                                LazyVerticalGrid(
-                                    columns = GridCells.Fixed(2),
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                                    contentPadding = PaddingValues(bottom = TamixaDesignTokens.screenPaddingBottomWithNav),
-                                ) {
-                                    items(cachedStories, key = { it.id }) { story ->
-                                        LibraryPosterCard(
-                                            story = story,
-                                            apiBaseUrl = apiBaseUrl,
-                                            onClick = { onStoryClick(story) },
-                                        )
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(bottom = TamixaDesignTokens.screenPaddingBottomWithNav),
+                        ) {
+                            if (headerScrollsWithList) {
+                                item(key = "header") { Column { header() } }
+                            }
+                            items(cachedStories, key = { it.id }) { story ->
+                                val headline = story.title?.takeIf { it.isNotBlank() } ?: story.theme
+                                val sub = buildString {
+                                    story.category?.trim()?.takeIf { it.isNotBlank() }?.let {
+                                        append(it)
+                                        append(" · ")
+                                    }
+                                    if (isEmpty()) {
+                                        story.childName.takeIf { it.isNotBlank() }?.let { append(it) }
+                                    }
+                                    if (isEmpty()) {
+                                        append(story.wordCount)
+                                        append(" words")
                                     }
                                 }
-                            }
-                            StorySelectionListLayout.CompactRows -> {
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                    contentPadding = PaddingValues(bottom = TamixaDesignTokens.screenPaddingBottomWithNav),
+                                Card(
+                                    onClick = { onStoryClick(story) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                    colors = TamixaCardColors.surface(),
                                 ) {
-                                    items(cachedStories, key = { it.id }) { story ->
-                                        val headline = story.title?.takeIf { it.isNotBlank() } ?: story.theme
-                                        val sub = buildString {
-                                            story.category?.trim()?.takeIf { it.isNotBlank() }?.let {
-                                                append(it)
-                                                append(" · ")
-                                            }
-                                            if (isEmpty()) {
-                                                story.childName.takeIf { it.isNotBlank() }?.let { append(it) }
-                                            }
-                                            if (isEmpty()) {
-                                                append(story.wordCount)
-                                                append(" words")
-                                            }
-                                        }
-                                        Card(
-                                            onClick = { onStoryClick(story) },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(TamixaDesignTokens.buttonRadius),
-                                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                                            colors = TamixaCardColors.surface(),
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(width = 64.dp, height = 48.dp)
+                                                .padding(4.dp),
+                                            contentAlignment = Alignment.Center,
                                         ) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(12.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(width = 64.dp, height = 48.dp)
-                                                        .padding(4.dp),
-                                                    contentAlignment = Alignment.Center,
-                                                ) {
-                                                    LibraryStoryThumbnail(theme = story.theme)
-                                                }
-                                                Spacer(Modifier.width(14.dp))
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    Text(
-                                                        headline,
-                                                        style = MaterialTheme.typography.titleMedium,
-                                                        color = MaterialTheme.colorScheme.onSurface,
-                                                    )
-                                                    Spacer(Modifier.height(2.dp))
-                                                    Text(
-                                                        sub,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        maxLines = 2,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                    )
-                                                }
-                                                Icon(
-                                                    Icons.Filled.PlayArrow,
-                                                    contentDescription = Strings.play(),
-                                                    tint = TamixaColors.goldAccent,
-                                                    modifier = Modifier.size(24.dp),
-                                                )
-                                            }
+                                            LibraryStoryThumbnail(theme = story.theme)
                                         }
+                                        Spacer(Modifier.width(14.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                headline,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Spacer(Modifier.height(2.dp))
+                                            Text(
+                                                sub,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                        Icon(
+                                            Icons.Filled.PlayArrow,
+                                            contentDescription = Strings.play(),
+                                            tint = TamixaColors.goldAccent,
+                                            modifier = Modifier.size(24.dp),
+                                        )
                                     }
                                 }
                             }

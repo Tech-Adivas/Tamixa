@@ -8,7 +8,7 @@ import { api, getApiBaseUrl, reconcileAdminAuthCookie, refreshTokensIfNeeded } f
 import type { CreateLibraryStoryRequest, LibraryStorySummary } from "@/types/api";
 import {
   STORY_CATEGORIES,
-  AGE_GROUPS,
+  ageGroupOptions,
   MIN_WORD_COUNT,
   EMOTION_MODES,
 } from "@/types/api";
@@ -69,6 +69,7 @@ import {
   type LibraryTranslationTabFields,
 } from "@/lib/library-story-admin-constants";
 import {
+  mergeSegmentImageUrls,
   parseInteractiveSegments,
   segmentStudioActivityMessage,
   type SegmentStudioActivity,
@@ -371,6 +372,7 @@ export default function EditLibraryStoryPage() {
   const [segmentVoiceStatus, setSegmentVoiceStatus] = useState<string | null>(null);
   const [segmentStudioActivity, setSegmentStudioActivity] = useState<SegmentStudioActivity>({ kind: "idle" });
   const segmentStudioBusy = segmentStudioActivity.kind !== "idle";
+  const [questionImagePrompt, setQuestionImagePrompt] = useState("");
   const segmentVoiceAutoLoadedRef = useRef(false);
   /** Per-locale interactive graph text: master key + optional language codes (e.g. hi). Empty string = clear DB overlay. */
   const [interactiveGraphSlots, setInteractiveGraphSlots] = useState<Record<string, string>>({});
@@ -1241,6 +1243,50 @@ export default function EditLibraryStoryPage() {
     ]
   );
 
+  /** Question pictures are saved by the backend straight away; the editor graph only gets the new URLs merged in. */
+  const handleGenerateQuestionImages = useCallback(
+    async (segmentIds?: string[]) => {
+      if (!id || !form) return;
+      const selectedIds = (segmentIds ?? interactiveSegments.filter((s) => s.hasChoices).map((s) => s.id)).filter(Boolean);
+      if (!selectedIds.length) {
+        showError("No questions", "This interactive graph has no segments with choices.");
+        return;
+      }
+      setSegmentStudioActivity({ kind: "images", segmentIds: selectedIds });
+      try {
+        const result = await api.admin.generateInteractiveQuestionImages(id, {
+          segmentIds: selectedIds,
+          customPrompt: questionImagePrompt.trim() || null,
+        });
+        const urls = Object.fromEntries(
+          (result.generated ?? []).filter((g) => g.imageUrl).map((g) => [g.segmentId, g.imageUrl as string])
+        );
+        if (Object.keys(urls).length > 0) {
+          setForm((f) => (f ? { ...f, interactiveGraph: mergeSegmentImageUrls(f.interactiveGraph, urls) } : f));
+          setInteractiveGraphSlots((p) => ({
+            ...p,
+            [interactiveGraphEditLocale]: mergeSegmentImageUrls(p[interactiveGraphEditLocale], urls),
+          }));
+        }
+        const ok = result.generated?.length ?? 0;
+        const failed = result.failed ?? [];
+        if (failed.length > 0) {
+          showError(
+            ok === 0 ? "Question pictures failed" : "Some question pictures failed",
+            `${ok} generated, ${failed.length} failed. ${failed.map((f) => `${f.segmentId}: ${f.message ?? "failed"}`).join(" · ")}`,
+          );
+        } else {
+          showSuccess("Question pictures generated", `${ok} picture(s) saved — no need to Save or resubmit.`);
+        }
+      } catch (e) {
+        showError("Question pictures failed", e instanceof Error ? e.message : "Could not generate question pictures.");
+      } finally {
+        setSegmentStudioActivity({ kind: "idle" });
+      }
+    },
+    [id, form, interactiveSegments, questionImagePrompt, interactiveGraphEditLocale, showError, showSuccess]
+  );
+
   const handleFillMissingSegmentScripts = useCallback(async () => {
     if (!id || !form) return;
     const ig = form.interactiveGraph?.trim();
@@ -2099,6 +2145,80 @@ export default function EditLibraryStoryPage() {
                     )}
                   </div>
                 ) : null}
+                {simulatorSelected && interactiveSegments.some((s) => s.hasChoices) ? (
+                  <div className="rounded-md border border-border/60 bg-background/80 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Question pictures
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => void handleGenerateQuestionImages()}
+                        disabled={segmentStudioBusy || !interactiveGraphLint.ok}
+                      >
+                        {segmentStudioActivity.kind === "images" &&
+                        segmentStudioActivity.segmentIds.length > 1 ? (
+                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        ) : (
+                          <ImagePlus className="h-4 w-4 mr-1.5" />
+                        )}
+                        {segmentStudioActivity.kind === "images" && segmentStudioActivity.segmentIds.length > 1
+                          ? "Generating pictures…"
+                          : "Generate all question pictures"}
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      One AI picture per question, shown in the app&apos;s question popup. Saved immediately — no Save or
+                      resubmit needed. About 20 s and one image generation each.
+                    </p>
+                    <textarea
+                      value={questionImagePrompt}
+                      onChange={(e) => setQuestionImagePrompt(e.target.value.slice(0, 2000))}
+                      className="flex min-h-[52px] w-full rounded border border-input bg-background px-2 py-1.5 text-xs"
+                      placeholder="Optional picture instructions, e.g. night sky, keep the girl in a blue dress…"
+                      disabled={segmentStudioBusy}
+                    />
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {interactiveSegments
+                        .filter((s) => s.hasChoices)
+                        .map((seg) => {
+                          const busyHere =
+                            segmentStudioActivity.kind === "images" && segmentStudioActivity.segmentIds.includes(seg.id);
+                          return (
+                            <div key={seg.id} className="rounded border border-border/60 p-2 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <code className="text-xs">{seg.id}</code>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void handleGenerateQuestionImages([seg.id])}
+                                  disabled={segmentStudioBusy || !interactiveGraphLint.ok}
+                                >
+                                  {busyHere ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : null}
+                                  {busyHere ? "Generating…" : seg.imageUrl ? "Regenerate" : "Generate"}
+                                </Button>
+                              </div>
+                              {seg.imageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={seg.imageUrl}
+                                  alt={`Question picture for ${seg.id}`}
+                                  className="aspect-square w-full rounded object-cover bg-muted/30"
+                                />
+                              ) : (
+                                <div className="aspect-square w-full rounded bg-muted/30 flex items-center justify-center text-[11px] text-muted-foreground">
+                                  No picture yet
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                ) : null}
                 <div>
                   <Label htmlFor="postStoryMission">Post-episode family mission (plain text)</Label>
                   <textarea
@@ -2179,7 +2299,7 @@ export default function EditLibraryStoryPage() {
                   <Select value={String(form.age)} onValueChange={(v) => setForm((f) => (f ? { ...f, age: parseInt(v, 10) } : f))}>
                     <SelectTrigger className="mt-1 rounded-lg"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {AGE_GROUPS.map((a) => (
+                      {ageGroupOptions(form.age).map((a) => (
                         <SelectItem key={a.value} value={String(a.value)}>{a.label}</SelectItem>
                       ))}
                     </SelectContent>
@@ -2255,7 +2375,7 @@ export default function EditLibraryStoryPage() {
                       <Select value={String(form.age)} onValueChange={(v) => setForm((f) => (f ? { ...f, age: parseInt(v, 10) } : f))}>
                         <SelectTrigger className="mt-1 rounded-lg"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          {AGE_GROUPS.map((a) => (
+                          {ageGroupOptions(form.age).map((a) => (
                             <SelectItem key={a.value} value={String(a.value)}>{a.label}</SelectItem>
                           ))}
                         </SelectContent>
@@ -2430,6 +2550,11 @@ export default function EditLibraryStoryPage() {
                   </p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
+                  {id && (
+                    <Button asChild type="button" variant="outline" size="sm">
+                      <Link href={`/dashboard/stories/${id}/slideshow`}>Story slideshow</Link>
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="outline"
@@ -2443,7 +2568,8 @@ export default function EditLibraryStoryPage() {
                         const updated = await api.admin.regenerateLibraryStoryCover(
                           id,
                           hasCover,
-                          coverCustomPrompt.trim() || null
+                          coverCustomPrompt.trim() || null,
+                          { title: form.title, content: form.content }
                         );
                         setForm((f) =>
                           f ? { ...f, coverImageUrl: updated?.coverImageUrl?.trim() ?? f.coverImageUrl ?? "" } : f

@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.tamixa.ui.edu.questionText
 import com.tamixa.ui.theme.TamixaDesignTokens
 import com.tamixa.ui.theme.TamixaDialogDefaults
 import androidx.compose.runtime.Composable
@@ -458,6 +459,7 @@ fun TamixaNavHost(
             val recommendedWithStories by storyViewModel.recommendedWithStories.collectAsState()
             val libraryLoading by storyViewModel.libraryLoading.collectAsState()
             val dashboardRefreshing by storyViewModel.dashboardRefreshing.collectAsState()
+            val dashboardAgeBand by storyViewModel.ageBand.collectAsState()
             val prefLang = settingsState.languageCode.ifEmpty { TamixaConstants.DEFAULT_LANGUAGE }
             LaunchedEffect(prefLang) {
                 storyViewModel.loadLibraryStories(prefLang)
@@ -564,7 +566,9 @@ fun TamixaNavHost(
                 spotlightSectionLoading = spotlightSectionLoading,
                 onSpotlightStoryClick = { s ->
                     navController.navigate(Screen.AudioPlayer.withId(s.id, TamixaConstants.STORY_SOURCE_LIBRARY))
-                }
+                },
+                ageBand = dashboardAgeBand,
+                onAgeBandChange = { storyViewModel.setAgeBand(it) },
             )
         }
         composable(
@@ -594,9 +598,12 @@ fun TamixaNavHost(
             LaunchedEffect(prefLangLib) { storyViewModel.loadLibraryScreen(prefLangLib) }
             val libraryLoading by storyViewModel.libraryLoading.collectAsState()
             val libraryError by storyViewModel.libraryError.collectAsState()
+            val libraryAgeBand by storyViewModel.ageBand.collectAsState()
+            // Reading this state recomposes the screen when the age filter changes (allStories() is not a flow).
+            val libraryStoriesForBand by storyViewModel.libraryStories.collectAsState()
             LibraryScreen(
                 initialHubTab = initialLibraryHub,
-                cachedStories = storyViewModel.allStories(),
+                cachedStories = libraryStoriesForBand.let { storyViewModel.allStories() },
                 loading = libraryLoading,
                 loadError = libraryError,
                 onRetry = { storyViewModel.loadLibraryScreen(prefLangLib) },
@@ -636,6 +643,8 @@ fun TamixaNavHost(
                 onNavigateToCrisisHelp = {
                     navController.navigate(Screen.CrisisHelp.route(Screen.CrisisHelp.FROM_LIB_SIM))
                 },
+                ageBand = libraryAgeBand,
+                onAgeBandChange = { storyViewModel.setAgeBand(it) },
             )
         }
         composable(Screen.Profile.route) {
@@ -1009,6 +1018,9 @@ fun TamixaNavHost(
             val favorites by storyViewModel.favorites.collectAsState()
             val allStories = storyViewModel.allStories()
             var story by remember(storyId) { mutableStateOf<com.tamixa.domain.Story?>(null) }
+            // True once the story fetch has finished: a story that can't be loaded (e.g. 404 while it is in audio
+            // review) then shows "not available" instead of an endless loading spinner.
+            var storyLoadDone by remember(storyId) { mutableStateOf(false) }
             var streamUrl by remember(storyId) { mutableStateOf<String?>(null) }
             var streamAvatarUrl by remember(storyId) { mutableStateOf<String?>(null) }
             var streamAvatarVideoUrl by remember(storyId) { mutableStateOf<String?>(null) }
@@ -1016,7 +1028,9 @@ fun TamixaNavHost(
             var streamNarrativeScenes by remember(storyId) { mutableStateOf<List<com.tamixa.network.NarrativeSceneVisual>?>(null) }
             var streamHostStoryClipUrl by remember(storyId) { mutableStateOf<String?>(null) }
             var streamDurationSeconds by remember(storyId) { mutableStateOf<Int?>(null) }
-            var streamUrlFailed by remember(storyId) { mutableStateOf(false) }
+            // The server audio URL that failed to play (e.g. 404). Device TTS stands in only while that same URL is
+            // selected: a flag alone stayed set after switching voice, so the newly picked voice never played.
+            var failedStreamUrl by remember(storyId) { mutableStateOf<String?>(null) }
             var streamUrlLoading by remember(storyId) { mutableStateOf(false) }
             var streamUrlError by remember(storyId) { mutableStateOf<String?>(null) }
             var streamLoadRetryTrigger by remember(storyId) { mutableStateOf(0) }
@@ -1025,6 +1039,9 @@ fun TamixaNavHost(
             var conversationalTtsUri by remember(storyId) { mutableStateOf<String?>(null) }
             var selectedVoice by remember(storyId) { mutableStateOf(TamixaConstants.VOICE_PROFILE_DEFAULT) }
             var selectedPlaybackMode by remember(storyId) { mutableStateOf("default") }
+            // Audio must not start before the saved voice is known, or the default narrator plays first and is then
+            // replaced by the parent's chosen (e.g. cloned) voice — heard as two voices.
+            var voicePreferenceLoaded by remember(storyId) { mutableStateOf(false) }
             var streamAvatarStatus by remember(storyId) { mutableStateOf<String?>(null) }
             var streamVoiceFallback by remember(storyId) { mutableStateOf(false) }
             var availableVoices by remember(storyId) { mutableStateOf<List<com.tamixa.network.VoiceOptionDto>>(emptyList()) }
@@ -1068,6 +1085,7 @@ fun TamixaNavHost(
                     null
                 } ?: allStories.find { it.id == storyId }
                     ?: SampleData.sampleStories().find { it.id == storyId }
+                storyLoadDone = true
             }
             var familyVoiceRefreshTrigger by remember(storyId) { mutableStateOf(0) }
             val voiceRefreshTrigger by voiceViewModel.refreshVoicesTrigger.collectAsState(0)
@@ -1087,29 +1105,38 @@ fun TamixaNavHost(
             }
             LaunchedEffect(story?.id, familyVoiceRefreshTrigger, voiceRefreshTrigger, storySource) {
                 val id = story?.id ?: return@LaunchedEffect
-                availableVoices = storyApi.getAvailableVoices(id, prefLang)
-                if (availableVoices.isEmpty()) availableVoices = listOf(
-                    com.tamixa.network.VoiceOptionDto(TamixaConstants.VOICE_PROFILE_DEFAULT, false),
-                    com.tamixa.network.VoiceOptionDto("calm", true)
-                )
-                val voices = availableVoices
-                val hasCloned = voices.any { it.voiceProfile.startsWith("cloned:", ignoreCase = true) }
-                val deduped = if (hasCloned) voices.filter { !it.voiceProfile.equals("family", ignoreCase = true) } else voices
-                val (voicePref, modePref) = storyApi.getVoicePreference(id, storySource)
-                selectedVoice = when {
-                    voicePref.equals(TamixaConstants.VOICE_PROFILE_DEFAULT, ignoreCase = true) -> TamixaConstants.VOICE_PROFILE_DEFAULT
-                    deduped.any { it.voiceProfile.equals(voicePref, ignoreCase = true) } -> voicePref
-                    else -> TamixaConstants.VOICE_PROFILE_DEFAULT
-                }
-                val voiceIsCloned = selectedVoice.startsWith("cloned:", ignoreCase = true) || selectedVoice.equals("family", ignoreCase = true)
-                val sanitizedMode = when {
-                    modePref == "avatar" && !voiceIsCloned -> "default"
-                    modePref in setOf("default", "my_voice", "avatar") -> modePref
-                    else -> "default"
-                }
-                selectedPlaybackMode = sanitizedMode
-                if (sanitizedMode != modePref) {
-                    scope.launch { storyApi.setVoicePreference(id, storySource, selectedVoice, sanitizedMode) }
+                try {
+                    availableVoices = storyApi.getAvailableVoices(id, prefLang)
+                    if (availableVoices.isEmpty()) availableVoices = listOf(
+                        com.tamixa.network.VoiceOptionDto(TamixaConstants.VOICE_PROFILE_DEFAULT, false),
+                        com.tamixa.network.VoiceOptionDto("calm", true)
+                    )
+                    val voices = availableVoices
+                    val hasCloned = voices.any { it.voiceProfile.startsWith("cloned:", ignoreCase = true) }
+                    val deduped = if (hasCloned) voices.filter { !it.voiceProfile.equals("family", ignoreCase = true) } else voices
+                    val (voicePref, modePref) = storyApi.getVoicePreference(id, storySource)
+                    selectedVoice = when {
+                        voicePref.equals(TamixaConstants.VOICE_PROFILE_DEFAULT, ignoreCase = true) -> TamixaConstants.VOICE_PROFILE_DEFAULT
+                        deduped.any { it.voiceProfile.equals(voicePref, ignoreCase = true) } -> voicePref
+                        else -> TamixaConstants.VOICE_PROFILE_DEFAULT
+                    }
+                    val voiceIsCloned = selectedVoice.startsWith("cloned:", ignoreCase = true) || selectedVoice.equals("family", ignoreCase = true)
+                    val sanitizedMode = when {
+                        modePref == "avatar" && !voiceIsCloned -> "default"
+                        modePref in setOf("default", "my_voice", "avatar") -> modePref
+                        else -> "default"
+                    }
+                    selectedPlaybackMode = sanitizedMode
+                    if (sanitizedMode != modePref) {
+                        scope.launch { storyApi.setVoicePreference(id, storySource, selectedVoice, sanitizedMode) }
+                    }
+                    voicePreferenceLoaded = true
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Still let playback start (default voice) instead of waiting forever.
+                    TamixaLog.w("AudioPlayer", "Voice preference load failed; using default voice", e)
+                    voicePreferenceLoaded = true
                 }
             }
             LaunchedEffect(streamVoiceFallback) {
@@ -1137,10 +1164,14 @@ fun TamixaNavHost(
                 effectiveInteractiveMode,
                 interactiveStoryGraph,
                 currentSegmentId,
+                voicePreferenceLoaded,
             ) {
                 val s = story ?: return@LaunchedEffect
-                streamUrlFailed = false
                 streamUrlError = null
+                if (!voicePreferenceLoaded) {
+                    streamUrlLoading = true
+                    return@LaunchedEffect
+                }
                 if (effectiveInteractiveMode && interactiveStoryGraph != null) {
                     val segId = currentSegmentId ?: interactiveStoryGraph.startSegmentId
                     val seg = interactiveStoryGraph.segments[segId]
@@ -1323,10 +1354,12 @@ fun TamixaNavHost(
                 if (!hasAvatarVideo && !reduceMotion && !hostStoryClipResolved.isNullOrBlank()) hostStoryClipResolved else null
             val hasRealAudio = !currentStreamUrl.isNullOrBlank() && !currentStreamUrl.startsWith(TamixaConstants.PLACEHOLDER_AUDIO_PREFIX)
             val ttsFallback = conversationalTtsUri ?: synthesizedUri
+            val resolvedStreamUrl = currentStreamUrl?.let { ApiConfig.resolveAudioUrl(apiBaseUrl, it) ?: it }
+            val streamUrlFailed = hasRealAudio && failedStreamUrl != null && failedStreamUrl == resolvedStreamUrl
             val playbackUrl = when {
                 hasAvatarVideo -> streamAvatarVideoUrl
                 streamUrlFailed -> ttsFallback
-                hasRealAudio -> ApiConfig.resolveAudioUrl(apiBaseUrl, currentStreamUrl) ?: currentStreamUrl
+                hasRealAudio -> resolvedStreamUrl
                 else -> ttsFallback
             }
             val isTtsFile = playbackUrl?.startsWith("file://") == true && !hasAvatarVideo
@@ -1367,7 +1400,7 @@ fun TamixaNavHost(
                     storyTheme = story?.theme ?: "",
                     scope = scope,
                     onProgressChanged = { },
-                    onPlaybackError = if (useTts) { { streamUrlFailed = true } } else null
+                    onPlaybackError = if (useTts) { { failedStreamUrl = resolvedStreamUrl } } else null
                 )
             }
             val playbackDurationSeconds = remember(
@@ -1414,8 +1447,10 @@ fun TamixaNavHost(
             val tracker = storyViewModel.playbackTracker()
             LaunchedEffect(story?.id) { tracker.reset() }
             val audioPlayerPageLoading =
-                (story == null && storyId > 0) ||
-                    (useTts && synthesizedUri == null && story != null) ||
+                (story == null && storyId > 0 && !storyLoadDone) ||
+                    // The device-TTS backup is only waited for when there is no real narration to play; otherwise
+                    // the player showed a spinner for the whole backup synthesis (30s+ on long stories).
+                    (useTts && synthesizedUri == null && story != null && (!hasRealAudio || streamUrlFailed)) ||
                     streamUrlLoading
             LaunchedEffect(playbackUrl, controller.isReady, audioPlayerPageLoading, streamUrlError) {
                 if (audioPlayerPageLoading || streamUrlError != null) return@LaunchedEffect
@@ -1699,10 +1734,10 @@ fun TamixaNavHost(
                     }
                 },
                 analytics = analytics,
-                isLoading = (story == null && storyId > 0) || (useTts && synthesizedUri == null && story != null) || streamUrlLoading,
+                isLoading = audioPlayerPageLoading,
                 loadingMessage = if (streamUrlLoading) Strings.preparingAudio() else null,
                 loadError = streamUrlError,
-                onRetryLoad = if (streamUrlError != null) { { streamUrlError = null; streamLoadRetryTrigger++ } } else null,
+                onRetryLoad = if (streamUrlError != null) { { streamUrlError = null; failedStreamUrl = null; streamLoadRetryTrigger++ } } else null,
                 selectedVoice = selectedVoice,
                 onVoiceAndModeChange = { newVoice, newMode ->
                     selectedVoice = newVoice
@@ -1801,36 +1836,69 @@ fun TamixaNavHost(
                 }
                 if (resolved.isNotEmpty()) storyApi.prefetchInteractiveSegmentAudio(resolved)
             }
+            // Question picture: fetched while the scene plays so the popup opens with it.
+            val questionImageUrl = currentInteractiveSegment?.imageUrl?.trim()?.takeIf { it.isNotBlank() }
+                ?.let { ApiConfig.resolveCoverUrl(apiBaseUrl, it) }
+            LaunchedEffect(questionImageUrl) {
+                com.tamixa.ui.components.prefetchStoryCover(questionImageUrl)
+            }
+            // Voice answers (parent setting, off until a parent agrees): the recording goes to the server and is not kept.
+            val voiceAnswerRecorder = com.tamixa.ui.edu.rememberVoiceAnswerRecorder()
+            val voiceAnswerInput = remember(voiceAnswerRecorder, settingsState.voiceAnswersEnabled, story?.id, effectiveSegmentId, prefLang) {
+                val rec = voiceAnswerRecorder
+                val sid = story?.id
+                val segmentId = effectiveSegmentId
+                if (!settingsState.voiceAnswersEnabled || rec == null || sid == null || segmentId.isNullOrBlank()) {
+                    null
+                } else {
+                    com.tamixa.ui.edu.VoiceAnswerInput(rec) { audio ->
+                        storyApi.sendInteractiveVoiceAnswer(sid, prefLang, segmentId, audio)
+                            ?.let { com.tamixa.ui.edu.VoiceAnswerOutcome(it.choiceId, it.heardText) }
+                    }
+                }
+            }
             if (choiceOverlayVisible && !segmentChoices.isNullOrEmpty()) {
-                com.tamixa.ui.edu.InteractiveChoiceOverlay(
-                    choices = segmentChoices,
-                    overlayStyle = interactiveStoryGraph?.overlayStyle,
-                    onChoice = { ch ->
-                        choiceOverlayVisible = false
-                        val segKey = effectiveSegmentId.orEmpty()
-                        story?.let { st ->
-                            appAnalytics.trackInteractiveBranch(st.id, storySource, prefLang)
+                val onInteractiveChoice: (com.tamixa.ui.edu.InteractiveChoice) -> Unit = { ch ->
+                    choiceOverlayVisible = false
+                    val segKey = effectiveSegmentId.orEmpty()
+                    story?.let { st ->
+                        appAnalytics.trackInteractiveBranch(st.id, storySource, prefLang)
+                    }
+                    scope.launch {
+                        val cid = storyViewModel.firstEducationChildId()
+                        val st = story
+                        if (cid != null && st != null) {
+                            val ok = storyApi.recordLifeSkillChoice(
+                                libraryStoryId = st.id,
+                                childId = cid,
+                                segmentId = segKey,
+                                choiceId = ch.id,
+                                skillDeltas = ch.skillDeltas,
+                            )
+                            if (ok) storyViewModel.bumpLifeSkillCountersRefresh()
                         }
-                        scope.launch {
-                            val cid = storyViewModel.firstEducationChildId()
-                            val st = story
-                            if (cid != null && st != null) {
-                                val ok = storyApi.recordLifeSkillChoice(
-                                    libraryStoryId = st.id,
-                                    childId = cid,
-                                    segmentId = segKey,
-                                    choiceId = ch.id,
-                                    skillDeltas = ch.skillDeltas,
-                                )
-                                if (ok) storyViewModel.bumpLifeSkillCountersRefresh()
-                            }
-                        }
-                        playedSegmentIds = playedSegmentIds + segKey
-                        playedSegmentSeconds += playbackDurationSeconds
-                        currentSegmentId = ch.nextSegmentId
-                        interactiveSegmentEpoch++
-                    },
-                )
+                    }
+                    playedSegmentIds = playedSegmentIds + segKey
+                    playedSegmentSeconds += playbackDurationSeconds
+                    currentSegmentId = ch.nextSegmentId
+                    interactiveSegmentEpoch++
+                }
+                if (questionImageUrl != null) {
+                    com.tamixa.ui.edu.InteractiveQuestionCard(
+                        question = currentInteractiveSegment?.questionText(),
+                        imageUrl = questionImageUrl,
+                        choices = segmentChoices,
+                        onChoice = onInteractiveChoice,
+                        voice = voiceAnswerInput,
+                    )
+                } else {
+                    com.tamixa.ui.edu.InteractiveChoiceOverlay(
+                        choices = segmentChoices,
+                        overlayStyle = interactiveStoryGraph?.overlayStyle,
+                        onChoice = onInteractiveChoice,
+                        voice = voiceAnswerInput,
+                    )
+                }
             }
             if (missionOverlayVisible && hasMissionContent) {
                 com.tamixa.ui.edu.MissionCardOverlay(
@@ -2018,6 +2086,8 @@ fun TamixaNavHost(
                 onPreferredVoiceChange = { settingsViewModel.setPreferredVoiceProfile(it) },
                 storyArtPersonalizationOptIn = settingsState.storyArtPersonalizationOptIn,
                 onStoryArtPersonalizationOptInChange = { settingsViewModel.setStoryArtPersonalizationOptIn(it) },
+                voiceAnswersEnabled = settingsState.voiceAnswersEnabled,
+                onVoiceAnswersEnabledChange = { settingsViewModel.setVoiceAnswersEnabled(it) },
                 apiBaseUrlOverride = settingsState.apiBaseUrlOverride,
                 subscriptionWebUrlOverride = settingsState.subscriptionWebUrlOverride,
                 serverEnvironmentMessage = settingsState.serverEnvironmentMessage,
